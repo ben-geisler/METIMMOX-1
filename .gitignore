@@ -1,0 +1,18 @@
+# Sensitive data folders
+data/
+data/raw/
+data/sensitive/
+data/tidy/
+
+# Specific file types
+*.csv
+*.xlsx
+*.rds
+*.dta
+*.sav
+
+# R-specific ignores
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata

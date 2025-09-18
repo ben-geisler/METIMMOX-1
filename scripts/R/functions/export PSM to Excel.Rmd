@@ -1,0 +1,524 @@
+---
+title: "Export PSM to Excel"
+author: "Ben Geisler"
+date: "2025-09-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Load more libraries
+```{r}
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv, survival, survminer, gems, mstate, tidyverse, xtable, darthtools, dampack, mvtnorm, Matrix)
+#if (!requireNamespace("darthtools", quietly = TRUE)) {  install.packages("dampack", repos = c(
+#  DARTH = 'https://raw.githubusercontent.com/DARTH-git/dampack/master/repos',
+#  CRAN = 'https://cloud.r-project.org'))}
+```
+
+## load faster binary format
+```{r}
+rm(list = ls())
+setwd("../../..") 
+METIMMOX <- readRDS(file="data/tidy/METIMMOX.rds")
+```
+
+
+# Create partitioned survival models & export to Excel
+
+```{r}
+rm(list = setdiff(ls(), "METIMMOX"))
+```
+
+
+## load survival functions from DARTH
+
+Source: <https://github.com/DARTH-git/Survival-analysis-and-decision-modeling/> Note: I have modified this code to only fit Weibul models given that not all the other models converge
+
+```{r}
+source("DARTH_surv_func.R")
+```
+
+## if necessary, can create custom function to create individual partitioned survival models
+
+```{r}
+#PSM.fun <- function()  
+#{
+#}
+```
+
+##setup
+
+```{r}
+# number of states in the model
+v_n       <- c("non-progressed", "progressed", "dead") # state names
+n_s       <- length(v_n)           # No of states 
+n_i       <- 5000                  # number of simulations 
+c_l       <- 1 / 52.1429                # cycle length (a week)
+n_t       <- 10                    # number of years (10 years)
+times     <- seq(0, n_t, c_l)  # the cycles in years
+set.seed(1234)                 # set the seed
+
+
+# Create a transition probability matrix  with all transitions indicated and numbered
+tmat <- matrix(NA, n_s, n_s, dimnames = list(v_n,v_n))
+tmat["non-progressed", "progressed"]  <- 1
+tmat["non-progressed", "dead"]  <- 2
+tmat["progressed"   , "dead"]  <- 3
+
+```
+
+##individual parametric models
+### control group
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1])
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_control.csv")
+#rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2])
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+###select Weibull model for now Source: <https://github.com/DARTH-git/Survival-analysis-and-decision-modeling/> Note: I have modified this code to only fit Weibul models given that not all the other models converge
+
+```{r}
+#source("DARTH_surv_func.R")
+source("DARTH_surv_func weib only.R")
+```
+
+###compare Weibull models with KM curve: PFS
+
+```{r}
+METIMMOX_lim <- METIMMOX %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+KM.pfs <- survfit(Surv(time = PFSmo, event = `Progression exit`) ~ 1, data = METIMMOX_lim)
+KM.os <- survfit(Surv(time = OSmo, event = Death) ~ 1, data = METIMMOX_lim)
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+plot(KM.pfs, ylab = "Survival Probability", xlab = "Time",  main = paste ("True vs Fitted PFS")) 
+lines(best.pfs,  col = 2, t = times, lty = 2)   
+
+plot(KM.os, ylab = "Survival Probability", xlab = "Time",  main = c("True vs Fitted OS"))
+lines(best.os,  col = 2, t = times, lty = 2)  
+
+rm("METIMMOX_lim", "KM.pfs", "KM.os", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - TLR reduction <10% - include
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & TLRcat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+#write.csv(METIMMOX_lim, "test.csv")
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times, extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_con_tlr0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - TLR reduction ≥10% - exclude
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & TLRcat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_con_tlr1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - TLR reduction <10% - exclude
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & TLRcat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+#write.csv(METIMMOX_lim, "test.csv")
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times, extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_tlr0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - TLR reduction ≥10% - include
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & TLRcat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_tlr1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - CRP <5
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & CRP1cat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#rite.csv(PSM, "PSM_con_crp1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - CRP >=5
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & CRP1cat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_con_crp0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - CRP <5
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & CRP1cat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_crp1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - CRP >=5.0
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & CRP1cat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_crp0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - TMB <=8
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & TMBcat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_con_tmb0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### control group - TMB >8
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1] & TMBcat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_con_tmb1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - TMB <=8
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & TMBcat == 0)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_tmb0.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
+
+### experimental group - TMB >8
+
+```{r}
+METIMMOX_lim <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2] & TMBcat == 1)
+
+METIMMOX_lim <- METIMMOX_lim %>%
+  select(ID, PFSmo, `Progression exit`, OSmo, Death) %>%
+  mutate(PFSmo = PFSmo / 12, OSmo = OSmo / 12)
+
+
+########################Partitioned Survival model ################
+
+# fit all parametric models to the data and extract the AIC/BIC. 
+# Select the one with the most appropriate fit
+# Repeat for PFS and OS
+
+fit.pfs  <- fit.fun(time ="PFSmo", status = "Progression exit", data = METIMMOX_lim, times = times, extrapolate = T) 
+fit.os   <- fit.fun(time = "OSmo", status = "Death" , data = METIMMOX_lim, times = times,
+                                        extrapolate = T) 
+
+best.pfs <- fit.pfs[["Weibull"]]  
+best.os  <- fit.os [["Weibull"]]
+
+# construct a partitioned survival model out of the fitted models
+PSM <- partsurv(best.pfs,best.os, time = times)$trace
+
+#write.csv(PSM, "PSM_exp_tmb1.csv")
+rm("METIMMOX_lim", "PSM", "fit.pfs", "fit.os", "best.pfs", "best.os")
+```
