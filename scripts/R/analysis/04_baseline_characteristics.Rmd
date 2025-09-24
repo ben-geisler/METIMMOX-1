@@ -9,22 +9,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Load more libraries
-```{r}
-if (!require("pacman")) install.packages("pacman")
-library(pacman)
-p_load(devtools, dplyr, tableone, ggplot2)
-```
+# METIMMOX baseline chracteristics
 
-
-## load faster binary format
+#load full dataset
 ```{r}
-rm(list = ls())
 setwd("../../..") 
 METIMMOX <- readRDS(file="data/tidy/METIMMOX.rds")
 ```
-
-# METIMMOX baseline chracteristics
 
 ## Replicating Table 1 from Metlzer et al. Br J Ca 2022 paper
 

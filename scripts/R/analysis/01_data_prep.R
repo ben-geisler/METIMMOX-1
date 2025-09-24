@@ -61,7 +61,3 @@ METIMMOX$OSwk <-METIMMOX$`Days until death/last follow up`/7
 
 
 saveRDS(METIMMOX, file="data/tidy/METIMMOX.rds")
-
-# load faster binary format
-rm(list = ls())
-METIMMOX <- readRDS(file="data/tidy/METIMMOX.rds")
