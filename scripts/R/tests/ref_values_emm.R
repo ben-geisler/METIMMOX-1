@@ -1,0 +1,8 @@
+# Print reference values and data info for population-representative predictions (estimated marginal means)
+cat("Reference values for population-representative predictions:\n")
+cat("Age (mean):", round(ref_age, 2), "\n")
+cat("Sex (modal):", ref_sex, "\n")
+cat("CRP (modal):", ref_crp, "\n")
+cat("TLR (modal):", ref_tlr, "\n")
+cat("TMB_BRAF (modal):", ref_tmb_braf, "\n")
+cat("Complete cases used:", nrow(data_complete), "of", nrow(data), "\n")

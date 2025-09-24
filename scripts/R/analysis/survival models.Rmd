@@ -1,0 +1,816 @@
+---
+title: "survival models"
+author: "Ben Geisler"
+date: "2025-08-29"
+output: pdf_document
+---
+
+# load required libries
+```{r}
+require(pacman)
+pacman::p_load(
+  survival,
+  flexsurv,
+  dplyr,
+  ggplot2,
+  emmeans
+)
+```
+
+# fit_all_direct function by Frederick
+```{r}
+fit_all_direct <- function(fit_data,
+                    fit_formula, # the survival formula
+                    fit_dists = c("exponential",
+                                  "gamma",
+                                  "genf",
+                                  "gengamma",
+                                  "gompertz",
+                                  "weibull",
+                                  "weibullph",
+                                  "llogis",
+                                  "lognormal"),
+                    strip_bkgr_dat = TRUE # to delete data from fitted objects
+                    ){
+ 
+  # Load packages
+  require(survival)
+  require(flexsurv)
+ 
+  # Define names to automatically create named list of fits
+  names(fit_dists) <- fit_dists
+ 
+  # Extract data object name
+  data_name <- deparse(substitute(fit_data))
+ 
+  # Fit KM ignoring any subgroups
+  km_all <- eval(as.call(list(quote(survival::survfit),
+                              formula = update(fit_formula, ~ 1),
+                              data = quote(fit_data))))
+ 
+  # Fit KM with strata - but remove interaction terms first
+  # Extract main effects only for survfit
+  formula_terms <- terms(fit_formula)
+  main_effects <- attr(formula_terms, "term.labels")
+  # Remove interaction terms (those containing ":")
+  main_effects <- main_effects[!grepl(":", main_effects)]
+  
+  if(length(main_effects) > 0) {
+    # Create formula with main effects only
+    km_formula <- as.formula(paste(deparse(fit_formula[[2]]), "~", paste(main_effects, collapse = " + ")))
+    km_std <- eval(as.call(list(quote(survival::survfit),
+                                formula = km_formula,
+                                data = quote(fit_data))))
+  } else {
+    # If no main effects, use the intercept-only model
+    km_std <- km_all
+  }
+ 
+  # Fit all standard models (these can handle interactions)
+  fits <- lapply(fit_dists,
+                 function(x){
+                   tryCatch(expr = eval(as.call(list(quote(flexsurvreg),
+                                                     formula = fit_formula,
+                                                     data = quote(fit_data),
+                                                     dist = x))),
+                            error = function(e) paste("Error message:", e$message))
+                 })
+ 
+  # Strip background data from fitted models
+  if(strip_bkgr_dat) {
+    for (i in 1:length(fit_dists)) {
+      tryCatch(fits[[i]][["data"]] <- NULL,
+               error = function(e) NULL)
+    }
+  }
+ 
+  # Create result list
+  res <- list(data_name = data_name,
+              km_all = km_all,
+              km_std = km_std,
+              fitted_models = fits)
+}
+```
+
+# helper function to extract both AIC and BIC
+```{r}
+extract_ic_table <- function(results) {
+  # Simple data frame to collect results
+  ic_data <- data.frame(
+    Model = character(),
+    Distribution = character(),
+    AIC = numeric(),
+    BIC = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Loop through each model
+  for (model_name in names(results)) {
+    fitted_models <- results[[model_name]]$fitted_models
+    
+    # Loop through each distribution
+    for (dist_name in names(fitted_models)) {
+      fit_obj <- fitted_models[[dist_name]]
+      
+      # Initialize values
+      aic_val <- NA
+      bic_val <- NA
+      
+      # Check if it's a successful fit
+      if (inherits(fit_obj, "flexsurvreg")) {
+        # Try AIC 
+        aic_result <- try(AIC(fit_obj), silent = TRUE)
+        if (!inherits(aic_result, "try-error")) {
+          aic_val <- aic_result
+        }
+        
+        # Calculate BIC manually: BIC = -2*loglik + k*log(n)
+        tryCatch({
+          loglik <- fit_obj$loglik
+          k <- length(fit_obj$coefficients)
+          n <- fit_obj$N
+          
+          if (!is.null(loglik) && !is.null(k) && !is.null(n)) {
+            bic_val <- -2 * loglik + k * log(n)
+          }
+        }, error = function(e) NULL)
+      }
+      
+      # Add row
+      ic_data <- rbind(ic_data, data.frame(
+        Model = model_name,
+        Distribution = dist_name,
+        AIC = aic_val,
+        BIC = bic_val,
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+  
+  return(ic_data)
+}
+```
+
+# main code - check dataset
+```{r}
+# Define the right-hand side formulas once
+formula_rhs <- list(
+  "0" = ~ 1,
+  "1" = ~ crp:Rx,
+  "2" = ~ tlr:Rx,
+  "3" = ~ tmb_braf:Rx,
+  "4" = ~ Age + sex + crp:Rx,
+  "5" = ~ Age + sex + tlr:Rx,
+  "6" = ~ Age + sex + tmb_braf:Rx,
+  "7" = ~ crp:Rx + tlr:Rx + tmb_braf:Rx,
+  "8" = ~ Age + sex + crp:Rx + tlr:Rx + tmb_braf:Rx
+  )
+
+# Initialize empty lists
+formulas_os <- list()
+formulas_pfs <- list()
+
+# Populate both lists via loop
+for (i in names(formula_rhs)) {
+  # Create OS formula
+  formulas_os[[paste0("os", i)]] <- as.formula(paste("Surv(OSwk, Death)", deparse(formula_rhs[[i]])))
+  
+  # Create PFS formula  
+  formulas_pfs[[paste0("pfs", i)]] <- as.formula(paste("Surv(PFSwk, Progression)", deparse(formula_rhs[[i]])))
+}
+
+os_results <- list()
+pfs_results <- list()
+
+for (nm in names(formulas_os)) {
+  os_results[[nm]] <- fit_all_direct(data_control, formulas_os[[nm]])
+}
+
+for (nm in names(formulas_pfs)) {
+  pfs_results[[nm]] <- fit_all_direct(data_control, formulas_pfs[[nm]])
+}
+
+# Extract IC tables
+ic_table_os <- extract_ic_table(os_results)
+ic_table_pfs <- extract_ic_table(pfs_results)
+
+# Function to rearrange IC table - models as rows, distributions as columns
+rearrange_ic_table <- function(ic_table) {
+  # Split into AIC and BIC tables
+  aic_wide <- reshape(ic_table[, c("Model", "Distribution", "AIC")], 
+                      idvar = "Model", 
+                      timevar = "Distribution", 
+                      direction = "wide")
+  
+  bic_wide <- reshape(ic_table[, c("Model", "Distribution", "BIC")], 
+                      idvar = "Model", 
+                      timevar = "Distribution", 
+                      direction = "wide")
+  
+  # Clean column names
+  names(aic_wide) <- gsub("AIC\\.", "", names(aic_wide))
+  names(bic_wide) <- gsub("BIC\\.", "", names(bic_wide))
+  
+  # Add prefix to distinguish AIC from BIC
+  names(aic_wide)[-1] <- paste0("AIC_", names(aic_wide)[-1])
+  names(bic_wide)[-1] <- paste0("BIC_", names(bic_wide)[-1])
+  
+  # Merge AIC and BIC tables
+  combined <- merge(aic_wide, bic_wide, by = "Model")
+  
+  # Reorder columns: Model, then all AIC columns, then all BIC columns
+  aic_cols <- grep("^AIC_", names(combined), value = TRUE)
+  bic_cols <- grep("^BIC_", names(combined), value = TRUE)
+  
+  combined <- combined[, c("Model", aic_cols, bic_cols)]
+  
+  return(combined)
+}
+
+# Rearrange tables
+ic_table_os_wide <- rearrange_ic_table(ic_table_os)
+ic_table_pfs_wide <- rearrange_ic_table(ic_table_pfs)
+
+# Print rearranged tables
+print("OS Models - Wide Format:")
+print(ic_table_os_wide)
+
+print("PFS Models - Wide Format:")
+print(ic_table_pfs_wide)
+```
+
+# output all model parameters
+```{r}
+check_model_parameters <- function(results, model_name) {
+  model_results <- results[[model_name]]
+  
+  cat("=== Parameter Summary for", model_name, "===\n")
+  
+  for (dist in names(model_results$fitted_models)) {
+    fit_obj <- model_results$fitted_models[[dist]]
+    if (inherits(fit_obj, "flexsurvreg")) {
+      cat("\n", dist, ":\n")
+      print(fit_obj$res.t)
+      cat("Parameter names:", paste(rownames(fit_obj$res.t), collapse = ", "), "\n")
+    } else {
+      cat("\n", dist, ": FAILED FIT\n")
+    }
+  }
+}
+
+# First, let's check the parameters
+cat("Checking OS0 parameters:\n")
+check_model_parameters(os_results, "os0")
+
+cat("\n\nChecking PFS0 parameters:\n")
+check_model_parameters(pfs_results, "pfs0")
+```
+
+# plotting function
+```{r}
+plot_single_survival <- function(results, 
+                                outcome_type = "OS", 
+                                model_name = "os0") {
+  
+  # Extract the specific model results
+  model_results <- results[[model_name]]
+  
+  # Get KM estimates
+  km_fit <- model_results$km_all
+  
+  # Determine time range
+  time_max <- max(km_fit$time, na.rm = TRUE)
+  
+  # Create time sequence for predictions
+  time_seq <- seq(0.01, time_max, length.out = 200)
+  
+  # Extract KM data for plotting
+  km_data <- data.frame(
+    time = km_fit$time,
+    surv = km_fit$surv,
+    lower = km_fit$lower,
+    upper = km_fit$upper
+  ) %>%
+    filter(!is.na(surv) & time >= 0)
+  
+  # Colors for different distributions
+  dist_colors <- c(
+    "exponential" = "#E31A1C",
+    "weibull" = "#1F78B4", 
+    "llogis" = "#33A02C",
+    "lognormal" = "#FF7F00",
+    "gamma" = "#6A3D9A",
+    "gompertz" = "#FB9A99",
+    "gengamma" = "#A6CEE3",
+    "genf" = "#B2DF8A",
+    "weibullph" = "#FDBF6F"
+  )
+  
+  # Initialize plot
+  p <- ggplot() +
+    geom_step(data = km_data, 
+              aes(x = time, y = surv), 
+              color = "black", 
+              linewidth = 1.5) +
+    geom_ribbon(data = km_data,
+                aes(x = time, ymin = lower, ymax = upper),
+                alpha = 0.2,
+                fill = "grey50") +
+    theme_minimal() +
+    labs(
+      title = paste(outcome_type, "- Model:", model_name),
+      x = "Time (weeks)",
+      y = "Survival Probability",
+      color = "Distribution"
+    ) +
+    theme(
+      plot.title = element_text(size = 14, hjust = 0.5),
+      legend.position = "bottom"
+    ) +
+    scale_y_continuous(limits = c(0, 1))
+  
+  # Get all available distributions
+  available_dists <- names(model_results$fitted_models)
+  
+  # Add parametric fits with correct parameterizations
+  parametric_data <- data.frame()
+  
+  for (dist in available_dists) {
+    fit_obj <- model_results$fitted_models[[dist]]
+    
+    if (inherits(fit_obj, "flexsurvreg")) {
+      tryCatch({
+        
+        # Extract parameters from the fit object
+        params <- fit_obj$res.t[, "est"]
+        
+        surv_pred <- switch(dist,
+          
+          "exponential" = {
+            rate <- exp(params["rate"])
+            exp(-rate * time_seq)
+          },
+          
+          "weibull" = {
+            shape <- exp(params["shape"])
+            scale <- exp(params["scale"])
+            exp(-(time_seq/scale)^shape)
+          },
+          
+          "weibullph" = {
+            # CORRECTED: WeibullPH uses S(t) = exp(-exp(scale) * t^exp(shape))
+            shape <- exp(params["shape"])
+            log_scale <- params["scale"]  # This is log(baseline hazard)
+            exp(-exp(log_scale) * time_seq^shape)
+          },
+          
+          "llogis" = {
+            shape <- exp(params["shape"])
+            scale <- exp(params["scale"])
+            1 / (1 + (time_seq/scale)^shape)
+          },
+          
+          "lognormal" = {
+            meanlog <- params["meanlog"]
+            sdlog <- exp(params["sdlog"])
+            1 - plnorm(time_seq, meanlog = meanlog, sdlog = sdlog)
+          },
+          
+          "gamma" = {
+            shape <- exp(params["shape"])
+            rate <- exp(params["rate"])
+            1 - pgamma(time_seq, shape = shape, rate = rate)
+          },
+          
+          "gompertz" = {
+            shape <- params["shape"]
+            rate <- exp(params["rate"])
+            if (abs(shape) < 1e-6) {
+              exp(-rate * time_seq)
+            } else {
+              exp(-rate/shape * (exp(shape * time_seq) - 1))
+            }
+          },
+          
+          "gengamma" = {
+            mu <- params["mu"]
+            sigma <- exp(params["sigma"])
+            Q <- params["Q"]
+            1 - flexsurv::pgengamma(time_seq, mu = mu, sigma = sigma, Q = Q)
+          },
+          
+          "genf" = {
+            mu <- params["mu"]
+            sigma <- exp(params["sigma"])
+            Q <- params["Q"]
+            P <- params["P"]
+            1 - flexsurv::pgenf(time_seq, mu = mu, sigma = sigma, Q = Q, P = P)
+          },
+          
+          NA
+        )
+        
+        if (!all(is.na(surv_pred))) {
+          valid_idx <- !is.na(surv_pred) & surv_pred >= 0 & surv_pred <= 1 & is.finite(surv_pred)
+          if (sum(valid_idx) > 10) {
+            temp_data <- data.frame(
+              time = time_seq[valid_idx],
+              surv = surv_pred[valid_idx],
+              distribution = dist
+            )
+            parametric_data <- rbind(parametric_data, temp_data)
+          }
+        }
+        
+      }, error = function(e) {
+        # Silent error handling
+      })
+    }
+  }
+  
+  # Add parametric curves
+  if (nrow(parametric_data) > 0) {
+    p <- p + geom_line(data = parametric_data,
+                      aes(x = time, y = surv, color = distribution),
+                      linewidth = 0.8) +
+          scale_color_manual(values = dist_colors)
+  }
+  
+  return(p)
+}
+```
+
+#survival plots for PFS0 and OS0 only
+```{r}
+# Create individual OS plot
+os0_plot <- plot_single_survival(os_results, "Overall Survival", "os0")
+
+# Create individual PFS plot
+pfs0_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs0")
+
+# Display plots one by one
+print("OS Model 0 (Intercept only):")
+print(os0_plot)
+
+print("PFS Model 0 (Intercept only):")
+print(pfs0_plot)
+```
+
+# ---
+# Function to calculate estimated marginal means
+```{r}
+calculate_emmeans <- function(data) {
+  
+  # Calculate means for continuous variables
+  age_mean <- mean(data$Age, na.rm = TRUE)
+  
+  # Calculate mode/most frequent category for categorical variables
+  sex_mode <- as.numeric(names(sort(table(data$sex), decreasing = TRUE))[1])
+  rx_mode <- names(sort(table(data$Rx), decreasing = TRUE))[1]
+  
+  # For binary biomarkers, calculate the proportion
+  crp_mean <- mean(data$crp, na.rm = TRUE)
+  tlr_mean <- mean(data$tlr, na.rm = TRUE)
+  tmb_braf_mean <- mean(data$tmb_braf, na.rm = TRUE)
+  
+  emmeans_data <- list(
+    Age = age_mean,
+    sex = sex_mode,
+    Rx = rx_mode,
+    crp = crp_mean,
+    tlr = tlr_mean,
+    tmb_braf = tmb_braf_mean
+  )
+  
+  cat("Estimated Marginal Means:\n")
+  cat("Age:", round(age_mean, 2), "\n")
+  cat("sex:", sex_mode, "\n")
+  cat("Rx:", rx_mode, "\n")
+  cat("crp:", round(crp_mean, 3), "\n")
+  cat("tlr:", round(tlr_mean, 3), "\n")
+  cat("tmb_braf:", round(tmb_braf_mean, 3), "\n\n")
+  
+  return(emmeans_data)
+}
+```
+
+# Main function to create scenario plots
+```{r}
+create_scenario_plots_from_existing <- function(data, os_results, pfs_results, 
+                                               models_to_plot = paste0("os", 1:8),
+                                               dist_to_use = "weibull") {
+  
+  # Calculate estimated marginal means
+  emmeans_data <- calculate_emmeans(data)
+  
+  # Define scenarios
+  scenarios <- list(
+    "crp_1" = list(var = "crp", value = 1, label = "CRP = 1"),
+    "crp_0" = list(var = "crp", value = 0, label = "CRP = 0"),
+    "tlr_1" = list(var = "tlr", value = 1, label = "TLR = 1"),
+    "tlr_0" = list(var = "tlr", value = 0, label = "TLR = 0"),
+    "tmb_braf_1" = list(var = "tmb_braf", value = 1, label = "TMB_BRAF = 1"),
+    "tmb_braf_0" = list(var = "tmb_braf", value = 0, label = "TMB_BRAF = 0")
+  )
+  
+  # Time sequence for predictions
+  time_max <- max(c(data$OSwk, data$PFSwk), na.rm = TRUE)
+  time_seq <- seq(0.01, time_max, length.out = 200)
+  
+  # Colors for scenarios
+  scenario_colors <- c(
+    "crp_1" = "#E31A1C", "crp_0" = "#FB9A99",
+    "tlr_1" = "#1F78B4", "tlr_0" = "#A6CEE3", 
+    "tmb_braf_1" = "#33A02C", "tmb_braf_0" = "#B2DF8A"
+  )
+  
+  # Store results
+  plot_results <- list()
+  
+  for (model_name in models_to_plot) {
+    
+    cat("Processing model:", model_name, "\n")
+    
+    # Get fitted models from your existing results
+    os_fit <- os_results[[model_name]]$fitted_models[[dist_to_use]]
+    pfs_model_name <- gsub("os", "pfs", model_name)
+    pfs_fit <- pfs_results[[pfs_model_name]]$fitted_models[[dist_to_use]]
+    
+    # Check if fits exist and are valid
+    if (!inherits(os_fit, "flexsurvreg") || !inherits(pfs_fit, "flexsurvreg")) {
+      cat("Skipping", model_name, "- invalid fit objects\n")
+      next
+    }
+    
+    # Temporarily restore data to fit objects
+    os_fit$data <- data
+    pfs_fit$data <- data
+    
+    # Create prediction data for each scenario
+    scenario_data <- data.frame()
+    
+    for (scenario_name in names(scenarios)) {
+      scenario_info <- scenarios[[scenario_name]]
+      
+      # Create newdata for this scenario
+      newdata <- create_scenario_newdata(data, emmeans_data, scenario_info$var, scenario_info$value)
+      
+      # Predict OS
+      tryCatch({
+        os_pred <- summary(os_fit, t = time_seq, type = "survival", newdata = newdata)
+        
+        if (is.data.frame(os_pred) && "est" %in% names(os_pred)) {
+          temp_os <- data.frame(
+            time = time_seq,
+            surv = os_pred$est,
+            outcome = "OS",
+            scenario = scenario_name,
+            scenario_label = scenario_info$label
+          )
+          scenario_data <- rbind(scenario_data, temp_os)
+          cat("✓ OS prediction successful for", scenario_name, "\n")
+        }
+      }, error = function(e) {
+        cat("✗ OS prediction failed for", scenario_name, ":", e$message, "\n")
+      })
+      
+      # Predict PFS
+      tryCatch({
+        pfs_pred <- summary(pfs_fit, t = time_seq, type = "survival", newdata = newdata)
+        
+        if (is.data.frame(pfs_pred) && "est" %in% names(pfs_pred)) {
+          temp_pfs <- data.frame(
+            time = time_seq,
+            surv = pfs_pred$est,
+            outcome = "PFS", 
+            scenario = scenario_name,
+            scenario_label = scenario_info$label
+          )
+          scenario_data <- rbind(scenario_data, temp_pfs)
+          cat("✓ PFS prediction successful for", scenario_name, "\n")
+        }
+      }, error = function(e) {
+        cat("✗ PFS prediction failed for", scenario_name, ":", e$message, "\n")
+      })
+    }
+    
+    # Remove data from fit objects again
+    os_fit$data <- NULL
+    pfs_fit$data <- NULL
+    
+    # Create plots if we have data
+    if (nrow(scenario_data) > 0) {
+      
+      # OS plot
+      os_data <- scenario_data[scenario_data$outcome == "OS", ]
+      if (nrow(os_data) > 0) {
+        os_plot <- ggplot(os_data, aes(x = time, y = surv, color = scenario)) +
+          geom_line(linewidth = 1.2) +
+          scale_color_manual(values = scenario_colors, 
+                           labels = setNames(sapply(scenarios, function(x) x$label), names(scenarios))) +
+          theme_minimal() +
+          labs(
+            title = paste("Overall Survival -", model_name, "(", dist_to_use, ")"),
+            x = "Time (weeks)",
+            y = "Survival Probability",
+            color = "Scenario"
+          ) +
+          theme(legend.position = "bottom") +
+          scale_y_continuous(limits = c(0, 1)) +
+          guides(color = guide_legend(ncol = 3))
+        
+        plot_results[[paste0(model_name, "_os")]] <- os_plot
+      }
+      
+      # PFS plot
+      pfs_data <- scenario_data[scenario_data$outcome == "PFS", ]
+      if (nrow(pfs_data) > 0) {
+        pfs_plot <- ggplot(pfs_data, aes(x = time, y = surv, color = scenario)) +
+          geom_line(linewidth = 1.2) +
+          scale_color_manual(values = scenario_colors,
+                           labels = setNames(sapply(scenarios, function(x) x$label), names(scenarios))) +
+          theme_minimal() +
+          labs(
+            title = paste("Progression-Free Survival -", pfs_model_name, "(", dist_to_use, ")"),
+            x = "Time (weeks)",
+            y = "Survival Probability", 
+            color = "Scenario"
+          ) +
+          theme(legend.position = "bottom") +
+          scale_y_continuous(limits = c(0, 1)) +
+          guides(color = guide_legend(ncol = 3))
+        
+        plot_results[[paste0(pfs_model_name, "_pfs")]] <- pfs_plot
+      }
+    } else {
+      cat("No valid predictions for", model_name, "\n")
+    }
+  }
+  
+  return(plot_results)
+}
+```
+
+# Execute the analysis
+```{r}
+cat("=== Creating Scenario-Based Survival Plots (Using Existing Models) ===\n")
+
+# Create scenario plots using your existing fitted models
+scenario_plots <- create_scenario_plots_from_existing(
+  data = data,
+  os_results = os_results,
+  pfs_results = pfs_results,
+  models_to_plot = paste0("os", 1:8),
+  dist_to_use = "weibull"  # Change this to your preferred distribution
+)
+
+# Display results
+if (length(scenario_plots) > 0) {
+  cat("\nCreated", length(scenario_plots), "scenario plots\n")
+  
+  # Show first few plots
+  if ("os1_os" %in% names(scenario_plots)) {
+    print("OS1 scenario plot:")
+    print(scenario_plots$os1_os)
+  }
+  
+  if ("pfs1_pfs" %in% names(scenario_plots)) {
+    print("PFS1 scenario plot:")
+    print(scenario_plots$pfs1_pfs)
+  }
+  
+  # Save all plots
+  if (!dir.exists("scenario_plots")) {
+    dir.create("scenario_plots")
+  }
+  
+  for (plot_name in names(scenario_plots)) {
+    ggsave(
+      filename = paste0("scenario_plots/", plot_name, "_scenarios.png"),
+      plot = scenario_plots[[plot_name]],
+      width = 12, height = 6, dpi = 300
+    )
+  }
+  
+  cat("All scenario plots saved in 'scenario_plots' directory\n")
+} else {
+  cat("No plots were created. Check the error messages above.\n")
+}
+
+# Print summary
+cat("\nScenario Analysis Summary:\n")
+cat("- Models analyzed: 1 through 8 (OS and PFS)\n") 
+cat("- Scenarios per model: 6 (crp 0/1, tlr 0/1, tmb_braf 0/1)\n")
+cat("- Distribution used:", "weibull", "\n")
+cat("- Total plots created:", length(scenario_plots), "\n")
+
+# List which models were successful
+if (length(scenario_plots) > 0) {
+  successful_models <- unique(gsub("_(os|pfs)$", "", names(scenario_plots)))
+  cat("- Successful models:", paste(successful_models, collapse = ", "), "\n")
+}
+```
+
+#survival plots for all other models
+```{r}
+
+# Create individual OS plots
+os1_plot <- plot_single_survival(os_results, "Overall Survival", "os1")
+os2_plot <- plot_single_survival(os_results, "Overall Survival", "os2")
+os3_plot <- plot_single_survival(os_results, "Overall Survival", "os3")
+os4_plot <- plot_single_survival(os_results, "Overall Survival", "os4")
+os5_plot <- plot_single_survival(os_results, "Overall Survival", "os5")
+os6_plot <- plot_single_survival(os_results, "Overall Survival", "os6")
+os7_plot <- plot_single_survival(os_results, "Overall Survival", "os7")
+os8_plot <- plot_single_survival(os_results, "Overall Survival", "os8")
+
+# Create individual PFS plots
+pfs1_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs1")
+pfs2_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs2")
+pfs3_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs3")
+pfs4_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs4")
+pfs5_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs5")
+pfs6_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs6")
+pfs7_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs7")
+pfs8_plot <- plot_single_survival(pfs_results, "Progression-Free Survival", "pfs8")
+
+# Display plots one by one
+print("OS Model 1 (crp:Rx):")
+print(os1_plot)
+
+print("OS Model 2 (tlr:Rx):")
+print(os2_plot)
+
+print("OS Model 3 (tmb_braf:Rx):")
+print(os3_plot)
+
+print("OS Model 4 (Age + sex + crp:Rx):")
+print(os4_plot)
+
+print("OS Model 5 (Age + sex + tlr:Rx):")
+print(os5_plot)
+
+print("OS Model 6 (Age + sex + tmb_braf:Rx):")
+print(os6_plot)
+
+print("OS Model 7 (crp:Rx + tlr:Rx + tmb_braf:Rx):")
+print(os7_plot)
+
+print("OS Model 8 (Age + sex + crp:Rx + tlr:Rx + tmb_braf:Rx):")
+print(os8_plot)
+
+print("PFS Model 1 (crp:Rx):")
+print(pfs1_plot)
+
+print("PFS Model 2 (tlr:Rx):")
+print(pfs2_plot)
+
+print("PFS Model 3 (tmb_braf:Rx):")
+print(pfs3_plot)
+
+print("PFS Model 4 (Age + sex + crp:Rx):")
+print(pfs4_plot)
+
+print("PFS Model 5 (Age + sex + tlr:Rx):")
+print(pfs5_plot)
+
+print("PFS Model 6 (Age + sex + tmb_braf:Rx):")
+print(pfs6_plot)
+
+print("PFS Model 7 (crp:Rx + tlr:Rx + tmb_braf:Rx):")
+print(pfs7_plot)
+
+print("PFS Model 8 (Age + sex + crp:Rx + tlr:Rx + tmb_braf:Rx):")
+print(pfs8_plot)
+
+```
+
+
+#debug
+```{r}
+debug_results <- function(results, result_name) {
+  cat("=== Debugging", result_name, "===\n")
+  
+  for (model_name in names(results)) {
+    cat("\nModel:", model_name, "\n")
+    fitted_models <- results[[model_name]]$fitted_models
+    
+    for (dist_name in names(fitted_models)) {
+      fit_obj <- fitted_models[[dist_name]]
+      if (inherits(fit_obj, "flexsurvreg")) {
+        cat("  ✓", dist_name, "- Valid flexsurvreg object\n")
+      } else if (is.character(fit_obj)) {
+        cat("  ✗", dist_name, "- Error:", fit_obj, "\n")
+      } else {
+        cat("  ✗", dist_name, "- Invalid object type:", class(fit_obj), "\n")
+      }
+    }
+  }
+  cat("\n")
+}
+
+# Debug your results
+debug_results(os_results, "OS Results")
+debug_results(pfs_results, "PFS Results")
+```
+

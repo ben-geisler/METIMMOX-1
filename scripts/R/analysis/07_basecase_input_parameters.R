@@ -27,28 +27,28 @@ l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
 # Map survival curves directly into a list structure 
 p_os <- list(
   control_OS = predictions$control$os,  
-  crp_pos_OS = predictions$crp$os_pos_exp,
-  crp_neg_OS = predictions$crp$os_neg_ctrl,
-  tlr_pos_OS = predictions$tlr$os_pos_exp,
-  tlr_neg_OS = predictions$tlr$os_neg_ctrl,
-  tmb_braf_pos_OS = predictions$tmb_braf$os_pos_exp,
-  tmb_braf_neg_OS = predictions$tmb_braf$os_neg_ctrl,
-  crp_weighted_OS = predictions$crp$os_weighted,
-  tlr_weighted_OS = predictions$tlr$os_weighted,
-  tmb_braf_weighted_OS = predictions$tmb_braf$os_weighted
+  crp_pos_OS = predictions$crp$biomarker_positive$os,
+  crp_neg_OS = predictions$crp$biomarker_negative$os,
+  tlr_pos_OS = predictions$tlr$biomarker_positive$os,
+  tlr_neg_OS = predictions$tlr$biomarker_negative$os,
+  tmb_braf_pos_OS = predictions$tmb_braf$biomarker_positive$os,
+  tmb_braf_neg_OS = predictions$tmb_braf$biomarker_negative$os,
+  crp_weighted_OS = predictions$crp$os,      # Population-marginalized
+  tlr_weighted_OS = predictions$tlr$os,      # Population-marginalized
+  tmb_braf_weighted_OS = predictions$tmb_braf$os  # Population-marginalized
 )
 
 p_pfs <- list(
   control_PFS = predictions$control$pfs, 
-  crp_pos_PFS = predictions$crp$pfs_pos_exp,
-  crp_neg_PFS = predictions$crp$pfs_neg_ctrl,
-  tlr_pos_PFS = predictions$tlr$pfs_pos_exp,
-  tlr_neg_PFS = predictions$tlr$pfs_neg_ctrl,
-  tmb_braf_pos_PFS = predictions$tmb_braf$pfs_pos_exp,
-  tmb_braf_neg_PFS = predictions$tmb_braf$pfs_neg_ctrl,
-  crp_weighted_PFS = predictions$crp$pfs_weighted,
-  tlr_weighted_PFS = predictions$tlr$pfs_weighted,
-  tmb_braf_weighted_PFS = predictions$tmb_braf$pfs_weighted
+  crp_pos_PFS = predictions$crp$biomarker_positive$pfs,
+  crp_neg_PFS = predictions$crp$biomarker_negative$pfs,
+  tlr_pos_PFS = predictions$tlr$biomarker_positive$pfs,
+  tlr_neg_PFS = predictions$tlr$biomarker_negative$pfs,
+  tmb_braf_pos_PFS = predictions$tmb_braf$biomarker_positive$pfs,
+  tmb_braf_neg_PFS = predictions$tmb_braf$biomarker_negative$pfs,
+  crp_weighted_PFS = predictions$crp$pfs,    # Population-marginalized
+  tlr_weighted_PFS = predictions$tlr$pfs,    # Population-marginalized
+  tmb_braf_weighted_PFS = predictions$tmb_braf$pfs  # Population-marginalized
 )
 
 
@@ -93,8 +93,8 @@ l_params_base <- list(
   p_os = p_os,
   p_pfs = p_pfs,
   
-  # Biomarker prevalence - using values from data
-  p_crp = mean(data$crp, na.rm = TRUE),
-  p_tlr = mean(data$tlr, na.rm = TRUE),
-  p_tmb_braf = mean(data$tmb_braf, na.rm = TRUE)
+  # Biomarker prevalence - using values from strategies_df
+  p_crp = strategies_df$prevalence[strategies_df$id == "crp"],
+  p_tlr = strategies_df$prevalence[strategies_df$id == "tlr"],
+  p_tmb_braf = strategies_df$prevalence[strategies_df$id == "tmb_braf"]
 )
