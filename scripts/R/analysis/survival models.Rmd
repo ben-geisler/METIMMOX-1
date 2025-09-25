@@ -582,6 +582,14 @@ create_scenario_plots_from_existing <- function(data, os_results, pfs_results,
           )
           scenario_data <- rbind(scenario_data, temp_os)
           cat("✓ OS prediction successful for", scenario_name, "\n")
+        } else {
+          cat("⚠ OS prediction structure not recognized for", scenario_name, "\n")
+          if (is.list(os_pred)) {
+            cat("  - Got list with", length(os_pred), "elements\n")
+            if (length(os_pred) > 0 && is.data.frame(os_pred[[1]])) {
+              cat("  - First element columns:", paste(names(os_pred[[1]]), collapse = ", "), "\n")
+            }
+          }
         }
       }, error = function(e) {
         cat("✗ OS prediction failed for", scenario_name, ":", e$message, "\n")
@@ -614,6 +622,14 @@ create_scenario_plots_from_existing <- function(data, os_results, pfs_results,
           )
           scenario_data <- rbind(scenario_data, temp_pfs)
           cat("✓ PFS prediction successful for", scenario_name, "\n")
+        } else {
+          cat("⚠ PFS prediction structure not recognized for", scenario_name, "\n")
+          if (is.list(pfs_pred)) {
+            cat("  - Got list with", length(pfs_pred), "elements\n") 
+            if (length(pfs_pred) > 0 && is.data.frame(pfs_pred[[1]])) {
+              cat("  - First element columns:", paste(names(pfs_pred[[1]]), collapse = ", "), "\n")
+            }
+          }
         }
       }, error = function(e) {
         cat("✗ PFS prediction failed for", scenario_name, ":", e$message, "\n")

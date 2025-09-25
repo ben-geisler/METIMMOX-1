@@ -250,6 +250,17 @@ create_population_plots <- function(models, data_complete, time_points, outcome_
             cat("Debug: Successfully added", nrow(temp_data), "rows for", structure, dist_name, "\n")
           } else {
             cat("Debug: pred_summary doesn't have expected structure\n")
+            cat("  Structure type:", if(is.list(pred_summary)) "list" else "other", "\n")
+            if (is.list(pred_summary)) {
+              cat("  List length:", length(pred_summary), "\n")
+              cat("  List names:", paste(names(pred_summary), collapse = ", "), "\n")
+              if (length(pred_summary) > 0) {
+                cat("  First element class:", class(pred_summary[[1]]), "\n")
+                if (is.data.frame(pred_summary[[1]])) {
+                  cat("  First element columns:", paste(names(pred_summary[[1]]), collapse = ", "), "\n")
+                }
+              }
+            }
             str(pred_summary)
           }
           
