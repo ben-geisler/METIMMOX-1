@@ -23,7 +23,7 @@ fit_all_direct <- function(fit_data,
                                          "weibullph",
                                          "llogis",
                                          "lognormal"),
-                           strip_bkgr_dat = TRUE # to delete data from fitted objects
+                           strip_bkgr_dat = FALSE # to delete data from fitted objects
 ){
   
   # Load packages
