@@ -221,12 +221,27 @@ create_population_plots <- function(models, data_complete, time_points, outcome_
           cat("Debug: Prediction summary class:", class(pred_summary), "\n")
           cat("Debug: Prediction summary names:", names(pred_summary), "\n")
           
+          # Handle both cases: direct data.frame or named list containing data.frames
+          prediction_df <- NULL
+          
           if (is.data.frame(pred_summary) && "est" %in% names(pred_summary)) {
+            # Direct data.frame case
+            prediction_df <- pred_summary
+          } else if (is.list(pred_summary) && length(pred_summary) > 0) {
+            # Named list case - extract first element which should be a data.frame
+            first_element <- pred_summary[[1]]
+            if (is.data.frame(first_element) && "est" %in% names(first_element)) {
+              prediction_df <- first_element
+              cat("Debug: Extracted data.frame from list element:", names(pred_summary)[1], "\n")
+            }
+          }
+          
+          if (!is.null(prediction_df)) {
             temp_data <- data.frame(
               time = time_points,
-              survival = pred_summary$est,
-              lower = if("lcl" %in% names(pred_summary)) pred_summary$lcl else NA,
-              upper = if("ucl" %in% names(pred_summary)) pred_summary$ucl else NA,
+              survival = prediction_df$est,
+              lower = if("lcl" %in% names(prediction_df)) prediction_df$lcl else NA,
+              upper = if("ucl" %in% names(prediction_df)) prediction_df$ucl else NA,
               model = dist_name,
               structure = structure
             )

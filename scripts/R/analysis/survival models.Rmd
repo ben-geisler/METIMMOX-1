@@ -559,10 +559,23 @@ create_scenario_plots_from_existing <- function(data, os_results, pfs_results,
       tryCatch({
         os_pred <- summary(os_fit, t = time_seq, type = "survival", newdata = newdata)
         
+        # Handle both cases: direct data.frame or named list containing data.frames
+        prediction_df <- NULL
         if (is.data.frame(os_pred) && "est" %in% names(os_pred)) {
+          # Direct data.frame case
+          prediction_df <- os_pred
+        } else if (is.list(os_pred) && length(os_pred) > 0) {
+          # Named list case - extract first element which should be a data.frame
+          first_element <- os_pred[[1]]
+          if (is.data.frame(first_element) && "est" %in% names(first_element)) {
+            prediction_df <- first_element
+          }
+        }
+        
+        if (!is.null(prediction_df)) {
           temp_os <- data.frame(
             time = time_seq,
-            surv = os_pred$est,
+            surv = prediction_df$est,
             outcome = "OS",
             scenario = scenario_name,
             scenario_label = scenario_info$label
@@ -578,10 +591,23 @@ create_scenario_plots_from_existing <- function(data, os_results, pfs_results,
       tryCatch({
         pfs_pred <- summary(pfs_fit, t = time_seq, type = "survival", newdata = newdata)
         
+        # Handle both cases: direct data.frame or named list containing data.frames
+        prediction_df <- NULL
         if (is.data.frame(pfs_pred) && "est" %in% names(pfs_pred)) {
+          # Direct data.frame case
+          prediction_df <- pfs_pred
+        } else if (is.list(pfs_pred) && length(pfs_pred) > 0) {
+          # Named list case - extract first element which should be a data.frame
+          first_element <- pfs_pred[[1]]
+          if (is.data.frame(first_element) && "est" %in% names(first_element)) {
+            prediction_df <- first_element
+          }
+        }
+        
+        if (!is.null(prediction_df)) {
           temp_pfs <- data.frame(
             time = time_seq,
-            surv = pfs_pred$est,
+            surv = prediction_df$est,
             outcome = "PFS", 
             scenario = scenario_name,
             scenario_label = scenario_info$label
