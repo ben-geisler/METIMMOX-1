@@ -5,6 +5,8 @@
 # 1. Fitting multiple parametric distributions across two model structures
 # 2. Automatically selecting best-fitting models based on AIC
 # 3. Generating population-level predictions for all treatment strategies
+# 
+# Testing and validation outputs are handled in scripts/R/tests/para_models.R
 # ===============================================================================
 
 # Load parametric model fitting functions
@@ -34,8 +36,6 @@ data$tmb_braf <- as.factor(data$tmb_braf)
 # Remove rows with missing values for modeling
 data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", "tmb_braf", "OSwk", "Death", "PFSwk", "Progression")]), ]
 
-cat("Data preparation complete. Using", nrow(data_complete), "of", nrow(data), "observations.\n")
-
 # ===============================================================================
 # MODEL STRUCTURE DEFINITIONS
 # ===============================================================================
@@ -62,8 +62,6 @@ distributions_to_test <- c("exponential", "weibull", "weibullph", "llogis",
 # MODEL FITTING
 # ===============================================================================
 
-cat("Starting parametric model fitting process...\n")
-
 # Initialize storage structure:
 # models$[structure]$[outcome]$[distribution] = fitted flexsurvreg object
 # models$[structure]$[outcome]_ic = information criteria table
@@ -74,10 +72,8 @@ models$no_age_sex <- list()
 
 # Fit models for each structure
 for (structure_name in names(model_formulas)) {
-  cat("Fitting", structure_name, "models...\n")
   
   # Fit OS models using fit_all_direct function
-  cat("  - OS models\n")
   os_results <- fit_all_direct(
     fit_data = data_complete,
     fit_formula = model_formulas[[structure_name]]$os,
@@ -85,7 +81,6 @@ for (structure_name in names(model_formulas)) {
   )
   
   # Fit PFS models using fit_all_direct function
-  cat("  - PFS models\n")
   pfs_results <- fit_all_direct(
     fit_data = data_complete,
     fit_formula = model_formulas[[structure_name]]$pfs,
@@ -114,21 +109,17 @@ for (structure_name in names(model_formulas)) {
   if (!is.null(best_os)) {
     models[[structure_name]]$best_os_dist <- best_os$distribution
     models[[structure_name]]$best_os_aic <- best_os$criterion_value
-    cat("    Best OS distribution:", best_os$distribution, "(AIC =", round(best_os$criterion_value, 2), ")\n")
   }
   
   if (!is.null(best_pfs)) {
     models[[structure_name]]$best_pfs_dist <- best_pfs$distribution
     models[[structure_name]]$best_pfs_aic <- best_pfs$criterion_value
-    cat("    Best PFS distribution:", best_pfs$distribution, "(AIC =", round(best_pfs$criterion_value, 2), ")\n")
   }
 }
 
 # ===============================================================================
 # GLOBAL BEST MODEL SELECTION
 # ===============================================================================
-
-cat("\nDetermining overall best models across all structures...\n")
 
 # Combine AIC values from both structures to find global optimum
 all_os_aic <- rbind(
@@ -153,8 +144,6 @@ if (nrow(best_os_overall) > 0) {
   models$best_fit$os_structure <- best_os_structure
   models$best_fit$os_distribution <- best_os_dist
   models$best_fit$os_aic <- best_os_overall$AIC[best_os_idx]
-  
-  cat("Overall best OS model:", best_os_structure, "-", best_os_dist, "(AIC =", round(models$best_fit$os_aic, 2), ")\n")
 }
 
 # Select globally best PFS model
@@ -169,15 +158,11 @@ if (nrow(best_pfs_overall) > 0) {
   models$best_fit$pfs_structure <- best_pfs_structure
   models$best_fit$pfs_distribution <- best_pfs_dist
   models$best_fit$pfs_aic <- best_pfs_overall$AIC[best_pfs_idx]
-  
-  cat("Overall best PFS model:", best_pfs_structure, "-", best_pfs_dist, "(AIC =", round(models$best_fit$pfs_aic, 2), ")\n")
 }
 
 # ===============================================================================
 # POPULATION-LEVEL PREDICTIONS
 # ===============================================================================
-
-cat("\nGenerating population-level predictions using best-fitting models...\n")
 
 # Proceed only if both best models were successfully identified
 if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
@@ -214,48 +199,44 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
     data_complete = data_complete
   )
   
-  cat("Population-level predictions generated for all", length(strategies_df$id), "strategies.\n")
-  
 } else {
-  cat("ERROR: Could not determine best-fitting models. Check model fitting results.\n")
+  # If model selection failed, create empty predictions object
   predictions <- list()
 }
 
 # ===============================================================================
-# GENERATE OUTPUT FILES
+# FINAL STORAGE STRUCTURE DOCUMENTATION
 # ===============================================================================
-
-# Create reference values output
-source("scripts/R/functions/ref_values_emm.R")
-
-# Create parametric model fit comparison table
-source("scripts/R/functions/para_model_fit_table.R")
-
-# Create survival plots
-source("scripts/R/functions/survival_plots.R")
-
+# 
+# MODELS OBJECT STRUCTURE:
+# ├── models$full                    # Full model (Age + sex + interactions)
+# │   ├── $os                       # OS models by distribution
+# │   │   ├── $weibull             # flexsurvreg object
+# │   │   ├── $exponential         # flexsurvreg object
+# │   │   └── $[other_distributions]
+# │   ├── $pfs                      # PFS models by distribution  
+# │   ├── $os_ic                    # AIC/BIC table for OS models
+# │   ├── $pfs_ic                   # AIC/BIC table for PFS models
+# │   ├── $km_os                    # Kaplan-Meier fit for OS
+# │   └── $km_pfs                   # Kaplan-Meier fit for PFS
+# ├── models$no_age_sex             # No age/sex model (interactions only)
+# │   └── [same structure as full]
+# └── models$best_fit               # Globally best models
+#     ├── $os                       # Best OS model object
+#     ├── $os_structure            # "full" or "no_age_sex"  
+#     ├── $os_distribution         # e.g., "weibull"
+#     ├── $os_aic                  # AIC value
+#     └── [same for pfs]
+#
+# PREDICTIONS OBJECT STRUCTURE:
+# ├── predictions$control           # Standard of care strategy
+# │   ├── $os                      # Population OS curve
+# │   └── $pfs                     # Population PFS curve
+# ├── predictions$crp              # CRP-guided strategy
+# │   ├── $os                      # Population-weighted OS curve
+# │   ├── $pfs                     # Population-weighted PFS curve
+# │   ├── $biomarker_positive      # CRP+ subgroup predictions
+# │   ├── $biomarker_negative      # CRP- subgroup predictions
+# │   └── $prevalence              # CRP prevalence used for weighting
+# └── predictions$[tlr/tmb_braf]   # Same structure for other biomarkers
 # ===============================================================================
-# SUMMARY
-# ===============================================================================
-
-cat("\n=== PARAMETRIC SURVIVAL ANALYSIS SUMMARY ===\n")
-cat("Models fitted:\n")
-cat("- Full model (Age + sex + biomarker interactions):", length(distributions_to_test), "distributions\n")
-cat("- No age/sex model (biomarker interactions only):", length(distributions_to_test), "distributions\n")
-cat("- Total models fitted:", 2 * 2 * length(distributions_to_test), "(2 structures × 2 outcomes × distributions)\n")
-
-if (length(predictions) > 0) {
-  cat("\nBest-fitting parametric models selected and predictions generated for all strategies.\n")
-  cat("Output files generated:\n")
-  cat("- scripts/R/functions/ref_values_emm.R: Reference values for population predictions\n")
-  cat("- scripts/R/functions/para_model_fit_table.R: Parametric model comparison table with AIC/BIC\n") 
-  cat("- scripts/R/functions/survival_plots.R: Biomarker-specific survival plots\n")
-} else {
-  cat("\nWarning: Best-fitting parametric models could not be determined.\n")
-}
-
-cat("\nFinal storage structure:\n")
-cat("- models$full: Full model results for all distributions\n")
-cat("- models$no_age_sex: No age/sex model results for all distributions\n")
-cat("- models$best_fit: Best-fitting parametric models with metadata\n")
-cat("- predictions: Strategy-level predictions using best parametric models\n")

@@ -1,15 +1,15 @@
 # ===============================================================================
 # BIOMARKER-SPECIFIC SURVIVAL PLOTS  
 # ===============================================================================
-# This file creates separate OS and PFS plots for each biomarker showing
-# biomarker-positive vs biomarker-negative survival curves
+# This file contains plotting functions for biomarker-specific survival curves.
+# Plot generation calls have been moved to para_models.Rmd
 # ===============================================================================
 
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(ggplot2, dplyr, scales)
 
-# Modified plotting function for biomarker-specific plots
+# Function for biomarker-specific survival plots
 plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = "OS", time_points) {
   
   # Extract predictions for this biomarker
@@ -94,10 +94,13 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
   return(p)
 }
 
-# Generate plots if predictions are available
-if (exists("predictions") && length(predictions) > 0) {
+# Function to generate all biomarker plots
+generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
   
-  cat("\n=== GENERATING BIOMARKER-SPECIFIC SURVIVAL PLOTS ===\n")
+  if (!exists("predictions") || length(predictions) == 0) {
+    cat("Survival plots not available. Run main analysis first.\n")
+    return(NULL)
+  }
   
   # Create storage list for plots
   survival_plots <- list()
@@ -119,6 +122,7 @@ if (exists("predictions") && length(predictions) > 0) {
     
     if (!is.null(os_plot)) {
       survival_plots[[paste0(biomarker, "_os")]] <- os_plot
+      print(os_plot)
       cat("  - OS plot created\n")
     }
     
@@ -132,39 +136,18 @@ if (exists("predictions") && length(predictions) > 0) {
     
     if (!is.null(pfs_plot)) {
       survival_plots[[paste0(biomarker, "_pfs")]] <- pfs_plot
+      print(pfs_plot)
       cat("  - PFS plot created\n")
     }
   }
   
-  # Display plots
-  cat("\nDisplaying survival plots:\n")
-  for (plot_name in names(survival_plots)) {
-    cat("Showing:", plot_name, "\n")
-    print(survival_plots[[plot_name]])
-    cat("\n")
-  }
-  
-  # Save plots if directory exists or can be created
-  plot_dir <- "survival_plots"
-  if (!dir.exists(plot_dir)) {
-    dir.create(plot_dir, recursive = TRUE)
-  }
-  
-  if (dir.exists(plot_dir)) {
-    for (plot_name in names(survival_plots)) {
-      filename <- paste0(plot_dir, "/", plot_name, "_biomarker_survival.png")
-      ggsave(
-        filename = filename,
-        plot = survival_plots[[plot_name]],
-        width = 10, height = 6, dpi = 300
-      )
-    }
-    cat("All plots saved to", plot_dir, "directory\n")
-  }
-  
+  return(survival_plots)
+}
+
+# Auto-execute if predictions exist
+if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
+  cat("\n=== GENERATING BIOMARKER-SPECIFIC SURVIVAL PLOTS ===\n")
+  survival_plots <- generate_biomarker_plots(predictions, strategies_df, time_points)
   cat("Total plots generated:", length(survival_plots), "\n")
   cat("=== BIOMARKER PLOTS COMPLETE ===\n\n")
-  
-} else {
-  cat("Survival plots not available. Run main analysis first.\n")
 }
