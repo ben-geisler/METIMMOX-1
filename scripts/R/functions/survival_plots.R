@@ -16,7 +16,6 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
   biomarker_pred <- predictions[[biomarker_name]]
   
   if (is.null(biomarker_pred) || is.null(biomarker_pred$biomarker_positive)) {
-    cat("No predictions available for", biomarker_name, "\n")
     return(NULL)
   }
   
@@ -98,7 +97,6 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
 generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
   
   if (!exists("predictions") || length(predictions) == 0) {
-    cat("Survival plots not available. Run main analysis first.\n")
     return(NULL)
   }
   
@@ -110,7 +108,6 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
   
   # Generate plots for each biomarker and outcome
   for (biomarker in biomarkers) {
-    cat("Creating plots for", toupper(biomarker), "...\n")
     
     # OS plot
     os_plot <- plot_biomarker_survival(
@@ -123,7 +120,6 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
     if (!is.null(os_plot)) {
       survival_plots[[paste0(biomarker, "_os")]] <- os_plot
       print(os_plot)
-      cat("  - OS plot created\n")
     }
     
     # PFS plot
@@ -137,7 +133,6 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
     if (!is.null(pfs_plot)) {
       survival_plots[[paste0(biomarker, "_pfs")]] <- pfs_plot
       print(pfs_plot)
-      cat("  - PFS plot created\n")
     }
   }
   
@@ -146,8 +141,5 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
 
 # Auto-execute if predictions exist
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
-  cat("\n=== GENERATING BIOMARKER-SPECIFIC SURVIVAL PLOTS ===\n")
   survival_plots <- generate_biomarker_plots(predictions, strategies_df, time_points)
-  cat("Total plots generated:", length(survival_plots), "\n")
-  cat("=== BIOMARKER PLOTS COMPLETE ===\n\n")
 }
