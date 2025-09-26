@@ -10,8 +10,8 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(survival, flexsurv, dplyr)
 
-# fit_all_direct function by Frederick
-# Fits multiple parametric distributions to survival data
+# fit_all_direct function by Frederick / fits multiple parametric distributions to survival data
+# NB: I had to turn off strip_bkgr_dat for compatibility with later functions
 fit_all_direct <- function(fit_data,
                            fit_formula, # the survival formula
                            fit_dists = c("exponential",
@@ -132,8 +132,7 @@ extract_ic_single <- function(fit_results) {
   return(ic_data)
 }
 
-# Find best fitting model based on information criterion
-# Returns list with best distribution and criterion value
+# Find best fitting model based on information criterion / returns list with best distribution and IC
 find_best_model <- function(ic_data, criterion = "AIC") {
   valid_data <- ic_data[!is.na(ic_data[[criterion]]), ]
   if (nrow(valid_data) == 0) {
