@@ -217,22 +217,31 @@ create_population_plots <- function(models, data_complete, time_points, outcome_
           
           # use summary() method for flexsurvreg objects
           pred_summary <- summary(model_obj, t = time_points, newdata = ref_patient, type = "survival")
-          
+
           cat("Debug: Prediction summary class:", class(pred_summary), "\n")
           cat("Debug: Prediction summary names:", names(pred_summary), "\n")
-          
-          if (is.data.frame(pred_summary) && "est" %in% names(pred_summary)) {
-            temp_data <- data.frame(
-              time = time_points,
-              survival = pred_summary$est,
-              lower = if("lcl" %in% names(pred_summary)) pred_summary$lcl else NA,
-              upper = if("ucl" %in% names(pred_summary)) pred_summary$ucl else NA,
-              model = dist_name,
-              structure = structure
-            )
-            
-            plot_data <- rbind(plot_data, temp_data)
-            cat("Debug: Successfully added", nrow(temp_data), "rows for", structure, dist_name, "\n")
+
+          # Handle the actual structure - it's a named list, not a data frame
+          if (is.list(pred_summary) && length(pred_summary) > 0) {
+            # Extract the first (and typically only) element which contains the data frame
+            first_result <- pred_summary[[1]]
+  
+            if (is.data.frame(first_result) && all(c("time", "est") %in% names(first_result))) {
+              temp_data <- data.frame(
+                time = first_result$time,
+                survival = first_result$est,
+                lower = if("lcl" %in% names(first_result)) first_result$lcl else NA,
+                upper = if("ucl" %in% names(first_result)) first_result$ucl else NA,
+                model = dist_name,
+                structure = structure
+              )
+    
+              plot_data <- rbind(plot_data, temp_data)
+              cat("Debug: Successfully added", nrow(temp_data), "rows for", structure, dist_name, "\n")
+            } else {
+              cat("Debug: First element is not a data.frame with expected columns\n")
+              str(first_result)
+            }
           } else {
             cat("Debug: pred_summary doesn't have expected structure\n")
             str(pred_summary)

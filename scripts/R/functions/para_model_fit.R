@@ -27,8 +27,8 @@ fit_all_direct <- function(fit_data,
 ){
   
   # Load packages
-  require(survival)
-  require(flexsurv)
+  #require(survival)
+  #require(flexsurv)
   
   # Define names to automatically create named list of fits
   names(fit_dists) <- fit_dists
