@@ -1,0 +1,32 @@
+---
+title: "Cost-Effectiveness Analysis"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+# Cost-Effectiveness Analysis
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r run-scripts}
+# Run R scripts for analysis
+source("scripts/R/analysis/02.R")
+source("scripts/R/analysis/03.R")
+source("scripts/R/analysis/05.R")
+source("scripts/R/analysis/06.R")
+source("scripts/R/analysis/07.R")
+source("scripts/R/analysis/08.R")
+source("scripts/R/analysis/10.R")
+source("scripts/R/analysis/11.R")
+source("scripts/R/analysis/12.R")
+```
+
+# Results
+
+```{r results}
+# Code to output tables and graphs
+# This should be adjusted based on what each script outputs
+``
