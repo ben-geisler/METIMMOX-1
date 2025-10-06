@@ -9,6 +9,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+#libraries
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(tableone, dplyr, ggplot2, readr)
+```
+
 # METIMMOX baseline chracteristics
 
 #load full dataset

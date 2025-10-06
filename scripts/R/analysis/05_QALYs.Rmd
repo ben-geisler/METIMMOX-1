@@ -19,7 +19,6 @@ p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv, survival, survminer
 # QALys
 
 ```{r}
-rm(list = setdiff(ls(), "METIMMOX"))
 setwd("../../..") 
 METIMMOX <- readRDS("data/tidy/METIMMOX.rds")
 METIMMOX_control <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1])
@@ -31,6 +30,7 @@ METIMMOX_experimental <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2])
 ```{r}
 METIMMOX_rx <- METIMMOX %>%
   select(ID, Rx) 
+setwd("../../..") 
 QALYsraw <- read_excel("data/sensitive/231208 METIMMOX EQ_5D_5L.xlsx", sheet = 2, skip = 1) %>%
   rename(ID = SubjectId)
 colnames(QALYsraw)
@@ -77,9 +77,10 @@ print(obs_median_table)
 ##EQ5D conversion
 
 ```{r}
+setwd("../../..") 
 METIMMOX_rx <- METIMMOX %>%
   select(ID, Rx, "First progression") 
-QALYsmanual <- read_excel("clinical data/EQ5Dmanual.xlsx", sheet = 1, skip = 0)
+QALYsmanual <- read_excel("data/sensitive/EQ5Dmanual.xlsx", sheet = 1, skip = 0)
 
 eq5d5l_data <- merge(METIMMOX_rx, QALYsmanual, by = "ID")
 

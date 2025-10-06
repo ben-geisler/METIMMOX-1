@@ -1,3 +1,8 @@
+#libraries
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(dplyr)
+
 # Create binary biomarker variables with simplified names
 data$crp <- as.numeric(data$CRP1cat == 1)
 data$tlr <- as.numeric(data$TLRcat == 1)
