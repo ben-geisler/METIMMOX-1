@@ -1,7 +1,13 @@
 # clear all objects from the work space
 rm(list = ls())
 # load faster binary format
-data <- readRDS(file="data/tidy/METIMMOX.rds")
+rds_path <- here::here("data", "tidy", "METIMMOX.rds")
+if (file.exists(rds_path)) {
+  data <- readRDS(rds_path)
+} else {
+  stop("File not found: ", rds_path)
+}
+rm(rds_path)
 
 data$PFSwk <- data$`Days until progression`/7
 data$OSwk <- data$`Days until death/last follow up`/7

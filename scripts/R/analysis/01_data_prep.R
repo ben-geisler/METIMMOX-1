@@ -1,7 +1,7 @@
 #libraries
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(readxl)
+p_load(readxl, dplyr)
 
 #clear workspace
 rm(list = ls())

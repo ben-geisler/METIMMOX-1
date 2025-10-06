@@ -9,16 +9,28 @@
 # Testing and validation outputs are handled in scripts/R/tests/para_models.R
 # ===============================================================================
 
-# Load parametric model fitting functions
-source("scripts/R/functions/para_model_fit.R")
-
-# Load prediction functions
-source("scripts/R/functions/prediction_functions.R")
-
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
-library(pacman)
+library(pacman, here)
 p_load(survival, flexsurv, dplyr)
+
+# Load parametric model fitting functions
+para_model_fit_path <- here::here("scripts", "R", "functions", "para_model_fit.R")
+if (file.exists(para_model_fit_path)) {
+  source(para_model_fit_path)
+} else {
+  message("File not found: ", para_model_fit_path)
+}
+rm(para_model_fit_path)
+
+# Load prediction functions
+prediction_functions_path <- here::here("scripts", "R", "functions", "prediction_functions.R")
+if (file.exists(prediction_functions_path)) {
+  source(prediction_functions_path)
+} else {
+  message("File not found: ", prediction_functions_path)
+}
+rm(prediction_functions_path)
 
 # ===============================================================================
 # DATA PREPARATION
