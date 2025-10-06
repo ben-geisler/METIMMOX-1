@@ -156,8 +156,33 @@ Quality-adjusted life years were derived from patient-reported outcome measures 
 
 ```{r survival-analysis, include=FALSE}
 # 06 - Parametric Survival Analysis
+# First ensure all required variables exist before running survival analysis
+
+# Check if biomarker variables exist, if not, recreate them
+if (!all(c("crp", "tlr", "tmb_braf") %in% names(data))) {
+  # Recreate biomarker variables (from script 03 logic)
+  if (all(c("CRP1cat", "TLRcat", "TMBcat") %in% names(data))) {
+    data$crp <- as.numeric(data$CRP1cat == 1)
+    data$tlr <- as.numeric(data$TLRcat == 1)
+    
+    # Handle TMB/BRAF combination (check if Mutation column exists)
+    if ("Mutation" %in% names(data)) {
+      data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
+    } else {
+      data$tmb_braf <- as.numeric(data$TMBcat == 1)
+    }
+    
+    message("Biomarker variables recreated successfully")
+  } else {
+    message("Warning: Original biomarker variables not found. Survival analysis may fail.")
+  }
+}
+
+# Now run the survival analysis script
 if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+} else {
+  message("Survival analysis script not found")
 }
 ```
 

@@ -1,8 +1,13 @@
+#libraries
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here)
+
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
 
-source("scripts/R/functions/bootstrap_survival_model.R")
+source(here::here("scripts/R/functions/bootstrap_survival_model.R"))
 
 # Initialize list to store bootstrapped models
 boot_models <- list()

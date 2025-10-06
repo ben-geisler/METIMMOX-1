@@ -1,6 +1,12 @@
-source("scripts/R/functions/model_fun.R")
-source("scripts/R/functions/calculate_outcomes.R")
-source("scripts/R/functions/create_tornado_plot.R")
+# Load required packages
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, dampack)
+
+# Load functions
+source(here::here("scripts/R/functions/model_fun.R"))
+source(here::here("scripts/R/functions/calculate_outcomes.R"))
+source(here::here("scripts/R/functions/create_tornado_plot.R"))
 
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {

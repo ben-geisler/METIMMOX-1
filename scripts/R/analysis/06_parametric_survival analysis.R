@@ -40,10 +40,19 @@ rm(prediction_functions_path)
 time_points <- seq(0, time_horizon, by = 1)
 
 # Ensure categorical variables are properly coded as factors
-data$sex <- as.factor(data$sex)
-data$crp <- as.factor(data$crp)
-data$tlr <- as.factor(data$tlr)
-data$tmb_braf <- as.factor(data$tmb_braf)
+# Ensure categorical variables are properly coded as factors
+if ("sex" %in% names(data) && !is.null(data$sex)) {
+  data$sex <- as.factor(data$sex)
+}
+if ("crp" %in% names(data) && !is.null(data$crp)) {
+  data$crp <- as.factor(data$crp)
+}
+if ("tlr" %in% names(data) && !is.null(data$tlr)) {
+  data$tlr <- as.factor(data$tlr)
+}
+if ("tmb_braf" %in% names(data) && !is.null(data$tmb_braf)) {
+  data$tmb_braf <- as.factor(data$tmb_braf)
+}
 
 # Remove rows with missing values for modeling
 data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", "tmb_braf", "OSwk", "Death", "PFSwk", "Progression")]), ]

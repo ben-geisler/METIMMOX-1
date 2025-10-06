@@ -1,5 +1,11 @@
-source("scripts/R/functions/model_fun.R")
-source("scripts/R/functions/calculate_outcomes.R")
+# Load required packages
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, dampack)
+
+# Load functions
+source(here::here("scripts/R/functions/model_fun.R"))
+source(here::here("scripts/R/functions/calculate_outcomes.R"))
 
 # Run the model to get base case results
 base_results <- model_fun(l_params_base)
