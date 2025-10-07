@@ -9,25 +9,100 @@ time_points_length <- length(time_points)
 
 source(here::here("scripts/R/functions/bootstrap_survival_model.R"))
 
+# ===============================================================================
+# MODEL FORMULA SELECTION BASED ON PARAMETRIC SURVIVAL ANALYSIS SWITCH
+# ===============================================================================
+
+# Use the same switch value from 06_parametric_survival analysis.R
+# USE_BOTH_MODELS: 0 = full model only, 1 = both models
+# Note: We assume the value is already set in the environment
+
+# Define model formulas based on the switch (matching 06_parametric_survival analysis.R)
+if (USE_BOTH_MODELS == 0) {
+  # Only use full model (age- and sex-adjusted) - matching the parametric analysis
+  model_type <- "full"
+  cat("Bootstrap sampling: Using full model (age- and sex-adjusted) to match parametric analysis\n")
+  
+  # Control model formula (age and sex adjusted)
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
+  
+  # Function to create biomarker model formulas (age and sex adjusted)
+  create_biomarker_formula <- function(outcome, biomarker) {
+    if (outcome == "os") {
+      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    } else {
+      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    }
+  }
+  
+} else if (USE_BOTH_MODELS == 1) {
+  # For compatibility, we'll use the full model structure when both are available
+  # This ensures consistency with whichever model was selected as best in parametric analysis
+  model_type <- "full"  # Default to full for bootstrap sampling
+  cat("Bootstrap sampling: Using full model structure (age- and sex-adjusted) for consistency\n")
+  
+  # Control model formula (age and sex adjusted)
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
+  
+  # Function to create biomarker model formulas (age and sex adjusted)
+  create_biomarker_formula <- function(outcome, biomarker) {
+    if (outcome == "os") {
+      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    } else {
+      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    }
+  }
+  
+} else {
+  # Default to full model if invalid switch value
+  model_type <- "full"
+  cat("Warning: Invalid USE_BOTH_MODELS value in bootstrap sampling. Defaulting to full model\n")
+  
+  # Control model formula (age and sex adjusted)
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
+  
+  # Function to create biomarker model formulas (age and sex adjusted)
+  create_biomarker_formula <- function(outcome, biomarker) {
+    if (outcome == "os") {
+      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    } else {
+      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
+    }
+  }
+}
+
+# ===============================================================================
+# BOOTSTRAP MODEL FITTING
+# ===============================================================================
+
 # Initialize list to store bootstrapped models
 boot_models <- list()
 
-# Bootstrap control models
+# Bootstrap control models with age and sex adjustments
 boot_models$control <- list(
-  os = bootstrap_survival_model(Surv(OSwk, Death) ~ 1, data = data_control),
-  pfs = bootstrap_survival_model(Surv(PFSwk, Progression) ~ 1, data = data_control)
+  os = bootstrap_survival_model(control_os_formula, data = data_control),
+  pfs = bootstrap_survival_model(control_pfs_formula, data = data_control)
 )
 
-# Bootstrap biomarker models
+# Bootstrap biomarker models with age and sex adjustments
 for (biomarker in biomarkers) {
-  # OS model with biomarker, treatment, and interaction
-  os_formula <- as.formula(paste0("Surv(OSwk, Death) ~ ", biomarker, " + Rx + ", biomarker, ":Rx"))
+  # OS model with age, sex, biomarker, treatment, and interaction
+  os_formula <- create_biomarker_formula("os", biomarker)
   boot_models[[biomarker]]$os <- bootstrap_survival_model(os_formula, data = data)
   
-  # PFS model with biomarker, treatment, and interaction
-  pfs_formula <- as.formula(paste0("Surv(PFSwk, Progression) ~ ", biomarker, " + Rx + ", biomarker, ":Rx"))
+  # PFS model with age, sex, biomarker, treatment, and interaction
+  pfs_formula <- create_biomarker_formula("pfs", biomarker)
   boot_models[[biomarker]]$pfs <- bootstrap_survival_model(pfs_formula, data = data)
 }
+
+# Print confirmation of model structures
+cat("Bootstrap model structures created:\n")
+cat("- Control models: Age + sex adjusted\n")
+cat("- Biomarker models: Age + sex + biomarker + treatment + interaction\n")
+cat("- Model type used:", model_type, "\n")
 
 # Function to generate survival predictions from normboot samples
 generate_bootstrap_predictions <- function(boot_model, newdata = NULL, sample_idx = 1, time_points) {
@@ -55,6 +130,10 @@ generate_bootstrap_predictions <- function(boot_model, newdata = NULL, sample_id
   pred_unnested <- unnest(pred, .pred)
   return(pred_unnested$.pred_survival)
 }
+
+# ===============================================================================
+# PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS
+# ===============================================================================
 
 # Create parameter distributions for other model parameters
 # Cost parameters (assume 20% coefficient of variation for costs)

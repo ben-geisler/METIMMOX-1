@@ -23,7 +23,7 @@ execute:
   echo: false
   warning: false
   message: false
-  cache: true
+  cache: false
   fig-cap-location: bottom
   tbl-cap-location: top
 ---
@@ -52,7 +52,7 @@ pacman::p_load(
   devtools, readxl, tableone, flexsurv, 
   survival, survminer, gems, mstate, 
   tidyverse, xtable, darthtools, dampack, 
-  mvtnorm, Matrix
+  mvtnorm, Matrix, reshape2
 )
 
 # Set ggplot theme
@@ -120,9 +120,15 @@ tryCatch({
 ```
 
 ```{r survival-analysis, include=FALSE}
-# 06 - Parametric Survival Analysis
-# First ensure all required variables exist before running survival analysis
+# 06 - Parametric Survival Analysis with Model Selection Switch
+# Set the model selection switch before running survival analysis
+# 0 = full model only (age- and sex-adjusted), 1 = both models
+if (!exists("USE_BOTH_MODELS")) {
+  USE_BOTH_MODELS <- 0  # Default to age- and sex-adjusted models only
+  cat("Setting USE_BOTH_MODELS = 0 (full model only) for CEA report\n")
+}
 
+# First ensure all required variables exist before running survival analysis
 # Check if biomarker variables exist, if not, recreate them
 if (!all(c("crp", "tlr", "tmb_braf") %in% names(data))) {
   # Recreate biomarker variables (from script 03 logic)
@@ -165,6 +171,7 @@ if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
   bootstrap_func_path <- here("scripts/R/functions/bootstrap_survival_model.R")
   if (file.exists(bootstrap_func_path)) {
     suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
+    cat("Sampling setup completed successfully\n")
   } else {
     message("Bootstrap function file not found at: ", bootstrap_func_path)
     message("Skipping sampling setup - this will affect PSA analysis")
@@ -176,7 +183,7 @@ if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
 
 # Overview
 
-This cost-effectiveness analysis evaluates three biomarker-guided strategies (CRP, TLR, and TMB/BRAF) for selecting metastatic microsatellite stable (MSS)/proficient mismatch repair (pMMR) colorectal cancer patients for immunotherapy versus the standard of care strategy of chemotherapy alone.
+This cost-effectiveness analysis evaluates three biomarker-guided strategies (CRP, TLR, and TMB/BRAF) for selecting metastatic microsatellite stable (MSS)/proficient mismatch repair (pMMR) colorectal cancer patients who might benefit from immunotherapy with nivolumab plus FLOX versus standard FLOX chemotherapy.
 
 This report contains:
 
@@ -185,11 +192,15 @@ This report contains:
 - **Deterministic Sensitivity Analysis**: Tornado diagrams showing parameter impact on each strategy
 - **Probabilistic Sensitivity Analysis**: Monte Carlo simulation results including scatterplot and cost-effectiveness acceptability curves
 
+```{r pagebreak-1, results='asis'}
+cat("\\newpage\n")
+```
+
 # Strategies Evaluated
 
-```{r strategies-table}
-#| tbl-cap: "Treatment Strategies Evaluated in the Cost-Effectiveness Analysis"
+**Table 1: Treatment Strategies Evaluated in the Cost-Effectiveness Analysis**
 
+```{r strategies-table}
 if (exists("strategies_df") && nrow(strategies_df) > 0) {
   # Format the strategies dataframe for display
   strategies_display <- strategies_df %>%
@@ -224,7 +235,7 @@ if (exists("strategies_df") && nrow(strategies_df) > 0) {
 }
 ```
 
-```{r base-case-pagebreak, results='asis'}
+```{r pagebreak-2, results='asis'}
 cat("\\newpage\n")
 ```
 
@@ -237,9 +248,9 @@ if (file.exists(here("scripts/R/analysis/10_basecase_analysis.R"))) {
 }
 ```
 
-```{r base-case-results-table}
-#| tbl-cap: "Base Case Cost-Effectiveness Results with ICERs"
+**Table 2: Base Case Cost-Effectiveness Results with ICERs**
 
+```{r base-case-results-table}
 if (exists("icer_obj") && "icers" %in% class(icer_obj)) {
   # Use the properly calculated ICER object from dampack
   icer_table <- as.data.frame(icer_obj)
@@ -314,7 +325,13 @@ if (exists("ce_plot") && "ggplot" %in% class(ce_plot)) {
 }
 ```
 
+```{r dsa-pagebreak, results='asis'}
+cat("\\newpage\n")
+```
+
 # Deterministic Sensitivity Analysis
+
+To assess the robustness of the base case results, we conducted one-way sensitivity analyses for each of the four treatment strategies. The tornado diagrams below show the impact of varying individual model parameters within their plausible ranges on the net monetary benefit (NMB) for each strategy.
 
 ```{r deterministic-sa, include=FALSE}
 # 11 - Deterministic Sensitivity Analysis
@@ -387,6 +404,8 @@ if (exists("dsa_results") && exists("strategies")) {
     
     print(p)
   }
+} else {
+  cat("**DSA results not available**\n")
 }
 ```
 
@@ -396,38 +415,6 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  library(ggplot2)
-  
-  # Function to create tornado data for a specific strategy
-  create_tornado_data <- function(strategy_name, dsa_results) {
-    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
-                                 dsa_results$Parameter != "base_case", ]
-    
-    tornado_data <- data.frame()
-    for (param in unique(strat_results$Parameter)) {
-      min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-      
-      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
-        tornado_data <- rbind(tornado_data, data.frame(
-          Parameter = param,
-          Min_diff = min_row$NMB_diff,
-          Max_diff = max_row$NMB_diff,
-          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
-        ))
-      }
-    }
-    
-    if (nrow(tornado_data) > 0) {
-      tornado_data <- tornado_data[order(tornado_data$Range), ]
-      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
-      return(tornado_data)
-    }
-    return(NULL)
-  }
-  
   # Create tornado plot for CRP strategy
   tornado_data <- create_tornado_data("crp", dsa_results)
   
@@ -454,6 +441,8 @@ if (exists("dsa_results") && exists("strategies")) {
     
     print(p)
   }
+} else {
+  cat("**DSA results not available**\n")
 }
 ```
 
@@ -463,38 +452,6 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  library(ggplot2)
-  
-  # Function to create tornado data for a specific strategy
-  create_tornado_data <- function(strategy_name, dsa_results) {
-    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
-                                 dsa_results$Parameter != "base_case", ]
-    
-    tornado_data <- data.frame()
-    for (param in unique(strat_results$Parameter)) {
-      min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-      
-      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
-        tornado_data <- rbind(tornado_data, data.frame(
-          Parameter = param,
-          Min_diff = min_row$NMB_diff,
-          Max_diff = max_row$NMB_diff,
-          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
-        ))
-      }
-    }
-    
-    if (nrow(tornado_data) > 0) {
-      tornado_data <- tornado_data[order(tornado_data$Range), ]
-      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
-      return(tornado_data)
-    }
-    return(NULL)
-  }
-  
   # Create tornado plot for TLR strategy
   tornado_data <- create_tornado_data("tlr", dsa_results)
   
@@ -521,6 +478,8 @@ if (exists("dsa_results") && exists("strategies")) {
     
     print(p)
   }
+} else {
+  cat("**DSA results not available**\n")
 }
 ```
 
@@ -530,38 +489,6 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  library(ggplot2)
-  
-  # Function to create tornado data for a specific strategy
-  create_tornado_data <- function(strategy_name, dsa_results) {
-    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
-                                 dsa_results$Parameter != "base_case", ]
-    
-    tornado_data <- data.frame()
-    for (param in unique(strat_results$Parameter)) {
-      min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-      
-      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
-        tornado_data <- rbind(tornado_data, data.frame(
-          Parameter = param,
-          Min_diff = min_row$NMB_diff,
-          Max_diff = max_row$NMB_diff,
-          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
-        ))
-      }
-    }
-    
-    if (nrow(tornado_data) > 0) {
-      tornado_data <- tornado_data[order(tornado_data$Range), ]
-      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
-      return(tornado_data)
-    }
-    return(NULL)
-  }
-  
   # Create tornado plot for TMB/BRAF strategy
   tornado_data <- create_tornado_data("tmb_braf", dsa_results)
   
@@ -588,150 +515,8 @@ if (exists("dsa_results") && exists("strategies")) {
     
     print(p)
   }
-}
-```
-
-```{r impact-table-pagebreak, results='asis'}
-cat("\\newpage\n")
-```
-
-```{r parameter-impact-summary}
-#| tbl-cap: "Parameter Impact Summary - Most Influential Parameters by Strategy"
-
-if (exists("impact_summary") && nrow(impact_summary) > 0) {
-  # Improve the formatting of the impact summary table
-  impact_formatted <- impact_summary %>%
-    mutate(
-      Strategy = case_when(
-        Strategy == "control" ~ "Standard Care",
-        Strategy == "crp" ~ "CRP-guided",
-        Strategy == "tlr" ~ "TLR-guided", 
-        Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
-        TRUE ~ Strategy
-      ),
-      Parameter = case_when(
-        Parameter == "u_np" ~ "Utility (No Progression)",
-        Parameter == "u_p" ~ "Utility (Progression)",
-        Parameter == "c_drug_nivo" ~ "Nivolumab Cost",
-        Parameter == "c_drug_FLOX" ~ "FLOX Cost",
-        Parameter == "c_test_NGS" ~ "NGS Testing Cost",
-        Parameter == "c_test_CT" ~ "CT Scan Cost",
-        Parameter == "c_test_blood" ~ "Blood Test Cost",
-        Parameter == "c_other_last" ~ "End-of-Life Care Cost",
-        Parameter == "c_other_visit" ~ "Visit Cost",
-        Parameter == "c_other_baseline" ~ "Baseline Care Cost",
-        Parameter == "c_other_follow" ~ "Follow-up Care Cost",
-        TRUE ~ Parameter
-      ),
-      `Impact (€)` = scales::dollar(Impact, accuracy = 1)
-    ) %>%
-    # Remove the Strategy column for display
-    select(Rank, Parameter, `Impact (€)`)
-  
-  # Create table without strategy column - use only pack_rows for grouping
-  knitr::kable(impact_formatted,
-               align = c("c", "l", "r"),
-               booktabs = TRUE,
-               col.names = c("Rank", "Parameter", "Impact on NMB (€)")) %>%
-    kableExtra::column_spec(1, width = "1.5cm") %>%
-    kableExtra::column_spec(2, width = "5cm") %>%
-    kableExtra::column_spec(3, width = "2.5cm") %>%
-    kableExtra::pack_rows("Standard Care", 1, 3, bold = TRUE, color = "white", background = "#4472C4") %>%
-    kableExtra::pack_rows("CRP-guided", 4, 6, bold = TRUE, color = "white", background = "#70AD47") %>%
-    kableExtra::pack_rows("TLR-guided", 7, 9, bold = TRUE, color = "white", background = "#FFC000") %>%
-    kableExtra::pack_rows("TMB/BRAF-guided", 10, 12, bold = TRUE, color = "white", background = "#C55A11") %>%
-    kableExtra::kable_styling(font_size = 10, latex_options = c("HOLD_position"))
-  
-} else if (exists("dsa_results") && nrow(dsa_results) > 0) {
-  # Generate impact summary if it doesn't exist but DSA results do
-  cat("**Generating parameter impact summary from DSA results...**\n\n")
-  
-  impact_summary_new <- data.frame()
-  
-  for (strat in unique(dsa_results$Strategy)) {
-    if (strat == "base_case") next
-    
-    strat_results <- dsa_results[dsa_results$Strategy == strat & 
-                                 dsa_results$Parameter != "base_case", ]
-    
-    param_impact <- data.frame()
-    for (param in unique(strat_results$Parameter)) {
-      min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-      
-      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
-        range <- abs(max_row$NMB_diff - min_row$NMB_diff)
-        param_impact <- rbind(param_impact, data.frame(
-          Parameter = param,
-          Range = range
-        ))
-      }
-    }
-    
-    if (nrow(param_impact) > 0) {
-      param_impact <- param_impact[order(-param_impact$Range), ]
-      top_n <- min(3, nrow(param_impact))
-      
-      for (i in 1:top_n) {
-        impact_summary_new <- rbind(impact_summary_new, data.frame(
-          Strategy = strat,
-          Rank = i,
-          Parameter = param_impact$Parameter[i],
-          Impact = param_impact$Range[i]
-        ))
-      }
-    }
-  }
-  
-  if (nrow(impact_summary_new) > 0) {
-    # Apply the same formatting as above
-    impact_formatted <- impact_summary_new %>%
-      mutate(
-        Strategy = case_when(
-          Strategy == "control" ~ "Standard Care",
-          Strategy == "crp" ~ "CRP-guided",
-          Strategy == "tlr" ~ "TLR-guided", 
-          Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
-          TRUE ~ Strategy
-        ),
-        Parameter = case_when(
-          Parameter == "u_np" ~ "Utility (No Progression)",
-          Parameter == "u_p" ~ "Utility (Progression)", 
-          Parameter == "c_drug_nivo" ~ "Nivolumab Cost",
-          Parameter == "c_drug_FLOX" ~ "FLOX Cost",
-          Parameter == "c_test_NGS" ~ "NGS Testing Cost",
-          Parameter == "c_test_CT" ~ "CT Scan Cost",
-          Parameter == "c_test_blood" ~ "Blood Test Cost",
-          Parameter == "c_other_last" ~ "End-of-Life Care Cost",
-          Parameter == "c_other_visit" ~ "Visit Cost",
-          Parameter == "c_other_baseline" ~ "Baseline Care Cost",
-          Parameter == "c_other_follow" ~ "Follow-up Care Cost",
-          TRUE ~ Parameter
-        ),
-        `Impact (€)` = scales::dollar(Impact, accuracy = 1)
-      ) %>%
-      # Remove Strategy column
-      select(Rank, Parameter, `Impact (€)`)
-    
-    # Create table with pack_rows grouping only
-    knitr::kable(impact_formatted,
-                 align = c("c", "l", "r"),
-                 booktabs = TRUE,
-                 col.names = c("Rank", "Parameter", "Impact on NMB (€)")) %>%
-      kableExtra::column_spec(1, width = "1.5cm") %>%
-      kableExtra::column_spec(2, width = "5cm") %>%
-      kableExtra::column_spec(3, width = "2.5cm") %>%
-      kableExtra::pack_rows("Standard Care", 1, 3, bold = TRUE, color = "white", background = "#4472C4") %>%
-      kableExtra::pack_rows("CRP-guided", 4, 6, bold = TRUE, color = "white", background = "#70AD47") %>%
-      kableExtra::pack_rows("TLR-guided", 7, 9, bold = TRUE, color = "white", background = "#FFC000") %>%
-      kableExtra::pack_rows("TMB/BRAF-guided", 10, 12, bold = TRUE, color = "white", background = "#C55A11") %>%
-      kableExtra::kable_styling(font_size = 10, latex_options = c("HOLD_position"))
-  }
-  
 } else {
-  cat("**Parameter impact summary requires completed DSA analysis.**\n")
+  cat("**DSA results not available**\n")
 }
 ```
 
@@ -745,90 +530,272 @@ cat("\\newpage\n")
 # 12 - Probabilistic Sensitivity Analysis
 if (file.exists(here("scripts/R/analysis/12_PSA.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/12_PSA.R"))))
+} else {
+  cat("PSA script not found\n")
 }
+
+# Debug: Check what PSA objects exist
+psa_objects <- ls()[grepl("psa|ceac", ls(), ignore.case = TRUE)]
 ```
 
 ```{r psa-scatterplot}
-#| fig-cap: "Cost-effectiveness Scatterplot"
+#| fig-cap: "Cost-effectiveness Scatterplot from Probabilistic Sensitivity Analysis"
+#| fig-height: 8
+#| fig-width: 10
 
+# Enhanced PSA scatterplot with better error handling and fallbacks
+psa_plot_created <- FALSE
+
+# Method 1: Try using dampack PSA object
 if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
-  # Use dampack's built-in plot function for PSA
-  psa_plot <- plot(psa_obj, 
-                   frontier = TRUE, 
-                   points = TRUE,
-                   alpha = 0.3,
-                   txtsize = 12) +
-    labs(x = "Effectiveness (QALYs)",
-         y = "Total Cost (€)") +
-    theme_minimal()
-  
-  print(psa_plot)
-  
-} else if (exists("psa_results") && "cost" %in% names(psa_results) && "effect" %in% names(psa_results)) {
-  # Alternative: use the raw PSA results
-  cost_matrix <- psa_results$cost
-  effect_matrix <- psa_results$effect
-  
-  psa_data <- data.frame(
-    Cost = as.vector(cost_matrix),
-    Effect = as.vector(effect_matrix),
-    Strategy = rep(colnames(cost_matrix), each = nrow(cost_matrix))
-  ) %>%
-    filter(!is.na(Cost) & !is.na(Effect))
-  
-  if (nrow(psa_data) > 0) {
-    p <- ggplot(psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
-      geom_point(alpha = 0.3, size = 0.8) +
-      scale_y_continuous(labels = scales::dollar_format()) +
-      scale_color_viridis_d(name = "Strategy") +
-      labs(
-        x = "Effectiveness (QALYs)",
-        y = "Total Cost (€)"
-      ) +
+  tryCatch({
+    psa_plot <- plot(psa_obj, 
+                     frontier = TRUE, 
+                     points = TRUE,
+                     alpha = 0.4,
+                     txtsize = 11,
+                     currency = "€",
+                     effect_units = "QALYs") +
       theme_minimal() +
-      theme(legend.position = "bottom")
+      theme(
+        legend.position = "bottom",
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 10)
+      )
     
-    print(p)
-  }
+    print(psa_plot)
+    psa_plot_created <- TRUE
+  }, error = function(e) {
+    cat("Failed to create PSA plot from psa_obj:", e$message, "\n")
+  })
+}
+
+# Method 2: Try using raw PSA results
+if (!psa_plot_created && exists("psa_results")) {
+  tryCatch({
+    if (is.list(psa_results) && "cost" %in% names(psa_results) && "effect" %in% names(psa_results)) {
+      cost_matrix <- psa_results$cost
+      effect_matrix <- psa_results$effect
+      
+      # Ensure matrices have the same dimensions
+      if (all(dim(cost_matrix) == dim(effect_matrix))) {
+        # Convert to long format
+        n_sims <- nrow(cost_matrix)
+        strategy_names <- colnames(cost_matrix)
+        
+        psa_data <- data.frame()
+        for (i in 1:ncol(cost_matrix)) {
+          strategy_data <- data.frame(
+            Cost = cost_matrix[, i],
+            Effect = effect_matrix[, i],
+            Strategy = strategy_names[i],
+            Simulation = 1:n_sims
+          )
+          psa_data <- rbind(psa_data, strategy_data)
+        }
+        
+        # Remove any NA values
+        psa_data <- psa_data[complete.cases(psa_data), ]
+        
+        if (nrow(psa_data) > 0) {
+          # Create the plot
+          p <- ggplot(psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
+            geom_point(alpha = 0.4, size = 0.8) +
+            scale_y_continuous(labels = scales::dollar_format()) +
+            scale_color_viridis_d(name = "Strategy") +
+            labs(
+              x = "Effectiveness (QALYs)",
+              y = "Total Cost (€)"
+            ) +
+            theme_minimal() +
+            theme(
+              legend.position = "bottom",
+              legend.title = element_text(size = 11),
+              legend.text = element_text(size = 10)
+            ) +
+            guides(color = guide_legend(override.aes = list(alpha = 1, size = 3)))
+          
+          print(p)
+          psa_plot_created <- TRUE
+        }
+      }
+    }
+  }, error = function(e) {
+    cat("Failed to create PSA plot from psa_results:", e$message, "\n")
+  })
+}
+
+# Method 3: Check for alternative PSA data structures
+if (!psa_plot_created) {
+  # Look for any dataframe with Cost, Effect, and Strategy columns
+  possible_psa_objects <- ls()[grepl("psa", ls(), ignore.case = TRUE)]
   
-} else {
-  cat("**PSA data not found. Check if PSA script completed successfully.**\n")
-  cat("Available objects:", paste(ls()[grepl("psa", ls(), ignore.case = TRUE)], collapse = ", "), "\n")
+  for (obj_name in possible_psa_objects) {
+    obj <- get(obj_name)
+    if (is.data.frame(obj) && all(c("Cost", "Effect", "Strategy") %in% names(obj))) {
+      tryCatch({
+        p <- ggplot(obj, aes(x = Effect, y = Cost, color = Strategy)) +
+          geom_point(alpha = 0.4, size = 0.8) +
+          scale_y_continuous(labels = scales::dollar_format()) +
+          scale_color_viridis_d(name = "Strategy") +
+          labs(
+            x = "Effectiveness (QALYs)",
+            y = "Total Cost (€)"
+          ) +
+          theme_minimal() +
+          theme(legend.position = "bottom")
+        
+        print(p)
+        psa_plot_created <- TRUE
+        break
+      }, error = function(e) {
+        cat("Failed to create PSA plot from", obj_name, ":", e$message, "\n")
+      })
+    }
+  }
+}
+
+# If all methods fail, display informative message
+if (!psa_plot_created) {
+  ggplot() + 
+    annotate("text", x = 0.5, y = 0.5, 
+             label = "PSA data not available or failed to process.\nCheck that:\n• Script 08 (sampling) completed successfully\n• Script 12 (PSA) ran without errors\n• PSA results are properly formatted", 
+             size = 12, hjust = 0.5) +
+    annotate("text", x = 0.5, y = 0.2,
+             label = paste("Available PSA objects:", paste(psa_objects, collapse = ", ")),
+             size = 10, hjust = 0.5, color = "darkgray") +
+    xlim(0, 1) + ylim(0, 1) +
+    theme_void()
 }
 ```
 
 ```{r ceac-curve}
-#| fig-cap: "Cost-Effectiveness Acceptability Curve"
+#| fig-cap: "Cost-Effectiveness Acceptability Curve (CEAC)"
+#| fig-height: 8
+#| fig-width: 10
 
+# Enhanced CEAC with better error handling and fallbacks
+ceac_plot_created <- FALSE
+
+# Method 1: Try using pre-computed CEAC object
 if (exists("ceac_obj") && "ceac" %in% class(ceac_obj)) {
-  # Use the CEAC object created in the PSA script
-  ceac_plot <- plot(ceac_obj, 
-                    frontier = TRUE, 
-                    points = TRUE, 
-                    currency = "€",
-                    txtsize = 12)
-  
-  print(ceac_plot)
-  
-} else if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
-  # Generate CEAC from PSA object
-  wtp_range <- seq(0, 100000, by = 2000)
-  
   tryCatch({
-    ceac_obj <- dampack::ceac(wtp = wtp_range, psa = psa_obj)
     ceac_plot <- plot(ceac_obj, 
                       frontier = TRUE, 
                       currency = "€",
-                      txtsize = 12)
+                      txtsize = 11) +
+      theme_minimal() +
+      theme(
+        legend.position = "bottom",
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 10)
+      )
     
     print(ceac_plot)
+    ceac_plot_created <- TRUE
   }, error = function(e) {
-    cat("**CEAC generation failed:**", e$message, "\n")
+    cat("Failed to create CEAC plot from ceac_obj:", e$message, "\n")
   })
-  
-} else {
-  cat("**CEAC requires PSA object or completed PSA analysis.**\n")
-  cat("Available PSA objects:", paste(ls()[grepl("psa|ceac", ls(), ignore.case = TRUE)], collapse = ", "), "\n")
+}
+
+# Method 2: Try generating CEAC from PSA object
+if (!ceac_plot_created && exists("psa_obj") && "psa" %in% class(psa_obj)) {
+  tryCatch({
+    wtp_range <- seq(0, 100000, by = 1000)
+    ceac_obj_new <- dampack::ceac(wtp = wtp_range, psa = psa_obj)
+    
+    ceac_plot <- plot(ceac_obj_new, 
+                      frontier = TRUE, 
+                      currency = "€",
+                      txtsize = 11) +
+      theme_minimal() +
+      theme(
+        legend.position = "bottom",
+        legend.title = element_text(size = 11),
+        legend.text = element_text(size = 10)
+      )
+    
+    print(ceac_plot)
+    ceac_plot_created <- TRUE
+  }, error = function(e) {
+    cat("Failed to generate CEAC from psa_obj:", e$message, "\n")
+  })
+}
+
+# Method 3: Manual CEAC calculation from PSA results
+if (!ceac_plot_created && exists("psa_results")) {
+  tryCatch({
+    if (is.list(psa_results) && "cost" %in% names(psa_results) && "effect" %in% names(psa_results)) {
+      cost_matrix <- psa_results$cost
+      effect_matrix <- psa_results$effect
+      
+      if (all(dim(cost_matrix) == dim(effect_matrix))) {
+        # Define WTP thresholds
+        wtp_thresholds <- seq(0, 100000, by = 2000)
+        strategy_names <- colnames(cost_matrix)
+        n_strategies <- ncol(cost_matrix)
+        n_sims <- nrow(cost_matrix)
+        
+        # Calculate CEAC manually
+        ceac_data <- data.frame()
+        
+        for (wtp in wtp_thresholds) {
+          # Calculate Net Monetary Benefit for each simulation and strategy
+          nmb_matrix <- effect_matrix * wtp - cost_matrix
+          
+          # Find optimal strategy for each simulation
+          optimal_strategies <- apply(nmb_matrix, 1, which.max)
+          
+          # Calculate probability for each strategy
+          for (s in 1:n_strategies) {
+            prob <- sum(optimal_strategies == s) / n_sims
+            ceac_data <- rbind(ceac_data, data.frame(
+              WTP = wtp,
+              Strategy = strategy_names[s],
+              Probability = prob
+            ))
+          }
+        }
+        
+        # Create CEAC plot
+        p <- ggplot(ceac_data, aes(x = WTP, y = Probability, color = Strategy)) +
+          geom_line(size = 1.2) +
+          scale_x_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+          scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+          scale_color_viridis_d(name = "Strategy") +
+          labs(
+            x = "Willingness-to-Pay Threshold (€)",
+            y = "Probability of Being Cost-Effective"
+          ) +
+          theme_minimal() +
+          theme(
+            legend.position = "bottom",
+            legend.title = element_text(size = 11),
+            legend.text = element_text(size = 10),
+            panel.grid.minor = element_blank()
+          ) +
+          guides(color = guide_legend(override.aes = list(size = 2)))
+        
+        print(p)
+        ceac_plot_created <- TRUE
+      }
+    }
+  }, error = function(e) {
+    cat("Failed to create manual CEAC:", e$message, "\n")
+  })
+}
+
+# If all methods fail, display informative message
+if (!ceac_plot_created) {
+  ggplot() + 
+    annotate("text", x = 0.5, y = 0.5, 
+             label = "CEAC data not available or failed to process.\nCheck that:\n• PSA analysis completed successfully\n• Cost and effect matrices are available\n• dampack package is properly loaded", 
+             size = 12, hjust = 0.5) +
+    annotate("text", x = 0.5, y = 0.2,
+             label = paste("Available PSA objects:", paste(psa_objects, collapse = ", ")),
+             size = 10, hjust = 0.5, color = "darkgray") +
+    xlim(0, 1) + ylim(0, 1) +
+    theme_void()
 }
 ```
 
@@ -838,12 +805,12 @@ I am working on the following other reports:
 
 - **Input Parameters Report**: Comprehensive documentation of all model input parameters including clinical effectiveness data, cost parameters, and utility values with their respective sources and uncertainty distributions.
 
-- **Parametric Survival Analysis Report**: Detailed documentation of the parametric survival modeling process, including goodness-of-fit statistics for all tested distributions, model selection criteria, and validation of the chosen survival models for both overall survival and progression-free survival endpoints.
+- **Parametric Survival Analysis Report**: Detailed documentation of the parametric survival modeling process, including goodness-of-fit statistics for all tested distributions, model selection criteria, and validation against Kaplan-Meier estimates.
 
-- **One-Way Sensitivity Analysis (OWSA) Report**: Extended sensitivity analysis providing detailed examination of each individual parameter's impact on model outcomes, including threshold analyses and parameter sensitivity rankings across all strategies.
+- **One-Way Sensitivity Analysis (OWSA) Report**: Extended sensitivity analysis providing detailed examination of each individual parameter's impact on model outcomes, including threshold analyses for key decision-relevant parameters.
 
 ---
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Report version:** 1.1
