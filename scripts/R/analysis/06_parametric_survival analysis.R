@@ -19,11 +19,9 @@ p_load(survival, flexsurv, dplyr)
 # ===============================================================================
 
 # CONFIGURATION SWITCH: Controls which model structures to consider
-# Options:
-# - "age_sex_only": Only fit models with age and sex adjustments
-# - "both": Consider both age/sex-adjusted and non-adjusted models (original behavior)
-# - "no_age_sex_only": Only fit models without age and sex adjustments
-MODEL_STRUCTURE_OPTION <- "age_sex_only"  # Change this to control model selection
+# 0 = Full model (age- and sex-adjusted) only
+# 1 = Both full model and model without age- and sex-adjustments
+USE_BOTH_MODELS <- 0
 
 # Load parametric model fitting functions
 para_model_fit_path <- here::here("scripts", "R", "functions", "para_model_fit.R")
@@ -71,29 +69,43 @@ data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", 
 # MODEL STRUCTURE DEFINITIONS
 # ===============================================================================
 
-# Define all possible model structures
-all_model_formulas <- list(
-  full = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-  ),
-  no_age_sex = list(
-    os = Surv(OSwk, Death) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+# Define model structures based on configuration switch
+if (USE_BOTH_MODELS == 0) {
+  # Only use full model (age- and sex-adjusted)
+  model_formulas <- list(
+    full = list(
+      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    )
   )
-)
-
-# Select which model structures to use based on configuration
-model_formulas <- switch(MODEL_STRUCTURE_OPTION,
-                         "age_sex_only" = list(full = all_model_formulas$full),
-                         "no_age_sex_only" = list(no_age_sex = all_model_formulas$no_age_sex),
-                         "both" = all_model_formulas,
-                         # Default to age/sex-adjusted only if invalid option provided
-                         list(full = all_model_formulas$full)
-)
+  cat("Configuration: Using full model (age- and sex-adjusted) only\n")
+  
+} else if (USE_BOTH_MODELS == 1) {
+  # Use both full model and model without age/sex adjustments
+  model_formulas <- list(
+    full = list(
+      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    ),
+    no_age_sex = list(
+      os = Surv(OSwk, Death) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    )
+  )
+  cat("Configuration: Using both full model and model without age/sex adjustments\n")
+  
+} else {
+  # Default to full model if invalid switch value
+  model_formulas <- list(
+    full = list(
+      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    )
+  )
+  cat("Warning: Invalid USE_BOTH_MODELS value. Defaulting to full model only\n")
+}
 
 # Print which models will be fitted
-cat("Model fitting configuration: ", MODEL_STRUCTURE_OPTION, "\n")
 cat("Model structures to be fitted: ", paste(names(model_formulas), collapse = ", "), "\n")
 
 # Define parametric distributions to test
@@ -268,14 +280,13 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
 # FINAL STORAGE STRUCTURE DOCUMENTATION
 # ===============================================================================
 # 
-# CONFIGURATION OPTIONS:
-# - MODEL_STRUCTURE_OPTION controls which model structures are fitted:
-#   * "age_sex_only": Only age- and sex-adjusted models (recommended for decision analysis)
-#   * "both": Both adjusted and non-adjusted models (original behavior)
-#   * "no_age_sex_only": Only non-adjusted models
+# CONFIGURATION:
+# - USE_BOTH_MODELS: Numeric switch controlling model selection
+#   * 0 = Only fit full model with age and sex adjustments (recommended for decision analysis)
+#   * 1 = Fit both full model and model without age/sex adjustments
 #
 # MODELS OBJECT STRUCTURE:
-# ├── models$[selected_structures]      # Based on MODEL_STRUCTURE_OPTION
+# ├── models$[selected_structures]      # Based on USE_BOTH_MODELS setting
 # │   ├── $os                          # OS models by distribution
 # │   │   ├── $weibull                # flexsurvreg object
 # │   │   ├── $exponential            # flexsurvreg object
