@@ -1,6 +1,6 @@
 ---
-title: "Cost-Effectiveness Analysis Report"
-subtitle: "Biomarker-Guided Strategies for Metastatic MSS/pMMR Colorectal Cancer"
+title: "METIMMOX-1 Cost-Effectiveness Analysis Report"
+subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -81,25 +81,6 @@ for (func_file in helper_functions) {
 }
 ```
 
-# Executive Summary
-
-This cost-effectiveness analysis evaluates three biomarker-guided strategies (CRP, TLR, and TMB/BRAF) for selecting metastatic microsatellite stable (MSS)/proficient mismatch repair (pMMR) colorectal cancer patients for immunotherapy versus the standard of care strategy of chemotherapy alone. The analysis employs a comprehensive decision-analytic model incorporating clinical trial data, parametric survival analysis, and uncertainty quantification through deterministic and probabilistic sensitivity analyses.
-
-# Introduction
-
-Metastatic colorectal cancer represents a significant clinical and economic burden. This analysis compares three biomarker-guided approaches against standard chemotherapy to inform treatment decisions and healthcare resource allocation. The biomarker strategies evaluate different approaches to patient selection for immunotherapy based on C-reactive protein (CRP), tumor lesion reduction (TLR), and combined tumor mutational burden/BRAF mutation status (TMB/BRAF).
-
-## Study Objectives
-
-1. Evaluate the cost-effectiveness of CRP, TLR, and TMB/BRAF biomarker strategies
-2. Compare population-level outcomes across all strategies
-3. Assess the impact of biomarker prevalence on overall cost-effectiveness
-4. Provide uncertainty analysis through deterministic and probabilistic sensitivity analyses
-
-# Methods
-
-## Model Structure and Approach
-
 ```{r setup-global-variables, include=FALSE}
 # 02 - Setup and Global Variables
 if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
@@ -107,26 +88,12 @@ if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
 }
 ```
 
-The analysis employs a decision-analytic model structure with a 10-year time horizon and weekly cycle length. The model incorporates appropriate discount rates for costs and health outcomes and evaluates strategies from a healthcare payer perspective.
-
-## Biomarker Strategies
-
 ```{r biomarker-strategies, include=FALSE}
 # 03 - Biomarker Strategies
 if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
 }
 ```
-
-Three biomarker strategies are compared against standard care:
-
-1. **CRP Strategy**: C-reactive protein biomarker guidance with <5 mg/L cutoff for biomarker-positive status
-2. **TLR Strategy**: Tumor lesion reduction biomarker guidance with ≥10% reduction cutoff  
-3. **TMB/BRAF Strategy**: Combined tumor mutational burden (≥9 mutations/Mb) or BRAF V600 mutation guidance
-
-For biomarker-positive patients, treatment consists of alternating cycles of FLOX chemotherapy and nivolumab immunotherapy. Biomarker-negative patients receive standard FLOX chemotherapy only.
-
-## Quality of Life Analysis
 
 ```{r qalys-data-processing, include=FALSE}
 # 05 - Process QALYs data with proper error handling
@@ -151,10 +118,6 @@ tryCatch({
   # File doesn't exist or can't be read - continue without it
 })
 ```
-
-Quality-adjusted life years were derived from patient-reported outcome measures using EQ-5D-5L data where available. Health state utilities were estimated for progression-free and progressed disease states.
-
-## Survival Analysis
 
 ```{r survival-analysis, include=FALSE}
 # 06 - Parametric Survival Analysis
@@ -188,10 +151,6 @@ if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
 }
 ```
 
-Parametric survival models were fitted to overall survival and progression-free survival endpoints. Multiple distributions were tested, with model selection based on Akaike Information Criterion (AIC). The analysis included age, sex, treatment assignment, and biomarker interaction terms.
-
-## Model Parameters
-
 ```{r input-parameters, include=FALSE}
 # 07 - Base Case Input Parameters
 if (file.exists(here("scripts/R/analysis/07_basecase_input_parameters.R"))) {
@@ -215,11 +174,61 @@ if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
 }
 ```
 
-The model incorporates clinical parameters from the METIMMOX trial, cost parameters based on German healthcare tariffs, and utility parameters derived from EQ-5D-5L questionnaires. All parameters include appropriate uncertainty distributions for probabilistic sensitivity analysis.
+# Overview
 
-# Results
+This cost-effectiveness analysis evaluates three biomarker-guided strategies (CRP, TLR, and TMB/BRAF) for selecting metastatic microsatellite stable (MSS)/proficient mismatch repair (pMMR) colorectal cancer patients for immunotherapy versus the standard of care strategy of chemotherapy alone.
 
-## Base Case Analysis
+This report contains:
+
+- **Strategy Descriptions**: Overview of the four treatment strategies evaluated
+- **Base Case Analysis**: Cost-effectiveness results with incremental cost-effectiveness ratios (ICERs) and cost-effectiveness plane
+- **Deterministic Sensitivity Analysis**: Tornado diagrams showing parameter impact on each strategy
+- **Probabilistic Sensitivity Analysis**: Monte Carlo simulation results including scatterplot and cost-effectiveness acceptability curves
+
+# Strategies Evaluated
+
+```{r strategies-table}
+#| tbl-cap: "Treatment Strategies Evaluated in the Cost-Effectiveness Analysis"
+
+if (exists("strategies_df") && nrow(strategies_df) > 0) {
+  # Format the strategies dataframe for display
+  strategies_display <- strategies_df %>%
+    mutate(
+      name = case_when(
+        id == "control" ~ "Standard of Care",
+        id == "crp" ~ "CRP-guided Strategy", 
+        id == "tlr" ~ "TLR-guided Strategy",
+        id == "tmb_braf" ~ "TMB/BRAF-guided Strategy",
+        TRUE ~ name
+      ),
+      prevalence = scales::percent(prevalence, accuracy = 0.1),
+      n_patients = as.character(n_patients)
+    ) %>%
+    select(
+      Strategy = name,
+      Description = description,
+      `Biomarker Prevalence` = prevalence,
+      `Patients (n)` = n_patients
+    )
+  
+  knitr::kable(strategies_display,
+               booktabs = TRUE,
+               align = c("l", "l", "c", "c")) %>%
+    kableExtra::column_spec(1, width = "2.5cm") %>%
+    kableExtra::column_spec(2, width = "8cm") %>%
+    kableExtra::column_spec(c(3,4), width = "1.5cm") %>%
+    kableExtra::kable_styling(font_size = 9, latex_options = c("scale_down", "HOLD_position"))
+  
+} else {
+  cat("**Strategy information not available. Check biomarker strategies script.**\n")
+}
+```
+
+```{r base-case-pagebreak, results='asis'}
+cat("\\newpage\n")
+```
+
+# Base Case Analysis
 
 ```{r base-case-analysis, include=FALSE}
 # 10 - Base Case Analysis
@@ -261,8 +270,6 @@ if (exists("icer_obj") && "icers" %in% class(icer_obj)) {
   cat("**Base case results pending - check analysis completion**\n")
 }
 ```
-
-The base case analysis presents the incremental cost-effectiveness ratios (ICERs) for each biomarker strategy compared to the reference strategy. Results include total costs, quality-adjusted life years (QALYs), and incremental cost-effectiveness ratios with efficiency frontier analysis.
 
 ```{r cost-effectiveness-plane}
 #| fig-cap: "Cost-Effectiveness Plane with Efficiency Frontier"
@@ -307,11 +314,7 @@ if (exists("ce_plot") && "ggplot" %in% class(ce_plot)) {
 }
 ```
 
-The cost-effectiveness plane displays the relationship between costs and health outcomes for all strategies, with the efficiency frontier indicating the optimal strategies at different willingness-to-pay thresholds.
-
-## Sensitivity Analyses
-
-### Deterministic Sensitivity Analysis
+# Deterministic Sensitivity Analysis
 
 ```{r deterministic-sa, include=FALSE}
 # 11 - Deterministic Sensitivity Analysis
@@ -320,14 +323,13 @@ if (file.exists(here("scripts/R/analysis/11_DSA.R"))) {
 }
 ```
 
-```{r tornado-plot}
-#| fig-cap: "Tornado Diagrams - One-Way Sensitivity Analysis for All Strategies"
-#| fig-height: 12
-#| fig-width: 14
+```{r tornado-control}
+#| fig-cap: "Tornado Diagram - Standard of Care One-Way Sensitivity Analysis"
+#| fig-height: 8
+#| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
   library(ggplot2)
-  library(gridExtra)
   
   # Function to create tornado data for a specific strategy
   create_tornado_data <- function(strategy_name, dsa_results) {
@@ -352,7 +354,6 @@ if (exists("dsa_results") && exists("strategies")) {
     }
     
     if (nrow(tornado_data) > 0) {
-      # Sort by range for display
       tornado_data <- tornado_data[order(tornado_data$Range), ]
       tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
       return(tornado_data)
@@ -360,65 +361,242 @@ if (exists("dsa_results") && exists("strategies")) {
     return(NULL)
   }
   
-  # Create tornado plots for all strategies
-  tornado_plots <- list()
+  # Create tornado plot for control strategy
+  tornado_data <- create_tornado_data("control", dsa_results)
   
-  for (strat in strategies) {
-    tornado_data <- create_tornado_data(strat, dsa_results)
+  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    p <- ggplot(tornado_data) +
+      geom_col(aes(x = Parameter, y = Min_diff), 
+               fill = "steelblue", alpha = 0.8, width = 0.7) +
+      geom_col(aes(x = Parameter, y = Max_diff), 
+               fill = "darkred", alpha = 0.8, width = 0.7) +
+      coord_flip() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      labs(x = "Model Parameters",
+           y = "Change in NMB (€)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+      theme_minimal() +
+      theme(
+        axis.text.y = element_text(size = 11),
+        axis.text.x = element_text(size = 10),
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid.minor = element_blank()
+      )
     
-    if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
-      # Create the tornado plot for this strategy
-      p <- ggplot(tornado_data) +
-        geom_col(aes(x = Parameter, y = Min_diff), 
-                 fill = "steelblue", alpha = 0.7, width = 0.6) +
-        geom_col(aes(x = Parameter, y = Max_diff), 
-                 fill = "darkred", alpha = 0.7, width = 0.6) +
-        coord_flip() +
-        geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.5) +
-        labs(title = paste("Tornado Plot:", strat),
-             x = "Parameters",
-             y = "Change in NMB (€)") +
-        scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
-        theme_minimal() +
-        theme(
-          axis.text.y = element_text(size = 9),
-          axis.text.x = element_text(size = 8),
-          plot.title = element_text(size = 11, face = "bold"),
-          axis.title = element_text(size = 9)
-        )
-      
-      tornado_plots[[strat]] <- p
-    }
+    print(p)
   }
-  
-  # Display plots in a 2x2 grid
-  if (length(tornado_plots) > 0) {
-    if (length(tornado_plots) == 4) {
-      # 2x2 grid for 4 strategies
-      grid.arrange(grobs = tornado_plots, ncol = 2, nrow = 2)
-    } else if (length(tornado_plots) == 3) {
-      # 2x2 grid with empty space for 3 strategies
-      grid.arrange(grobs = tornado_plots, ncol = 2, nrow = 2)
-    } else if (length(tornado_plots) == 2) {
-      # 1x2 grid for 2 strategies
-      grid.arrange(grobs = tornado_plots, ncol = 2, nrow = 1)
-    } else {
-      # Single plot
-      print(tornado_plots[[1]])
-    }
-    
-    cat("\n**Tornado diagrams generated for", length(tornado_plots), "strategies.**\n\n")
-  } else {
-    cat("**No tornado plot data available.**\n")
-  }
-  
-} else {
-  cat("**Tornado plots require DSA results and strategy definitions.**\n")
 }
 ```
 
+```{r tornado-crp}
+#| fig-cap: "Tornado Diagram - CRP-guided Strategy One-Way Sensitivity Analysis"
+#| fig-height: 8
+#| fig-width: 10
+
+if (exists("dsa_results") && exists("strategies")) {
+  library(ggplot2)
+  
+  # Function to create tornado data for a specific strategy
+  create_tornado_data <- function(strategy_name, dsa_results) {
+    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
+                                 dsa_results$Parameter != "base_case", ]
+    
+    tornado_data <- data.frame()
+    for (param in unique(strat_results$Parameter)) {
+      min_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "max", ]
+      
+      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+        tornado_data <- rbind(tornado_data, data.frame(
+          Parameter = param,
+          Min_diff = min_row$NMB_diff,
+          Max_diff = max_row$NMB_diff,
+          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
+        ))
+      }
+    }
+    
+    if (nrow(tornado_data) > 0) {
+      tornado_data <- tornado_data[order(tornado_data$Range), ]
+      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
+      return(tornado_data)
+    }
+    return(NULL)
+  }
+  
+  # Create tornado plot for CRP strategy
+  tornado_data <- create_tornado_data("crp", dsa_results)
+  
+  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    p <- ggplot(tornado_data) +
+      geom_col(aes(x = Parameter, y = Min_diff), 
+               fill = "steelblue", alpha = 0.8, width = 0.7) +
+      geom_col(aes(x = Parameter, y = Max_diff), 
+               fill = "darkred", alpha = 0.8, width = 0.7) +
+      coord_flip() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      labs(x = "Model Parameters",
+           y = "Change in NMB (€)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+      theme_minimal() +
+      theme(
+        axis.text.y = element_text(size = 11),
+        axis.text.x = element_text(size = 10),
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid.minor = element_blank()
+      )
+    
+    print(p)
+  }
+}
+```
+
+```{r tornado-tlr}
+#| fig-cap: "Tornado Diagram - TLR-guided Strategy One-Way Sensitivity Analysis"
+#| fig-height: 8
+#| fig-width: 10
+
+if (exists("dsa_results") && exists("strategies")) {
+  library(ggplot2)
+  
+  # Function to create tornado data for a specific strategy
+  create_tornado_data <- function(strategy_name, dsa_results) {
+    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
+                                 dsa_results$Parameter != "base_case", ]
+    
+    tornado_data <- data.frame()
+    for (param in unique(strat_results$Parameter)) {
+      min_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "max", ]
+      
+      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+        tornado_data <- rbind(tornado_data, data.frame(
+          Parameter = param,
+          Min_diff = min_row$NMB_diff,
+          Max_diff = max_row$NMB_diff,
+          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
+        ))
+      }
+    }
+    
+    if (nrow(tornado_data) > 0) {
+      tornado_data <- tornado_data[order(tornado_data$Range), ]
+      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
+      return(tornado_data)
+    }
+    return(NULL)
+  }
+  
+  # Create tornado plot for TLR strategy
+  tornado_data <- create_tornado_data("tlr", dsa_results)
+  
+  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    p <- ggplot(tornado_data) +
+      geom_col(aes(x = Parameter, y = Min_diff), 
+               fill = "steelblue", alpha = 0.8, width = 0.7) +
+      geom_col(aes(x = Parameter, y = Max_diff), 
+               fill = "darkred", alpha = 0.8, width = 0.7) +
+      coord_flip() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      labs(x = "Model Parameters",
+           y = "Change in NMB (€)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+      theme_minimal() +
+      theme(
+        axis.text.y = element_text(size = 11),
+        axis.text.x = element_text(size = 10),
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid.minor = element_blank()
+      )
+    
+    print(p)
+  }
+}
+```
+
+```{r tornado-tmb-braf}
+#| fig-cap: "Tornado Diagram - TMB/BRAF-guided Strategy One-Way Sensitivity Analysis"
+#| fig-height: 8
+#| fig-width: 10
+
+if (exists("dsa_results") && exists("strategies")) {
+  library(ggplot2)
+  
+  # Function to create tornado data for a specific strategy
+  create_tornado_data <- function(strategy_name, dsa_results) {
+    strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
+                                 dsa_results$Parameter != "base_case", ]
+    
+    tornado_data <- data.frame()
+    for (param in unique(strat_results$Parameter)) {
+      min_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Parameter == param & 
+                               strat_results$Value == "max", ]
+      
+      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+        tornado_data <- rbind(tornado_data, data.frame(
+          Parameter = param,
+          Min_diff = min_row$NMB_diff,
+          Max_diff = max_row$NMB_diff,
+          Range = abs(max_row$NMB_diff - min_row$NMB_diff)
+        ))
+      }
+    }
+    
+    if (nrow(tornado_data) > 0) {
+      tornado_data <- tornado_data[order(tornado_data$Range), ]
+      tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
+      return(tornado_data)
+    }
+    return(NULL)
+  }
+  
+  # Create tornado plot for TMB/BRAF strategy
+  tornado_data <- create_tornado_data("tmb_braf", dsa_results)
+  
+  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    p <- ggplot(tornado_data) +
+      geom_col(aes(x = Parameter, y = Min_diff), 
+               fill = "steelblue", alpha = 0.8, width = 0.7) +
+      geom_col(aes(x = Parameter, y = Max_diff), 
+               fill = "darkred", alpha = 0.8, width = 0.7) +
+      coord_flip() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      labs(x = "Model Parameters",
+           y = "Change in NMB (€)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+      theme_minimal() +
+      theme(
+        axis.text.y = element_text(size = 11),
+        axis.text.x = element_text(size = 10),
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid.minor = element_blank()
+      )
+    
+    print(p)
+  }
+}
+```
+
+```{r impact-table-pagebreak, results='asis'}
+cat("\\newpage\n")
+```
+
 ```{r parameter-impact-summary}
-#| tbl-cap: "Parameter Impact Summary - Top 3 Most Influential Parameters by Strategy"
+#| tbl-cap: "Parameter Impact Summary - Most Influential Parameters by Strategy"
 
 if (exists("impact_summary") && nrow(impact_summary) > 0) {
   # Improve the formatting of the impact summary table
@@ -447,34 +625,22 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
       ),
       `Impact (€)` = scales::dollar(Impact, accuracy = 1)
     ) %>%
-    select(Strategy, Rank, Parameter, `Impact (€)`)
+    # Remove the Strategy column for display
+    select(Rank, Parameter, `Impact (€)`)
   
-  # Create a wider table by reshaping
-  impact_wide <- impact_formatted %>%
-    pivot_wider(
-      names_from = Rank,
-      values_from = c(Parameter, `Impact (€)`),
-      names_sep = "_"
-    ) %>%
-    select(Strategy, 
-           `1st Most Influential` = Parameter_1, `Impact_1` = `Impact (€)_1`,
-           `2nd Most Influential` = Parameter_2, `Impact_2` = `Impact (€)_2`, 
-           `3rd Most Influential` = Parameter_3, `Impact_3` = `Impact (€)_3`)
-  
-  knitr::kable(impact_wide,
-               align = c("l", "l", "r", "l", "r", "l", "r"),
+  # Create table without strategy column - use only pack_rows for grouping
+  knitr::kable(impact_formatted,
+               align = c("c", "l", "r"),
                booktabs = TRUE,
-               col.names = c("Strategy", 
-                            "Parameter", "Impact", 
-                            "Parameter", "Impact",
-                            "Parameter", "Impact")) %>%
-    kableExtra::add_header_above(c(" " = 1, 
-                                   "1st Most Influential" = 2,
-                                   "2nd Most Influential" = 2, 
-                                   "3rd Most Influential" = 2)) %>%
-    kableExtra::column_spec(c(2,4,6), width = "3cm") %>%
-    kableExtra::column_spec(c(3,5,7), width = "1.5cm") %>%
-    kableExtra::kable_styling(font_size = 9, latex_options = c("scale_down", "HOLD_position"))
+               col.names = c("Rank", "Parameter", "Impact on NMB (€)")) %>%
+    kableExtra::column_spec(1, width = "1.5cm") %>%
+    kableExtra::column_spec(2, width = "5cm") %>%
+    kableExtra::column_spec(3, width = "2.5cm") %>%
+    kableExtra::pack_rows("Standard Care", 1, 3, bold = TRUE, color = "white", background = "#4472C4") %>%
+    kableExtra::pack_rows("CRP-guided", 4, 6, bold = TRUE, color = "white", background = "#70AD47") %>%
+    kableExtra::pack_rows("TLR-guided", 7, 9, bold = TRUE, color = "white", background = "#FFC000") %>%
+    kableExtra::pack_rows("TMB/BRAF-guided", 10, 12, bold = TRUE, color = "white", background = "#C55A11") %>%
+    kableExtra::kable_styling(font_size = 10, latex_options = c("HOLD_position"))
   
 } else if (exists("dsa_results") && nrow(dsa_results) > 0) {
   # Generate impact summary if it doesn't exist but DSA results do
@@ -546,32 +712,22 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
         ),
         `Impact (€)` = scales::dollar(Impact, accuracy = 1)
       ) %>%
-      select(Strategy, Rank, Parameter, `Impact (€)`)
+      # Remove Strategy column
+      select(Rank, Parameter, `Impact (€)`)
     
-    # Create wide format table
-    impact_wide <- impact_formatted %>%
-      pivot_wider(
-        names_from = Rank,
-        values_from = c(Parameter, `Impact (€)`),
-        names_sep = "_"
-      ) %>%
-      select(Strategy, 
-             `1st Most Influential` = Parameter_1, `Impact_1` = `Impact (€)_1`,
-             `2nd Most Influential` = Parameter_2, `Impact_2` = `Impact (€)_2`, 
-             `3rd Most Influential` = Parameter_3, `Impact_3` = `Impact (€)_3`)
-    
-    knitr::kable(impact_wide,
-                 align = c("l", "l", "r", "l", "r", "l", "r"),
+    # Create table with pack_rows grouping only
+    knitr::kable(impact_formatted,
+                 align = c("c", "l", "r"),
                  booktabs = TRUE,
-                 col.names = c("Strategy", 
-                              "Parameter", "Impact", 
-                              "Parameter", "Impact",
-                              "Parameter", "Impact")) %>%
-      kableExtra::add_header_above(c(" " = 1, 
-                                     "1st Most Influential" = 2,
-                                     "2nd Most Influential" = 2, 
-                                     "3rd Most Influential" = 2)) %>%
-      kableExtra::kable_styling(font_size = 9, latex_options = c("scale_down", "HOLD_position"))
+                 col.names = c("Rank", "Parameter", "Impact on NMB (€)")) %>%
+      kableExtra::column_spec(1, width = "1.5cm") %>%
+      kableExtra::column_spec(2, width = "5cm") %>%
+      kableExtra::column_spec(3, width = "2.5cm") %>%
+      kableExtra::pack_rows("Standard Care", 1, 3, bold = TRUE, color = "white", background = "#4472C4") %>%
+      kableExtra::pack_rows("CRP-guided", 4, 6, bold = TRUE, color = "white", background = "#70AD47") %>%
+      kableExtra::pack_rows("TLR-guided", 7, 9, bold = TRUE, color = "white", background = "#FFC000") %>%
+      kableExtra::pack_rows("TMB/BRAF-guided", 10, 12, bold = TRUE, color = "white", background = "#C55A11") %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("HOLD_position"))
   }
   
 } else {
@@ -579,9 +735,11 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
 }
 ```
 
-The deterministic sensitivity analysis evaluates the impact of parameter uncertainty on the base case results through one-way sensitivity analysis. Tornado diagrams illustrate the parameters with the greatest influence on the incremental net monetary benefit.
+```{r psa-pagebreak, results='asis'}
+cat("\\newpage\n")
+```
 
-### Probabilistic Sensitivity Analysis
+# Probabilistic Sensitivity Analysis
 
 ```{r probabilistic-sa, include=FALSE}
 # 12 - Probabilistic Sensitivity Analysis
@@ -591,7 +749,7 @@ if (file.exists(here("scripts/R/analysis/12_PSA.R"))) {
 ```
 
 ```{r psa-scatterplot}
-#| fig-cap: "Probabilistic Sensitivity Analysis Scatterplot"
+#| fig-cap: "Cost-effectiveness Scatterplot"
 
 if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
   # Use dampack's built-in plot function for PSA
@@ -600,9 +758,7 @@ if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
                    points = TRUE,
                    alpha = 0.3,
                    txtsize = 12) +
-    labs(title = "Probabilistic Sensitivity Analysis",
-         subtitle = paste("Monte Carlo Simulation (n =", psa_obj$n_sim, ")"),
-         x = "Effectiveness (QALYs)",
+    labs(x = "Effectiveness (QALYs)",
          y = "Total Cost (€)") +
     theme_minimal()
   
@@ -626,8 +782,6 @@ if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
       scale_y_continuous(labels = scales::dollar_format()) +
       scale_color_viridis_d(name = "Strategy") +
       labs(
-        title = "Probabilistic Sensitivity Analysis",
-        subtitle = paste("Monte Carlo Simulation Results (n =", nrow(cost_matrix), ")"),
         x = "Effectiveness (QALYs)",
         y = "Total Cost (€)"
       ) +
@@ -643,8 +797,6 @@ if (exists("psa_obj") && "psa" %in% class(psa_obj)) {
 }
 ```
 
-The probabilistic sensitivity analysis incorporates parameter uncertainty through Monte Carlo simulation, providing a comprehensive assessment of decision uncertainty across the full range of plausible parameter values.
-
 ```{r ceac-curve}
 #| fig-cap: "Cost-Effectiveness Acceptability Curve"
 
@@ -654,9 +806,7 @@ if (exists("ceac_obj") && "ceac" %in% class(ceac_obj)) {
                     frontier = TRUE, 
                     points = TRUE, 
                     currency = "€",
-                    txtsize = 12) +
-    labs(title = "Cost-Effectiveness Acceptability Curve",
-         subtitle = "Probability of Being Cost-Effective")
+                    txtsize = 12)
   
   print(ceac_plot)
   
@@ -669,9 +819,7 @@ if (exists("ceac_obj") && "ceac" %in% class(ceac_obj)) {
     ceac_plot <- plot(ceac_obj, 
                       frontier = TRUE, 
                       currency = "€",
-                      txtsize = 12) +
-      labs(title = "Cost-Effectiveness Acceptability Curve",
-           subtitle = "Probability of Being Cost-Effective")
+                      txtsize = 12)
     
     print(ceac_plot)
   }, error = function(e) {
@@ -684,73 +832,18 @@ if (exists("ceac_obj") && "ceac" %in% class(ceac_obj)) {
 }
 ```
 
-The cost-effectiveness acceptability curve shows the probability that each strategy is cost-effective across a range of willingness-to-pay thresholds, providing decision-makers with information about uncertainty in the optimal treatment choice.
+# Other Reports
 
-# Discussion
+I am working on the following other reports:
 
-## Key Findings
+- **Input Parameters Report**: Comprehensive documentation of all model input parameters including clinical effectiveness data, cost parameters, and utility values with their respective sources and uncertainty distributions.
 
-```{r summary-findings}
-# Provide analysis summary based on available objects
-available_objects <- ls()
-cat("**Analysis Completion Summary**\n\n")
+- **Parametric Survival Analysis Report**: Detailed documentation of the parametric survival modeling process, including goodness-of-fit statistics for all tested distributions, model selection criteria, and validation of the chosen survival models for both overall survival and progression-free survival endpoints.
 
-# Count key result objects
-result_count <- length(available_objects[grepl("result", available_objects, ignore.case = TRUE)])
-matrix_count <- length(available_objects[grepl("matrix", available_objects, ignore.case = TRUE)])
-
-cat("Result objects available:", result_count, "\n")
-cat("Analysis matrices available:", matrix_count, "\n\n")
-
-# Check if base case completed
-if (exists("base_results") || exists("icer_obj")) {
-  cat("✓ Base case analysis completed\n")
-}
-
-# Check if DSA completed  
-if (exists("all_results") && is.list(all_results) && length(all_results) > 1) {
-  cat("✓ Deterministic sensitivity analysis completed (", length(all_results), "scenarios)\n")
-}
-
-# Check if PSA completed
-if (exists("cost_matrix") && exists("effect_matrix")) {
-  cat("✓ Probabilistic sensitivity analysis completed\n")
-}
-
-# Report optimal strategy if available
-if (exists("optimal_strategy")) {
-  cat("✓ Optimal strategy identified:", optimal_strategy, "\n")
-}
-
-# Report WTP threshold
-if (exists("WTP")) {
-  cat("✓ Analysis conducted at WTP threshold: €", format(WTP, big.mark=","), "\n")
-}
-```
-
-The cost-effectiveness analysis provides comprehensive evidence for decision-making regarding biomarker-guided treatment strategies in metastatic MSS/pMMR colorectal cancer. The analysis demonstrates the relative value of different biomarker approaches considering both clinical effectiveness and economic efficiency.
-
-## Clinical Implications
-
-The results inform clinical decision-making regarding optimal biomarker strategies for patient selection based on biomarker prevalence and treatment efficacy in the target population. The analysis accounts for the population-level impact of different biomarker prevalences, which is crucial for real-world implementation.
-
-## Economic Implications
-
-From a healthcare payer perspective, the analysis demonstrates value-for-money considerations for different biomarker approaches and their population-level impact on healthcare resource allocation. The sensitivity analyses provide important insights into parameter uncertainty and decision robustness.
-
-## Limitations
-
-This analysis has several limitations including model assumptions regarding long-term outcomes, uncertainty in biomarker performance characteristics, and generalizability to different healthcare systems and populations. The model structure assumes perfect biomarker testing and treatment adherence, which may not reflect real-world clinical practice.
-
-# Conclusions
-
-The cost-effectiveness analysis provides evidence-based insights for clinical decision-making and healthcare policy regarding biomarker-guided treatment strategies for metastatic MSS/pMMR colorectal cancer. The comprehensive uncertainty analysis supports robust decision-making under uncertainty, while the population-level perspective ensures relevance for healthcare system planning and resource allocation.
-
-The analysis demonstrates the importance of considering biomarker prevalence in addition to test performance characteristics when evaluating population-level cost-effectiveness of precision medicine approaches. Future research should focus on validation of biomarker performance in broader patient populations and assessment of implementation considerations in routine clinical practice.
+- **One-Way Sensitivity Analysis (OWSA) Report**: Extended sensitivity analysis providing detailed examination of each individual parameter's impact on model outcomes, including threshold analyses and parameter sensitivity rankings across all strategies.
 
 ---
 
-**Analysis completed on:** `r Sys.Date()`  
+**Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Analysis version:** 1.0  
-**WTP threshold:** €`r if(exists("WTP")) format(WTP, big.mark=",") else "51,000"`
+**Report version:** 1.0
