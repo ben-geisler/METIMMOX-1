@@ -2,7 +2,7 @@
 # PARAMETRIC SURVIVAL ANALYSIS WITH MODEL SELECTION
 # ===============================================================================
 # This script performs comprehensive parametric survival analysis by:
-# 1. Fitting multiple parametric distributions across two model structures
+# 1. Fitting multiple parametric distributions across model structures
 # 2. Automatically selecting best-fitting models based on AIC
 # 3. Generating population-level predictions for all treatment strategies
 # 
@@ -13,6 +13,17 @@
 if (!require("pacman")) install.packages("pacman")
 library(pacman, here)
 p_load(survival, flexsurv, dplyr)
+
+# ===============================================================================
+# MODEL SELECTION CONFIGURATION
+# ===============================================================================
+
+# CONFIGURATION SWITCH: Controls which model structures to consider
+# Options:
+# - "age_sex_only": Only fit models with age and sex adjustments
+# - "both": Consider both age/sex-adjusted and non-adjusted models (original behavior)
+# - "no_age_sex_only": Only fit models without age and sex adjustments
+MODEL_STRUCTURE_OPTION <- "age_sex_only"  # Change this to control model selection
 
 # Load parametric model fitting functions
 para_model_fit_path <- here::here("scripts", "R", "functions", "para_model_fit.R")
@@ -40,7 +51,6 @@ rm(prediction_functions_path)
 time_points <- seq(0, time_horizon, by = 1)
 
 # Ensure categorical variables are properly coded as factors
-# Ensure categorical variables are properly coded as factors
 if ("sex" %in% names(data) && !is.null(data$sex)) {
   data$sex <- as.factor(data$sex)
 }
@@ -61,10 +71,8 @@ data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", 
 # MODEL STRUCTURE DEFINITIONS
 # ===============================================================================
 
-# Define the two model structures for comparison:
-# 1. Full model: includes age, sex, treatment, and biomarker interactions
-# 2. No age/sex model: includes only treatment and biomarker interactions
-model_formulas <- list(
+# Define all possible model structures
+all_model_formulas <- list(
   full = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
@@ -74,6 +82,19 @@ model_formulas <- list(
     pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   )
 )
+
+# Select which model structures to use based on configuration
+model_formulas <- switch(MODEL_STRUCTURE_OPTION,
+                         "age_sex_only" = list(full = all_model_formulas$full),
+                         "no_age_sex_only" = list(no_age_sex = all_model_formulas$no_age_sex),
+                         "both" = all_model_formulas,
+                         # Default to age/sex-adjusted only if invalid option provided
+                         list(full = all_model_formulas$full)
+)
+
+# Print which models will be fitted
+cat("Model fitting configuration: ", MODEL_STRUCTURE_OPTION, "\n")
+cat("Model structures to be fitted: ", paste(names(model_formulas), collapse = ", "), "\n")
 
 # Define parametric distributions to test
 distributions_to_test <- c("exponential", "weibull", "weibullph", "llogis", 
@@ -88,11 +109,16 @@ distributions_to_test <- c("exponential", "weibull", "weibullph", "llogis",
 # models$[structure]$[outcome]_ic = information criteria table
 # models$best_fit$[outcome] = best model overall
 models <- list()
-models$full <- list()
-models$no_age_sex <- list()
 
-# Fit models for each structure
+# Initialize model structure lists based on configuration
 for (structure_name in names(model_formulas)) {
+  models[[structure_name]] <- list()
+}
+
+# Fit models for each selected structure
+for (structure_name in names(model_formulas)) {
+  
+  cat("Fitting models for structure:", structure_name, "\n")
   
   # Fit OS models using fit_all_direct function
   os_results <- fit_all_direct(
@@ -142,43 +168,55 @@ for (structure_name in names(model_formulas)) {
 # GLOBAL BEST MODEL SELECTION
 # ===============================================================================
 
-# Combine AIC values from both structures to find global optimum
-all_os_aic <- rbind(
-  data.frame(structure = "full", models$full$os_ic),
-  data.frame(structure = "no_age_sex", models$no_age_sex$os_ic)
-)
+# Combine AIC values from all fitted structures to find global optimum
+all_os_aic <- do.call(rbind, lapply(names(model_formulas), function(structure_name) {
+  if (!is.null(models[[structure_name]]$os_ic)) {
+    data.frame(structure = structure_name, models[[structure_name]]$os_ic)
+  }
+}))
 
-all_pfs_aic <- rbind(
-  data.frame(structure = "full", models$full$pfs_ic),
-  data.frame(structure = "no_age_sex", models$no_age_sex$pfs_ic)
-)
+all_pfs_aic <- do.call(rbind, lapply(names(model_formulas), function(structure_name) {
+  if (!is.null(models[[structure_name]]$pfs_ic)) {
+    data.frame(structure = structure_name, models[[structure_name]]$pfs_ic)
+  }
+}))
 
 # Select globally best OS model
-best_os_overall <- all_os_aic[!is.na(all_os_aic$AIC), ]
-if (nrow(best_os_overall) > 0) {
-  best_os_idx <- which.min(best_os_overall$AIC)
-  best_os_structure <- best_os_overall$structure[best_os_idx]
-  best_os_dist <- best_os_overall$Distribution[best_os_idx]
-  
-  # Store best model information
-  models$best_fit$os <- models[[best_os_structure]]$os[[best_os_dist]]
-  models$best_fit$os_structure <- best_os_structure
-  models$best_fit$os_distribution <- best_os_dist
-  models$best_fit$os_aic <- best_os_overall$AIC[best_os_idx]
+if (!is.null(all_os_aic) && nrow(all_os_aic) > 0) {
+  best_os_overall <- all_os_aic[!is.na(all_os_aic$AIC), ]
+  if (nrow(best_os_overall) > 0) {
+    best_os_idx <- which.min(best_os_overall$AIC)
+    best_os_structure <- best_os_overall$structure[best_os_idx]
+    best_os_dist <- best_os_overall$Distribution[best_os_idx]
+    
+    # Store best model information
+    models$best_fit$os <- models[[best_os_structure]]$os[[best_os_dist]]
+    models$best_fit$os_structure <- best_os_structure
+    models$best_fit$os_distribution <- best_os_dist
+    models$best_fit$os_aic <- best_os_overall$AIC[best_os_idx]
+    
+    cat("Best OS model: ", best_os_structure, " structure, ", best_os_dist, " distribution (AIC: ", 
+        round(best_os_overall$AIC[best_os_idx], 2), ")\n")
+  }
 }
 
 # Select globally best PFS model
-best_pfs_overall <- all_pfs_aic[!is.na(all_pfs_aic$AIC), ]
-if (nrow(best_pfs_overall) > 0) {
-  best_pfs_idx <- which.min(best_pfs_overall$AIC)
-  best_pfs_structure <- best_pfs_overall$structure[best_pfs_idx]
-  best_pfs_dist <- best_pfs_overall$Distribution[best_pfs_idx]
-  
-  # Store best model information
-  models$best_fit$pfs <- models[[best_pfs_structure]]$pfs[[best_pfs_dist]]
-  models$best_fit$pfs_structure <- best_pfs_structure
-  models$best_fit$pfs_distribution <- best_pfs_dist
-  models$best_fit$pfs_aic <- best_pfs_overall$AIC[best_pfs_idx]
+if (!is.null(all_pfs_aic) && nrow(all_pfs_aic) > 0) {
+  best_pfs_overall <- all_pfs_aic[!is.na(all_pfs_aic$AIC), ]
+  if (nrow(best_pfs_overall) > 0) {
+    best_pfs_idx <- which.min(best_pfs_overall$AIC)
+    best_pfs_structure <- best_pfs_overall$structure[best_pfs_idx]
+    best_pfs_dist <- best_pfs_overall$Distribution[best_pfs_idx]
+    
+    # Store best model information
+    models$best_fit$pfs <- models[[best_pfs_structure]]$pfs[[best_pfs_dist]]
+    models$best_fit$pfs_structure <- best_pfs_structure
+    models$best_fit$pfs_distribution <- best_pfs_dist
+    models$best_fit$pfs_aic <- best_pfs_overall$AIC[best_pfs_idx]
+    
+    cat("Best PFS model: ", best_pfs_structure, " structure, ", best_pfs_dist, " distribution (AIC: ", 
+        round(best_pfs_overall$AIC[best_pfs_idx], 2), ")\n")
+  }
 }
 
 # ===============================================================================
@@ -223,41 +261,46 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
 } else {
   # If model selection failed, create empty predictions object
   predictions <- list()
+  warning("Model fitting failed - predictions object is empty")
 }
 
 # ===============================================================================
 # FINAL STORAGE STRUCTURE DOCUMENTATION
 # ===============================================================================
 # 
+# CONFIGURATION OPTIONS:
+# - MODEL_STRUCTURE_OPTION controls which model structures are fitted:
+#   * "age_sex_only": Only age- and sex-adjusted models (recommended for decision analysis)
+#   * "both": Both adjusted and non-adjusted models (original behavior)
+#   * "no_age_sex_only": Only non-adjusted models
+#
 # MODELS OBJECT STRUCTURE:
-# ├── models$full                    # Full model (Age + sex + interactions)
-# │   ├── $os                       # OS models by distribution
-# │   │   ├── $weibull             # flexsurvreg object
-# │   │   ├── $exponential         # flexsurvreg object
+# ├── models$[selected_structures]      # Based on MODEL_STRUCTURE_OPTION
+# │   ├── $os                          # OS models by distribution
+# │   │   ├── $weibull                # flexsurvreg object
+# │   │   ├── $exponential            # flexsurvreg object
 # │   │   └── $[other_distributions]
-# │   ├── $pfs                      # PFS models by distribution  
-# │   ├── $os_ic                    # AIC/BIC table for OS models
-# │   ├── $pfs_ic                   # AIC/BIC table for PFS models
-# │   ├── $km_os                    # Kaplan-Meier fit for OS
-# │   └── $km_pfs                   # Kaplan-Meier fit for PFS
-# ├── models$no_age_sex             # No age/sex model (interactions only)
-# │   └── [same structure as full]
-# └── models$best_fit               # Globally best models
-#     ├── $os                       # Best OS model object
-#     ├── $os_structure            # "full" or "no_age_sex"  
-#     ├── $os_distribution         # e.g., "weibull"
-#     ├── $os_aic                  # AIC value
+# │   ├── $pfs                         # PFS models by distribution  
+# │   ├── $os_ic                       # AIC/BIC table for OS models
+# │   ├── $pfs_ic                      # AIC/BIC table for PFS models
+# │   ├── $km_os                       # Kaplan-Meier fit for OS
+# │   └── $km_pfs                      # Kaplan-Meier fit for PFS
+# └── models$best_fit                  # Globally best models from selected structures
+#     ├── $os                          # Best OS model object
+#     ├── $os_structure               # Structure name
+#     ├── $os_distribution            # e.g., "weibull"
+#     ├── $os_aic                     # AIC value
 #     └── [same for pfs]
 #
 # PREDICTIONS OBJECT STRUCTURE:
-# ├── predictions$control           # Standard of care strategy
-# │   ├── $os                      # Population OS curve
-# │   └── $pfs                     # Population PFS curve
-# ├── predictions$crp              # CRP-guided strategy
-# │   ├── $os                      # Population-weighted OS curve
-# │   ├── $pfs                     # Population-weighted PFS curve
-# │   ├── $biomarker_positive      # CRP+ subgroup predictions
-# │   ├── $biomarker_negative      # CRP- subgroup predictions
-# │   └── $prevalence              # CRP prevalence used for weighting
-# └── predictions$[tlr/tmb_braf]   # Same structure for other biomarkers
+# ├── predictions$control              # Standard of care strategy
+# │   ├── $os                         # Population OS curve
+# │   └── $pfs                        # Population PFS curve
+# ├── predictions$crp                 # CRP-guided strategy
+# │   ├── $os                         # Population-weighted OS curve
+# │   ├── $pfs                        # Population-weighted PFS curve
+# │   ├── $biomarker_positive         # CRP+ subgroup predictions
+# │   ├── $biomarker_negative         # CRP- subgroup predictions
+# │   └── $prevalence                 # CRP prevalence used for weighting
+# └── predictions$[tlr/tmb_braf]      # Same structure for other biomarkers
 # ===============================================================================
