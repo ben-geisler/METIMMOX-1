@@ -30,3 +30,6 @@ set.seed(123)      #set seed for reproducibility
 
 ## global discount rate
 dr = 0.04
+
+## switch to use either just the full model (0) or also the age- and sex-adjusted model
+USE_BOTH_MODELS <- 0
