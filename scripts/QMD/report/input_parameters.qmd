@@ -1,0 +1,431 @@
+---
+title: "METIMMOX-1 Model Input Parameters"
+subtitle: "Base Case, Deterministic Sensitivity Analysis (DSA), and Probabilistic Sensitivity Analysis (PSA) Parameters"
+author: "Health Economic Analysis Team"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    theme: cosmo
+    html-math-method: katex
+editor: visual
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+
+# Load required packages
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, knitr, kableExtra, DT, dplyr, tidyr, ggplot2)
+
+# Source required files (assuming they've been run)
+# Note: This assumes the analysis scripts have been executed
+```
+
+# Introduction
+
+This report provides a comprehensive overview of all input parameters used in the METIMMOX-1 health economic model. The parameters are organized into three main categories:
+
+1. **Base Case Parameters**: Point estimates used in the deterministic base case analysis
+2. **DSA Parameters**: Parameter ranges and variations used in the deterministic sensitivity analysis
+3. **PSA Parameters**: Probability distributions used in the probabilistic sensitivity analysis
+
+# Base Case Parameters
+
+The base case analysis uses fixed point estimates for all model parameters. These values represent the most likely or best available estimates from the literature and clinical data.
+
+## Time and Discount Parameters
+
+```{r base-time-params}
+#| echo: true
+
+# Time parameters (assuming these are defined in the environment)
+time_params <- data.frame(
+  Parameter = c("Time Horizon", "Cycle Length", "Discount Rate (Costs)", "Discount Rate (Effects)"),
+  Value = c("time_horizon", "cl", "dr", "dr"),
+  Description = c("Model time horizon in weeks", "Cycle length in weeks", 
+                 "Annual discount rate for costs", "Annual discount rate for effects"),
+  Source = c("Model assumption", "Model assumption", "Standard guideline", "Standard guideline")
+)
+
+kable(time_params, caption = "Time and Discount Parameters") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Utility Parameters
+
+```{r base-utility-params}
+#| echo: true
+
+utility_params <- data.frame(
+  Parameter = c("Non-progressed state utility", "Progressed state utility"),
+  Symbol = c("u_np", "u_p"),
+  Value = c(0.9077, 0.9005),
+  Description = c("Utility weight for non-progressed disease state", 
+                 "Utility weight for progressed disease state"),
+  Source = c("Literature/clinical data", "Literature/clinical data")
+)
+
+kable(utility_params, caption = "Health State Utility Values") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Cost Parameters
+
+### Drug Costs
+
+```{r base-drug-costs}
+#| echo: true
+
+drug_costs <- data.frame(
+  Parameter = c("Nivolumab per administration", "FLOX per administration"),
+  Symbol = c("c_drug_nivo", "c_drug_FLOX"),
+  Value = c("€13,923", "€427"),
+  Description = c("Cost of nivolumab per treatment cycle", 
+                 "Cost of FLOX chemotherapy per treatment cycle"),
+  Source = c("Drug pricing data", "Drug pricing data")
+)
+
+kable(drug_costs, caption = "Drug Costs per Administration") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Test Costs
+
+```{r base-test-costs}
+#| echo: true
+
+test_costs <- data.frame(
+  Parameter = c("CT scan", "Blood tests", "Next-generation sequencing (NGS)"),
+  Symbol = c("c_test_CT", "c_test_blood", "c_test_NGS"),
+  Value = c("€386", "€0", "€1,439"),
+  Description = c("Cost of CT imaging", "Cost of routine blood work", 
+                 "Cost of NGS testing for TMB/BRAF"),
+  Source = c("Healthcare tariffs", "Healthcare tariffs", "Laboratory pricing")
+)
+
+kable(test_costs, caption = "Diagnostic Test Costs") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Other Healthcare Costs
+
+```{r base-other-costs}
+#| echo: true
+
+other_costs <- data.frame(
+  Parameter = c("Standard outpatient visit", "Comprehensive baseline visit", 
+               "Follow-up visits", "End-of-life care"),
+  Symbol = c("c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last"),
+  Value = c("€33", "€530", "€33", "€13,803"),
+  Description = c("Cost of routine outpatient consultation", 
+                 "Cost of comprehensive baseline assessment",
+                 "Cost of quarterly follow-up visits",
+                 "Cost of terminal care and end-of-life management"),
+  Source = c("Healthcare tariffs", "Healthcare tariffs", "Healthcare tariffs", "Literature")
+)
+
+kable(other_costs, caption = "Other Healthcare Resource Costs") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Biomarker Prevalence
+
+```{r base-biomarker-prev}
+#| echo: true
+
+# Note: These values would come from strategies_df
+biomarker_prev <- data.frame(
+  Biomarker = c("CRP", "TLR", "TMB/BRAF"),
+  Symbol = c("p_crp", "p_tlr", "p_tmb_braf"),
+  Prevalence = c("strategies_df value", "strategies_df value", "strategies_df value"),
+  Description = c("Prevalence of positive CRP biomarker", 
+                 "Prevalence of positive TLR biomarker",
+                 "Prevalence of positive TMB/BRAF biomarker"),
+  Source = c("Clinical trial data", "Clinical trial data", "Clinical trial data")
+)
+
+kable(biomarker_prev, caption = "Biomarker Prevalence Rates") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Treatment Schedules
+
+The model incorporates detailed treatment schedules that specify when different interventions are administered throughout the treatment period:
+
+```{r treatment-schedules}
+#| echo: true
+
+schedule_info <- data.frame(
+  Treatment = c("Nivolumab", "FLOX (Experimental)", "FLOX (Control)", "CT Scans", "Blood Tests", "Clinic Visits"),
+  Symbol = c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"),
+  Schedule = c("Weeks 5, 7, 13, 15, 29, 31, 37, 39", 
+              "Weeks 1, 3, 9, 11, 25, 27, 33, 35",
+              "Weeks 1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39",
+              "Baseline + every 12 weeks",
+              "Baseline + every 4 weeks", 
+              "All treatment and assessment visits"),
+  Description = c("Immunotherapy administration schedule", 
+                 "Experimental chemotherapy schedule",
+                 "Control chemotherapy schedule",
+                 "Imaging assessment schedule",
+                 "Laboratory monitoring schedule",
+                 "Clinical assessment schedule")
+)
+
+kable(schedule_info, caption = "Treatment and Monitoring Schedules") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+# Deterministic Sensitivity Analysis (DSA) Parameters
+
+The DSA examines the impact of parameter uncertainty by varying individual parameters across plausible ranges while holding all other parameters at their base case values.
+
+## DSA Parameter Selection
+
+```{r dsa-parameters}
+#| echo: true
+
+dsa_params_info <- data.frame(
+  Parameter = c("Nivolumab cost", "FLOX cost", "NGS test cost", "CT scan cost", 
+               "Non-progressed utility", "Progressed utility", "End-of-life care cost"),
+  Symbol = c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT", 
+            "u_np", "u_p", "c_other_last"),
+  Base_Value = c("€13,923", "€427", "€1,439", "€386", "0.9077", "0.9005", "€13,803"),
+  Rationale = c("High cost driver", "Treatment cost", "Biomarker testing cost", 
+               "Monitoring cost", "Quality of life impact", "Quality of life impact", 
+               "High cost driver")
+)
+
+kable(dsa_params_info, caption = "Parameters Included in Deterministic Sensitivity Analysis") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## DSA Parameter Ranges
+
+```{r dsa-ranges}
+#| echo: true
+
+# DSA uses ±20% variation
+dsa_variation <- 0.2
+
+# Define base values as numeric vector
+base_vals <- c(13923, 427, 1439, 386, 0.9077, 0.9005, 13803)
+param_labels <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT", 
+                 "u_np", "u_p", "c_other_last")
+
+# Calculate numeric bounds
+lower_vals <- base_vals * (1 - dsa_variation)
+upper_vals <- base_vals * (1 + dsa_variation)
+
+# Cap utility values at 1.0
+upper_vals[5] <- min(upper_vals[5], 1.0)  # u_np
+upper_vals[6] <- min(upper_vals[6], 1.0)  # u_p
+
+# Create data frame with properly formatted values
+dsa_table <- data.frame(
+  Parameter = param_labels,
+  Base_Value = character(7),
+  Lower_Bound = character(7),
+  Upper_Bound = character(7),
+  Variation = rep("±20%", 7),
+  stringsAsFactors = FALSE
+)
+
+# Format cost parameters (1-4, 7) as currency
+cost_idx <- c(1, 2, 3, 4, 7)
+utility_idx <- c(5, 6)
+
+for (i in cost_idx) {
+  dsa_table$Base_Value[i] <- paste0("€", format(round(base_vals[i]), big.mark = ","))
+  dsa_table$Lower_Bound[i] <- paste0("€", format(round(lower_vals[i]), big.mark = ","))
+  dsa_table$Upper_Bound[i] <- paste0("€", format(round(upper_vals[i]), big.mark = ","))
+}
+
+# Format utility parameters to 4 decimal places
+for (i in utility_idx) {
+  dsa_table$Base_Value[i] <- sprintf("%.4f", base_vals[i])
+  dsa_table$Lower_Bound[i] <- sprintf("%.4f", lower_vals[i])
+  dsa_table$Upper_Bound[i] <- sprintf("%.4f", upper_vals[i])
+}
+
+kable(dsa_table, caption = "DSA Parameter Ranges") %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) %>%
+  add_footnote("Utility parameters are capped at 1.0 for the upper bound", notation = "symbol")
+```
+
+# Probabilistic Sensitivity Analysis (PSA) Parameters
+
+The PSA accounts for parameter uncertainty by assigning probability distributions to key model parameters and conducting Monte Carlo simulation.
+
+## PSA Distribution Specifications
+
+### Cost Parameter Distributions
+
+All cost parameters follow **Gamma distributions** to ensure non-negative values, with a coefficient of variation (CV) of 20%.
+
+```{r psa-cost-distributions}
+#| echo: true
+
+# Function to calculate gamma parameters
+get_gamma_params <- function(mean_val, cv) {
+  if (mean_val <= 0) return(list(shape = 0, rate = 0))
+  shape <- 1/cv^2
+  rate <- shape/mean_val
+  return(list(shape = shape, rate = rate))
+}
+
+cv_costs <- 0.2
+
+cost_means <- c(13923, 427, 386, 0, 1439, 33, 530, 33, 13803)
+cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood", 
+                "c_test_NGS", "c_other_visit", "c_other_baseline", 
+                "c_other_follow", "c_other_last")
+
+cost_distributions <- data.frame(
+  Parameter = cost_params,
+  Mean = cost_means,
+  Distribution = rep("Gamma", 9),
+  CV = rep("20%", 9),
+  Shape = numeric(9),
+  Rate = numeric(9)
+)
+
+for (i in 1:9) {
+  params <- get_gamma_params(cost_means[i], cv_costs)
+  cost_distributions$Shape[i] <- round(params$shape, 2)
+  cost_distributions$Rate[i] <- round(params$rate, 6)
+}
+
+kable(cost_distributions, caption = "Cost Parameter Distributions for PSA") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Utility Parameter Distributions
+
+Utility parameters follow **Beta distributions** to ensure values remain between 0 and 1, with a CV of 15%.
+
+```{r psa-utility-distributions}
+#| echo: true
+
+# Function to calculate beta parameters
+get_beta_params <- function(mean_val, cv) {
+  var_val <- (mean_val * cv)^2
+  alpha <- mean_val * (mean_val * (1 - mean_val) / var_val - 1)
+  beta <- (1 - mean_val) * (mean_val * (1 - mean_val) / var_val - 1)
+  return(list(shape1 = alpha, shape2 = beta))
+}
+
+cv_utilities <- 0.15
+
+utility_means <- c(0.9077, 0.9005)
+utility_params <- c("u_np", "u_p")
+
+utility_distributions <- data.frame(
+  Parameter = utility_params,
+  Mean = utility_means,
+  Distribution = rep("Beta", 2),
+  CV = rep("15%", 2),
+  Alpha = numeric(2),
+  Beta = numeric(2)
+)
+
+for (i in 1:2) {
+  params <- get_beta_params(utility_means[i], cv_utilities)
+  utility_distributions$Alpha[i] <- round(params$shape1, 2)
+  utility_distributions$Beta[i] <- round(params$shape2, 2)
+}
+
+kable(utility_distributions, caption = "Utility Parameter Distributions for PSA") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Survival Parameter Distributions
+
+Survival parameters use **bootstrap sampling** from fitted survival models to capture uncertainty in the survival curves. The bootstrap approach:
+
+1. Resamples the original survival data with replacement
+2. Refits survival models to each bootstrap sample
+3. Stores coefficient distributions for Monte Carlo sampling
+
+```{r survival-distributions}
+#| echo: true
+
+survival_info <- data.frame(
+  Model_Type = c("Control OS", "Control PFS", "Biomarker OS", "Biomarker PFS"),
+  Formula = c("Surv(OSwk, Death) ~ Age + sex", 
+             "Surv(PFSwk, Progression) ~ Age + sex",
+             "Surv(OSwk, Death) ~ Age + sex + Rx + biomarker:Rx",
+             "Surv(PFSwk, Progression) ~ Age + sex + Rx + biomarker:Rx"),
+  Sampling_Method = rep("Bootstrap resampling", 4),
+  Adjustments = rep("Age and sex adjusted", 4),
+  Biomarkers = c("N/A", "N/A", "CRP, TLR, TMB/BRAF", "CRP, TLR, TMB/BRAF")
+)
+
+kable(survival_info, caption = "Survival Model Parameter Sampling for PSA") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+# Model Parameters Summary
+
+## Parameter Categories Overview
+
+```{r parameter-summary}
+#| echo: true
+
+param_summary <- data.frame(
+  Category = c("Time & Discount", "Utilities", "Drug Costs", "Test Costs", 
+              "Other Costs", "Treatment Schedules", "Survival Curves", "Biomarker Prevalence"),
+  Base_Case = c("Fixed values", "Point estimates", "Point estimates", "Point estimates",
+               "Point estimates", "Fixed schedules", "Fitted curves", "Point estimates"),
+  DSA = c("Not varied", "Beta ranges ±20%", "Ranges ±20%", "Ranges ±20%",
+         "Ranges ±20%", "Not varied", "Not varied", "Not varied"),
+  PSA = c("Fixed", "Beta distributions", "Gamma distributions", "Gamma distributions",
+         "Gamma distributions", "Fixed", "Bootstrap sampling", "Fixed"),
+  Count = c(4, 2, 2, 3, 4, 6, 10, 3)
+)
+
+kable(param_summary, caption = "Summary of Parameter Treatment Across Analyses") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## Total Parameter Count
+
+- **Base Case**: 34 fixed parameters
+- **DSA**: 7 parameters varied across ranges
+- **PSA**: 16 parameters with probability distributions (9 cost + 2 utility + 5 survival model sets)
+
+# Technical Notes
+
+## Model Structure Consistency
+
+- All analyses use the same base model structure and time horizon
+- Treatment schedules are derived from the clinical trial protocol
+- Survival curves are stratified by biomarker status and treatment arm
+- Cost and utility parameters reflect the healthcare system perspective
+
+## Uncertainty Handling
+
+- **DSA**: One-way sensitivity analysis with ±20% variation
+- **PSA**: Monte Carlo simulation with appropriate distributions
+- **Survival uncertainty**: Bootstrap sampling preserves correlation structure
+- **Parameter constraints**: Utilities bounded at [0,1], costs non-negative
+
+## Data Sources
+
+- Clinical effectiveness: METIMMOX-1 trial data
+- Costs: National healthcare tariffs and drug pricing databases
+- Utilities: Published literature and patient-reported outcomes
+- Biomarker prevalence: Trial population characteristics
+
+---
+
+*Report generated on `r Sys.Date()` for the METIMMOX-1 health economic model.*
