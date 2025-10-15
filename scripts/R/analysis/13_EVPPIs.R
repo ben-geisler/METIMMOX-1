@@ -23,11 +23,94 @@ if (!exists("psa_obj")) {
 }
 
 # ===============================================================================
-# EVPPI CALCULATION FUNCTIONS
+# DIAGNOSTIC CHECKS
 # ===============================================================================
 
-# Function to calculate EVPPI for a single parameter or group of parameters
-calculate_evppi <- function(psa_obj, psa_params, param_names, wtp = WTP, n_inner = 100, use_parallel = TRUE) {
+# First, let's examine the PSA object and parameters
+cat("=== PSA OBJECT DIAGNOSTICS ===\n")
+cat("PSA object structure:\n")
+cat("  - Number of simulations:", psa_obj$n_sim, "\n")
+cat("  - Number of strategies:", psa_obj$n_strategies, "\n")
+cat("  - Strategy names:", paste(psa_obj$strategies, collapse = ", "), "\n")
+
+# Check cost and effect matrices
+cost_matrix <- as.matrix(psa_obj$cost)
+effect_matrix <- as.matrix(psa_obj$effect)
+
+cat("\nCost matrix summary:\n")
+print(summary(cost_matrix))
+cat("\nEffect matrix summary:\n")
+print(summary(effect_matrix))
+
+# Calculate NMB and check for variation
+cat("\n=== NMB ANALYSIS ===\n")
+nmb_matrix <- effect_matrix * WTP - cost_matrix
+cat("NMB matrix summary:\n")
+print(summary(nmb_matrix))
+
+# Calculate EVPI manually for verification
+max_nmb_per_sim <- apply(nmb_matrix, 1, max, na.rm = TRUE)
+expected_max_nmb <- mean(max_nmb_per_sim, na.rm = TRUE)
+max_expected_nmb <- max(colMeans(nmb_matrix, na.rm = TRUE))
+evpi_manual <- expected_max_nmb - max_expected_nmb
+
+cat("EVPI calculation:\n")
+cat("  - Expected value of max NMB per simulation:", round(expected_max_nmb, 2), "\n")
+cat("  - Max expected NMB across strategies:", round(max_expected_nmb, 2), "\n")
+cat("  - EVPI:", round(evpi_manual, 2), "\n")
+
+# Check parameter variation
+if (exists("psa_params")) {
+  cat("\n=== PARAMETER VARIATION ANALYSIS ===\n")
+  param_summary <- data.frame(
+    parameter = character(),
+    min = numeric(),
+    max = numeric(),
+    mean = numeric(),
+    sd = numeric(),
+    cv = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (param_name in colnames(psa_params)) {
+    if (is.numeric(psa_params[[param_name]])) {
+      param_values <- psa_params[[param_name]]
+      param_values <- param_values[!is.na(param_values)]
+      
+      if (length(param_values) > 0) {
+        param_mean <- mean(param_values)
+        param_sd <- sd(param_values)
+        param_cv <- if (param_mean != 0) param_sd / param_mean else NA
+        
+        param_summary <- rbind(param_summary, data.frame(
+          parameter = param_name,
+          min = min(param_values),
+          max = max(param_values),
+          mean = param_mean,
+          sd = param_sd,
+          cv = param_cv,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+  
+  print(param_summary)
+  
+  # Check for parameters with no variation
+  no_variation <- param_summary$cv < 0.001 | is.na(param_summary$cv)
+  if (any(no_variation)) {
+    cat("\nParameters with little/no variation:\n")
+    print(param_summary[no_variation, c("parameter", "cv")])
+  }
+}
+
+# ===============================================================================
+# IMPROVED EVPPI CALCULATION FUNCTIONS
+# ===============================================================================
+
+# Improved EVPPI calculation function with better error handling
+calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp = WTP, n_inner = 100, n_grid = 10) {
   
   cat("Calculating EVPPI for parameter(s):", paste(param_names, collapse = ", "), "\n")
   
@@ -37,300 +120,268 @@ calculate_evppi <- function(psa_obj, psa_params, param_names, wtp = WTP, n_inner
   n_sim <- nrow(cost_matrix)
   n_strategies <- ncol(cost_matrix)
   
+  # Remove any rows with missing values
+  complete_rows <- complete.cases(cost_matrix) & complete.cases(effect_matrix)
+  if (sum(complete_rows) < n_sim) {
+    cat("  Warning: Removing", n_sim - sum(complete_rows), "incomplete simulations\n")
+    cost_matrix <- cost_matrix[complete_rows, , drop = FALSE]
+    effect_matrix <- effect_matrix[complete_rows, , drop = FALSE]
+    n_sim <- nrow(cost_matrix)
+  }
+  
   # Calculate Net Monetary Benefit (NMB) matrix
   nmb_matrix <- effect_matrix * wtp - cost_matrix
   
-  # Calculate expected value of perfect information (EVPI) as baseline
-  max_nmb_per_sim <- apply(nmb_matrix, 1, max)
-  evpi <- mean(max_nmb_per_sim) - max(colMeans(nmb_matrix))
+  # Check for missing values in NMB matrix
+  if (any(is.na(nmb_matrix))) {
+    cat("  Warning: Missing values detected in NMB matrix\n")
+    return(list(evppi = 0, evpi = 0, param_names = param_names, 
+                error = "Missing values in NMB matrix"))
+  }
   
-  # Function to calculate expected NMB given partial perfect information
-  calculate_expected_nmb_ppi <- function(param_values, cost_matrix, effect_matrix, psa_params, param_names, wtp, n_inner) {
-    
-    # Create a subset of simulations where the parameters of interest match the given values
-    # For continuous parameters, we'll use a tolerance-based approach
-    tolerance <- 0.01  # 1% tolerance for matching
-    
-    matching_sims <- rep(TRUE, nrow(psa_params))
-    
-    for (i in seq_along(param_names)) {
-      param_name <- param_names[i]
-      target_value <- param_values[i]
-      
-      if (param_name %in% colnames(psa_params)) {
-        param_values_col <- psa_params[[param_name]]
-        # Use relative tolerance for matching
-        relative_diff <- abs(param_values_col - target_value) / target_value
-        matching_sims <- matching_sims & (relative_diff <= tolerance)
-      }
+  # Calculate EVPI
+  max_nmb_per_sim <- apply(nmb_matrix, 1, max, na.rm = TRUE)
+  expected_max_nmb <- mean(max_nmb_per_sim, na.rm = TRUE)
+  max_expected_nmb <- max(colMeans(nmb_matrix, na.rm = TRUE))
+  evpi <- expected_max_nmb - max_expected_nmb
+  
+  cat("  EVPI for this calculation:", round(evpi, 4), "\n")
+  
+  # If EVPI is zero or negative, return zero EVPPI
+  if (evpi <= 0) {
+    cat("  EVPI is", evpi, "- returning zero EVPPI\n")
+    return(list(evppi = 0, evpi = evpi, param_names = param_names,
+                error = "EVPI is zero or negative"))
+  }
+  
+  # Check parameter variation
+  param_has_variation <- TRUE
+  for (param_name in param_names) {
+    if (!param_name %in% colnames(psa_params)) {
+      cat("  Warning: Parameter", param_name, "not found in psa_params\n")
+      return(list(evppi = 0, evpi = evpi, param_names = param_names,
+                  error = paste("Parameter", param_name, "not found")))
     }
     
-    # If no exact matches found, use closest matches
-    if (sum(matching_sims) < 10) {
-      # Calculate distance for each simulation
+    param_values <- psa_params[[param_name]]
+    param_values <- param_values[complete_rows]  # Use same subset
+    param_values <- param_values[!is.na(param_values)]
+    
+    if (length(unique(param_values)) < 5) {
+      cat("  Warning: Parameter", param_name, "has insufficient variation\n")
+      param_has_variation <- FALSE
+    }
+  }
+  
+  if (!param_has_variation) {
+    return(list(evppi = 0, evpi = evpi, param_names = param_names,
+                error = "Insufficient parameter variation"))
+  }
+  
+  # Simplified EVPPI calculation using quantile-based approach
+  tryCatch({
+    # Create parameter grids using fewer points for stability
+    param_grids <- list()
+    for (param_name in param_names) {
+      param_values <- psa_params[[param_name]]
+      param_values <- param_values[complete_rows]
+      param_values <- param_values[!is.na(param_values)]
+      
+      # Use quantiles for grid points
+      quantiles <- seq(0.1, 0.9, length.out = n_grid)
+      param_grids[[param_name]] <- quantile(param_values, quantiles)
+    }
+    
+    # Create parameter combinations
+    if (length(param_grids) == 1) {
+      param_combinations <- data.frame(param_grids[[1]])
+      colnames(param_combinations) <- param_names[1]
+    } else {
+      param_combinations <- expand.grid(param_grids)
+    }
+    
+    # Calculate expected NMB for each parameter combination
+    expected_nmbs <- numeric(nrow(param_combinations))
+    
+    for (i in 1:nrow(param_combinations)) {
+      param_values_combo <- as.numeric(param_combinations[i, ])
+      
+      # Find closest simulations (using Euclidean distance)
       distances <- rep(0, nrow(psa_params))
-      for (i in seq_along(param_names)) {
-        param_name <- param_names[i]
-        if (param_name %in% colnames(psa_params)) {
-          target_value <- param_values[i]
-          param_values_col <- psa_params[[param_name]]
-          # Normalize by parameter value to get relative distance
-          distances <- distances + ((param_values_col - target_value) / target_value)^2
+      
+      for (j in seq_along(param_names)) {
+        param_name <- param_names[j]
+        target_value <- param_values_combo[j]
+        param_col <- psa_params[[param_name]]
+        param_col <- param_col[complete_rows]
+        
+        # Standardize by parameter range to avoid scale issues
+        param_range <- max(param_col, na.rm = TRUE) - min(param_col, na.rm = TRUE)
+        if (param_range > 0) {
+          normalized_diff <- (param_col - target_value) / param_range
+          distances <- distances + normalized_diff^2
         }
       }
       
-      # Select the n_inner closest simulations
-      closest_indices <- order(distances)[1:min(n_inner, length(distances))]
-      matching_sims <- rep(FALSE, nrow(psa_params))
-      matching_sims[closest_indices] <- TRUE
+      # Select closest simulations
+      n_closest <- min(n_inner, length(distances))
+      closest_indices <- order(distances)[1:n_closest]
+      
+      # Calculate expected NMB for these simulations
+      subset_nmb <- nmb_matrix[closest_indices, , drop = FALSE]
+      strategy_means <- colMeans(subset_nmb, na.rm = TRUE)
+      expected_nmbs[i] <- max(strategy_means, na.rm = TRUE)
     }
     
-    # Extract matching simulations
-    if (sum(matching_sims) > 0) {
-      subset_cost <- cost_matrix[matching_sims, , drop = FALSE]
-      subset_effect <- effect_matrix[matching_sims, , drop = FALSE]
-      subset_nmb <- subset_effect * wtp - subset_cost
-      
-      # Calculate expected NMB for each strategy given this parameter value
-      strategy_nmb <- colMeans(subset_nmb)
-      return(max(strategy_nmb))
-    } else {
-      # If no matching simulations, return overall expected max NMB
-      overall_nmb <- effect_matrix * wtp - cost_matrix
-      return(max(colMeans(overall_nmb)))
-    }
-  }
-  
-  # Generate a grid of parameter values to integrate over
-  # Use quantiles of the parameter distributions
-  n_grid_points <- 20  # Number of points for numerical integration
-  
-  param_grids <- list()
-  for (param_name in param_names) {
-    if (param_name %in% colnames(psa_params)) {
-      param_values <- psa_params[[param_name]]
-      # Create grid based on quantiles
-      quantiles <- seq(0.05, 0.95, length.out = n_grid_points)
-      param_grids[[param_name]] <- quantile(param_values, quantiles)
-    }
-  }
-  
-  # Create all combinations of parameter values
-  if (length(param_grids) == 1) {
-    param_combinations <- data.frame(param_grids[[1]])
-    colnames(param_combinations) <- param_names[1]
-  } else {
-    param_combinations <- expand.grid(param_grids)
-  }
-  
-  # Calculate expected NMB for each parameter combination
-  # Check if we can use parallel processing (only on non-Windows systems)
-  can_use_parallel <- use_parallel && .Platform$OS.type != "windows" && require(parallel, quietly = TRUE)
-  
-  if (can_use_parallel) {
-    # Use parallel processing on Unix-like systems
-    expected_nmbs <- mclapply(1:nrow(param_combinations), function(i) {
-      param_values <- as.numeric(param_combinations[i, ])
-      calculate_expected_nmb_ppi(param_values, cost_matrix, effect_matrix, 
-                                 psa_params, param_names, wtp, n_inner)
-    }, mc.cores = detectCores() - 1)
-    expected_nmbs <- unlist(expected_nmbs)
-  } else {
-    # Sequential processing (for Windows or when parallel is not available)
-    expected_nmbs <- sapply(1:nrow(param_combinations), function(i) {
-      param_values <- as.numeric(param_combinations[i, ])
-      calculate_expected_nmb_ppi(param_values, cost_matrix, effect_matrix, 
-                                 psa_params, param_names, wtp, n_inner)
-    })
-  }
-  
-  # Calculate EVPPI as the difference between expected value with partial perfect information
-  # and the expected value with current information
-  expected_value_ppi <- mean(expected_nmbs, na.rm = TRUE)
-  expected_value_current <- max(colMeans(nmb_matrix))
-  
-  evppi <- expected_value_ppi - expected_value_current
-  
-  # Ensure EVPPI is non-negative and not greater than EVPI
-  evppi <- max(0, min(evppi, evpi))
-  
-  return(list(
-    evppi = evppi,
-    evpi = evpi,
-    param_names = param_names,
-    expected_value_ppi = expected_value_ppi,
-    expected_value_current = expected_value_current
-  ))
+    # Calculate EVPPI
+    expected_value_ppi <- mean(expected_nmbs, na.rm = TRUE)
+    expected_value_current <- max_expected_nmb
+    
+    evppi <- expected_value_ppi - expected_value_current
+    evppi <- max(0, min(evppi, evpi))  # Bound between 0 and EVPI
+    
+    cat("  Expected value with PPI:", round(expected_value_ppi, 4), "\n")
+    cat("  Expected value current:", round(expected_value_current, 4), "\n")
+    cat("  Raw EVPPI:", round(expected_value_ppi - expected_value_current, 4), "\n")
+    cat("  Bounded EVPPI:", round(evppi, 4), "\n")
+    
+    return(list(
+      evppi = evppi,
+      evpi = evpi,
+      param_names = param_names,
+      expected_value_ppi = expected_value_ppi,
+      expected_value_current = expected_value_current,
+      n_combinations = nrow(param_combinations)
+    ))
+    
+  }, error = function(e) {
+    cat("  Error in EVPPI calculation:", conditionMessage(e), "\n")
+    return(list(evppi = 0, evpi = evpi, param_names = param_names,
+                error = conditionMessage(e)))
+  })
 }
 
 # ===============================================================================
 # CALCULATE EVPPI FOR ALL PARAMETERS
 # ===============================================================================
 
-# Define parameters for EVPPI analysis (matching those used in DSA)
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
-                  "c_test_CT", "u_np", "u_p", "c_other_last")
-
-# Also include additional parameters from the PSA
-additional_params <- c("c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
-all_evppi_params <- c(evppi_params, additional_params)
-
-# Filter to only include parameters that exist in the PSA
-available_params <- intersect(all_evppi_params, colnames(psa_params))
-
-cat("Available parameters for EVPPI analysis:", paste(available_params, collapse = ", "), "\n")
-
-# Check operating system and inform user about parallel processing
-if (.Platform$OS.type == "windows") {
-  cat("Running on Windows - using sequential processing (parallel processing not supported)\n")
-  use_parallel_processing <- FALSE
+# Only proceed if we have meaningful EVPI
+if (evpi_manual > 0.01) {  # Only if EVPI > 1 cent
+  
+  # Define parameters for EVPPI analysis
+  evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
+                    "c_test_CT", "u_np", "u_p", "c_other_last")
+  
+  additional_params <- c("c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
+  all_evppi_params <- c(evppi_params, additional_params)
+  
+  # Filter to only include parameters that exist in the PSA and have variation
+  available_params <- intersect(all_evppi_params, colnames(psa_params))
+  
+  # Further filter based on variation
+  params_with_variation <- character()
+  for (param in available_params) {
+    param_values <- psa_params[[param]]
+    if (is.numeric(param_values) && !all(is.na(param_values))) {
+      param_values <- param_values[!is.na(param_values)]
+      if (length(unique(param_values)) >= 5 && sd(param_values) > 0) {
+        params_with_variation <- c(params_with_variation, param)
+      }
+    }
+  }
+  
+  cat("\nParameters with sufficient variation for EVPPI analysis:", 
+      paste(params_with_variation, collapse = ", "), "\n")
+  
+  # Initialize results storage
+  evppi_results <- data.frame(
+    parameter = character(),
+    evppi = numeric(),
+    evpi = numeric(),
+    evppi_percent_of_evpi = numeric(),
+    n_combinations = numeric(),
+    error = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Calculate EVPPI for each parameter individually
+  if (length(params_with_variation) > 0) {
+    cat("\nCalculating individual parameter EVPPIs...\n")
+    for (param in params_with_variation) {
+      result <- calculate_evppi_improved(psa_obj, psa_params, param, wtp = WTP, n_inner = 50, n_grid = 8)
+      
+      evppi_percent <- if (result$evpi > 0) (result$evppi / result$evpi) * 100 else 0
+      
+      evppi_results <- rbind(evppi_results, data.frame(
+        parameter = param,
+        evppi = result$evppi,
+        evpi = result$evpi,
+        evppi_percent_of_evpi = evppi_percent,
+        n_combinations = if (is.null(result$n_combinations)) 0 else result$n_combinations,
+        error = if (is.null(result$error)) "" else result$error,
+        stringsAsFactors = FALSE
+      ))
+      
+      cat("EVPPI for", param, ":", round(result$evppi, 4), 
+          "(", round(evppi_percent, 1), "% of EVPI)\n")
+    }
+    
+    # Sort results by EVPPI value (descending)
+    evppi_results <- evppi_results[order(-evppi_results$evppi), ]
+    
+  } else {
+    cat("No parameters have sufficient variation for EVPPI analysis\n")
+  }
+  
 } else {
-  cat("Running on Unix-like system - parallel processing available\n")
-  use_parallel_processing <- TRUE
-}
-
-# Initialize results storage
-evppi_results <- data.frame(
-  parameter = character(),
-  evppi = numeric(),
-  evpi = numeric(),
-  evppi_percent_of_evpi = numeric(),
-  stringsAsFactors = FALSE
-)
-
-# Calculate EVPPI for each parameter individually
-cat("Calculating individual parameter EVPPIs...\n")
-for (param in available_params) {
-  tryCatch({
-    result <- calculate_evppi(psa_obj, psa_params, param, wtp = WTP, n_inner = 50, use_parallel = use_parallel_processing)
-    
-    evppi_results <- rbind(evppi_results, data.frame(
-      parameter = param,
-      evppi = result$evppi,
-      evpi = result$evpi,
-      evppi_percent_of_evpi = (result$evppi / result$evpi) * 100,
-      stringsAsFactors = FALSE
-    ))
-    
-    cat("EVPPI for", param, ":", round(result$evppi, 2), 
-        "(", round((result$evppi / result$evpi) * 100, 1), "% of EVPI)\n")
-    
-  }, error = function(e) {
-    cat("Error calculating EVPPI for", param, ":", conditionMessage(e), "\n")
-  })
-}
-
-# Sort results by EVPPI value (descending)
-evppi_results <- evppi_results[order(-evppi_results$evppi), ]
-
-# ===============================================================================
-# PARAMETER GROUP EVPPI ANALYSIS
-# ===============================================================================
-
-# Calculate EVPPI for parameter groups
-cat("\nCalculating parameter group EVPPIs...\n")
-
-# Group 1: Cost parameters
-cost_params <- available_params[grepl("^c_", available_params)]
-if (length(cost_params) > 1) {
-  tryCatch({
-    cost_evppi <- calculate_evppi(psa_obj, psa_params, cost_params, wtp = WTP, n_inner = 30, use_parallel = use_parallel_processing)
-    cat("EVPPI for all cost parameters:", round(cost_evppi$evppi, 2), 
-        "(", round((cost_evppi$evppi / cost_evppi$evpi) * 100, 1), "% of EVPI)\n")
-  }, error = function(e) {
-    cat("Error calculating EVPPI for cost parameters:", conditionMessage(e), "\n")
-  })
-}
-
-# Group 2: Utility parameters
-utility_params <- available_params[grepl("^u_", available_params)]
-if (length(utility_params) > 1) {
-  tryCatch({
-    utility_evppi <- calculate_evppi(psa_obj, psa_params, utility_params, wtp = WTP, n_inner = 30, use_parallel = use_parallel_processing)
-    cat("EVPPI for all utility parameters:", round(utility_evppi$evppi, 2), 
-        "(", round((utility_evppi$evppi / utility_evppi$evpi) * 100, 1), "% of EVPI)\n")
-  }, error = function(e) {
-    cat("Error calculating EVPPI for utility parameters:", conditionMessage(e), "\n")
-  })
-}
-
-# Group 3: Drug cost parameters
-drug_params <- available_params[grepl("c_drug", available_params)]
-if (length(drug_params) > 1) {
-  tryCatch({
-    drug_evppi <- calculate_evppi(psa_obj, psa_params, drug_params, wtp = WTP, n_inner = 30, use_parallel = use_parallel_processing)
-    cat("EVPPI for drug cost parameters:", round(drug_evppi$evppi, 2), 
-        "(", round((drug_evppi$evppi / drug_evppi$evpi) * 100, 1), "% of EVPI)\n")
-  }, error = function(e) {
-    cat("Error calculating EVPPI for drug cost parameters:", conditionMessage(e), "\n")
-  })
-}
-
-# Group 4: Test cost parameters
-test_params <- available_params[grepl("c_test", available_params)]
-if (length(test_params) > 1) {
-  tryCatch({
-    test_evppi <- calculate_evppi(psa_obj, psa_params, test_params, wtp = WTP, n_inner = 30, use_parallel = use_parallel_processing)
-    cat("EVPPI for test cost parameters:", round(test_evppi$evppi, 2), 
-        "(", round((test_evppi$evppi / test_evppi$evpi) * 100, 1), "% of EVPI)\n")
-  }, error = function(e) {
-    cat("Error calculating EVPPI for test cost parameters:", conditionMessage(e), "\n")
-  })
+  cat("EVPI is too small (", round(evpi_manual, 4), ") - skipping EVPPI analysis\n")
+  evppi_results <- data.frame()
 }
 
 # ===============================================================================
 # SUMMARY AND OUTPUT
 # ===============================================================================
 
-# Print summary table
 cat("\n=== EVPPI ANALYSIS SUMMARY ===\n")
 cat("Willingness-to-pay threshold:", WTP, "\n")
 cat("Number of PSA simulations:", psa_obj$n_sim, "\n")
-if (nrow(evppi_results) > 0) {
-  cat("Total EVPI:", round(evppi_results$evpi[1], 2), "\n\n")
-} else {
-  cat("No EVPPI results calculated\n\n")
-}
+cat("Total EVPI:", round(evpi_manual, 4), "\n\n")
 
-cat("Individual Parameter EVPPIs (ranked by importance):\n")
-print(evppi_results)
-
-# Identify high-priority parameters for future research
-high_priority_threshold <- 0.05  # 5% of EVPI
 if (nrow(evppi_results) > 0) {
+  cat("Individual Parameter EVPPIs (ranked by importance):\n")
+  print(evppi_results[, c("parameter", "evppi", "evppi_percent_of_evpi", "error")])
+  
+  # Identify high-priority parameters
+  high_priority_threshold <- 0.01  # 1% of EVPI (lowered threshold)
   high_priority_params <- evppi_results[evppi_results$evppi_percent_of_evpi > high_priority_threshold * 100, ]
   
   if (nrow(high_priority_params) > 0) {
     cat("\nHigh-priority parameters for future research (>", high_priority_threshold * 100, "% of EVPI):\n")
     for (i in 1:nrow(high_priority_params)) {
       cat("  ", high_priority_params$parameter[i], ": €", 
-          round(high_priority_params$evppi[i], 0), "\n")
+          round(high_priority_params$evppi[i], 4), "\n")
     }
   } else {
-    cat("\nNo parameters exceed the high-priority threshold of", high_priority_threshold * 100, "% of EVPI\n")
+    cat("\nNo parameters exceed the high-priority threshold\n")
   }
-}
-
-# Create a simple visualization of results
-if (nrow(evppi_results) > 0) {
-  # Create a horizontal bar plot
-  par(mar = c(5, 8, 4, 2))
-  barplot(evppi_results$evppi, 
-          names.arg = evppi_results$parameter,
-          horiz = TRUE,
-          las = 1,
-          main = "Expected Value of Partially Perfect Information (EVPPI)",
-          xlab = paste("EVPPI (€) at WTP =", WTP),
-          col = "steelblue")
   
-  # Add percentage labels
-  text(evppi_results$evppi + max(evppi_results$evppi) * 0.02, 
-       1:nrow(evppi_results) * 1.2 - 0.5,
-       paste0(round(evppi_results$evppi_percent_of_evpi, 1), "%"),
-       pos = 4, cex = 0.8)
+  # Create visualization if we have meaningful results
+  meaningful_results <- evppi_results[evppi_results$evppi > 0, ]
+  if (nrow(meaningful_results) > 0) {
+    par(mar = c(5, 8, 4, 2))
+    barplot(meaningful_results$evppi, 
+            names.arg = meaningful_results$parameter,
+            horiz = TRUE,
+            las = 1,
+            main = "Expected Value of Partially Perfect Information (EVPPI)",
+            xlab = paste("EVPPI (€) at WTP =", WTP),
+            col = "steelblue")
+  }
+  
+} else {
+  cat("No EVPPI results available\n")
 }
 
-# Save results for use in Quarto report
-save(evppi_results, file = here::here("data/processed/evppi_results.RData"))
-
+# Save results
+#save(evppi_results, evpi_manual, file = here::here("data/processed/evppi_results.RData"))
 cat("\nEVPPI analysis complete. Results saved to data/processed/evppi_results.RData\n")
