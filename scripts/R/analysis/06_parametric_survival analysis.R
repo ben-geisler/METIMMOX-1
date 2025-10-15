@@ -21,7 +21,7 @@ p_load(survival, flexsurv, dplyr)
 # CONFIGURATION SWITCH: Controls which model structures to consider
 # 0 = Full model (age- and sex-adjusted) only
 # 1 = Both full model and model without age- and sex-adjustments
-#USE_BOTH_MODELS <- 0
+USE_BOTH_MODELS <- 0
 #we will set this now with the global variables, so it can be overridden later more easily
 
 # Load parametric model fitting functions
