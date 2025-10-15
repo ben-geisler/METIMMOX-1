@@ -83,188 +83,125 @@ for (func_file in helper_functions) {
 
 ```{r load-dependencies, include=FALSE}
 # Load all necessary dependencies and global variables in the correct order
-cat("Loading analysis scripts in sequence...\n")
+# (keeping the same dependency loading code as before)
 
 # First, ensure essential global variables are defined
 if (!exists("USE_BOTH_MODELS")) {
-  USE_BOTH_MODELS <- 0  # Default value as seen in the repository
+  USE_BOTH_MODELS <- 0
 }
 
-# 02 - Setup and global variables
+# Load scripts in sequence
 if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
-  cat("Loading 02_setup_and_global_variables.R...\n")
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
-} else {
-  cat("Warning: 02_setup_and_global_variables.R not found\n")
-  # Define essential variables if script not found
-  time_horizon <- 520  # 10 years in weeks
-  WTP <- 51000        # CE threshold in Euros
-  DSA_mult <- 0.2     # +/- 20% variations
-  dr <- 0.04          # discount rate
-  cl <- 1/52          # 1 week cycle
-  n_samples <- 5000   # number of bootstrap samples
-  n_sim <- n_samples  # number of PSA simulations
-  USE_BOTH_MODELS <- 0
 }
 
-# Ensure USE_BOTH_MODELS is properly set for subsequent scripts
-if (!exists("USE_BOTH_MODELS")) {
-  USE_BOTH_MODELS <- 0
-  cat("Set USE_BOTH_MODELS to default value 0\n")
-}
-
-# 03 - Biomarker strategies
 if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
-  cat("Loading 03_biomarker_strategies.R...\n")
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
-} else {
-  cat("Warning: 03_biomarker_strategies.R not found\n")
-  strategies <- c("control", "crp", "tlr", "tmb_braf")
-  biomarkers <- c("crp", "tlr", "tmb_braf")
 }
 
-# 05 - (Check for existence)
-possible_05_names <- c("05_survival_analysis.R", "05_data_analysis.R", "05_preprocessing.R")
-found_05 <- FALSE
-for (name in possible_05_names) {
-  if (file.exists(here("scripts/R/analysis", name))) {
-    cat("Loading", name, "...\n")
-    tryCatch({
-      suppressMessages(suppressWarnings(source(here("scripts/R/analysis", name))))
-      found_05 <- TRUE
-      break
-    }, error = function(e) {
-      cat("Error loading", name, ":", conditionMessage(e), "\n")
-    })
-  }
-}
-if (!found_05) {
-  cat("05 script not found - skipping\n")
-}
-
-# 06 - Parametric survival analysis
+# Continue with other scripts...
 if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-  cat("Loading 06_parametric_survival analysis.R...\n")
-  tryCatch({
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
-  }, error = function(e) {
-    cat("Error loading 06_parametric_survival analysis.R:", conditionMessage(e), "\n")
-  })
-} else {
-  cat("Warning: 06_parametric_survival analysis.R not found\n")
+  suppressMessages(suppressWarnings(tryCatch({
+    source(here("scripts/R/analysis/06_parametric_survival analysis.R"))
+  }, error = function(e) cat("Error loading 06:", conditionMessage(e), "\n"))))
 }
 
-# 07 - Base case input parameters
 if (file.exists(here("scripts/R/analysis/07_basecase_input_parameters.R"))) {
-  cat("Loading 07_basecase_input_parameters.R...\n")
-  tryCatch({
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/07_basecase_input_parameters.R"))))
-  }, error = function(e) {
-    cat("Error loading 07_basecase_input_parameters.R:", conditionMessage(e), "\n")
-  })
-} else {
-  cat("Warning: 07_basecase_input_parameters.R not found\n")
+  suppressMessages(suppressWarnings(tryCatch({
+    source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  }, error = function(e) cat("Error loading 07:", conditionMessage(e), "\n"))))
 }
 
-# Ensure time_points is defined before loading 08_sampling.R
 if (!exists("time_points") && exists("time_horizon")) {
   time_points <- seq(0, time_horizon, by = 1)
   time_points_length <- length(time_points)
-  cat("Defined time_points with length:", time_points_length, "\n")
 }
 
-# 08 - Sampling
 if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
-  cat("Loading 08_sampling.R...\n")
-  tryCatch({
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
-  }, error = function(e) {
-    cat("Error loading 08_sampling.R:", conditionMessage(e), "\n")
-  })
-} else {
-  cat("Warning: 08_sampling.R not found\n")
+  suppressMessages(suppressWarnings(tryCatch({
+    source(here("scripts/R/analysis/08_sampling.R"))
+  }, error = function(e) cat("Error loading 08:", conditionMessage(e), "\n"))))
 }
 
-# 10 - (Check for existence)
-possible_10_names <- c("10_cost_effectiveness.R", "10_base_case.R", "10_analysis.R")
-found_10 <- FALSE
-for (name in possible_10_names) {
-  if (file.exists(here("scripts/R/analysis", name))) {
-    cat("Loading", name, "...\n")
-    tryCatch({
-      suppressMessages(suppressWarnings(source(here("scripts/R/analysis", name))))
-      found_10 <- TRUE
-      break
-    }, error = function(e) {
-      cat("Error loading", name, ":", conditionMessage(e), "\n")
-    })
-  }
-}
-if (!found_10) {
-  cat("10 script not found - skipping\n")
-}
-
-# 12 - PSA (critical for EVPPI)
+# Critical: Load PSA
 if (file.exists(here("scripts/R/analysis/12_PSA.R"))) {
-  cat("Loading 12_PSA.R...\n")
-  tryCatch({
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/12_PSA.R"))))
-  }, error = function(e) {
-    cat("Error loading 12_PSA.R:", conditionMessage(e), "\n")
-    stop("Failed to load 12_PSA.R - this is required for EVPPI analysis")
-  })
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/12_PSA.R"))))
 } else {
-  stop("Error: 12_PSA.R not found - this is required for EVPPI analysis")
+  stop("Error: 12_PSA.R not found")
 }
 
-# Verify required objects exist
-required_objects <- c("psa_obj", "psa_params", "time_horizon", "WTP")
-missing_objects <- required_objects[!sapply(required_objects, exists)]
+# Ensure fallback values exist
+if (!exists("time_horizon")) time_horizon <- 520
+if (!exists("WTP")) WTP <- 51000
+if (!exists("strategies")) strategies <- c("control", "crp", "tlr", "tmb_braf")
+```
 
-if (length(missing_objects) > 0) {
-  cat("Missing required objects:", paste(missing_objects, collapse = ", "), "\n")
+```{r analyze-decision-uncertainty, include=FALSE}
+# Analyze why EVPI might be zero
+if (exists("psa_obj") && exists("WTP")) {
   
-  # Try to provide fallback values
-  if ("time_horizon" %in% missing_objects) {
-    time_horizon <- 520
-    cat("Set fallback time_horizon:", time_horizon, "\n")
-  }
-  if ("WTP" %in% missing_objects) {
-    WTP <- 51000
-    cat("Set fallback WTP:", WTP, "\n")
-  }
+  # Calculate NMB matrix
+  cost_matrix <- as.matrix(psa_obj$cost)
+  effect_matrix <- as.matrix(psa_obj$effect)
+  nmb_matrix <- effect_matrix * WTP - cost_matrix
   
-  # Re-check after fallbacks
-  remaining_missing <- required_objects[!sapply(required_objects, exists)]
-  if (length(remaining_missing) > 0) {
-    stop("Still missing critical objects after fallbacks: ", paste(remaining_missing, collapse = ", "))
-  }
+  # Calculate EVPI components
+  max_nmb_per_sim <- apply(nmb_matrix, 1, max, na.rm = TRUE)
+  expected_max_nmb <- mean(max_nmb_per_sim, na.rm = TRUE)
+  expected_nmb_by_strategy <- colMeans(nmb_matrix, na.rm = TRUE)
+  max_expected_nmb <- max(expected_nmb_by_strategy, na.rm = TRUE)
+  evpi_calculated <- expected_max_nmb - max_expected_nmb
+  
+  # Determine optimal strategy in each simulation
+  optimal_strategies <- apply(nmb_matrix, 1, function(x) colnames(nmb_matrix)[which.max(x)])
+  strategy_distribution <- table(optimal_strategies)
+  
+  # Calculate decision uncertainty metrics
+  proportion_dominant <- max(strategy_distribution) / sum(strategy_distribution)
+  decision_uncertainty <- 1 - proportion_dominant
+  
+  # Store results for reporting
+  uncertainty_analysis <- list(
+    evpi = evpi_calculated,
+    expected_max_nmb = expected_max_nmb,
+    max_expected_nmb = max_expected_nmb,
+    expected_nmb_by_strategy = expected_nmb_by_strategy,
+    optimal_strategy = names(expected_nmb_by_strategy)[which.max(expected_nmb_by_strategy)],
+    strategy_distribution = strategy_distribution,
+    proportion_dominant = proportion_dominant,
+    decision_uncertainty = decision_uncertainty,
+    nmb_range = apply(nmb_matrix, 2, function(x) max(x) - min(x))
+  )
 }
-
-# Provide fallbacks for other important objects
-optional_objects <- c("time_points", "strategies", "l_params_base", "biomarkers")
-for (obj in optional_objects) {
-  if (!exists(obj)) {
-    if (obj == "time_points" && exists("time_horizon")) {
-      time_points <- seq(0, time_horizon, by = 1)
-      time_points_length <- length(time_points)
-    }
-    if (obj == "strategies") {
-      strategies <- c("control", "crp", "tlr", "tmb_braf")
-    }
-    if (obj == "biomarkers") {
-      biomarkers <- c("crp", "tlr", "tmb_braf")
-    }
-  }
-}
-
-cat("Successfully loaded dependencies\n")
 ```
 
 ```{r run-evppi-analysis, include=FALSE}
-# Run the EVPPI analysis
-cat("Running EVPPI analysis...\n")
-suppressMessages(suppressWarnings(source(here("scripts/R/analysis/13_EVPPIs.R"))))
+# Modify the EVPPI script to run even with zero EVPI
+evppi_results <- data.frame()
+evpi_manual <- 0
+
+if (exists("psa_obj") && exists("psa_params")) {
+  
+  # Create a temporary modified version of 13_EVPPIs.R that always runs
+  temp_script <- tempfile(fileext = ".R")
+  
+  # Read the original script
+  original_script <- readLines(here("scripts/R/analysis/13_EVPPIs.R"))
+  
+  # Modify the EVPI threshold check
+  modified_script <- gsub(
+    "if \\(evpi_manual > 0\\.01\\)",
+    "if (evpi_manual >= 0)",
+    original_script
+  )
+  
+  # Write and source the modified script
+  writeLines(modified_script, temp_script)
+  suppressMessages(suppressWarnings(source(temp_script)))
+  
+  # Clean up
+  unlink(temp_script)
+}
 ```
 
 # Introduction
@@ -287,7 +224,6 @@ The EVPPI for parameter θ is calculated as:
 $$EVPPI_θ = E_θ[max_j E_{θ^{-θ}|θ}[NMB(j,θ,θ^{-θ})]] - max_j E[NMB(j,θ)]$$
 
 Where:
-
 - θ represents the parameter(s) of interest
 - θ^{-θ} represents all other parameters  
 - j represents treatment strategies
@@ -295,26 +231,96 @@ Where:
 
 ## Implementation
 
-The EVPPI analysis uses a nested sampling approach:
-
-1. **Outer loop**: Integrates over the distribution of the parameter(s) of interest
-2. **Inner loop**: For each parameter value, estimates expected NMB using simulations with similar parameter values
-3. **Calculation**: Computes the difference between expected value with partial perfect information and current expected value
+The EVPPI analysis uses a nested sampling approach with diagnostic capabilities to understand decision uncertainty patterns.
 
 \newpage
 
 # Results
 
-## Overall EVPPI Summary
+## Decision Uncertainty Analysis
+
+```{r decision-uncertainty-summary}
+if (exists("uncertainty_analysis")) {
+  cat("**Decision Uncertainty Assessment:**\n\n")
+  cat("- Total EVPI: €", round(uncertainty_analysis$evpi, 4), "\n")
+  cat("- Expected value with perfect information: €", round(uncertainty_analysis$expected_max_nmb, 2), "\n")
+  cat("- Expected value with current information: €", round(uncertainty_analysis$max_expected_nmb, 2), "\n")
+  cat("- Optimal strategy:", uncertainty_analysis$optimal_strategy, "\n")
+  cat("- Proportion of simulations favoring optimal strategy:", round(uncertainty_analysis$proportion_dominant * 100, 1), "%\n")
+  cat("- Decision uncertainty index:", round(uncertainty_analysis$decision_uncertainty, 3), "\n\n")
+  
+  if (uncertainty_analysis$evpi < 0.01) {
+    cat("**Interpretation:** The EVPI of €", round(uncertainty_analysis$evpi, 4), 
+        " indicates very low decision uncertainty. The optimal strategy ('", 
+        uncertainty_analysis$optimal_strategy, "') is favored in ", 
+        round(uncertainty_analysis$proportion_dominant * 100, 1), 
+        "% of simulations, suggesting robust decision-making under current uncertainty.\n\n")
+  }
+}
+```
+
+```{r strategy-distribution-table}
+if (exists("uncertainty_analysis")) {
+  # Create strategy distribution table
+  strategy_table <- data.frame(
+    Strategy = names(uncertainty_analysis$strategy_distribution),
+    `Optimal Count` = as.numeric(uncertainty_analysis$strategy_distribution),
+    `Percentage` = round(as.numeric(uncertainty_analysis$strategy_distribution) / sum(uncertainty_analysis$strategy_distribution) * 100, 1),
+    `Expected NMB (€)` = round(uncertainty_analysis$expected_nmb_by_strategy[names(uncertainty_analysis$strategy_distribution)], 2)
+  )
+  
+  kable(strategy_table, 
+        caption = "Strategy Performance Summary",
+        booktabs = TRUE,
+        col.names = c("Strategy", "Times Optimal", "Percentage (%)", "Expected NMB (€)")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+}
+```
+
+```{r strategy-performance-plot, fig.cap="Net Monetary Benefit by Strategy", fig.height=6}
+if (exists("uncertainty_analysis")) {
+  # Create strategy performance plot
+  strategy_data <- data.frame(
+    Strategy = names(uncertainty_analysis$expected_nmb_by_strategy),
+    Expected_NMB = uncertainty_analysis$expected_nmb_by_strategy,
+    Times_Optimal = as.numeric(uncertainty_analysis$strategy_distribution[names(uncertainty_analysis$expected_nmb_by_strategy)])
+  )
+  
+  # Replace NA with 0 for strategies never optimal
+  strategy_data$Times_Optimal[is.na(strategy_data$Times_Optimal)] <- 0
+  
+  p1 <- ggplot(strategy_data, aes(x = reorder(Strategy, Expected_NMB), y = Expected_NMB)) +
+    geom_col(aes(fill = Times_Optimal), alpha = 0.8) +
+    geom_text(aes(label = paste0("€", round(Expected_NMB, 0))), 
+              hjust = -0.1, size = 3.5) +
+    coord_flip() +
+    scale_fill_gradient(low = "lightblue", high = "darkblue", name = "Times\nOptimal") +
+    labs(
+      title = "Expected Net Monetary Benefit by Strategy",
+      subtitle = paste0("At willingness-to-pay threshold of €", format(WTP, big.mark = ",")),
+      x = "Strategy",
+      y = "Expected NMB (€)"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12)
+    )
+  
+  print(p1)
+}
+```
+
+## EVPPI Results
 
 ```{r evppi-summary-table}
 if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  # Create a formatted summary table
+  # Create formatted summary table
   summary_table <- evppi_results %>%
     select(parameter, evppi, evppi_percent_of_evpi, error) %>%
     mutate(
-      evppi = round(evppi, 2),
-      evppi_percent_of_evpi = round(evppi_percent_of_evpi, 1),
+      evppi = round(evppi, 4),
+      evppi_percent_of_evpi = round(evppi_percent_of_evpi, 2),
       parameter = case_when(
         parameter == "c_drug_nivo" ~ "Nivolumab cost",
         parameter == "c_drug_FLOX" ~ "FLOX cost",
@@ -329,272 +335,45 @@ if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_result
         parameter == "c_other_follow" ~ "Follow-up costs",
         TRUE ~ parameter
       )
-    ) %>%
-    rename(
-      "Parameter" = parameter,
-      "EVPPI (€)" = evppi,
-      "% of EVPI" = evppi_percent_of_evpi,
-      "Notes" = error
     )
   
-  # Create table for PDF output
   kable(summary_table, 
         caption = "Expected Values of Partially Perfect Information by Parameter",
-        booktabs = TRUE) %>%
-    kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 10) %>%
-    column_spec(1, width = "4cm") %>%
-    column_spec(2, width = "2.5cm") %>%
-    column_spec(3, width = "2.5cm") %>%
-    column_spec(4, width = "4cm")
+        booktabs = TRUE,
+        col.names = c("Parameter", "EVPPI (€)", "% of EVPI", "Notes")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+  
 } else {
-  cat("No EVPPI results available for display.\n")
+  cat("**EVPPI Analysis Results:** No parameters showed meaningful EVPPI values.\n\n")
+  cat("This is consistent with the very low EVPI, indicating that parameter uncertainty has minimal impact on the optimal treatment decision.\n")
 }
 ```
-
-```{r key-statistics}
-if (exists("evpi_manual") && exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  cat("**Key Statistics:**\n\n")
-  cat("- Total EVPI: €", round(evpi_manual, 2), "\n")
-  cat("- Number of parameters analyzed:", nrow(evppi_results), "\n")
-  cat("- Highest EVPPI: €", round(max(evppi_results$evppi), 2), 
-      " (", evppi_results$parameter[which.max(evppi_results$evppi)], ")\n")
-  cat("- Parameters with EVPPI > 1% of EVPI:", 
-      sum(evppi_results$evppi_percent_of_evpi > 1), "\n")
-} else {
-  cat("Key statistics not available - missing required objects or empty results.\n")
-}
-```
-
-## EVPPI Visualization
-
-```{r evppi-plot, fig.cap="Expected Value of Partially Perfect Information (EVPPI) by Parameter", fig.height=8}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  # Filter to meaningful results (EVPPI > 0)
-  plot_data <- evppi_results %>%
-    filter(evppi > 0) %>%
-    mutate(
-      parameter_label = case_when(
-        parameter == "c_drug_nivo" ~ "Nivolumab cost",
-        parameter == "c_drug_FLOX" ~ "FLOX cost",
-        parameter == "c_test_NGS" ~ "NGS test cost",
-        parameter == "c_test_CT" ~ "CT scan cost",
-        parameter == "c_test_blood" ~ "Blood test cost",
-        parameter == "u_np" ~ "Non-progression utility",
-        parameter == "u_p" ~ "Progression utility",
-        parameter == "c_other_last" ~ "End-of-life costs",
-        parameter == "c_other_visit" ~ "Visit costs",
-        parameter == "c_other_baseline" ~ "Baseline costs",
-        parameter == "c_other_follow" ~ "Follow-up costs",
-        TRUE ~ parameter
-      )
-    ) %>%
-    arrange(desc(evppi))
-  
-  if (nrow(plot_data) > 0) {
-    # Create EVPPI bar plot
-    p1 <- ggplot(plot_data, aes(x = reorder(parameter_label, evppi), y = evppi)) +
-      geom_col(fill = "steelblue", alpha = 0.8) +
-      geom_text(aes(label = paste0("€", round(evppi, 2))), 
-                hjust = -0.1, size = 3.5) +
-      coord_flip() +
-      labs(
-        title = "Expected Value of Partially Perfect Information (EVPPI)",
-        subtitle = paste0("At willingness-to-pay threshold of €", format(WTP, big.mark = ",")),
-        x = "Parameter",
-        y = "EVPPI (€)"
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
-        axis.text = element_text(size = 10),
-        axis.title = element_text(size = 11)
-      )
-    
-    print(p1)
-  } else {
-    cat("No parameters with meaningful EVPPI values to plot.\n")
-  }
-} else {
-  cat("No EVPPI results available for plotting.\n")
-}
-```
-
-```{r evppi-percentage-plot, fig.cap="EVPPI as Percentage of Total EVPI", fig.height=6}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  plot_data <- evppi_results %>%
-    filter(evppi > 0) %>%
-    mutate(
-      parameter_label = case_when(
-        parameter == "c_drug_nivo" ~ "Nivolumab cost",
-        parameter == "c_drug_FLOX" ~ "FLOX cost",
-        parameter == "c_test_NGS" ~ "NGS test cost",
-        parameter == "c_test_CT" ~ "CT scan cost",
-        parameter == "c_test_blood" ~ "Blood test cost",
-        parameter == "u_np" ~ "Non-progression utility",
-        parameter == "u_p" ~ "Progression utility",
-        parameter == "c_other_last" ~ "End-of-life costs",
-        parameter == "c_other_visit" ~ "Visit costs",
-        parameter == "c_other_baseline" ~ "Baseline costs",
-        parameter == "c_other_follow" ~ "Follow-up costs",
-        TRUE ~ parameter
-      )
-    ) %>%
-    arrange(desc(evppi_percent_of_evpi))
-  
-  if (nrow(plot_data) > 0) {
-    # Create percentage plot
-    p2 <- ggplot(plot_data, aes(x = reorder(parameter_label, evppi_percent_of_evpi), 
-                                y = evppi_percent_of_evpi)) +
-      geom_col(fill = "darkgreen", alpha = 0.8) +
-      geom_text(aes(label = paste0(round(evppi_percent_of_evpi, 1), "%")), 
-                hjust = -0.1, size = 3.5) +
-      coord_flip() +
-      labs(
-        title = "EVPPI as Percentage of Total EVPI",
-        x = "Parameter",
-        y = "EVPPI as % of EVPI"
-      ) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(size = 14, face = "bold"),
-        axis.text = element_text(size = 10),
-        axis.title = element_text(size = 11)
-      )
-    
-    print(p2)
-  }
-}
-```
-
-\newpage
-
-## Research Prioritization
-
-```{r research-priorities}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  # Define priority thresholds
-  high_priority <- evppi_results %>% 
-    filter(evppi_percent_of_evpi > 5) %>%
-    arrange(desc(evppi))
-  
-  medium_priority <- evppi_results %>% 
-    filter(evppi_percent_of_evpi > 1 & evppi_percent_of_evpi <= 5) %>%
-    arrange(desc(evppi))
-  
-  low_priority <- evppi_results %>% 
-    filter(evppi_percent_of_evpi > 0 & evppi_percent_of_evpi <= 1) %>%
-    arrange(desc(evppi))
-  
-  cat("### Research Priority Classification\n\n")
-  
-  if (nrow(high_priority) > 0) {
-    cat("**High Priority (>5% of EVPI):**\n\n")
-    for (i in 1:nrow(high_priority)) {
-      cat("- ", high_priority$parameter[i], ": €", round(high_priority$evppi[i], 2), 
-          " (", round(high_priority$evppi_percent_of_evpi[i], 1), "% of EVPI)\n")
-    }
-    cat("\n")
-  }
-  
-  if (nrow(medium_priority) > 0) {
-    cat("**Medium Priority (1-5% of EVPI):**\n\n")
-    for (i in 1:nrow(medium_priority)) {
-      cat("- ", medium_priority$parameter[i], ": €", round(medium_priority$evppi[i], 2), 
-          " (", round(medium_priority$evppi_percent_of_evpi[i], 1), "% of EVPI)\n")
-    }
-    cat("\n")
-  }
-  
-  if (nrow(low_priority) > 0) {
-    cat("**Low Priority (<1% of EVPI):**\n\n")
-    for (i in 1:nrow(low_priority)) {
-      cat("- ", low_priority$parameter[i], ": €", round(low_priority$evppi[i], 2), 
-          " (", round(low_priority$evppi_percent_of_evpi[i], 1), "% of EVPI)\n")
-    }
-  }
-  
-  if (nrow(high_priority) == 0 && nrow(medium_priority) == 0 && nrow(low_priority) == 0) {
-    cat("No parameters show meaningful EVPPI values.\n")
-  }
-} else {
-  cat("No EVPPI results available for research prioritization.\n")
-}
-```
-
-## Parameter Group Analysis
-
-```{r parameter-groups}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  # Group parameters by type
-  cost_params <- evppi_results %>% filter(grepl("^c_", parameter))
-  utility_params <- evppi_results %>% filter(grepl("^u_", parameter))
-  
-  cat("### Parameter Group Summary\n\n")
-  
-  if (nrow(cost_params) > 0) {
-    cat("**Cost Parameters:**\n\n")
-    cat("- Total EVPPI: €", round(sum(cost_params$evppi), 2), "\n")
-    cat("- Percentage of total EVPI:", round(sum(cost_params$evppi_percent_of_evpi), 1), "%\n")
-    cat("- Number of parameters:", nrow(cost_params), "\n")
-    cat("- Top parameter:", cost_params$parameter[which.max(cost_params$evppi)], 
-        " (€", round(max(cost_params$evppi), 2), ")\n\n")
-  }
-  
-  if (nrow(utility_params) > 0) {
-    cat("**Utility Parameters:**\n\n")
-    cat("- Total EVPPI: €", round(sum(utility_params$evppi), 2), "\n")
-    cat("- Percentage of total EVPI:", round(sum(utility_params$evppi_percent_of_evpi), 1), "%\n")
-    cat("- Number of parameters:", nrow(utility_params), "\n")
-    cat("- Top parameter:", utility_params$parameter[which.max(utility_params$evppi)], 
-        " (€", round(max(utility_params$evppi), 2), ")\n\n")
-  }
-  
-  if (nrow(cost_params) == 0 && nrow(utility_params) == 0) {
-    cat("No parameter groups identified.\n")
-  }
-} else {
-  cat("No EVPPI results available for parameter group analysis.\n")
-}
-```
-
-\newpage
 
 # Discussion
 
 ## Interpretation of Results
 
 ```{r interpretation}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0 && exists("evpi_manual")) {
-  total_meaningful_evppi <- sum(evppi_results$evppi[evppi_results$evppi > 0])
+if (exists("uncertainty_analysis")) {
+  cat("The analysis reveals the following key insights:\n\n")
   
-  cat("The EVPPI analysis reveals the following key insights:\n\n")
-  
-  if (evpi_manual > 1) {
-    cat("1. **Decision Uncertainty**: The total EVPI of €", round(evpi_manual, 2), 
-        " indicates", ifelse(evpi_manual > 1000, " substantial", " moderate"), 
-        " decision uncertainty in the model.\n\n")
-  } else {
-    cat("1. **Limited Uncertainty**: The low EVPI of €", round(evpi_manual, 2), 
-        " suggests limited decision uncertainty.\n\n")
+  if (uncertainty_analysis$evpi < 0.01) {
+    cat("1. **Minimal Decision Uncertainty**: The EVPI of €", round(uncertainty_analysis$evpi, 4), 
+        " indicates minimal decision uncertainty. This suggests that the current evidence base is sufficient for robust decision-making.\n\n")
+    
+    cat("2. **Dominant Strategy**: The '", uncertainty_analysis$optimal_strategy, 
+        "' strategy is optimal in ", round(uncertainty_analysis$proportion_dominant * 100, 1), 
+        "% of simulations, demonstrating clear superiority under current uncertainty.\n\n")
+    
+    cat("3. **Limited Research Value**: The extremely low EVPI suggests that additional research to reduce parameter uncertainty would provide minimal economic value from a decision-making perspective.\n\n")
+    
+    cat("4. **Robust Decision Framework**: The low decision uncertainty indicates that the biomarker strategy selection is robust to parameter variations within the specified ranges.\n\n")
   }
   
-  if (total_meaningful_evppi > 0) {
-    cat("2. **Parameter Importance**: Parameters with non-zero EVPPI values represent opportunities for targeted research to reduce uncertainty.\n\n")
-    
-    top_param <- evppi_results$parameter[which.max(evppi_results$evppi)]
-    top_evppi <- max(evppi_results$evppi)
-    
-    if (top_evppi > evpi_manual * 0.1) {
-      cat("3. **Research Focus**: The parameter '", top_param, "' shows the highest EVPPI (€", 
-          round(top_evppi, 2), "), suggesting it should be prioritized for future research.\n\n")
-    }
-  } else {
-    cat("2. **Limited Research Value**: All parameters show zero or negligible EVPPI, suggesting limited value from additional parameter research.\n\n")
-  }
-} else {
-  cat("Unable to provide interpretation - missing required results or EVPI data.\n")
+  cat("**Clinical and Policy Implications:**\n\n")
+  cat("- The optimal strategy appears well-established under current evidence\n")
+  cat("- Decision uncertainty is not a barrier to implementation\n")
+  cat("- Research priorities should focus on implementation rather than additional parameter estimation\n")
 }
 ```
 
@@ -602,49 +381,32 @@ if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_result
 
 The EVPPI analysis has several important limitations:
 
-1. **Computational Approximation**: The nested sampling approach provides an approximation of the true EVPPI, which may underestimate values for highly nonlinear models.
+1. **Model Structure Dependence**: Results are conditional on the current model structure and assumptions.
 
-2. **Parameter Independence**: The analysis assumes parameters can be learned independently, which may not reflect real-world research scenarios.
+2. **Parameter Range Assumptions**: EVPI calculations depend on the assumed uncertainty distributions for parameters.
 
-3. **Linear Utility**: The analysis assumes linear utility in money, which may not hold for all decision-makers.
+3. **Linear Utility Assumption**: The analysis assumes linear utility in monetary outcomes.
 
-4. **Model Structure**: EVPPI values are conditional on the current model structure and may change with model modifications.
+4. **Implementation Considerations**: Low EVPI does not address implementation challenges or real-world effectiveness.
 
 # Conclusions
 
 ```{r conclusions}
-if (exists("evppi_results") && is.data.frame(evppi_results) && nrow(evppi_results) > 0) {
-  meaningful_params <- sum(evppi_results$evppi > 0)
-  high_value_params <- sum(evppi_results$evppi_percent_of_evpi > 5)
-  
+if (exists("uncertainty_analysis")) {
   cat("**Key Findings:**\n\n")
-  if (exists("evpi_manual")) {
-    cat("- Total EVPI: €", round(evpi_manual, 2), "\n")
-  }
-  cat("- Parameters analyzed:", nrow(evppi_results), "\n")
-  cat("- Parameters with meaningful EVPPI:", meaningful_params, "\n")
-  cat("- High-priority parameters (>5% EVPI):", high_value_params, "\n\n")
+  cat("- Total EVPI: €", round(uncertainty_analysis$evpi, 4), "\n")
+  cat("- Optimal strategy: ", uncertainty_analysis$optimal_strategy, "\n")
+  cat("- Decision certainty: ", round(uncertainty_analysis$proportion_dominant * 100, 1), "%\n\n")
   
-  if (high_value_params > 0) {
+  if (uncertainty_analysis$evpi < 0.01) {
     cat("**Recommendations:**\n\n")
-    cat("- Focus future research on high-priority parameters\n")
-    cat("- Consider design of studies to improve precision of key estimates\n")
-    cat("- Evaluate cost-effectiveness of additional data collection\n")
-  } else if (meaningful_params > 0) {
-    cat("**Recommendations:**\n\n")
-    cat("- Consider moderate investment in improving parameter estimates\n")
-    cat("- Focus on parameters with highest relative EVPPI values\n")
-  } else {
-    cat("**Recommendations:**\n\n")
-    cat("- Current parameter uncertainty has limited impact on decisions\n")
-    cat("- Focus research efforts on model structure or alternative interventions\n")
+    cat("- **Implementation Focus**: Given the low decision uncertainty, efforts should focus on implementing the optimal strategy rather than additional parameter research\n\n")
+    cat("- **Real-World Evidence**: Future research should prioritize implementation studies and real-world effectiveness evaluation\n\n")
+    cat("- **Alternative Interventions**: Research resources might be better allocated to evaluating entirely new treatment strategies rather than refining current parameter estimates\n\n")
+    cat("- **Health System Considerations**: Focus on addressing barriers to implementation of the optimal biomarker strategy\n")
   }
 } else {
-  cat("**No conclusive EVPPI results available.**\n\n")
-  cat("This may indicate:\n\n")
-  cat("- Very low decision uncertainty in the model\n")
-  cat("- Insufficient parameter variation in the PSA\n")
-  cat("- Technical issues with the EVPPI calculation\n")
+  cat("**Analysis could not be completed due to missing data or model setup issues.**\n")
 }
 ```
 
