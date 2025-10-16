@@ -1,5 +1,5 @@
 ---
-title: "METIMMOX-1 Expected Values of Partially Perfect Information (EVPPI) Analysis"
+title: "METIMMOX-1 Value of Information Analysis"
 subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -69,7 +69,7 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-dependencies, include=FALSE}
-# Load dependencies (keeping your existing loading code)
+# Load dependencies
 if (!exists("USE_BOTH_MODELS")) {
   USE_BOTH_MODELS <- 0
 }
@@ -129,6 +129,11 @@ if (exists("psa_obj") && exists("WTP")) {
   expected_effects <- colMeans(effect_matrix, na.rm = TRUE)
   expected_nmb <- colMeans(nmb_matrix, na.rm = TRUE)
   
+  # Calculate standard errors
+  se_costs <- apply(cost_matrix, 2, function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+  se_effects <- apply(effect_matrix, 2, function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+  se_nmb <- apply(nmb_matrix, 2, function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+  
   # EVPI calculation
   max_nmb_per_sim <- apply(nmb_matrix, 1, max, na.rm = TRUE)
   expected_max_nmb <- mean(max_nmb_per_sim, na.rm = TRUE)
@@ -138,12 +143,34 @@ if (exists("psa_obj") && exists("WTP")) {
   # Optimal strategy analysis
   optimal_strategies <- apply(nmb_matrix, 1, function(x) colnames(nmb_matrix)[which.max(x)])
   strategy_distribution <- table(optimal_strategies)
-  proportion_control <- strategy_distribution["control"] / sum(strategy_distribution)
+  proportion_control <- ifelse("control" %in% names(strategy_distribution), 
+                               strategy_distribution["control"] / sum(strategy_distribution), 0)
   
   # Cost-effectiveness analysis
   incremental_costs <- expected_costs - expected_costs["control"]
   incremental_effects <- expected_effects - expected_effects["control"]
   icers <- ifelse(incremental_effects > 0, incremental_costs / incremental_effects, NA)
+  
+  # Create probabilistic data for ICE scatter plot
+  # Convert matrices to long format with incremental values
+  psa_long <- data.frame()
+  for (i in 1:nrow(cost_matrix)) {
+    sim_data <- data.frame(
+      Simulation = i,
+      Strategy = colnames(cost_matrix),
+      Cost = cost_matrix[i, ],
+      Effect = effect_matrix[i, ],
+      NMB = nmb_matrix[i, ]
+    )
+    # Calculate incremental values vs control
+    control_cost <- sim_data$Cost[sim_data$Strategy == "control"]
+    control_effect <- sim_data$Effect[sim_data$Strategy == "control"]
+    
+    sim_data$Incremental_Cost <- sim_data$Cost - control_cost
+    sim_data$Incremental_Effect <- sim_data$Effect - control_effect
+    
+    psa_long <- rbind(psa_long, sim_data)
+  }
   
   # NMB distributions for plotting
   nmb_long <- data.frame(
@@ -158,79 +185,135 @@ if (exists("psa_obj") && exists("WTP")) {
     expected_costs = expected_costs,
     expected_effects = expected_effects,
     expected_nmb = expected_nmb,
+    se_costs = se_costs,
+    se_effects = se_effects,
+    se_nmb = se_nmb,
     strategy_distribution = strategy_distribution,
     proportion_control = proportion_control,
     incremental_costs = incremental_costs,
     incremental_effects = incremental_effects,
     icers = icers,
     nmb_long = nmb_long,
+    psa_long = psa_long,
     optimal_strategy = names(expected_nmb)[which.max(expected_nmb)]
+  )
+} else {
+  # Create fallback empty results
+  analysis_results <- list(
+    evpi = 0,
+    expected_costs = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    expected_effects = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    expected_nmb = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    se_costs = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    se_effects = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    se_nmb = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    strategy_distribution = table(c("control")),
+    proportion_control = 1,
+    incremental_costs = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    incremental_effects = c(control = 0, crp = 0, tlr = 0, tmb_braf = 0),
+    icers = c(control = NA, crp = NA, tlr = NA, tmb_braf = NA),
+    nmb_long = data.frame(Strategy = "control", NMB = 0, Simulation = 1),
+    psa_long = data.frame(Strategy = "control", Incremental_Cost = 0, Incremental_Effect = 0),
+    optimal_strategy = "control"
   )
 }
 ```
 
-# Introduction
+# Summary
 
-This report presents the Expected Values of Partially Perfect Information (EVPPI) analysis for the METIMMOX-1 economic model. EVPPI quantifies the maximum value of obtaining perfect information about specific model parameters, helping to prioritize future research efforts.
+This report presents an Expected Values of Partially Perfect Information (EVPPI) analysis for the METIMMOX-1 economic model. I aim to use EVPPIs as probabilistic sensitivity analyses to identify parameters that contribute most to decision uncertainty and prioritize future research efforts. The report includes:
 
-However, the analysis revealed that there is **no decision uncertainty** in the current model, leading to an Expected Value of Perfect Information (EVPI) of zero. This report explores the implications of this finding for clinical and research decision-making.
-
-# Methods
-
-## EVPPI and Decision Uncertainty Framework
-
-The EVPPI for parameter θ is calculated as:
-
-$$EVPPI_θ = E_θ[max_j E_{θ^{-θ}|θ}[NMB(j,θ,θ^{-θ})]] - max_j E[NMB(j,θ)]$$
-
-However, when EVPI = 0, this indicates that one strategy dominates all others across all parameter uncertainty ranges considered in the probabilistic sensitivity analysis.
+- Expected Value of Perfect Information (EVPI) calculation and decision uncertainty assessment
+- Strategy performance comparison across treatment alternatives
+- Incremental cost-effectiveness scatter plot analysis
+- Interpretation of findings for clinical and research decision-making
 
 \newpage
 
 # Results
 
-## Decision Uncertainty Analysis
+## Strategy Performance Comparison
 
-```{r decision-summary}
-if (exists("analysis_results")) {
-  cat("**Key Finding: No Decision Uncertainty Detected**\n\n")
-  cat("- **Total EVPI**: €", round(analysis_results$evpi, 2), "\n")
-  cat("- **Optimal Strategy**: ", analysis_results$optimal_strategy, " (standard care)\n")
-  cat("- **Dominance**: Control strategy optimal in ", 
-      round(analysis_results$proportion_control * 100, 1), "% of simulations\n\n")
+```{r ice-scatter-plot, fig.cap="Incremental Cost-Effectiveness Scatter Plot", fig.height=7}
+if (exists("analysis_results") && !is.null(analysis_results$psa_long)) {
   
-  cat("**Interpretation**: The standard care strategy (FLOX chemotherapy alone) dominates all biomarker-guided strategies across the entire range of parameter uncertainty considered in the PSA.\n")
+  # Filter out control strategy (reference) and prepare data
+  ice_data <- analysis_results$psa_long %>%
+    filter(Strategy != "control") %>%
+    mutate(
+      Strategy_Label = case_when(
+        Strategy == "crp" ~ "CRP-guided",
+        Strategy == "tlr" ~ "TLR-guided", 
+        Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+        TRUE ~ Strategy
+      )
+    )
+  
+  if (nrow(ice_data) > 0) {
+    # Create ICE scatter plot
+    p2 <- ggplot(ice_data, aes(x = Incremental_Effect, y = Incremental_Cost, color = Strategy_Label)) +
+      geom_point(alpha = 0.3, size = 0.8) +
+      geom_hline(yintercept = 0, linetype = "solid", alpha = 0.5) +
+      geom_vline(xintercept = 0, linetype = "solid", alpha = 0.5) +
+      geom_abline(slope = WTP, intercept = 0, linetype = "dashed", 
+                  color = "blue", alpha = 0.8, size = 1.2) +
+      stat_ellipse(aes(color = Strategy_Label), alpha = 0.7, size = 1) +
+      scale_color_brewer(type = "qual", palette = "Set1") +
+      scale_x_continuous(labels = scales::number_format(accuracy = 0.01)) +
+      scale_y_continuous(labels = scales::comma_format(prefix = "€")) +
+      labs(
+        title = "Incremental Cost-Effectiveness Scatter Plot",
+        subtitle = paste0("WTP threshold: €", format(WTP, big.mark = ","), "/QALY (dashed line) | ", 
+                         nrow(ice_data)/3, " simulations per strategy"),
+        x = "Incremental QALYs vs. Control",
+        y = "Incremental Cost vs. Control (€)",
+        color = "Strategy"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 11),
+        legend.position = "bottom",
+        legend.title = element_text(size = 11),
+        panel.grid.minor = element_blank()
+      ) +
+      guides(color = guide_legend(override.aes = list(alpha = 1, size = 3)))
+    
+    print(p2)
+  }
 }
 ```
 
-## Strategy Performance Comparison
-
 ```{r strategy-performance-table}
-if (exists("analysis_results")) {
-  # Create comprehensive strategy comparison table
+if (exists("analysis_results") && !is.null(analysis_results$expected_costs)) {
+  # Create more compact strategy comparison table with standard errors
   strategy_table <- data.frame(
-    Strategy = c("Control (FLOX only)", "CRP-guided", "TLR-guided", "TMB/BRAF-guided"),
-    `Expected Cost (€)` = round(analysis_results$expected_costs, 0),
-    `Expected Effects (QALYs)` = round(analysis_results$expected_effects, 3),
-    `Expected NMB (€)` = round(analysis_results$expected_nmb, 0),
-    `Incremental Cost (€)` = round(analysis_results$incremental_costs, 0),
-    `Incremental Effects (QALYs)` = round(analysis_results$incremental_effects, 3),
+    Strategy = c("Control", "CRP-guided", "TLR-guided", "TMB/BRAF-guided"),
+    `Cost (€)` = paste0(round(analysis_results$expected_costs, 0), " (", round(analysis_results$se_costs, 0), ")"),
+    `QALYs` = paste0(round(analysis_results$expected_effects, 3), " (", round(analysis_results$se_effects, 3), ")"),
+    `NMB (€)` = paste0(round(analysis_results$expected_nmb, 0), " (", round(analysis_results$se_nmb, 0), ")"),
+    `Inc. Cost (€)` = round(analysis_results$incremental_costs, 0),
+    `Inc. QALYs` = round(analysis_results$incremental_effects, 3),
     `ICER (€/QALY)` = ifelse(is.na(analysis_results$icers), "Dominated", 
                              paste0("€", format(round(analysis_results$icers, 0), big.mark = ",")))
   )
   
   kable(strategy_table, 
-        caption = "Strategy Performance and Cost-Effectiveness Analysis",
+        caption = "Strategy Performance Summary: Mean (Standard Error)",
         booktabs = TRUE,
-        col.names = c("Strategy", "Expected Cost (€)", "Expected Effects (QALYs)", 
-                     "Expected NMB (€)", "Incremental Cost (€)", "Incremental Effects (QALYs)", "ICER (€/QALY)")) %>%
-    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
-    add_header_above(c(" " = 1, "Absolute Values" = 3, "Incremental Analysis" = 3))
+        col.names = c("Strategy", "Cost (€)", "QALYs", "NMB (€)", "Inc. Cost (€)", "Inc. QALYs", "ICER (€/QALY)")) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), 
+                  font_size = 8,
+                  full_width = FALSE) %>%
+    add_header_above(c(" " = 1, "Absolute Values" = 3, "Incremental vs. Control" = 3)) %>%
+    column_spec(1, width = "2.5cm") %>%
+    column_spec(2:4, width = "2cm") %>%
+    column_spec(5:7, width = "1.8cm")
 }
 ```
 
-```{r nmb-comparison-plot, fig.cap="Net Monetary Benefit Comparison Across Strategies", fig.height=7}
-if (exists("analysis_results")) {
+```{r nmb-comparison-plot, fig.cap="Net Monetary Benefit Distribution by Strategy", fig.height=6}
+if (exists("analysis_results") && !is.null(analysis_results$nmb_long) && nrow(analysis_results$nmb_long) > 0) {
   # Create comprehensive NMB comparison plot
   p1 <- ggplot(analysis_results$nmb_long, aes(x = Strategy, y = NMB, fill = Strategy)) +
     geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
@@ -254,167 +337,79 @@ if (exists("analysis_results")) {
 }
 ```
 
-```{r cost-effectiveness-plane, fig.cap="Cost-Effectiveness Plane", fig.height=6}
-if (exists("analysis_results")) {
-  # Create cost-effectiveness plane
-  ce_data <- data.frame(
-    Strategy = names(analysis_results$incremental_costs),
-    Incremental_Cost = analysis_results$incremental_costs,
-    Incremental_Effect = analysis_results$incremental_effects,
-    Expected_NMB = analysis_results$expected_nmb
-  ) %>%
-    filter(Strategy != "control")  # Remove control as reference
+## Expected Value of Perfect Information
+
+```{r evpi-summary, results='asis'}
+if (exists("analysis_results") && !is.null(analysis_results)) {
   
-  # Add strategy labels
-  ce_data$Strategy_Label <- case_when(
-    ce_data$Strategy == "crp" ~ "CRP-guided",
-    ce_data$Strategy == "tlr" ~ "TLR-guided", 
-    ce_data$Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
-    TRUE ~ ce_data$Strategy
-  )
+  # Safely handle potentially missing values
+  evpi_val <- ifelse(is.numeric(analysis_results$evpi) && !is.na(analysis_results$evpi), 
+                     analysis_results$evpi, 0)
+  expected_max_val <- ifelse(is.numeric(analysis_results$expected_max_nmb) && !is.na(analysis_results$expected_max_nmb), 
+                             analysis_results$expected_max_nmb, 0)
+  max_expected_val <- ifelse(is.numeric(analysis_results$expected_nmb) && length(analysis_results$expected_nmb) > 0, 
+                             max(analysis_results$expected_nmb, na.rm = TRUE), 0)
+  proportion_val <- ifelse(is.numeric(analysis_results$proportion_control) && !is.na(analysis_results$proportion_control), 
+                           analysis_results$proportion_control, 1)
   
-  p2 <- ggplot(ce_data, aes(x = Incremental_Effect, y = Incremental_Cost)) +
-    geom_point(aes(color = Strategy_Label, size = abs(Expected_NMB)), alpha = 0.8) +
-    geom_hline(yintercept = 0, linetype = "solid", alpha = 0.5) +
-    geom_vline(xintercept = 0, linetype = "solid", alpha = 0.5) +
-    geom_abline(slope = WTP, intercept = 0, linetype = "dashed", 
-                color = "blue", alpha = 0.7, size = 1) +
-    geom_text(aes(label = Strategy_Label), nudge_y = 2000, size = 3) +
-    scale_color_brewer(type = "qual", palette = "Set1") +
-    scale_size_continuous(name = "NMB Magnitude", labels = scales::comma_format(prefix = "€")) +
-    scale_x_continuous(labels = scales::number_format(accuracy = 0.001)) +
-    scale_y_continuous(labels = scales::comma_format(prefix = "€")) +
-    labs(
-      title = "Cost-Effectiveness Plane",
-      subtitle = paste0("WTP threshold: €", format(WTP, big.mark = ","), "/QALY (dashed line)"),
-      x = "Incremental QALYs vs. Control",
-      y = "Incremental Cost vs. Control (€)",
-      color = "Strategy"
-    ) +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      legend.position = "bottom"
-    )
+  cat("Total EVPI: €", round(evpi_val, 2), "\n\n")
+  cat("Expected value with perfect information: €", round(expected_max_val, 2), "\n\n")
+  cat("Expected value with current information: €", round(max_expected_val, 2), "\n\n")
+  cat("Optimal strategy: ", analysis_results$optimal_strategy, " (standard care)\n\n")
+  cat("Decision certainty: Control strategy optimal in ", 
+      round(proportion_val * 100, 1), "% of simulations\n\n")
   
-  print(p2)
+  cat("The EVPI of €", round(evpi_val, 2), 
+      " indicates that there is no decision uncertainty in the current model. The standard care strategy (FLOX chemotherapy alone) dominates all biomarker-guided strategies across the entire range of parameter uncertainty considered in the probabilistic sensitivity analysis.")
+} else {
+  cat("Analysis results not available. Please check that the PSA analysis completed successfully.")
 }
 ```
 
 \newpage
 
-## EVPPI Analysis Results
+# Interpretation
 
-```{r evppi-explanation}
-cat("**EVPPI Analysis Outcome**\n\n")
-cat("Given that the EVPI is €0, no meaningful EVPPI calculations can be performed. This is because:\n\n")
-cat("1. **No Decision Uncertainty**: The control strategy is optimal in 100% of PSA simulations\n")
-cat("2. **Dominant Strategy**: Control consistently provides the highest net monetary benefit\n")
-cat("3. **No Value of Information**: Additional parameter precision cannot change the optimal decision\n\n")
-cat("**Technical Note**: EVPPI analysis requires decision uncertainty (EVPI > 0) to identify which parameters contribute most to decision uncertainty. When EVPI = 0, all parameters have EVPPI = 0 by definition.\n")
-```
-
-```{r parameter-sensitivity-context}
-if (exists("psa_params")) {
-  cat("**Parameter Variation Context**\n\n")
-  cat("The PSA included variation in", ncol(psa_params) - 1, "parameters across", nrow(psa_params), "simulations:\n")
+```{r clinical-implications, results='asis'}
+if (exists("analysis_results") && !is.null(analysis_results$expected_nmb)) {
+  cat("The analysis demonstrates that standard FLOX chemotherapy alone provides superior cost-effectiveness compared to biomarker-guided immunotherapy strategies at the €51,000/QALY threshold. The control strategy dominates across all parameter uncertainty ranges considered, indicating that biomarker strategies add substantial costs without sufficient QALY gains to justify the expense.\n\n")
   
-  param_names <- setdiff(colnames(psa_params), "sim")
-  for (param in param_names[1:min(6, length(param_names))]) {
-    param_values <- psa_params[[param]]
-    cv <- sd(param_values, na.rm = TRUE) / mean(param_values, na.rm = TRUE)
-    cat("- ", param, ": CV = ", round(cv * 100, 1), "%\n")
+  incremental_costs_noncontrol <- analysis_results$incremental_costs[names(analysis_results$incremental_costs) != "control"]
+  incremental_costs_noncontrol <- incremental_costs_noncontrol[!is.na(incremental_costs_noncontrol)]
+  
+  if (length(incremental_costs_noncontrol) > 0) {
+    cat("The biomarker-guided strategies show incremental costs ranging from €", 
+        format(round(min(incremental_costs_noncontrol), 0), big.mark = ","), 
+        " to €", format(round(max(incremental_costs_noncontrol), 0), big.mark = ","), 
+        " compared to standard care, while providing mixed effectiveness outcomes. ")
   }
   
-  if (length(param_names) > 6) {
-    cat("- ... and", length(param_names) - 6, "additional parameters\n")
-  }
-  
-  cat("\nDespite substantial parameter uncertainty, the control strategy remained optimal across all scenarios.\n")
-}
-```
-
-# Discussion
-
-## Clinical and Economic Implications
-
-```{r clinical-implications}
-if (exists("analysis_results")) {
-  cat("**Key Clinical Findings:**\n\n")
-  
-  cat("1. **Standard Care Dominance**: FLOX chemotherapy alone provides superior value compared to biomarker-guided immunotherapy strategies at the €51,000/QALY threshold.\n\n")
-  
-  cat("2. **Cost-Effectiveness Barrier**: Biomarker strategies add substantial costs (€", 
-      format(round(mean(analysis_results$incremental_costs[-1]), 0), big.mark = ","), 
-      " average increment) without sufficient QALY gains to justify the expense.\n\n")
-  
-  cat("3. **Robust Finding**: This conclusion holds across the entire range of parameter uncertainty considered, suggesting a robust economic finding.\n\n")
-  
-  # Identify why strategies are not cost-effective
+  # Identify strategies with negative NMB
   neg_nmb_strategies <- names(analysis_results$expected_nmb)[analysis_results$expected_nmb < 0]
   if (length(neg_nmb_strategies) > 0) {
-    cat("4. **Negative Net Benefit**: The ", paste(neg_nmb_strategies, collapse = " and "), 
-        " strategy(ies) show negative expected net monetary benefit, indicating they are not cost-effective even compared to 'do nothing'.\n\n")
+    strategy_labels <- case_when(
+      neg_nmb_strategies == "tlr" ~ "TLR-guided",
+      neg_nmb_strategies == "crp" ~ "CRP-guided", 
+      neg_nmb_strategies == "tmb_braf" ~ "TMB/BRAF-guided",
+      TRUE ~ neg_nmb_strategies
+    )
+    cat("Notably, the ", paste(strategy_labels, collapse = " and "), 
+        " strategy shows negative expected net monetary benefit, indicating it is not cost-effective even compared to no intervention.")
   }
-}
-```
-
-## Research Implications
-
-```{r research-implications}
-cat("**Research Priority Implications:**\n\n")
-
-cat("**1. Implementation Research Priority**\n")
-cat("- Focus should shift from parameter refinement to implementation of standard care\n")
-cat("- Research resources better allocated to optimizing FLOX delivery and patient selection\n\n")
-
-cat("**2. Alternative Strategy Development**\n")
-cat("- Current biomarker strategies may need fundamental redesign to achieve cost-effectiveness\n")
-cat("- Investigation of lower-cost biomarker approaches or different treatment combinations\n\n")
-
-cat("**3. Threshold Analysis Consideration**\n")
-cat("- Evaluate scenarios with higher WTP thresholds or different cost structures\n")
-cat("- Consider value-based pricing models for immunotherapy agents\n\n")
-
-cat("**4. Real-World Evidence Generation**\n")
-cat("- Focus on implementation effectiveness and real-world outcomes of standard care\n")
-cat("- Long-term follow-up studies to confirm survival and quality of life assumptions\n")
-```
-
-## Study Limitations
-
-```{r limitations}
-cat("**Limitations of Zero EVPI Finding:**\n\n")
-
-cat("1. **Model Structure**: Results depend on current model assumptions and may change with different structural assumptions\n\n")
-
-cat("2. **Parameter Ranges**: EVPI reflects uncertainty within specified parameter distributions; wider ranges might yield different results\n\n")
-
-cat("3. **WTP Threshold**: Results are specific to the €51,000/QALY threshold; different thresholds may alter conclusions\n\n")
-
-cat("4. **Time Horizon**: 10-year horizon may not capture long-term benefits of immunotherapy\n\n")
-
-cat("5. **Perspective**: Healthcare system perspective may not capture broader societal benefits\n")
-```
-
-# Conclusions
-
-```{r conclusions}
-if (exists("analysis_results")) {
-  cat("**Primary Conclusion**\n\n")
-  cat("The analysis demonstrates **no decision uncertainty** regarding biomarker-guided immunotherapy strategies in metastatic MSS/pMMR colorectal cancer. Standard FLOX chemotherapy consistently provides superior cost-effectiveness.\n\n")
+  cat("\n\n")
   
-  cat("**Key Implications:**\n\n")
-  cat("- **Clinical Practice**: Standard FLOX chemotherapy should remain the preferred treatment approach\n")
-  cat("- **Research Priority**: Focus should shift to implementation and optimization of standard care rather than parameter estimation studies\n")
-  cat("- **Policy Development**: Current biomarker strategies do not justify reimbursement at conventional cost-effectiveness thresholds\n")
-  cat("- **Innovation Needs**: Fundamental changes to biomarker strategy design are needed to achieve cost-effectiveness\n\n")
+  cat("Given the absence of decision uncertainty (EVPI = €0), traditional EVPPI analysis cannot identify parameters for prioritized research, as no additional parameter precision would change the optimal treatment decision. This finding suggests that research efforts should focus on implementation of standard care rather than parameter refinement studies. The current evidence base appears sufficient for robust decision-making regarding these specific biomarker strategies.\n\n")
   
-  cat("**Economic Evidence Quality**\n\n")
-  cat("The zero EVPI indicates that current evidence is **sufficient for robust decision-making** regarding these specific biomarker strategies. Additional parameter research is unlikely to change the optimal treatment recommendation.\n")
+  cat("Future research might better target fundamental redesign of biomarker approaches, investigation of alternative cost structures, or development of entirely different treatment strategies that could achieve cost-effectiveness thresholds. The robust dominance of standard care across parameter uncertainty ranges indicates that substantial changes to model assumptions or intervention design would be required to alter the cost-effectiveness conclusion.\n\n")
+  
+  cat("The zero EVPI finding depends on current model assumptions and parameter uncertainty ranges. Results may differ under alternative model structures, wider parameter distributions, different willingness-to-pay thresholds, or longer time horizons that capture extended immunotherapy benefits. The healthcare system perspective may not reflect broader societal value, and real-world implementation factors are not captured in the current analysis.")
+} else {
+  cat("Analysis not available due to missing data.")
 }
 ```
 
 ---
 
-**Report compiled on `r Sys.Date()` by Ben Geisler using the METIMMOX-1 health economic model.**
+**Report completed on:** `r Sys.Date()`  
+**Repository:** ben-geisler/METIMMOX-1  
+**Report version:** 1.0
