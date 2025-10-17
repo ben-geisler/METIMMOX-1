@@ -1,6 +1,6 @@
 ---
-title: "METIMMOX-1 Expected Value of Partially Perfect Information Analysis"
-subtitle: "Multi-Scenario Analysis for Biomarker-Guided Strategies in Metastatic MSS/pMMR Colorectal Cancer"
+title: "METIMMOX-1 Value of Information Analysis"
+subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -103,10 +103,6 @@ create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "
     }
   }
   
-  # Determine axis limits for WTP line
-  x_range <- range(plot_data$Incremental_Effect)
-  x_max <- max(abs(x_range)) * 1.1
-  
   # Create the plot
   p <- ggplot(plot_data, aes(x = Incremental_Effect, y = Incremental_Cost, color = Strategy)) +
     geom_point(alpha = 0.3, size = 1) +
@@ -115,11 +111,6 @@ create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "
     geom_abline(slope = wtp_threshold, intercept = 0, 
                 linetype = "dotted", color = "black", linewidth = 0.8,
                 alpha = 0.7) +
-    annotate("text", x = x_max * 0.7, y = wtp_threshold * x_max * 0.7, 
-             label = paste0("WTP = €", format(wtp_threshold, big.mark = ",")),
-             angle = atan(wtp_threshold * diff(range(plot_data$Incremental_Effect)) / 
-                         diff(range(plot_data$Incremental_Cost))) * 180 / pi,
-             vjust = -0.5, size = 3.5, color = "black") +
     scale_y_continuous(labels = scales::dollar_format(prefix = "€")) +
     scale_color_brewer(palette = "Set1") +
     labs(
@@ -134,9 +125,47 @@ create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "
   
   return(p)
 }
+
+# Function to create NMB boxplot
+create_nmb_boxplot <- function(psa_obj, wtp_threshold, scenario_name = "") {
+  # Extract cost and effect matrices
+  cost_mat <- as.matrix(psa_obj$cost)
+  effect_mat <- as.matrix(psa_obj$effect)
+  strategies <- colnames(cost_mat)
+  
+  # Calculate NMB
+  nmb_mat <- effect_mat * wtp_threshold - cost_mat
+  
+  # Create data frame for plotting
+  plot_data <- data.frame()
+  for (i in seq_along(strategies)) {
+    plot_data <- rbind(plot_data, data.frame(
+      Strategy = strategies[i],
+      NMB = nmb_mat[, i]
+    ))
+  }
+  
+  # Create the plot
+  p <- ggplot(plot_data, aes(x = Strategy, y = NMB, fill = Strategy)) +
+    geom_boxplot(alpha = 0.7) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red", alpha = 0.5) +
+    scale_y_continuous(labels = scales::dollar_format(prefix = "€")) +
+    scale_fill_brewer(palette = "Set1") +
+    labs(
+      title = "Net Monetary Benefit Distribution",
+      subtitle = scenario_name,
+      x = "Strategy",
+      y = "Net Monetary Benefit (€)"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  return(p)
+}
 ```
 
-# Summary
+# Overview
 
 This report presents the results of an Expected Value of Partially Perfect Information (EVPPI) analysis for the METIMMOX-1 decision-analytic model. The analysis evaluates the value of reducing uncertainty in individual model parameters across multiple scenarios with varying willingness-to-pay (WTP) thresholds and nivolumab drug costs.
 
@@ -165,33 +194,23 @@ kable(scenario_summary,
 
 # Base Case Scenario
 
-**Willingness-to-Pay Threshold:** €`r format(scenarios$wtp[scenarios$scenario_id == "base"], big.mark = ",")`
-
-**Nivolumab Cost:** €`r format(scenarios$c_drug_nivo[scenarios$scenario_id == "base"], big.mark = ",")`
-
-```{r base-evpi}
+```{r base-params}
 base_results <- all_scenario_results[["base"]]
 
 if (!is.null(base_results) && nrow(base_results$evppi_results) > 0) {
   base_evpi <- base_results$evppi_results$evpi[1]
   base_wtp <- scenarios$wtp[scenarios$scenario_id == "base"]
+  base_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 } else {
   base_evpi <- 0
   base_wtp <- 51000
+  base_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 }
 ```
 
-**Total EVPI:** €`r round(base_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(base_wtp, big.mark = ",")`
 
-```{r base-interpretation, results='asis'}
-if (base_evpi > 0.01) {
-  cat("\n\nThe positive EVPI indicates decision uncertainty at the base case WTP threshold. This suggests that additional research to reduce parameter uncertainty could have value.\n")
-} else {
-  cat("\n\nThe EVPI is effectively zero, indicating no decision uncertainty at the base case WTP threshold. In this case, one strategy is clearly dominant regardless of parameter uncertainty, making EVPPI calculations less meaningful for the base case scenario.\n")
-}
-```
-
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(base_nivo_cost, big.mark = ",")`
 
 ```{r base-ice-scatter, fig.cap="Cost-effectiveness scatter plot (base case)", fig.height=6}
 if (!is.null(base_results$psa_obj)) {
@@ -212,24 +231,40 @@ if (!is.null(base_results$psa_obj)) {
 if (!is.null(base_results$psa_obj)) {
   psa_summary <- summary(base_results$psa_obj, calc_sds = TRUE)
   
-  # Format the summary table
+  # Calculate NMB
+  cost_mat <- as.matrix(base_results$psa_obj$cost)
+  effect_mat <- as.matrix(base_results$psa_obj$effect)
+  nmb_mat <- effect_mat * base_wtp - cost_mat
+  
+  # Format the summary table with NMB
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary from probabilistic sensitivity analysis (base case)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r base-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (base case)", fig.height=6}
+if (!is.null(base_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(base_results$psa_obj, base_wtp, "Base Case")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -241,11 +276,20 @@ if (!is.null(base_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(base_evpi, 2)`
+
+```{r base-interpretation, results='asis'}
+if (base_evpi > 0.01) {
+  cat("\n\nThe positive EVPI indicates decision uncertainty at the base case WTP threshold. This suggests that additional research to reduce parameter uncertainty could have value.\n")
+} else {
+  cat("\n\nThe EVPI is effectively zero, indicating no decision uncertainty at the base case WTP threshold. In this case, one strategy is clearly dominant regardless of parameter uncertainty, making EVPPI calculations less meaningful for the base case scenario.\n")
+}
+```
 
 ```{r base-case-evppi-table}
 if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi > 0.01) {
   base_evppi <- base_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter,
            EVPPI = evppi,
            `% of EVPI` = evppi_percent_of_evpi) %>%
@@ -268,7 +312,7 @@ if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi 
 if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi > 0.01) {
   base_plot_data <- base_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(base_plot_data) > 0) {
@@ -280,7 +324,7 @@ if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi 
                         expand = expansion(mult = c(0, 0.15))) +
       labs(
         title = "Base Case: Expected Value of Partially Perfect Information",
-        subtitle = paste0("WTP = €", format(scenarios$wtp[1], big.mark = ",")),
+        subtitle = paste0("WTP = €", format(base_wtp, big.mark = ",")),
         x = "EVPPI (€)",
         y = NULL
       ) +
@@ -293,33 +337,23 @@ if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi 
 
 # Scenario 1: Decreased Nivolumab Cost
 
-**Willingness-to-Pay Threshold:** €51,000
-
-**Nivolumab Cost:** €4,641 (80% discount)
-
-```{r s1-evpi}
+```{r s1-params}
 s1_results <- all_scenario_results[["s1_decreased_nivo"]]
 
 if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0) {
   s1_evpi <- s1_results$evppi_results$evpi[1]
   s1_wtp <- 51000
+  s1_nivo_cost <- 4641
 } else {
   s1_evpi <- 0
   s1_wtp <- 51000
+  s1_nivo_cost <- 4641
 }
 ```
 
-**Total EVPI:** €`r round(s1_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(s1_wtp, big.mark = ",")`
 
-```{r s1-interpretation, results='asis'}
-if (s1_evpi > 0.01) {
-  cat("\n\nReducing nivolumab costs creates decision uncertainty, making EVPPI analysis meaningful.\n")
-} else {
-  cat("\n\nEven with decreased nivolumab costs, EVPI remains near zero at this WTP threshold.\n")
-}
-```
-
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(s1_nivo_cost, big.mark = ",")` (80% discount)
 
 ```{r s1-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 1)", fig.height=6}
 if (!is.null(s1_results$psa_obj)) {
@@ -340,23 +374,38 @@ if (!is.null(s1_results$psa_obj)) {
 if (!is.null(s1_results$psa_obj)) {
   psa_summary <- summary(s1_results$psa_obj, calc_sds = TRUE)
   
+  cost_mat <- as.matrix(s1_results$psa_obj$cost)
+  effect_mat <- as.matrix(s1_results$psa_obj$effect)
+  nmb_mat <- effect_mat * s1_wtp - cost_mat
+  
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary (Scenario 1)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r s1-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (Scenario 1)", fig.height=6}
+if (!is.null(s1_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(s1_results$psa_obj, s1_wtp, "Scenario 1: Decreased Nivolumab")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -368,11 +417,20 @@ if (!is.null(s1_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(s1_evpi, 2)`
+
+```{r s1-interpretation, results='asis'}
+if (s1_evpi > 0.01) {
+  cat("\n\nReducing nivolumab costs creates decision uncertainty, making EVPPI analysis meaningful.\n")
+} else {
+  cat("\n\nEven with decreased nivolumab costs, EVPI remains near zero at this WTP threshold.\n")
+}
+```
 
 ```{r s1-evppi-table}
 if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01) {
   s1_evppi <- s1_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter,
            EVPPI = evppi,
            `% of EVPI` = evppi_percent_of_evpi) %>%
@@ -395,7 +453,7 @@ if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01
 if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01) {
   s1_plot_data <- s1_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(s1_plot_data) > 0) {
@@ -420,25 +478,23 @@ if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01
 
 # Scenario 2: Higher WTP Threshold (€100,000)
 
-**Willingness-to-Pay Threshold:** €100,000
-
-**Nivolumab Cost:** Standard (base case)
-
-```{r s2-evpi}
+```{r s2-params}
 s2_results <- all_scenario_results[["s2_wtp100k"]]
 
 if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0) {
   s2_evpi <- s2_results$evppi_results$evpi[1]
   s2_wtp <- 100000
+  s2_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 } else {
   s2_evpi <- 0
   s2_wtp <- 100000
+  s2_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 }
 ```
 
-**Total EVPI:** €`r round(s2_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(s2_wtp, big.mark = ",")`
 
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(s2_nivo_cost, big.mark = ",")` (standard)
 
 ```{r s2-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 2)", fig.height=6}
 if (!is.null(s2_results$psa_obj)) {
@@ -459,23 +515,38 @@ if (!is.null(s2_results$psa_obj)) {
 if (!is.null(s2_results$psa_obj)) {
   psa_summary <- summary(s2_results$psa_obj, calc_sds = TRUE)
   
+  cost_mat <- as.matrix(s2_results$psa_obj$cost)
+  effect_mat <- as.matrix(s2_results$psa_obj$effect)
+  nmb_mat <- effect_mat * s2_wtp - cost_mat
+  
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary (Scenario 2)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r s2-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (Scenario 2)", fig.height=6}
+if (!is.null(s2_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(s2_results$psa_obj, s2_wtp, "Scenario 2: WTP €100,000")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -487,11 +558,12 @@ if (!is.null(s2_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(s2_evpi, 2)`
 
 ```{r s2-evppi-table}
 if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01) {
   s2_evppi <- s2_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter, EVPPI = evppi, `% of EVPI` = evppi_percent_of_evpi) %>%
     mutate(EVPPI = paste0("€", round(EVPPI, 2)),
            `% of EVPI` = paste0(round(`% of EVPI`, 1), "%"))
@@ -510,7 +582,7 @@ if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01
 if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01) {
   s2_plot_data <- s2_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(s2_plot_data) > 0) {
@@ -531,25 +603,23 @@ if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01
 
 # Scenario 3: Higher WTP with Decreased Nivolumab Cost
 
-**Willingness-to-Pay Threshold:** €100,000
-
-**Nivolumab Cost:** €4,641 (80% discount)
-
-```{r s3-evpi}
+```{r s3-params}
 s3_results <- all_scenario_results[["s3_wtp100k_decreased"]]
 
 if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0) {
   s3_evpi <- s3_results$evppi_results$evpi[1]
   s3_wtp <- 100000
+  s3_nivo_cost <- 4641
 } else {
   s3_evpi <- 0
   s3_wtp <- 100000
+  s3_nivo_cost <- 4641
 }
 ```
 
-**Total EVPI:** €`r round(s3_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(s3_wtp, big.mark = ",")`
 
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(s3_nivo_cost, big.mark = ",")` (80% discount)
 
 ```{r s3-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 3)", fig.height=6}
 if (!is.null(s3_results$psa_obj)) {
@@ -570,23 +640,38 @@ if (!is.null(s3_results$psa_obj)) {
 if (!is.null(s3_results$psa_obj)) {
   psa_summary <- summary(s3_results$psa_obj, calc_sds = TRUE)
   
+  cost_mat <- as.matrix(s3_results$psa_obj$cost)
+  effect_mat <- as.matrix(s3_results$psa_obj$effect)
+  nmb_mat <- effect_mat * s3_wtp - cost_mat
+  
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary (Scenario 3)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r s3-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (Scenario 3)", fig.height=6}
+if (!is.null(s3_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(s3_results$psa_obj, s3_wtp, "Scenario 3: WTP €100k + Decreased Nivo")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -598,11 +683,12 @@ if (!is.null(s3_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(s3_evpi, 2)`
 
 ```{r s3-evppi-table}
 if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01) {
   s3_evppi <- s3_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter, EVPPI = evppi, `% of EVPI` = evppi_percent_of_evpi) %>%
     mutate(EVPPI = paste0("€", round(EVPPI, 2)),
            `% of EVPI` = paste0(round(`% of EVPI`, 1), "%"))
@@ -621,7 +707,7 @@ if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01
 if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01) {
   s3_plot_data <- s3_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(s3_plot_data) > 0) {
@@ -642,25 +728,23 @@ if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01
 
 # Scenario 4: Highest WTP Threshold (€150,000)
 
-**Willingness-to-Pay Threshold:** €150,000
-
-**Nivolumab Cost:** Standard (base case)
-
-```{r s4-evpi}
+```{r s4-params}
 s4_results <- all_scenario_results[["s4_wtp150k"]]
 
 if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0) {
   s4_evpi <- s4_results$evppi_results$evpi[1]
   s4_wtp <- 150000
+  s4_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 } else {
   s4_evpi <- 0
   s4_wtp <- 150000
+  s4_nivo_cost <- scenarios$c_drug_nivo[scenarios$scenario_id == "base"]
 }
 ```
 
-**Total EVPI:** €`r round(s4_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(s4_wtp, big.mark = ",")`
 
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(s4_nivo_cost, big.mark = ",")` (standard)
 
 ```{r s4-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 4)", fig.height=6}
 if (!is.null(s4_results$psa_obj)) {
@@ -681,23 +765,38 @@ if (!is.null(s4_results$psa_obj)) {
 if (!is.null(s4_results$psa_obj)) {
   psa_summary <- summary(s4_results$psa_obj, calc_sds = TRUE)
   
+  cost_mat <- as.matrix(s4_results$psa_obj$cost)
+  effect_mat <- as.matrix(s4_results$psa_obj$effect)
+  nmb_mat <- effect_mat * s4_wtp - cost_mat
+  
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary (Scenario 4)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r s4-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (Scenario 4)", fig.height=6}
+if (!is.null(s4_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(s4_results$psa_obj, s4_wtp, "Scenario 4: WTP €150,000")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -709,11 +808,12 @@ if (!is.null(s4_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(s4_evpi, 2)`
 
 ```{r s4-evppi-table}
 if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01) {
   s4_evppi <- s4_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter, EVPPI = evppi, `% of EVPI` = evppi_percent_of_evpi) %>%
     mutate(EVPPI = paste0("€", round(EVPPI, 2)),
            `% of EVPI` = paste0(round(`% of EVPI`, 1), "%"))
@@ -732,7 +832,7 @@ if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01
 if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01) {
   s4_plot_data <- s4_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(s4_plot_data) > 0) {
@@ -753,25 +853,23 @@ if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01
 
 # Scenario 5: Highest WTP with Decreased Nivolumab Cost
 
-**Willingness-to-Pay Threshold:** €150,000
-
-**Nivolumab Cost:** €4,641 (80% discount)
-
-```{r s5-evpi}
+```{r s5-params}
 s5_results <- all_scenario_results[["s5_wtp150k_decreased"]]
 
 if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0) {
   s5_evpi <- s5_results$evppi_results$evpi[1]
   s5_wtp <- 150000
+  s5_nivo_cost <- 4641
 } else {
   s5_evpi <- 0
   s5_wtp <- 150000
+  s5_nivo_cost <- 4641
 }
 ```
 
-**Total EVPI:** €`r round(s5_evpi, 2)`
+**Willingness-to-Pay Threshold:** €`r format(s5_wtp, big.mark = ",")`
 
-## Cost-Effectiveness Results
+**Nivolumab Cost:** €`r format(s5_nivo_cost, big.mark = ",")` (80% discount)
 
 ```{r s5-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 5)", fig.height=6}
 if (!is.null(s5_results$psa_obj)) {
@@ -792,23 +890,38 @@ if (!is.null(s5_results$psa_obj)) {
 if (!is.null(s5_results$psa_obj)) {
   psa_summary <- summary(s5_results$psa_obj, calc_sds = TRUE)
   
+  cost_mat <- as.matrix(s5_results$psa_obj$cost)
+  effect_mat <- as.matrix(s5_results$psa_obj$effect)
+  nmb_mat <- effect_mat * s5_wtp - cost_mat
+  
   summary_formatted <- psa_summary %>%
     mutate(
       Strategy = Strategy,
       `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
-      `Mean Effect (QALYs)` = round(meanEffect, 3),
       `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
-      `SD Effect` = round(sdEffect, 3)
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Effect` = round(sdEffect, 3),
+      `Mean NMB (€)` = paste0("€", format(round(colMeans(nmb_mat)[Strategy], 2), big.mark = ",")),
+      `SD NMB` = paste0("€", format(round(apply(nmb_mat, 2, sd)[Strategy], 2), big.mark = ","))
     ) %>%
-    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+    select(Strategy, `Mean Cost (€)`, `SD Cost`, `Mean Effect (QALYs)`, `SD Effect`, `Mean NMB (€)`, `SD NMB`)
   
   kable(summary_formatted,
         caption = "Cost-effectiveness analysis summary (Scenario 5)",
         booktabs = TRUE,
-        align = c("l", "r", "r", "r", "r")) %>%
+        align = c("l", "r", "r", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
+                  font_size = 8,
                   full_width = FALSE)
+}
+```
+
+```{r s5-nmb-boxplot, fig.cap="Net Monetary Benefit distribution (Scenario 5)", fig.height=6}
+if (!is.null(s5_results$psa_obj)) {
+  nmb_plot <- create_nmb_boxplot(s5_results$psa_obj, s5_wtp, "Scenario 5: WTP €150k + Decreased Nivo")
+  if (!is.null(nmb_plot)) {
+    print(nmb_plot)
+  }
 }
 ```
 
@@ -820,11 +933,12 @@ if (!is.null(s5_results$psa_obj)) {
 }
 ```
 
-## EVPPI Results
+**Total EVPI:** €`r round(s5_evpi, 2)`
 
 ```{r s5-evppi-table}
 if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01) {
   s5_evppi <- s5_results$evppi_results %>%
+    arrange(desc(evppi)) %>%
     select(Parameter = parameter, EVPPI = evppi, `% of EVPI` = evppi_percent_of_evpi) %>%
     mutate(EVPPI = paste0("€", round(EVPPI, 2)),
            `% of EVPI` = paste0(round(`% of EVPI`, 1), "%"))
@@ -843,7 +957,7 @@ if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01
 if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01) {
   s5_plot_data <- s5_results$evppi_results %>%
     filter(evppi > 0) %>%
-    arrange(desc(evppi)) %>%
+    arrange(evppi) %>%
     mutate(parameter = factor(parameter, levels = parameter))
   
   if (nrow(s5_plot_data) > 0) {
@@ -864,36 +978,7 @@ if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01
 
 # Comparative Analysis Across Scenarios
 
-```{r comparative-summary-table}
-# Create comparative summary table
-if (nrow(evppi_all_scenarios) > 0) {
-  comp_summary <- evppi_all_scenarios %>%
-    group_by(scenario_name, wtp) %>%
-    summarise(
-      EVPI = first(evpi),
-      `Top Parameter` = parameter[which.max(evppi)],
-      `Max EVPPI` = max(evppi),
-      `% of EVPI` = round(max(evppi) / first(evpi) * 100, 1),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      WTP = paste0("€", format(wtp, big.mark = ",")),
-      EVPI = paste0("€", round(EVPI, 2)),
-      `Max EVPPI` = paste0("€", round(`Max EVPPI`, 2))
-    ) %>%
-    select(Scenario = scenario_name, WTP, EVPI, `Top Parameter`, `Max EVPPI`, `% of EVPI`)
-  
-  kable(comp_summary, 
-        caption = "Summary of EVPI and top EVPPI by scenario",
-        booktabs = TRUE,
-        align = c("l", "r", "r", "l", "r", "r")) %>%
-    kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 9,
-                  full_width = FALSE)
-}
-```
-
-## EVPI Comparison
+## EVPI
 
 ```{r evpi-comparison, fig.cap="Expected Value of Perfect Information across scenarios", fig.height=5}
 if (nrow(evppi_all_scenarios) > 0) {
@@ -923,7 +1008,7 @@ if (nrow(evppi_all_scenarios) > 0) {
 }
 ```
 
-## Parameter Importance Heatmap
+## EVPPI
 
 ```{r parameter-heatmap, fig.cap="Parameter importance across scenarios (top 10 parameters)", fig.height=7}
 if (nrow(evppi_all_scenarios) > 0) {
@@ -972,11 +1057,37 @@ if (nrow(evppi_all_scenarios) > 0) {
 }
 ```
 
-\newpage
+## Summary
 
-# Conclusions and Recommendations
+```{r comparative-summary-table}
+# Create comparative summary table
+if (nrow(evppi_all_scenarios) > 0) {
+  comp_summary <- evppi_all_scenarios %>%
+    group_by(scenario_name, wtp) %>%
+    summarise(
+      EVPI = first(evpi),
+      `Top Parameter` = parameter[which.max(evppi)],
+      `Max EVPPI` = max(evppi),
+      `% of EVPI` = round(max(evppi) / first(evpi) * 100, 1),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      WTP = paste0("€", format(wtp, big.mark = ",")),
+      EVPI = paste0("€", round(EVPI, 2)),
+      `Max EVPPI` = paste0("€", round(`Max EVPPI`, 2))
+    ) %>%
+    select(Scenario = scenario_name, WTP, EVPI, `Top Parameter`, `Max EVPPI`, `% of EVPI`)
+  
+  kable(comp_summary, 
+        caption = "Summary of EVPI and top EVPPI by scenario",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "l", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
 
-## Summary of Findings
 
 ```{r conclusions, results='asis'}
 if (nrow(evppi_all_scenarios) > 0) {
@@ -1006,45 +1117,3 @@ if (nrow(evppi_all_scenarios) > 0) {
 }
 ```
 
-## Research Priorities
-
-Based on the EVPPI analysis, future research should prioritize:
-
-```{r research-priorities}
-if (nrow(evppi_all_scenarios) > 0) {
-  priorities <- evppi_all_scenarios %>%
-    group_by(parameter) %>%
-    summarise(
-      max_evppi = max(evppi),
-      avg_evppi = mean(evppi),
-      n_scenarios = sum(evppi > 0),
-      .groups = "drop"
-    ) %>%
-    arrange(desc(max_evppi)) %>%
-    slice(1:5) %>%
-    mutate(
-      Priority = 1:n(),
-      Parameter = parameter,
-      `Max EVPPI` = paste0("€", round(max_evppi, 2)),
-      `Avg EVPPI` = paste0("€", round(avg_evppi, 2)),
-      `Relevant Scenarios` = n_scenarios
-    ) %>%
-    select(Priority, Parameter, `Max EVPPI`, `Avg EVPPI`, `Relevant Scenarios`)
-  
-  kable(priorities,
-        caption = "Top 5 research priorities based on EVPPI",
-        booktabs = TRUE,
-        align = c("c", "l", "r", "r", "c")) %>%
-    kable_styling(latex_options = c("striped", "hold_position"), 
-                  font_size = 10,
-                  full_width = FALSE)
-}
-```
-
-\newpage
-
----
-
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
