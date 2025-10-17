@@ -72,6 +72,68 @@ if (!file.exists(results_file)) {
 
 # Load results
 load(results_file)
+
+# Function to create incremental CE plot relative to control with WTP threshold
+create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "") {
+  # Extract cost and effect matrices
+  cost_mat <- as.matrix(psa_obj$cost)
+  effect_mat <- as.matrix(psa_obj$effect)
+  strategies <- colnames(cost_mat)
+  
+  # Find control strategy
+  control_idx <- which(strategies == "control")
+  
+  if (length(control_idx) == 0) {
+    return(NULL)
+  }
+  
+  # Calculate incremental costs and effects relative to control
+  incr_costs <- cost_mat - cost_mat[, control_idx]
+  incr_effects <- effect_mat - effect_mat[, control_idx]
+  
+  # Create data frame for plotting (exclude control)
+  plot_data <- data.frame()
+  for (i in seq_along(strategies)) {
+    if (i != control_idx) {
+      plot_data <- rbind(plot_data, data.frame(
+        Strategy = strategies[i],
+        Incremental_Cost = incr_costs[, i],
+        Incremental_Effect = incr_effects[, i]
+      ))
+    }
+  }
+  
+  # Determine axis limits for WTP line
+  x_range <- range(plot_data$Incremental_Effect)
+  x_max <- max(abs(x_range)) * 1.1
+  
+  # Create the plot
+  p <- ggplot(plot_data, aes(x = Incremental_Effect, y = Incremental_Cost, color = Strategy)) +
+    geom_point(alpha = 0.3, size = 1) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+    geom_abline(slope = wtp_threshold, intercept = 0, 
+                linetype = "dotted", color = "black", linewidth = 0.8,
+                alpha = 0.7) +
+    annotate("text", x = x_max * 0.7, y = wtp_threshold * x_max * 0.7, 
+             label = paste0("WTP = €", format(wtp_threshold, big.mark = ",")),
+             angle = atan(wtp_threshold * diff(range(plot_data$Incremental_Effect)) / 
+                         diff(range(plot_data$Incremental_Cost))) * 180 / pi,
+             vjust = -0.5, size = 3.5, color = "black") +
+    scale_y_continuous(labels = scales::dollar_format(prefix = "€")) +
+    scale_color_brewer(palette = "Set1") +
+    labs(
+      title = "Incremental Cost-Effectiveness Scatter Plot",
+      subtitle = paste0(scenario_name, " (relative to control)"),
+      x = "Incremental QALYs",
+      y = "Incremental Cost (€)",
+      color = "Strategy"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  return(p)
+}
 ```
 
 # Summary
@@ -101,23 +163,52 @@ kable(scenario_summary,
 
 \newpage
 
-# Probabilistic Sensitivity Analysis Results
+# Base Case Scenario
 
-## Incremental Cost-Effectiveness Scatter Plot
+**Willingness-to-Pay Threshold:** €`r format(scenarios$wtp[scenarios$scenario_id == "base"], big.mark = ",")`
 
-```{r ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot from probabilistic sensitivity analysis (base case)", fig.height=6}
+**Nivolumab Cost:** €`r format(scenarios$c_drug_nivo[scenarios$scenario_id == "base"], big.mark = ",")`
+
+```{r base-evpi}
 base_results <- all_scenario_results[["base"]]
 
+if (!is.null(base_results) && nrow(base_results$evppi_results) > 0) {
+  base_evpi <- base_results$evppi_results$evpi[1]
+  base_wtp <- scenarios$wtp[scenarios$scenario_id == "base"]
+} else {
+  base_evpi <- 0
+  base_wtp <- 51000
+}
+```
+
+**Total EVPI:** €`r round(base_evpi, 2)`
+
+```{r base-interpretation, results='asis'}
+if (base_evpi > 0.01) {
+  cat("\n\nThe positive EVPI indicates decision uncertainty at the base case WTP threshold. This suggests that additional research to reduce parameter uncertainty could have value.\n")
+} else {
+  cat("\n\nThe EVPI is effectively zero, indicating no decision uncertainty at the base case WTP threshold. In this case, one strategy is clearly dominant regardless of parameter uncertainty, making EVPPI calculations less meaningful for the base case scenario.\n")
+}
+```
+
+## Cost-Effectiveness Results
+
+```{r base-ice-scatter, fig.cap="Cost-effectiveness scatter plot (base case)", fig.height=6}
 if (!is.null(base_results$psa_obj)) {
   plot(base_results$psa_obj, frontier = TRUE, points = TRUE)
 }
 ```
 
-## Cost-Effectiveness Analysis Summary
+```{r base-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (base case)", fig.height=6}
+if (!is.null(base_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(base_results$psa_obj, base_wtp, "Base Case")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
 
-```{r cea-summary-table}
-base_results <- all_scenario_results[["base"]]
-
+```{r base-cea-summary}
 if (!is.null(base_results$psa_obj)) {
   psa_summary <- summary(base_results$psa_obj, calc_sds = TRUE)
   
@@ -133,7 +224,7 @@ if (!is.null(base_results$psa_obj)) {
     select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
   
   kable(summary_formatted,
-        caption = "Cost-effectiveness analysis summary from probabilistic sensitivity analysis",
+        caption = "Cost-effectiveness analysis summary from probabilistic sensitivity analysis (base case)",
         booktabs = TRUE,
         align = c("l", "r", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position"), 
@@ -142,53 +233,13 @@ if (!is.null(base_results$psa_obj)) {
 }
 ```
 
-## Cost-Effectiveness Acceptability Curves
-
-```{r ceac-plot, fig.cap="Cost-effectiveness acceptability curves showing probability of cost-effectiveness across willingness-to-pay thresholds", fig.height=6}
-base_results <- all_scenario_results[["base"]]
-
+```{r base-ceac, fig.cap="Cost-effectiveness acceptability curves (base case)", fig.height=6}
 if (!is.null(base_results$psa_obj)) {
   c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
   ceac_obj <- ceac(c_wtp, base_results$psa_obj)
   plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
-
-## Expected Value of Perfect Information
-
-The Expected Value of Perfect Information (EVPI) represents the maximum amount that should be paid to eliminate all parameter uncertainty in the decision model. A positive EVPI indicates decision uncertainty exists at the specified WTP threshold.
-
-```{r evpi-base-case}
-base_results <- all_scenario_results[["base"]]
-
-if (!is.null(base_results) && nrow(base_results$evppi_results) > 0) {
-  base_evpi <- base_results$evppi_results$evpi[1]
-  base_wtp <- scenarios$wtp[scenarios$scenario_id == "base"]
-} else {
-  base_evpi <- 0
-  base_wtp <- 51000
-}
-```
-
-**Base Case EVPI (WTP = €`r format(base_wtp, big.mark = ",")`): €`r round(base_evpi, 2)`**
-
-```{r evpi-interpretation, results='asis'}
-if (base_evpi > 0.01) {
-  cat("\n\nThe positive EVPI indicates decision uncertainty at the base case WTP threshold. This suggests that additional research to reduce parameter uncertainty could have value.\n")
-} else {
-  cat("\n\nThe EVPI is effectively zero, indicating no decision uncertainty at the base case WTP threshold. In this case, one strategy is clearly dominant regardless of parameter uncertainty, making EVPPI calculations less meaningful for the base case scenario.\n")
-}
-```
-
-\newpage
-
-# Base Case Scenario
-
-**Willingness-to-Pay Threshold:** €`r format(scenarios$wtp[scenarios$scenario_id == "base"], big.mark = ",")`
-
-**Nivolumab Cost:** €`r format(scenarios$c_drug_nivo[scenarios$scenario_id == "base"], big.mark = ",")`
-
-**Total EVPI:** €`r round(base_evpi, 2)`
 
 ## EVPPI Results
 
@@ -210,12 +261,10 @@ if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi 
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for base case scenario due to zero EVPI.\n")
 }
 ```
 
-```{r base-case-plot, fig.cap="Base case EVPPI by parameter"}
+```{r base-case-plot, fig.cap="Base case EVPPI by parameter", eval=!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi > 0.01}
 if (!is.null(base_results) && nrow(base_results$evppi_results) > 0 && base_evpi > 0.01) {
   base_plot_data <- base_results$evppi_results %>%
     filter(evppi > 0) %>%
@@ -253,8 +302,10 @@ s1_results <- all_scenario_results[["s1_decreased_nivo"]]
 
 if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0) {
   s1_evpi <- s1_results$evppi_results$evpi[1]
+  s1_wtp <- 51000
 } else {
   s1_evpi <- 0
+  s1_wtp <- 51000
 }
 ```
 
@@ -268,11 +319,52 @@ if (s1_evpi > 0.01) {
 }
 ```
 
-## Incremental Cost-Effectiveness Results
+## Cost-Effectiveness Results
 
-```{r s1-ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot (Scenario 1: Decreased nivolumab cost)", fig.height=6}
+```{r s1-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 1)", fig.height=6}
 if (!is.null(s1_results$psa_obj)) {
   plot(s1_results$psa_obj, frontier = TRUE, points = TRUE)
+}
+```
+
+```{r s1-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (Scenario 1)", fig.height=6}
+if (!is.null(s1_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(s1_results$psa_obj, s1_wtp, "Scenario 1: Decreased Nivolumab")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
+
+```{r s1-cea-summary}
+if (!is.null(s1_results$psa_obj)) {
+  psa_summary <- summary(s1_results$psa_obj, calc_sds = TRUE)
+  
+  summary_formatted <- psa_summary %>%
+    mutate(
+      Strategy = Strategy,
+      `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
+      `SD Effect` = round(sdEffect, 3)
+    ) %>%
+    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+  
+  kable(summary_formatted,
+        caption = "Cost-effectiveness analysis summary (Scenario 1)",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
+
+```{r s1-ceac, fig.cap="Cost-effectiveness acceptability curves (Scenario 1)", fig.height=6}
+if (!is.null(s1_results$psa_obj)) {
+  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  ceac_obj <- ceac(c_wtp, s1_results$psa_obj)
+  plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
 
@@ -296,12 +388,10 @@ if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for this scenario.\n")
 }
 ```
 
-```{r s1-plot, fig.cap="EVPPI with decreased nivolumab cost"}
+```{r s1-plot, fig.cap="EVPPI with decreased nivolumab cost", eval=!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01}
 if (!is.null(s1_results) && nrow(s1_results$evppi_results) > 0 && s1_evpi > 0.01) {
   s1_plot_data <- s1_results$evppi_results %>%
     filter(evppi > 0) %>%
@@ -339,18 +429,61 @@ s2_results <- all_scenario_results[["s2_wtp100k"]]
 
 if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0) {
   s2_evpi <- s2_results$evppi_results$evpi[1]
+  s2_wtp <- 100000
 } else {
   s2_evpi <- 0
+  s2_wtp <- 100000
 }
 ```
 
 **Total EVPI:** €`r round(s2_evpi, 2)`
 
-## Incremental Cost-Effectiveness Results
+## Cost-Effectiveness Results
 
-```{r s2-ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot (Scenario 2: WTP €100,000)", fig.height=6}
+```{r s2-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 2)", fig.height=6}
 if (!is.null(s2_results$psa_obj)) {
   plot(s2_results$psa_obj, frontier = TRUE, points = TRUE)
+}
+```
+
+```{r s2-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (Scenario 2)", fig.height=6}
+if (!is.null(s2_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(s2_results$psa_obj, s2_wtp, "Scenario 2: WTP €100,000")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
+
+```{r s2-cea-summary}
+if (!is.null(s2_results$psa_obj)) {
+  psa_summary <- summary(s2_results$psa_obj, calc_sds = TRUE)
+  
+  summary_formatted <- psa_summary %>%
+    mutate(
+      Strategy = Strategy,
+      `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
+      `SD Effect` = round(sdEffect, 3)
+    ) %>%
+    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+  
+  kable(summary_formatted,
+        caption = "Cost-effectiveness analysis summary (Scenario 2)",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
+
+```{r s2-ceac, fig.cap="Cost-effectiveness acceptability curves (Scenario 2)", fig.height=6}
+if (!is.null(s2_results$psa_obj)) {
+  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  ceac_obj <- ceac(c_wtp, s2_results$psa_obj)
+  plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
 
@@ -370,12 +503,10 @@ if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for this scenario.\n")
 }
 ```
 
-```{r s2-plot, fig.cap="EVPPI at WTP €100,000"}
+```{r s2-plot, fig.cap="EVPPI at WTP €100,000", eval=!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01}
 if (!is.null(s2_results) && nrow(s2_results$evppi_results) > 0 && s2_evpi > 0.01) {
   s2_plot_data <- s2_results$evppi_results %>%
     filter(evppi > 0) %>%
@@ -409,18 +540,61 @@ s3_results <- all_scenario_results[["s3_wtp100k_decreased"]]
 
 if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0) {
   s3_evpi <- s3_results$evppi_results$evpi[1]
+  s3_wtp <- 100000
 } else {
   s3_evpi <- 0
+  s3_wtp <- 100000
 }
 ```
 
 **Total EVPI:** €`r round(s3_evpi, 2)`
 
-## Incremental Cost-Effectiveness Results
+## Cost-Effectiveness Results
 
-```{r s3-ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot (Scenario 3: WTP €100,000 with decreased nivolumab)", fig.height=6}
+```{r s3-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 3)", fig.height=6}
 if (!is.null(s3_results$psa_obj)) {
   plot(s3_results$psa_obj, frontier = TRUE, points = TRUE)
+}
+```
+
+```{r s3-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (Scenario 3)", fig.height=6}
+if (!is.null(s3_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(s3_results$psa_obj, s3_wtp, "Scenario 3: WTP €100k + Decreased Nivo")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
+
+```{r s3-cea-summary}
+if (!is.null(s3_results$psa_obj)) {
+  psa_summary <- summary(s3_results$psa_obj, calc_sds = TRUE)
+  
+  summary_formatted <- psa_summary %>%
+    mutate(
+      Strategy = Strategy,
+      `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
+      `SD Effect` = round(sdEffect, 3)
+    ) %>%
+    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+  
+  kable(summary_formatted,
+        caption = "Cost-effectiveness analysis summary (Scenario 3)",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
+
+```{r s3-ceac, fig.cap="Cost-effectiveness acceptability curves (Scenario 3)", fig.height=6}
+if (!is.null(s3_results$psa_obj)) {
+  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  ceac_obj <- ceac(c_wtp, s3_results$psa_obj)
+  plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
 
@@ -440,12 +614,10 @@ if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for this scenario.\n")
 }
 ```
 
-```{r s3-plot, fig.cap="EVPPI: WTP €100,000 with decreased nivolumab"}
+```{r s3-plot, fig.cap="EVPPI: WTP €100,000 with decreased nivolumab", eval=!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01}
 if (!is.null(s3_results) && nrow(s3_results$evppi_results) > 0 && s3_evpi > 0.01) {
   s3_plot_data <- s3_results$evppi_results %>%
     filter(evppi > 0) %>%
@@ -479,18 +651,61 @@ s4_results <- all_scenario_results[["s4_wtp150k"]]
 
 if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0) {
   s4_evpi <- s4_results$evppi_results$evpi[1]
+  s4_wtp <- 150000
 } else {
   s4_evpi <- 0
+  s4_wtp <- 150000
 }
 ```
 
 **Total EVPI:** €`r round(s4_evpi, 2)`
 
-## Incremental Cost-Effectiveness Results
+## Cost-Effectiveness Results
 
-```{r s4-ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot (Scenario 4: WTP €150,000)", fig.height=6}
+```{r s4-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 4)", fig.height=6}
 if (!is.null(s4_results$psa_obj)) {
   plot(s4_results$psa_obj, frontier = TRUE, points = TRUE)
+}
+```
+
+```{r s4-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (Scenario 4)", fig.height=6}
+if (!is.null(s4_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(s4_results$psa_obj, s4_wtp, "Scenario 4: WTP €150,000")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
+
+```{r s4-cea-summary}
+if (!is.null(s4_results$psa_obj)) {
+  psa_summary <- summary(s4_results$psa_obj, calc_sds = TRUE)
+  
+  summary_formatted <- psa_summary %>%
+    mutate(
+      Strategy = Strategy,
+      `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
+      `SD Effect` = round(sdEffect, 3)
+    ) %>%
+    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+  
+  kable(summary_formatted,
+        caption = "Cost-effectiveness analysis summary (Scenario 4)",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
+
+```{r s4-ceac, fig.cap="Cost-effectiveness acceptability curves (Scenario 4)", fig.height=6}
+if (!is.null(s4_results$psa_obj)) {
+  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  ceac_obj <- ceac(c_wtp, s4_results$psa_obj)
+  plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
 
@@ -510,12 +725,10 @@ if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for this scenario.\n")
 }
 ```
 
-```{r s4-plot, fig.cap="EVPPI at WTP €150,000"}
+```{r s4-plot, fig.cap="EVPPI at WTP €150,000", eval=!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01}
 if (!is.null(s4_results) && nrow(s4_results$evppi_results) > 0 && s4_evpi > 0.01) {
   s4_plot_data <- s4_results$evppi_results %>%
     filter(evppi > 0) %>%
@@ -549,18 +762,61 @@ s5_results <- all_scenario_results[["s5_wtp150k_decreased"]]
 
 if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0) {
   s5_evpi <- s5_results$evppi_results$evpi[1]
+  s5_wtp <- 150000
 } else {
   s5_evpi <- 0
+  s5_wtp <- 150000
 }
 ```
 
 **Total EVPI:** €`r round(s5_evpi, 2)`
 
-## Incremental Cost-Effectiveness Results
+## Cost-Effectiveness Results
 
-```{r s5-ice-scatter, fig.cap="Incremental cost-effectiveness scatter plot (Scenario 5: WTP €150,000 with decreased nivolumab)", fig.height=6}
+```{r s5-ice-scatter, fig.cap="Cost-effectiveness scatter plot (Scenario 5)", fig.height=6}
 if (!is.null(s5_results$psa_obj)) {
   plot(s5_results$psa_obj, frontier = TRUE, points = TRUE)
+}
+```
+
+```{r s5-ice-incremental, fig.cap="Incremental cost-effectiveness scatter plot relative to control (Scenario 5)", fig.height=6}
+if (!is.null(s5_results$psa_obj)) {
+  incr_plot <- create_incremental_ce_plot(s5_results$psa_obj, s5_wtp, "Scenario 5: WTP €150k + Decreased Nivo")
+  if (!is.null(incr_plot)) {
+    print(incr_plot)
+  }
+}
+```
+
+```{r s5-cea-summary}
+if (!is.null(s5_results$psa_obj)) {
+  psa_summary <- summary(s5_results$psa_obj, calc_sds = TRUE)
+  
+  summary_formatted <- psa_summary %>%
+    mutate(
+      Strategy = Strategy,
+      `Mean Cost (€)` = paste0("€", format(round(meanCost, 2), big.mark = ",")),
+      `Mean Effect (QALYs)` = round(meanEffect, 3),
+      `SD Cost` = paste0("€", format(round(sdCost, 2), big.mark = ",")),
+      `SD Effect` = round(sdEffect, 3)
+    ) %>%
+    select(Strategy, `Mean Cost (€)`, `Mean Effect (QALYs)`, `SD Cost`, `SD Effect`)
+  
+  kable(summary_formatted,
+        caption = "Cost-effectiveness analysis summary (Scenario 5)",
+        booktabs = TRUE,
+        align = c("l", "r", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), 
+                  font_size = 9,
+                  full_width = FALSE)
+}
+```
+
+```{r s5-ceac, fig.cap="Cost-effectiveness acceptability curves (Scenario 5)", fig.height=6}
+if (!is.null(s5_results$psa_obj)) {
+  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  ceac_obj <- ceac(c_wtp, s5_results$psa_obj)
+  plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
 ```
 
@@ -580,12 +836,10 @@ if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01
     kable_styling(latex_options = c("striped", "hold_position"), 
                   font_size = 10,
                   full_width = FALSE)
-} else {
-  cat("\n\nNo meaningful EVPPI results available for this scenario.\n")
 }
 ```
 
-```{r s5-plot, fig.cap="EVPPI: Highest WTP with decreased nivolumab cost"}
+```{r s5-plot, fig.cap="EVPPI: Highest WTP with decreased nivolumab cost", eval=!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01}
 if (!is.null(s5_results) && nrow(s5_results$evppi_results) > 0 && s5_evpi > 0.01) {
   s5_plot_data <- s5_results$evppi_results %>%
     filter(evppi > 0) %>%
