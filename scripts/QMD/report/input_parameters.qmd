@@ -5,20 +5,27 @@ author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
   pdf:
-    documentclass: article
-    geometry: margin=0.75in
-    fontsize: 10pt
-    colorlinks: true
     toc: true
     toc-depth: 3
     number-sections: true
-    fig-pos: 'H'
+    fig-width: 8
+    fig-height: 6
     keep-tex: false
-editor: visual
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
 execute:
   echo: false
   warning: false
   message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
 ---
 
 ```{r setup}
@@ -214,25 +221,28 @@ kable(comprehensive_params,
 # Technical Notes
 
 ## Model Structure
-- **Time horizon**: 520 weeks (10 years) based on long-term follow-up requirements
-- **Cycle length**: 1 week for precise timing of treatments and assessments  
-- **Perspective**: Healthcare system costs and patient-reported health outcomes
-- **Population**: Metastatic colorectal cancer patients eligible for biomarker testing
+
+-   **Time horizon**: 520 weeks (10 years) based on long-term follow-up requirements
+-   **Cycle length**: 1 week for precise timing of treatments and assessments\
+-   **Perspective**: Healthcare system costs and patient-reported health outcomes
+-   **Population**: Metastatic colorectal cancer patients eligible for biomarker testing
 
 ## Uncertainty Analysis Methods
-- **DSA**: Parameters varied individually by ±20% while others held at base case
-- **PSA**: Monte Carlo simulation with 5,000 iterations using appropriate distributions
-- **Survival uncertainty**: Bootstrap resampling (5,000 samples) preserves correlation structure
-- **Biomarker strategies**: Population-weighted averages account for biomarker prevalence
+
+-   **DSA**: Parameters varied individually by ±20% while others held at base case
+-   **PSA**: Monte Carlo simulation with 5,000 iterations using appropriate distributions
+-   **Survival uncertainty**: Bootstrap resampling (5,000 samples) preserves correlation structure
+-   **Biomarker strategies**: Population-weighted averages account for biomarker prevalence
 
 ## Data Sources and Assumptions
-- **Clinical effectiveness**: METIMMOX-1 randomized controlled trial data
-- **Costs**: National healthcare tariffs, drug pricing databases, and published literature
-- **Utilities**: EQ-5D-5L patient-reported outcomes from trial participants
-- **Treatment schedules**: Protocol-specified dosing and monitoring requirements
 
----
+-   **Clinical effectiveness**: METIMMOX-1 randomized controlled trial data
+-   **Costs**: National healthcare tariffs, drug pricing databases, and published literature
+-   **Utilities**: EQ-5D-5L patient-reported outcomes from trial participants
+-   **Treatment schedules**: Protocol-specified dosing and monitoring requirements
 
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
+------------------------------------------------------------------------
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
 **Report version:** 1.0
