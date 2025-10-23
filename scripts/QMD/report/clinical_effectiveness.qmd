@@ -378,4 +378,3 @@ effectiveness_data %>%
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0
-```
