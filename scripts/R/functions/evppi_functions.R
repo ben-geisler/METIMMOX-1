@@ -10,7 +10,7 @@
 #' @param n_grid Number of grid points for parameter values
 #' @return List with EVPPI results and diagnostics
 calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp, 
-                                     n_inner = 100, n_grid = 10) {
+                                     n_inner = 1000, n_grid = 500) {
   
   cat("Calculating EVPPI for parameter(s):", paste(param_names, collapse = ", "), "\n")
   
@@ -80,15 +80,15 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
   
   # Simplified EVPPI calculation using quantile-based approach
   tryCatch({
-    # Create parameter grids using fewer points for stability
+    # Create parameter grids using quantiles
     param_grids <- list()
     for (param_name in param_names) {
       param_values <- psa_params[[param_name]]
       param_values <- param_values[complete_rows]
       param_values <- param_values[!is.na(param_values)]
       
-      # Use quantiles for grid points
-      quantiles <- seq(0.1, 0.9, length.out = n_grid)
+      # Use quantiles for grid points (500 points from 0.001 to 0.999)
+      quantiles <- seq(0.001, 0.999, length.out = n_grid)
       param_grids[[param_name]] <- quantile(param_values, quantiles)
     }
     
@@ -123,7 +123,7 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
         }
       }
       
-      # Select closest simulations
+      # Select closest simulations (1000 nearest neighbors)
       n_closest <- min(n_inner, length(distances))
       closest_indices <- order(distances)[1:n_closest]
       
@@ -151,7 +151,9 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       param_names = param_names,
       expected_value_ppi = expected_value_ppi,
       expected_value_current = expected_value_current,
-      n_combinations = nrow(param_combinations)
+      n_combinations = nrow(param_combinations),
+      n_inner = n_inner,
+      n_grid = n_grid
     ))
     
   }, error = function(e) {
@@ -182,7 +184,8 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params) {
   evpi_manual <- expected_max_nmb - max_expected_nmb
   
   cat("\n=== EVPPI Analysis at WTP =", wtp, "===\n")
-  cat("Total EVPI:", round(evpi_manual, 4), "\n\n")
+  cat("Total EVPI:", round(evpi_manual, 4), "\n")
+  cat("Using n_inner = 1000 and n_grid = 500 for EVPPI calculations\n\n")
   
   # Only proceed if we have meaningful EVPI
   if (evpi_manual <= 0.01) {
@@ -222,7 +225,7 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params) {
   if (length(params_with_variation) > 0) {
     for (param in params_with_variation) {
       result <- calculate_evppi_improved(psa_obj, psa_params, param, 
-                                         wtp = wtp, n_inner = 50, n_grid = 8)
+                                         wtp = wtp, n_inner = 1000, n_grid = 500)
       
       evppi_percent <- if (result$evpi > 0) (result$evppi / result$evpi) * 100 else 0
       
