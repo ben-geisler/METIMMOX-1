@@ -270,7 +270,7 @@ if (!is.null(base_results$psa_obj)) {
 
 ```{r base-ceac, fig.cap="Cost-effectiveness acceptability curves (base case)", fig.height=6}
 if (!is.null(base_results$psa_obj)) {
-  c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+  c_wtp <- seq(from = 0, to = 1e6, by = 5e3)
   ceac_obj <- ceac(c_wtp, base_results$psa_obj)
   plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 }
