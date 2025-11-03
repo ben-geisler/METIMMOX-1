@@ -170,11 +170,18 @@ if (exists("ref_age") && exists("predictions") && exists("strategies_df")) {
 
 if (exists("models") && !is.null(models$full)) {
   
-  # Overall Survival models
-  os_comparison <- rbind(
-    data.frame(Structure = "Full Model", models$full$os_ic),
-    data.frame(Structure = "w/o Age/Sex", models$no_age_sex$os_ic)
-  ) %>%
+  # Overall Survival models - start with full model
+  os_comparison <- data.frame(Structure = "Full Model", models$full$os_ic)
+  
+  # Add no_age_sex model only if it exists
+  if (!is.null(models$no_age_sex) && !is.null(models$no_age_sex$os_ic)) {
+    os_comparison <- rbind(
+      os_comparison,
+      data.frame(Structure = "w/o Age/Sex", models$no_age_sex$os_ic)
+    )
+  }
+  
+  os_comparison <- os_comparison %>%
     arrange(AIC) %>%
     mutate(
       AIC = round(AIC, 2),
@@ -210,11 +217,18 @@ if (exists("models") && !is.null(models$full)) {
 
 if (exists("models") && !is.null(models$full)) {
   
-  # Progression-Free Survival models
-  pfs_comparison <- rbind(
-    data.frame(Structure = "Full Model", models$full$pfs_ic),
-    data.frame(Structure = "w/o Age/Sex", models$no_age_sex$pfs_ic)
-  ) %>%
+  # Progression-Free Survival models - start with full model
+  pfs_comparison <- data.frame(Structure = "Full Model", models$full$pfs_ic)
+  
+  # Add no_age_sex model only if it exists
+  if (!is.null(models$no_age_sex) && !is.null(models$no_age_sex$pfs_ic)) {
+    pfs_comparison <- rbind(
+      pfs_comparison,
+      data.frame(Structure = "w/o Age/Sex", models$no_age_sex$pfs_ic)
+    )
+  }
+  
+  pfs_comparison <- pfs_comparison %>%
     arrange(AIC) %>%
     mutate(
       AIC = round(AIC, 2),
@@ -242,6 +256,108 @@ if (exists("models") && !is.null(models$full)) {
     
 } else {
   cat("**PFS model comparison not available.**\n")
+}
+```
+
+# Model Coefficients
+
+## Overall Survival (OS) Model Coefficients
+
+```{r os-coefficients}
+#| tbl-cap: "Regression coefficients for the selected OS parametric survival model"
+
+if (exists("models") && !is.null(models$best_fit$os)) {
+  
+  # Extract model object
+  os_model <- models$best_fit$os
+  
+  # Add model information first
+  cat("**Model specification:**\n\n")
+  cat("- Distribution:", models$best_fit$os_distribution, "\n")
+  cat("- Structure:", models$best_fit$os_structure, "\n")
+  cat("- AIC:", round(models$best_fit$os_aic, 2), "\n\n")
+  
+  # Get coefficient estimates with confidence intervals
+  coef_table <- as.data.frame(os_model$res.t)
+  
+  # Add parameter names as a column
+  coef_table <- data.frame(
+    Parameter = rownames(coef_table),
+    coef_table,
+    stringsAsFactors = FALSE
+  )
+  rownames(coef_table) <- NULL
+  
+  # Format numeric columns
+  numeric_cols <- c("est", "L95.", "U95.", "se")
+  coef_table[numeric_cols] <- lapply(coef_table[numeric_cols], function(x) round(x, 4))
+  
+  # Display coefficient table
+  if (knitr::is_latex_output()) {
+    kable(coef_table, format = "latex", booktabs = TRUE, 
+          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE"),
+          longtable = FALSE, escape = TRUE) %>%
+      kableExtra::kable_styling(font_size = 9, 
+                               latex_options = c("striped", "HOLD_position"),
+                               full_width = FALSE)
+  } else {
+    kable(coef_table, format = "html",
+          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+  
+} else {
+  cat("**OS model coefficients not available.**\n")
+}
+```
+
+## Progression-Free Survival (PFS) Model Coefficients
+
+```{r pfs-coefficients}
+#| tbl-cap: "Regression coefficients for the selected PFS parametric survival model"
+
+if (exists("models") && !is.null(models$best_fit$pfs)) {
+  
+  # Extract model object
+  pfs_model <- models$best_fit$pfs
+  
+  # Add model information first
+  cat("**Model specification:**\n\n")
+  cat("- Distribution:", models$best_fit$pfs_distribution, "\n")
+  cat("- Structure:", models$best_fit$pfs_structure, "\n")
+  cat("- AIC:", round(models$best_fit$pfs_aic, 2), "\n\n")
+  
+  # Get coefficient estimates with confidence intervals
+  coef_table <- as.data.frame(pfs_model$res.t)
+  
+  # Add parameter names as a column
+  coef_table <- data.frame(
+    Parameter = rownames(coef_table),
+    coef_table,
+    stringsAsFactors = FALSE
+  )
+  rownames(coef_table) <- NULL
+  
+  # Format numeric columns
+  numeric_cols <- c("est", "L95.", "U95.", "se")
+  coef_table[numeric_cols] <- lapply(coef_table[numeric_cols], function(x) round(x, 4))
+  
+  # Display coefficient table
+  if (knitr::is_latex_output()) {
+    kable(coef_table, format = "latex", booktabs = TRUE, 
+          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE"),
+          longtable = FALSE, escape = TRUE) %>%
+      kableExtra::kable_styling(font_size = 9, 
+                               latex_options = c("striped", "HOLD_position"),
+                               full_width = FALSE)
+  } else {
+    kable(coef_table, format = "html",
+          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+  
+} else {
+  cat("**PFS model coefficients not available.**\n")
 }
 ```
 
