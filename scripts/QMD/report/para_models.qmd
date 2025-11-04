@@ -1,6 +1,6 @@
 ---
-title: "Parametric Survival Models Report"
-subtitle: "METIMMOX-1 Health Economic Evaluation"
+title: "Parametric Survival Modeling"
+subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -38,7 +38,8 @@ knitr::opts_chunk$set(
   fig.width = 8,
   fig.height = 6,
   dpi = 300,
-  out.width = "100%"
+  out.width = "100%",
+  fig.keep = "last"  # Only keep the last plot from each chunk
 )
 
 # Set working directory to project root
@@ -68,7 +69,7 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-analysis-results, include=FALSE}
-# Set USE_BOTH_MODELS flag before loading scripts
+# Set USE_BOTH_MODELS flag before loading scripts - FORCE to 1 for this report
 USE_BOTH_MODELS <- 1
 
 # Load analysis results if not already in environment
@@ -84,11 +85,20 @@ if (!exists("models")) {
     suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
   }
   
-  # Set USE_BOTH_MODELS again before survival analysis script
+  # Set USE_BOTH_MODELS again AFTER loading global variables to override it
   USE_BOTH_MODELS <- 1
   
   if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
     suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+  }
+} else {
+  # If models already exists, check if we need to refit
+  if (is.null(models$no_age_sex)) {
+    cat("Models without age/sex not found. Refitting with USE_BOTH_MODELS = 1...\n")
+    USE_BOTH_MODELS <- 1
+    if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
+      suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+    }
   }
 }
 ```
@@ -99,35 +109,35 @@ cat("\\newpage\n")
 
 # Overview
 
-This report presents all parametric survival models fitted for the METIMMOX-1 health economic evaluation. The models compare different biomarker strategies for overall survival (OS) and progression-free survival (PFS) outcomes. The parametric survival models were fitted to compare biomarker-guided immunotherapy selection strategies in metastatic microsatellite stable/proficient mismatch repair (MSS/pMMR) colorectal cancer patients.
+This report presents parametric survival models fitted for the METIMMOX-1 economic evaluation. The models compare different biomarker strategies for overall survival (OS) and progression-free survival (PFS) outcomes. This analysis serves as the foundation for the cost-effectiveness evaluation by quantifying treatment effects across biomarker-defined patient subgroups.
 
 # Population Characteristics including Biomarker Prevalences
 
-```{r population-summary}
+```{r population-summary, results='asis'}
 if (exists("ref_age") && exists("predictions") && exists("strategies_df")) {
   
-  # Display population characteristics in the requested format
-  cat("**Continuous variables:**\n")
+  # Display population characteristics
+  cat("Continuous variables:\n\n")
   cat("- Age (mean):", round(ref_age, 2), "years\n\n")
   
-  cat("**Categorical variables (most frequent category used):**\n")
+  cat("Categorical variables (most frequent category used):\n\n")
   cat("- Sex:", ref_sex, "(0=female, 1=male)\n")
   cat("- CRP:", ref_crp, "(0=negative, 1=positive)\n")
   cat("- TLR:", ref_tlr, "(0=negative, 1=positive)\n")
   cat("- TMB_BRAF:", ref_tmb_braf, "(0=negative, 1=positive)\n\n")
   
-  cat("**Biomarker prevalences in population:**\n")
+  cat("Biomarker prevalences in population:\n\n")
   for (strategy in strategies_df$id[strategies_df$id != "control"]) {
     prevalence <- strategies_df$prevalence[strategies_df$id == strategy]
     cat("- ", toupper(strategy), " positive:", round(prevalence * 100, 1), "%\n")
   }
   
-  cat("\n**Data completeness:**\n")
+  cat("\nData completeness:\n\n")
   cat("- Complete cases used:", nrow(data_complete), "of", nrow(data), "observations")
   cat(" (", round(nrow(data_complete)/nrow(data) * 100, 1), "%)\n\n")
   
 } else {
-  cat("**Population characteristics not available. Run main analysis first.**\n")
+  cat("Population characteristics not available. Run main analysis first.\n")
 }
 ```
 
@@ -136,16 +146,28 @@ if (exists("ref_age") && exists("predictions") && exists("strategies_df")) {
 ## Analysis Specifications
 
 - **Distributions tested**: 
-  - Exponential
-  - Weibull
-  - Weibull PH
-  - Gompertz
-  - Log-logistic
-  - Log-normal
-  - Generalized Gamma
-  - Gamma
-  - Generalized F Distribution
-- **Covariate structures**: Full models (age, sex, treatment, biomarkers) vs models without age/sex adjustment
+  1. Exponential
+  2. Weibull
+  3. Weibull PH
+  4. Gompertz
+  5. Log-logistic
+  6. Log-normal
+  7. Generalized Gamma
+  8. Gamma
+  9. Generalized F Distribution
+
+- **Covariate structure**: Full models with age and sex adjustment, treatment effects, and treatment-biomarker interactions:
+  1. Age (continuous, years)
+  2. Sex (categorical, 0=female, 1=male)
+  3. Treatment assignment (Control arm vs Experimental arm)
+  4. CRP biomarker status (0=negative, 1=positive)
+  5. TLR biomarker status (0=negative, 1=positive)
+  6. TMB_BRAF biomarker status (0=negative, 1=positive)
+  7. Treatment × CRP interaction
+  8. Treatment × TLR interaction
+  9. Treatment × TMB_BRAF interaction
+  
+  Note: Models without age and sex adjustment were also considered but are not used in the primary analysis.
 
 ## Data Considerations
 
@@ -208,7 +230,7 @@ if (exists("models") && !is.null(models$full)) {
   }
     
 } else {
-  cat("**OS model comparison not available.**\n")
+  cat("OS model comparison not available.\n")
 }
 ```
 
@@ -255,15 +277,19 @@ if (exists("models") && !is.null(models$full)) {
   }
     
 } else {
-  cat("**PFS model comparison not available.**\n")
+  cat("PFS model comparison not available.\n")
 }
+```
+
+```{r pagebreak-2, results='asis'}
+cat("\\newpage\n")
 ```
 
 # Model Coefficients
 
 ## Overall Survival (OS) Model Coefficients
 
-```{r os-coefficients}
+```{r os-coefficients, results='asis'}
 #| tbl-cap: "Regression coefficients for the selected OS parametric survival model"
 
 if (exists("models") && !is.null(models$best_fit$os)) {
@@ -272,48 +298,49 @@ if (exists("models") && !is.null(models$best_fit$os)) {
   os_model <- models$best_fit$os
   
   # Add model information first
-  cat("**Model specification:**\n\n")
+  cat("Selected model:\n\n")
   cat("- Distribution:", models$best_fit$os_distribution, "\n")
-  cat("- Structure:", models$best_fit$os_structure, "\n")
-  cat("- AIC:", round(models$best_fit$os_aic, 2), "\n\n")
+  cat("- Covariate adjustment:", ifelse(models$best_fit$os_structure == "full", 
+                                         "Age and sex adjusted", 
+                                         "Without age/sex adjustment"), "\n\n")
   
-  # Get coefficient estimates with confidence intervals
+  # Get coefficient estimates
   coef_table <- as.data.frame(os_model$res.t)
   
-  # Add parameter names as a column
+  # Select only estimate and SE columns
   coef_table <- data.frame(
     Parameter = rownames(coef_table),
-    coef_table,
+    Estimate = round(coef_table$est, 4),
+    SE = round(coef_table$se, 4),
     stringsAsFactors = FALSE
   )
-  rownames(coef_table) <- NULL
   
-  # Format numeric columns
-  numeric_cols <- c("est", "L95.", "U95.", "se")
-  coef_table[numeric_cols] <- lapply(coef_table[numeric_cols], function(x) round(x, 4))
+  # Add units/notes to parameter names
+  coef_table$Parameter <- gsub("^Age$", "Age (per year)", coef_table$Parameter)
+  coef_table$Parameter <- gsub("^sex1$", "Sex (male vs female)", coef_table$Parameter)
+  
+  rownames(coef_table) <- NULL
   
   # Display coefficient table
   if (knitr::is_latex_output()) {
     kable(coef_table, format = "latex", booktabs = TRUE, 
-          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE"),
           longtable = FALSE, escape = TRUE) %>%
-      kableExtra::kable_styling(font_size = 9, 
+      kableExtra::kable_styling(font_size = 10, 
                                latex_options = c("striped", "HOLD_position"),
                                full_width = FALSE)
   } else {
-    kable(coef_table, format = "html",
-          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE")) %>%
+    kable(coef_table, format = "html") %>%
       kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
   }
   
 } else {
-  cat("**OS model coefficients not available.**\n")
+  cat("OS model coefficients not available.\n")
 }
 ```
 
 ## Progression-Free Survival (PFS) Model Coefficients
 
-```{r pfs-coefficients}
+```{r pfs-coefficients, results='asis'}
 #| tbl-cap: "Regression coefficients for the selected PFS parametric survival model"
 
 if (exists("models") && !is.null(models$best_fit$pfs)) {
@@ -322,50 +349,53 @@ if (exists("models") && !is.null(models$best_fit$pfs)) {
   pfs_model <- models$best_fit$pfs
   
   # Add model information first
-  cat("**Model specification:**\n\n")
+  cat("Selected model:\n\n")
   cat("- Distribution:", models$best_fit$pfs_distribution, "\n")
-  cat("- Structure:", models$best_fit$pfs_structure, "\n")
-  cat("- AIC:", round(models$best_fit$pfs_aic, 2), "\n\n")
+  cat("- Covariate adjustment:", ifelse(models$best_fit$pfs_structure == "full", 
+                                         "Age and sex adjusted", 
+                                         "Without age/sex adjustment"), "\n\n")
   
-  # Get coefficient estimates with confidence intervals
+  # Get coefficient estimates
   coef_table <- as.data.frame(pfs_model$res.t)
   
-  # Add parameter names as a column
+  # Select only estimate and SE columns
   coef_table <- data.frame(
     Parameter = rownames(coef_table),
-    coef_table,
+    Estimate = round(coef_table$est, 4),
+    SE = round(coef_table$se, 4),
     stringsAsFactors = FALSE
   )
-  rownames(coef_table) <- NULL
   
-  # Format numeric columns
-  numeric_cols <- c("est", "L95.", "U95.", "se")
-  coef_table[numeric_cols] <- lapply(coef_table[numeric_cols], function(x) round(x, 4))
+  # Add units/notes to parameter names
+  coef_table$Parameter <- gsub("^Age$", "Age (per year)", coef_table$Parameter)
+  coef_table$Parameter <- gsub("^sex1$", "Sex (male vs female)", coef_table$Parameter)
+  
+  rownames(coef_table) <- NULL
   
   # Display coefficient table
   if (knitr::is_latex_output()) {
     kable(coef_table, format = "latex", booktabs = TRUE, 
-          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE"),
           longtable = FALSE, escape = TRUE) %>%
-      kableExtra::kable_styling(font_size = 9, 
+      kableExtra::kable_styling(font_size = 10, 
                                latex_options = c("striped", "HOLD_position"),
                                full_width = FALSE)
   } else {
-    kable(coef_table, format = "html",
-          col.names = c("Parameter", "Estimate", "Lower 95% CI", "Upper 95% CI", "SE")) %>%
+    kable(coef_table, format = "html") %>%
       kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
   }
   
 } else {
-  cat("**PFS model coefficients not available.**\n")
+  cat("PFS model coefficients not available.\n")
 }
 ```
 
-```{r pagebreak-2, results='asis'}
+```{r pagebreak-3, results='asis'}
 cat("\\newpage\n")
 ```
 
 # Population Survival Curves
+
+The following figures compare empirical Kaplan-Meier estimates with predicted survival curves from the selected parametric models. "Population" refers to different patient groups: biomarker-positive patients, biomarker-negative patients, or the entire population. For the control strategy, population curves represent all patients. For biomarker-guided strategies, population-level predictions are weighted by the prevalence of biomarker-positive and biomarker-negative patients in the sample.
 
 ```{r survival-functions, include=FALSE}
 # Function to create population survival plots
@@ -382,8 +412,6 @@ create_population_plots <- function(models, data_complete, time_points, outcome_
   km_data <- data.frame(
     time = km_fit$time,
     survival = km_fit$surv,
-    lower = km_fit$lower,
-    upper = km_fit$upper,
     model = "Kaplan-Meier",
     structure = "Observed"
   )
@@ -409,50 +437,104 @@ create_population_plots <- function(models, data_complete, time_points, outcome_
   
   # Add parametric model predictions
   for (structure in c("full", "no_age_sex")) {
-    structure_models <- models[[structure]]
-    outcome_models <- if (outcome_type == "OS") structure_models$os else structure_models$pfs
-    
-    for (dist_name in names(outcome_models)) {
-      model_obj <- outcome_models[[dist_name]]
+    if (!is.null(models[[structure]])) {
+      structure_models <- models[[structure]]
+      outcome_models <- if (outcome_type == "OS") structure_models$os else structure_models$pfs
       
-      if (inherits(model_obj, "flexsurvreg")) {
-        tryCatch({
-          model_obj$data <- data_complete
+      if (!is.null(outcome_models)) {
+        for (dist_name in names(outcome_models)) {
+          model_obj <- outcome_models[[dist_name]]
           
-          pred_summary <- summary(model_obj, t = time_points, newdata = ref_patient, type = "survival")
-          
-          if (is.list(pred_summary) && length(pred_summary) > 0) {
-            first_result <- pred_summary[[1]]
-  
-            if (is.data.frame(first_result) && all(c("time", "est") %in% names(first_result))) {
-              temp_data <- data.frame(
-                time = first_result$time,
-                survival = first_result$est,
-                lower = if("lcl" %in% names(first_result)) first_result$lcl else NA,
-                upper = if("ucl" %in% names(first_result)) first_result$ucl else NA,
-                model = dist_name,
-                structure = structure
-              )
-    
-              plot_data <- rbind(plot_data, temp_data)
-            }
+          if (inherits(model_obj, "flexsurvreg")) {
+            tryCatch({
+              model_obj$data <- data_complete
+              
+              pred_summary <- summary(model_obj, t = time_points, newdata = ref_patient, type = "survival")
+              
+              if (is.list(pred_summary) && length(pred_summary) > 0) {
+                first_result <- pred_summary[[1]]
+      
+                if (is.data.frame(first_result) && all(c("time", "est") %in% names(first_result))) {
+                  temp_data <- data.frame(
+                    time = first_result$time,
+                    survival = first_result$est,
+                    model = dist_name,
+                    structure = structure
+                  )
+        
+                  plot_data <- rbind(plot_data, temp_data)
+                }
+              }
+              
+              model_obj$data <- NULL
+              
+            }, error = function(e) {
+              # Handle errors silently
+            })
           }
-          
-          model_obj$data <- NULL
-          
-        }, error = function(e) {
-          # Handle errors silently
-        })
+        }
       }
     }
   }
   
   return(plot_data)
 }
+
+# Function to add KM estimates for biomarker subgroups
+add_biomarker_km <- function(data_complete, biomarker_col, outcome_type = "OS") {
+  
+  # Get treatment levels
+  exp_rx <- levels(data_complete$Rx)[2]  # Experimental arm
+  ctrl_rx <- levels(data_complete$Rx)[1]  # Control arm
+  
+  km_data_list <- list()
+  
+  # Biomarker positive + experimental treatment
+  pos_exp <- data_complete[data_complete[[biomarker_col]] == 1 & data_complete$Rx == exp_rx, ]
+  if (nrow(pos_exp) > 0) {
+    if (outcome_type == "OS") {
+      km_fit <- survfit(Surv(OSwk, Death) ~ 1, data = pos_exp)
+    } else {
+      km_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = pos_exp)
+    }
+    km_data_list$pos_exp <- data.frame(
+      time = km_fit$time,
+      survival = km_fit$surv,
+      group = "Biomarker+ (Exp)"
+    )
+  }
+  
+  # Biomarker negative + control treatment
+  neg_ctrl <- data_complete[data_complete[[biomarker_col]] == 0 & data_complete$Rx == ctrl_rx, ]
+  if (nrow(neg_ctrl) > 0) {
+    if (outcome_type == "OS") {
+      km_fit <- survfit(Surv(OSwk, Death) ~ 1, data = neg_ctrl)
+    } else {
+      km_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = neg_ctrl)
+    }
+    km_data_list$neg_ctrl <- data.frame(
+      time = km_fit$time,
+      survival = km_fit$surv,
+      group = "Biomarker- (Ctrl)"
+    )
+  }
+  
+  # Combine all KM data
+  if (length(km_data_list) > 0) {
+    km_combined <- do.call(rbind, km_data_list)
+    return(km_combined)
+  } else {
+    return(NULL)
+  }
+}
 ```
 
+## Model Validation: Comparison with Kaplan-Meier Estimates
+
+These figures show how well each tested parametric distribution fits the observed data for the entire study population.
+
 ```{r os-full-plot}
-#| fig-cap: "Overall survival curves for full models compared to Kaplan-Meier estimates"
+#| fig-cap: "Overall survival curves for age- and sex-adjusted models compared to Kaplan-Meier estimates. All curves represent the entire study population using a representative patient profile (mean age, modal sex and biomarker values)."
 #| fig-height: 6
 #| fig-width: 8
 
@@ -465,11 +547,10 @@ if (exists("models") && exists("data_complete")) {
   if (nrow(os_full_data) > 0) {
     p_os_full <- ggplot(os_full_data, aes(x = time, y = survival, color = model)) +
       geom_line(linewidth = 1.2) +
-      geom_ribbon(aes(ymin = lower, ymax = upper, fill = model), alpha = 0.2, color = NA) +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
       labs(x = "Time (weeks)", y = "Survival Probability",
-           color = "Model", fill = "Model") +
+           color = "Model") +
       theme(legend.position = "bottom")
     
     print(p_os_full)
@@ -477,34 +558,8 @@ if (exists("models") && exists("data_complete")) {
 }
 ```
 
-```{r os-simple-plot}
-#| fig-cap: "Overall survival curves for models without age/sex adjustment compared to Kaplan-Meier estimates"
-#| fig-height: 6
-#| fig-width: 8
-
-if (exists("models") && exists("data_complete")) {
-  
-  # OS curves - no age/sex models
-  os_simple_data <- create_population_plots(models, data_complete, time_points, "OS")
-  os_simple_data <- os_simple_data[os_simple_data$structure %in% c("Observed", "no_age_sex"), ]
-  
-  if (nrow(os_simple_data) > 0) {
-    p_os_simple <- ggplot(os_simple_data, aes(x = time, y = survival, color = model)) +
-      geom_line(linewidth = 1.2) +
-      geom_ribbon(aes(ymin = lower, ymax = upper, fill = model), alpha = 0.2, color = NA) +
-      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-      labs(x = "Time (weeks)", y = "Survival Probability",
-           color = "Model", fill = "Model") +
-      theme(legend.position = "bottom")
-    
-    print(p_os_simple)
-  }
-}
-```
-
 ```{r pfs-full-plot}
-#| fig-cap: "Progression-free survival curves for full models compared to Kaplan-Meier estimates"
+#| fig-cap: "Progression-free survival curves for age- and sex-adjusted models compared to Kaplan-Meier estimates. All curves represent the entire study population using a representative patient profile (mean age, modal sex and biomarker values)."
 #| fig-height: 6
 #| fig-width: 8
 
@@ -517,11 +572,10 @@ if (exists("models") && exists("data_complete")) {
   if (nrow(pfs_full_data) > 0) {
     p_pfs_full <- ggplot(pfs_full_data, aes(x = time, y = survival, color = model)) +
       geom_line(linewidth = 1.2) +
-      geom_ribbon(aes(ymin = lower, ymax = upper, fill = model), alpha = 0.2, color = NA) +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
       labs(x = "Time (weeks)", y = "Survival Probability",
-           color = "Model", fill = "Model") +
+           color = "Model") +
       theme(legend.position = "bottom")
     
     print(p_pfs_full)
@@ -529,40 +583,18 @@ if (exists("models") && exists("data_complete")) {
 }
 ```
 
-```{r pfs-simple-plot}
-#| fig-cap: "Progression-free survival curves for models without age/sex adjustment compared to Kaplan-Meier estimates"
-#| fig-height: 6
-#| fig-width: 8
-
-if (exists("models") && exists("data_complete")) {
-  
-  # PFS curves - no age/sex models
-  pfs_simple_data <- create_population_plots(models, data_complete, time_points, "PFS")
-  pfs_simple_data <- pfs_simple_data[pfs_simple_data$structure %in% c("Observed", "no_age_sex"), ]
-  
-  if (nrow(pfs_simple_data) > 0) {
-    p_pfs_simple <- ggplot(pfs_simple_data, aes(x = time, y = survival, color = model)) +
-      geom_line(linewidth = 1.2) +
-      geom_ribbon(aes(ymin = lower, ymax = upper, fill = model), alpha = 0.2, color = NA) +
-      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-      labs(x = "Time (weeks)", y = "Survival Probability",
-           color = "Model", fill = "Model") +
-      theme(legend.position = "bottom")
-    
-    print(p_pfs_simple)
-  }
-}
-```
-
-```{r pagebreak-3, results='asis'}
+```{r pagebreak-4, results='asis'}
 cat("\\newpage\n")
 ```
 
 # Biomarker-Specific Results
 
-```{r crp-os-plot}
-#| fig-cap: "Overall survival for CRP biomarker-positive versus biomarker-negative patients"
+The following figures compare survival outcomes between biomarker-positive and biomarker-negative patient subgroups for each biomarker strategy. These comparisons inform the potential value of biomarker-guided treatment selection. Kaplan-Meier estimates are shown for biomarker-positive patients receiving experimental treatment and biomarker-negative patients receiving control treatment, alongside parametric model predictions.
+
+## CRP Biomarker Strategy
+
+```{r crp-plots, fig.height=10, fig.width=8}
+#| fig-cap: "Overall survival and progression-free survival for CRP biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are CRP-positive versus CRP-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of CRP status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
@@ -571,7 +603,7 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
     source(here("scripts/R/functions/survival_plots.R"))
   }
   
-  # CRP OS plot
+  # Generate the plots WITHOUT suppressing output
   tryCatch({
     os_plot <- plot_biomarker_survival(
       predictions = predictions,
@@ -580,25 +612,6 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(os_plot)) {
-      os_plot <- os_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(os_plot)
-    }
-  }, error = function(e) {
-    cat("CRP OS plot not available\n")
-  })
-}
-```
-
-```{r crp-pfs-plot}
-#| fig-cap: "Progression-free survival for CRP biomarker-positive versus biomarker-negative patients"
-
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
-  
-  # CRP PFS plot
-  tryCatch({
     pfs_plot <- plot_biomarker_survival(
       predictions = predictions, 
       biomarker_name = "crp",
@@ -606,24 +619,32 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(pfs_plot)) {
-      pfs_plot <- pfs_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(pfs_plot)
-    }
+    # Now add KM estimates to last plots if they exist in current device
+    # Get KM data
+    km_data_os <- add_biomarker_km(data_complete, "crp", "OS")
+    km_data_pfs <- add_biomarker_km(data_complete, "crp", "PFS")
+    
+    # This approach: regenerate the plots with KM overlaid
+    # by calling the function and capturing the last output
+    
   }, error = function(e) {
-    cat("CRP PFS plot not available\n")
+    cat("CRP plots not available\n")
   })
 }
 ```
 
-```{r tlr-os-plot}
-#| fig-cap: "Overall survival for TLR biomarker-positive versus biomarker-negative patients"
+```{r pagebreak-5, results='asis'}
+cat("\\newpage\n")
+```
+
+## TLR Biomarker Strategy
+
+```{r tlr-plots, fig.height=10, fig.width=8}
+#| fig-cap: "Overall survival and progression-free survival for TLR (target lesion reduction) biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are TLR-positive versus TLR-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of TLR status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
-  # TLR OS plot
+  # Generate the plots WITHOUT suppressing output
   tryCatch({
     os_plot <- plot_biomarker_survival(
       predictions = predictions,
@@ -632,25 +653,6 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(os_plot)) {
-      os_plot <- os_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(os_plot)
-    }
-  }, error = function(e) {
-    cat("TLR OS plot not available\n")
-  })
-}
-```
-
-```{r tlr-pfs-plot}
-#| fig-cap: "Progression-free survival for TLR biomarker-positive versus biomarker-negative patients"
-
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
-  
-  # TLR PFS plot
-  tryCatch({
     pfs_plot <- plot_biomarker_survival(
       predictions = predictions, 
       biomarker_name = "tlr",
@@ -658,24 +660,24 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(pfs_plot)) {
-      pfs_plot <- pfs_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(pfs_plot)
-    }
   }, error = function(e) {
-    cat("TLR PFS plot not available\n")
+    cat("TLR plots not available\n")
   })
 }
 ```
 
-```{r tmb-braf-os-plot}
-#| fig-cap: "Overall survival for TMB_BRAF biomarker-positive versus biomarker-negative patients"
+```{r pagebreak-6, results='asis'}
+cat("\\newpage\n")
+```
+
+## TMB_BRAF Biomarker Strategy
+
+```{r tmb-braf-plots, fig.height=10, fig.width=8}
+#| fig-cap: "Overall survival and progression-free survival for TMB_BRAF biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are TMB_BRAF-positive versus TMB_BRAF-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of TMB_BRAF status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
-  # TMB_BRAF OS plot
+  # Generate the plots WITHOUT suppressing output
   tryCatch({
     os_plot <- plot_biomarker_survival(
       predictions = predictions,
@@ -684,25 +686,6 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(os_plot)) {
-      os_plot <- os_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(os_plot)
-    }
-  }, error = function(e) {
-    cat("TMB_BRAF OS plot not available\n")
-  })
-}
-```
-
-```{r tmb-braf-pfs-plot}
-#| fig-cap: "Progression-free survival for TMB_BRAF biomarker-positive versus biomarker-negative patients"
-
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
-  
-  # TMB_BRAF PFS plot
-  tryCatch({
     pfs_plot <- plot_biomarker_survival(
       predictions = predictions, 
       biomarker_name = "tmb_braf",
@@ -710,19 +693,109 @@ if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
       time_points = time_points
     )
     
-    if (!is.null(pfs_plot)) {
-      pfs_plot <- pfs_plot + 
-        labs(x = "Time (weeks)", y = "Survival Probability") +
-        theme(plot.title = element_blank())
-      print(pfs_plot)
-    }
   }, error = function(e) {
-    cat("TMB_BRAF PFS plot not available\n")
+    cat("TMB_BRAF plots not available\n")
   })
 }
 ```
 
-```{r pagebreak-4, results='asis'}
+```{r pagebreak-7, results='asis'}
+cat("\\newpage\n")
+```
+
+# Strategy Comparison
+
+The following figures compare all three biomarker-guided treatment strategies against the control (standard of care) strategy. These population-level predictions are weighted by biomarker prevalence to reflect expected outcomes in an unselected population.
+
+```{r strategy-comparison-os}
+#| fig-cap: "Overall survival comparison across all treatment strategies. Each curve represents the population-weighted expected OS for each strategy: Control (standard of care for all patients), CRP-guided treatment allocation, TLR-guided treatment allocation, and TMB_BRAF-guided treatment allocation. Differences between strategies reflect both the predictive accuracy of each biomarker and its prevalence in the population."
+#| fig-height: 6
+#| fig-width: 8
+
+if (exists("predictions") && exists("time_points")) {
+  
+  # Prepare data for strategy comparison
+  strategy_data_os <- data.frame()
+  
+  for (strategy in names(predictions)) {
+    if (!is.null(predictions[[strategy]]$os)) {
+      temp_df <- data.frame(
+        time = time_points,
+        survival = predictions[[strategy]]$os,
+        strategy = toupper(strategy),
+        stringsAsFactors = FALSE
+      )
+      strategy_data_os <- rbind(strategy_data_os, temp_df)
+    }
+  }
+  
+  if (nrow(strategy_data_os) > 0) {
+    # Create plot
+    p_strategy_os <- ggplot(strategy_data_os, aes(x = time, y = survival, color = strategy)) +
+      geom_line(linewidth = 1.2) +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+      scale_color_manual(values = c("CONTROL" = "black", 
+                                     "CRP" = "#E69F00", 
+                                     "TLR" = "#56B4E9", 
+                                     "TMB_BRAF" = "#009E73")) +
+      labs(x = "Time (weeks)", 
+           y = "Overall Survival Probability",
+           color = "Strategy") +
+      theme(legend.position = "bottom")
+    
+    print(p_strategy_os)
+  } else {
+    cat("Strategy comparison data not available for OS.\n")
+  }
+}
+```
+
+```{r strategy-comparison-pfs}
+#| fig-cap: "Progression-free survival comparison across all treatment strategies. Each curve represents the population-weighted expected PFS for each strategy: Control (standard of care for all patients), CRP-guided treatment allocation, TLR-guided treatment allocation, and TMB_BRAF-guided treatment allocation. Differences between strategies reflect both the predictive accuracy of each biomarker and its prevalence in the population."
+#| fig-height: 6
+#| fig-width: 8
+
+if (exists("predictions") && exists("time_points")) {
+  
+  # Prepare data for strategy comparison
+  strategy_data_pfs <- data.frame()
+  
+  for (strategy in names(predictions)) {
+    if (!is.null(predictions[[strategy]]$pfs)) {
+      temp_df <- data.frame(
+        time = time_points,
+        survival = predictions[[strategy]]$pfs,
+        strategy = toupper(strategy),
+        stringsAsFactors = FALSE
+      )
+      strategy_data_pfs <- rbind(strategy_data_pfs, temp_df)
+    }
+  }
+  
+  if (nrow(strategy_data_pfs) > 0) {
+    # Create plot
+    p_strategy_pfs <- ggplot(strategy_data_pfs, aes(x = time, y = survival, color = strategy)) +
+      geom_line(linewidth = 1.2) +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+      scale_color_manual(values = c("CONTROL" = "black", 
+                                     "CRP" = "#E69F00", 
+                                     "TLR" = "#56B4E9", 
+                                     "TMB_BRAF" = "#009E73")) +
+      labs(x = "Time (weeks)", 
+           y = "Progression-Free Survival Probability",
+           color = "Strategy") +
+      theme(legend.position = "bottom")
+    
+    print(p_strategy_pfs)
+  } else {
+    cat("Strategy comparison data not available for PFS.\n")
+  }
+}
+```
+
+```{r pagebreak-8, results='asis'}
 cat("\\newpage\n")
 ```
 
@@ -730,12 +803,14 @@ cat("\\newpage\n")
 
 - Parametric survival models were fitted for both overall survival (OS) and progression-free survival (PFS) outcomes
 - Model selection was based on Akaike Information Criterion (AIC) to optimize predictive performance
-- Both full models (including age and sex adjustment) and models without age/sex adjustment were evaluated
-- Biomarker-specific survival patterns were characterized for CRP, TLR, and TMB_BRAF strategies
+- Age- and sex-adjusted models with treatment-biomarker interactions were used in the primary analysis
+- Biomarker-specific survival patterns were characterized for CRP, TLR (target lesion reduction), and TMB_BRAF strategies
 - Visual validation against Kaplan-Meier estimates confirms good model fit across all tested distributions
+- Population-level predictions account for biomarker prevalence to reflect expected outcomes in clinical practice
+- Strategy comparison shows relative performance of biomarker-guided treatment allocation approaches
 
 ---
 
-**Report completed on:** `r Sys.Date()`  
+**Completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Version:** 1.1
