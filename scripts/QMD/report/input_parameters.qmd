@@ -1,6 +1,6 @@
 ---
-title: "METIMMOX-1 Model Input Parameters"
-subtitle: "Base Case, Deterministic Sensitivity Analysis (DSA), and Probabilistic Sensitivity Analysis (PSA) Parameters"
+title: "Input Parameters"
+subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -38,9 +38,26 @@ p_load(here, knitr, kableExtra, DT, dplyr, tidyr, ggplot2)
 
 # Set knitr options for PDF
 options(knitr.table.format = "latex")
+
+# Load PSA results - adjust path as needed based on where your PSA results are saved
+# This assumes the PSA has been run and results are available
+psa_results_path <- here("data/tidy", "psa_results.rds")
+psa_params_path <- here("data/tidy", "psa_params.rds")
+
+# Try to load PSA object and parameters
+psa_obj <- NULL
+psa_params <- NULL
+
+if (file.exists(psa_results_path)) {
+  psa_obj <- readRDS(psa_results_path)
+}
+
+if (file.exists(psa_params_path)) {
+  psa_params <- readRDS(psa_params_path)
+}
 ```
 
-# Summart
+# Summary
 
 This report provides an overview of all input parameters used in the METIMMOX-1 health economic model, organized into global model settings and variable parameters across base case, DSA, and PSA analyses.
 
@@ -218,31 +235,62 @@ kable(comprehensive_params,
            general_title = "Notes:")
 ```
 
-# Technical Notes
+\newpage
 
-## Model Structure
+# PSA Parameter Distributions
 
--   **Time horizon**: 520 weeks (10 years) based on long-term follow-up requirements
--   **Cycle length**: 1 week for precise timing of treatments and assessments\
--   **Perspective**: Healthcare system costs and patient-reported health outcomes
--   **Population**: Metastatic colorectal cancer patients eligible for biomarker testing
+This section displays histograms of all sampled parameters from the probabilistic sensitivity analysis (PSA), showing the distribution shapes and ranges used in the Monte Carlo simulation.
 
-## Uncertainty Analysis Methods
+```{r psa-histograms}
+#| echo: false
+#| fig-width: 12
+#| fig-height: 10
+#| fig-cap: "Distribution of PSA Parameters"
 
--   **DSA**: Parameters varied individually by ±20% while others held at base case
--   **PSA**: Monte Carlo simulation with 5,000 iterations using appropriate distributions
--   **Survival uncertainty**: Bootstrap resampling (5,000 samples) preserves correlation structure
--   **Biomarker strategies**: Population-weighted averages account for biomarker prevalence
+# Check if PSA parameters are available
+if (!is.null(psa_params) && is.data.frame(psa_params)) {
+  
+  # Get numeric columns only
+  numeric_cols <- sapply(psa_params, is.numeric)
+  psa_params_numeric <- psa_params[, numeric_cols, drop = FALSE]
+  
+  if (ncol(psa_params_numeric) > 0) {
+    n_params <- ncol(psa_params_numeric)
+    
+    # Calculate grid dimensions based on number of parameters
+    n_cols <- 5
+    n_rows <- ceiling(n_params / n_cols)
+    
+    par(mfrow = c(n_rows, n_cols), mar = c(4, 4, 2, 1))
+    
+    for(i in 1:n_params) {
+      hist(psa_params_numeric[, i], 
+           main = paste("Distribution of\n", colnames(psa_params_numeric)[i]),
+           xlab = colnames(psa_params_numeric)[i],
+           col = "lightblue",
+           breaks = 30,
+           cex.main = 0.9,
+           cex.lab = 0.8,
+           cex.axis = 0.8)
+    }
+    
+    par(mfrow = c(1, 1))  # Reset layout
+    
+  } else {
+    cat("No numeric parameters found in PSA data.\n")
+  }
+  
+} else {
+  cat("PSA parameter data not available.\n")
+  cat("To generate these histograms:\n")
+  cat("1. Run your PSA analysis script (e.g., scripts/R/analysis/13_EVPPIs.R)\n")
+  cat("2. Save the psa_params object using: saveRDS(psa_params, here('results', 'psa_params.rds'))\n")
+  cat("3. Re-render this report\n")
+}
+```
 
-## Data Sources and Assumptions
-
--   **Clinical effectiveness**: METIMMOX-1 randomized controlled trial data
--   **Costs**: National healthcare tariffs, drug pricing databases, and published literature
--   **Utilities**: EQ-5D-5L patient-reported outcomes from trial participants
--   **Treatment schedules**: Protocol-specified dosing and monitoring requirements
-
-------------------------------------------------------------------------
+---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 1.1

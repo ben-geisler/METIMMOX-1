@@ -68,3 +68,7 @@ ceac_obj <- ceac(c_wtp, psa_obj)
 ceac_sum <- summary(ceac_obj)
 print(ceac_sum)
 plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
+
+#save results
+saveRDS(psa_params, here("data", "tidy", "psa_params.rds"))
+saveRDS(psa_obj, here("data", "tidy", "psa_obj.rds"))
