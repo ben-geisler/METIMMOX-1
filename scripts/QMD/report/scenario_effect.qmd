@@ -1,0 +1,884 @@
+---
+title: "Scenario Analyses: Effect of Utility Assumptions"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r scenario-setup, include=FALSE}
+# Set global knitr options
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+
+# Load required libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, knitr, kableExtra, ggplot2, dplyr, 
+  flextable, officer, scales, gridExtra,
+  devtools, readxl, tableone, flexsurv, 
+  survival, survminer, gems, mstate, 
+  tidyverse, xtable, darthtools, dampack, 
+  mvtnorm, Matrix, reshape2
+)
+
+# Set ggplot theme
+theme_set(theme_minimal() + 
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    strip.text = element_text(size = 11, face = "bold")
+  ))
+
+# Source helper functions (silently)
+helper_functions <- c(
+  "scripts/R/functions/model_fun.R",
+  "scripts/R/functions/calculate_outcomes.R",
+  "scripts/R/functions/psa_functions.R"
+)
+
+for (func_file in helper_functions) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+```
+
+```{r setup-global-variables, include=FALSE}
+# 02 - Setup and Global Variables
+if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
+}
+
+# Re-source functions after script 02
+helper_functions <- c(
+  "scripts/R/functions/model_fun.R",
+  "scripts/R/functions/calculate_outcomes.R",
+  "scripts/R/functions/psa_functions.R"
+)
+
+for (func_file in helper_functions) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+```
+
+```{r biomarker-strategies, include=FALSE}
+# 03 - Biomarker Strategies
+if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
+}
+```
+
+```{r survival-analysis, include=FALSE}
+# 06 - Parametric Survival Analysis
+if (!exists("USE_BOTH_MODELS")) {
+  USE_BOTH_MODELS <- 0  # Default to age- and sex-adjusted models only
+}
+
+if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+}
+```
+
+```{r input-parameters, include=FALSE}
+# 07 - Base Case Input Parameters
+if (file.exists(here("scripts/R/analysis/07_basecase_input_parameters.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/07_basecase_input_parameters.R"))))
+}
+
+# Store base case parameters for reference
+l_params_basecase <- l_params_base
+```
+
+```{r sampling-setup, include=FALSE}
+# 08 - Sampling Setup (needed for PSA)
+if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
+  bootstrap_func_path <- here("scripts/R/functions/bootstrap_survival_model.R")
+  if (file.exists(bootstrap_func_path)) {
+    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
+    cat("Sampling setup completed successfully\n")
+  } else {
+    message("Bootstrap function file not found - PSA may be affected")
+  }
+}
+
+# Store base case parameter distributions for reference
+param_distributions_basecase <- param_distributions
+```
+
+# Overview
+
+This scenario analysis examines the impact of utility assumptions on the cost-effectiveness of biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer. We compare three scenarios:
+
+1. **Base Case**: Standard utility values (u_np = 0.9077, u_p = 0.9005)
+2. **Scenario 1 - Unadjusted Life Years**: All utilities set to 1.0 (no quality adjustment)
+3. **Scenario 2 - Alternative Utilities**: Lower utility values (u_np = 0.73, u_p = 0.59)
+
+For each scenario, we present deterministic cost-effectiveness results with ICERs and probabilistic sensitivity analysis results.
+
+```{r pagebreak-1, results='asis'}
+cat("\\newpage\n")
+```
+
+# Base Case: Standard Utility Values
+
+This analysis uses standard utility values derived from the IPD dataset (u_np = 0.9077, u_p = 0.9005).
+
+```{r basecase-params}
+# Display base case parameter values
+basecase_params_table <- data.frame(
+  Parameter = c("u_np (Non-progressed utility)", "u_p (Progressed utility)"),
+  Value = c(l_params_basecase$u_np, l_params_basecase$u_p),
+  Description = c(
+    "Utility value in non-progressed disease state",
+    "Utility value in progressed disease state"
+  )
+)
+
+knitr::kable(basecase_params_table,
+             digits = 4,
+             col.names = c("Parameter", "Value", "Description"),
+             align = c("l", "r", "l"),
+             booktabs = TRUE,
+             caption = "Base Case Utility Parameter Values") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r basecase-analysis}
+# Re-source functions to ensure they're available
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Run base case analysis
+base_results <- model_fun(l_params_basecase)
+
+# Calculate ICERs
+icer_obj <- dampack::calculate_icers(
+  cost = base_results$Cost,
+  effect = base_results$Effect,
+  strategies = base_results$Strategy
+)
+
+# Display results
+icer_table_base <- as.data.frame(icer_obj)
+icer_table_base$Cost <- scales::dollar(icer_table_base$Cost, accuracy = 1)
+icer_table_base$Effect <- sprintf("%.3f", icer_table_base$Effect)
+icer_table_base$ICER[!is.na(icer_table_base$ICER)] <- 
+  scales::dollar(icer_table_base$ICER[!is.na(icer_table_base$ICER)], accuracy = 1)
+
+knitr::kable(icer_table_base, 
+             align = c("l", "r", "r", "r", "l"),
+             booktabs = TRUE,
+             caption = "Base Case Cost-Effectiveness Results") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r basecase-ce-plane}
+#| fig-cap: "Cost-Effectiveness Plane - Base Case"
+
+ce_plot_base <- plot(icer_obj, 
+                     txtsize = 12,
+                     currency = "€",
+                     effect_units = "QALYs",
+                     label = "all")
+print(ce_plot_base)
+```
+
+```{r basecase-psa, include=FALSE}
+# Re-source functions
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Set number of simulations
+if (!exists("n_sim")) {
+  n_sim <- 1000
+}
+
+# Generate PSA samples for Base Case
+cat("Generating PSA samples for Base Case:", n_sim, "simulations\n")
+psa_params_basecase <- generate_psa_samples(param_distributions_basecase, n_sim)
+
+# Run PSA for Base Case
+cat("Starting PSA for Base Case\n")
+psa_results_basecase <- run_psa_analysis(
+  psa_params = psa_params_basecase,
+  l_params_base = l_params_basecase,
+  param_distributions = param_distributions_basecase,
+  strategies = strategies,
+  time_horizon = time_horizon,
+  cl = cl,
+  n_sim = n_sim
+)
+
+# Create PSA object
+psa_obj_basecase <- dampack::make_psa_obj(
+  cost = as.data.frame(psa_results_basecase$cost),
+  effect = as.data.frame(psa_results_basecase$effect),
+  strategies = strategies,
+  currency = "€"
+)
+
+# PSA summary
+psa_summary_base <- summary(psa_obj_basecase, calc_sds = TRUE)
+```
+
+**Table: PSA Summary Statistics - Base Case**
+
+```{r basecase-psa-summary}
+knitr::kable(psa_summary_base,
+             digits = 2,
+             booktabs = TRUE,
+             caption = "PSA Summary - Base Case") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r basecase-psa-scatter}
+#| fig-cap: "PSA Scatterplot - Base Case"
+
+psa_plot_base <- plot(psa_obj_basecase, 
+                      frontier = TRUE, 
+                      points = TRUE,
+                      alpha = 0.4,
+                      txtsize = 11,
+                      currency = "€",
+                      effect_units = "QALYs")
+print(psa_plot_base)
+```
+
+```{r basecase-ceac}
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Base Case"
+
+c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+ceac_obj_base <- ceac(c_wtp, psa_obj_basecase)
+ceac_plot_base <- plot(ceac_obj_base, frontier = TRUE, currency = "€", txtsize = 11)
+print(ceac_plot_base)
+```
+
+```{r pagebreak-2, results='asis'}
+cat("\\newpage\n")
+```
+
+# Scenario 1: Unadjusted Life Years (All Utilities = 1.0)
+
+In this scenario, we analyze life years gained without quality-of-life adjustments, providing insight into the survival benefit independent of quality-of-life considerations.
+
+```{r scenario1-params}
+# Create Scenario 1 parameter set: All utilities = 1.0
+l_params_scenario1 <- l_params_basecase
+l_params_scenario1$u_np <- 1.0
+l_params_scenario1$u_p <- 1.0
+
+# For Scenario 1, utilities are fixed at 1.0 (no uncertainty)
+# Create uniform distribution that always returns 1.0
+param_distributions_scenario1 <- param_distributions_basecase
+
+# Override utility distributions to be fixed at 1.0
+param_distributions_scenario1$u_np <- list(dist = "unif", min = 1.0, max = 1.0)
+param_distributions_scenario1$u_p <- list(dist = "unif", min = 1.0, max = 1.0)
+
+# Display parameter modifications
+scenario1_params_table <- data.frame(
+  Parameter = c("u_np (Non-progressed utility)", "u_p (Progressed utility)"),
+  Base_Case = c(l_params_basecase$u_np, l_params_basecase$u_p),
+  Scenario_1 = c(l_params_scenario1$u_np, l_params_scenario1$u_p),
+  Difference = c(
+    l_params_scenario1$u_np - l_params_basecase$u_np,
+    l_params_scenario1$u_p - l_params_basecase$u_p
+  )
+)
+
+knitr::kable(scenario1_params_table,
+             digits = 4,
+             col.names = c("Parameter", "Base Case", "Scenario 1", "Difference"),
+             align = c("l", "r", "r", "r"),
+             booktabs = TRUE,
+             caption = "Utility Parameter Modifications for Scenario 1") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r scenario1-basecase}
+# Re-source functions to ensure they're available
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Run base case analysis for Scenario 1
+base_results_scenario1 <- model_fun(l_params_scenario1)
+
+# Calculate ICERs
+icer_obj_scenario1 <- dampack::calculate_icers(
+  cost = base_results_scenario1$Cost,
+  effect = base_results_scenario1$Effect,
+  strategies = base_results_scenario1$Strategy
+)
+
+# Display results
+icer_table_s1 <- as.data.frame(icer_obj_scenario1)
+icer_table_s1$Cost <- scales::dollar(icer_table_s1$Cost, accuracy = 1)
+icer_table_s1$Effect <- sprintf("%.3f", icer_table_s1$Effect)
+icer_table_s1$ICER[!is.na(icer_table_s1$ICER)] <- 
+  scales::dollar(icer_table_s1$ICER[!is.na(icer_table_s1$ICER)], accuracy = 1)
+
+knitr::kable(icer_table_s1, 
+             align = c("l", "r", "r", "r", "l"),
+             booktabs = TRUE,
+             caption = "Scenario 1 Cost-Effectiveness Results (Unadjusted Life Years)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r scenario1-ce-plane}
+#| fig-cap: "Cost-Effectiveness Plane - Scenario 1 (Unadjusted Life Years)"
+
+ce_plot_s1 <- plot(icer_obj_scenario1, 
+                   txtsize = 12,
+                   currency = "€",
+                   effect_units = "Life Years",
+                   label = "all")
+print(ce_plot_s1)
+```
+
+```{r scenario1-psa, include=FALSE}
+# Re-source functions
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Generate PSA samples for Scenario 1
+cat("Generating PSA samples for Scenario 1:", n_sim, "simulations\n")
+psa_params_scenario1 <- generate_psa_samples(param_distributions_scenario1, n_sim)
+
+# Run PSA for Scenario 1
+cat("Starting PSA for Scenario 1\n")
+psa_results_scenario1 <- run_psa_analysis(
+  psa_params = psa_params_scenario1,
+  l_params_base = l_params_scenario1,
+  param_distributions = param_distributions_scenario1,
+  strategies = strategies,
+  time_horizon = time_horizon,
+  cl = cl,
+  n_sim = n_sim
+)
+
+# Create PSA object
+psa_obj_scenario1 <- dampack::make_psa_obj(
+  cost = as.data.frame(psa_results_scenario1$cost),
+  effect = as.data.frame(psa_results_scenario1$effect),
+  strategies = strategies,
+  currency = "€"
+)
+
+# PSA summary
+psa_summary_s1 <- summary(psa_obj_scenario1, calc_sds = TRUE)
+```
+
+**Table: PSA Summary Statistics - Scenario 1**
+
+```{r scenario1-psa-summary}
+knitr::kable(psa_summary_s1,
+             digits = 2,
+             booktabs = TRUE,
+             caption = "PSA Summary - Scenario 1 (Unadjusted Life Years)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r scenario1-psa-scatter}
+#| fig-cap: "PSA Scatterplot - Scenario 1 (Unadjusted Life Years)"
+
+psa_plot_s1 <- plot(psa_obj_scenario1, 
+                    frontier = TRUE, 
+                    points = TRUE,
+                    alpha = 0.4,
+                    txtsize = 11,
+                    currency = "€",
+                    effect_units = "Life Years")
+print(psa_plot_s1)
+```
+
+```{r scenario1-ceac}
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 1"
+
+ceac_obj_s1 <- ceac(c_wtp, psa_obj_scenario1)
+ceac_plot_s1 <- plot(ceac_obj_s1, frontier = TRUE, currency = "€", txtsize = 11)
+print(ceac_plot_s1)
+```
+
+```{r pagebreak-3, results='asis'}
+cat("\\newpage\n")
+```
+
+# Scenario 2: Alternative Utility Values (u_np = 0.73, u_p = 0.59)
+
+This scenario examines the cost-effectiveness under alternative, lower utility assumptions that may reflect more conservative estimates of quality of life. They are derived from the EQ-5D index score of the CORRECT trial (Grothey et al. Lancet 2013, as cited by Gourzoulidis et al. J Comp Effect Res 2018)-
+
+```{r scenario2-params}
+# Helper function to calculate beta parameters (from 08_sampling.R)
+get_beta_params <- function(mean_val, cv) {
+  var_val <- (mean_val * cv)^2
+  alpha <- mean_val * (mean_val * (1 - mean_val) / var_val - 1)
+  beta <- (1 - mean_val) * (mean_val * (1 - mean_val) / var_val - 1)
+  return(list(shape1 = alpha, shape2 = beta))
+}
+
+# Create Scenario 2 parameter set: Alternative utilities
+l_params_scenario2 <- l_params_basecase
+l_params_scenario2$u_np <- 0.73
+l_params_scenario2$u_p <- 0.59
+
+# Create distributions for Scenario 2 PSA
+cv_utilities <- 0.15  # Standard 15% CV for utilities
+param_distributions_scenario2 <- param_distributions_basecase
+
+# Override utility distributions with alternative values
+dist_u_np_scenario2 <- c(list(dist = "beta"), get_beta_params(0.73, cv_utilities))
+dist_u_p_scenario2 <- c(list(dist = "beta"), get_beta_params(0.59, cv_utilities))
+
+param_distributions_scenario2$u_np <- dist_u_np_scenario2
+param_distributions_scenario2$u_p <- dist_u_p_scenario2
+
+# Display parameter modifications
+scenario2_params_table <- data.frame(
+  Parameter = c("u_np (Non-progressed utility)", "u_p (Progressed utility)"),
+  Base_Case = c(l_params_basecase$u_np, l_params_basecase$u_p),
+  Scenario_2 = c(l_params_scenario2$u_np, l_params_scenario2$u_p),
+  Difference = c(
+    l_params_scenario2$u_np - l_params_basecase$u_np,
+    l_params_scenario2$u_p - l_params_basecase$u_p
+  ),
+  Pct_Change = c(
+    100 * (l_params_scenario2$u_np - l_params_basecase$u_np) / l_params_basecase$u_np,
+    100 * (l_params_scenario2$u_p - l_params_basecase$u_p) / l_params_basecase$u_p
+  )
+)
+
+knitr::kable(scenario2_params_table,
+             digits = 4,
+             col.names = c("Parameter", "Base Case", "Scenario 2", "Difference", "% Change"),
+             align = c("l", "r", "r", "r", "r"),
+             booktabs = TRUE,
+             caption = "Utility Parameter Modifications for Scenario 2") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+**Beta Distribution Parameters for PSA:**
+
+```{r scenario2-beta-params}
+beta_params_table <- data.frame(
+  Parameter = c("u_np", "u_p"),
+  Mean = c(0.73, 0.59),
+  CV = c(cv_utilities, cv_utilities),
+  Alpha = c(dist_u_np_scenario2$shape1, dist_u_p_scenario2$shape1),
+  Beta = c(dist_u_np_scenario2$shape2, dist_u_p_scenario2$shape2)
+)
+
+knitr::kable(beta_params_table,
+             digits = 3,
+             booktabs = TRUE,
+             caption = "Beta Distribution Parameters for Scenario 2 PSA") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r scenario2-basecase}
+# Re-source functions
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Run base case analysis for Scenario 2
+base_results_scenario2 <- model_fun(l_params_scenario2)
+
+# Calculate ICERs
+icer_obj_scenario2 <- dampack::calculate_icers(
+  cost = base_results_scenario2$Cost,
+  effect = base_results_scenario2$Effect,
+  strategies = base_results_scenario2$Strategy
+)
+
+# Display results
+icer_table_s2 <- as.data.frame(icer_obj_scenario2)
+icer_table_s2$Cost <- scales::dollar(icer_table_s2$Cost, accuracy = 1)
+icer_table_s2$Effect <- sprintf("%.3f", icer_table_s2$Effect)
+icer_table_s2$ICER[!is.na(icer_table_s2$ICER)] <- 
+  scales::dollar(icer_table_s2$ICER[!is.na(icer_table_s2$ICER)], accuracy = 1)
+
+knitr::kable(icer_table_s2, 
+             align = c("l", "r", "r", "r", "l"),
+             booktabs = TRUE,
+             caption = "Scenario 2 Cost-Effectiveness Results (Alternative Utilities)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r scenario2-ce-plane}
+#| fig-cap: "Cost-Effectiveness Plane - Scenario 2 (Alternative Utilities)"
+
+ce_plot_s2 <- plot(icer_obj_scenario2, 
+                   txtsize = 12,
+                   currency = "€",
+                   effect_units = "QALYs",
+                   label = "all")
+print(ce_plot_s2)
+```
+
+```{r scenario2-psa, include=FALSE}
+# Re-source functions
+for (func_file in c("scripts/R/functions/model_fun.R",
+                    "scripts/R/functions/calculate_outcomes.R",
+                    "scripts/R/functions/psa_functions.R")) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+
+# Generate PSA samples for Scenario 2
+cat("Generating PSA samples for Scenario 2:", n_sim, "simulations\n")
+psa_params_scenario2 <- generate_psa_samples(param_distributions_scenario2, n_sim)
+
+# Run PSA for Scenario 2
+cat("Starting PSA for Scenario 2\n")
+psa_results_scenario2 <- run_psa_analysis(
+  psa_params = psa_params_scenario2,
+  l_params_base = l_params_scenario2,
+  param_distributions = param_distributions_scenario2,
+  strategies = strategies,
+  time_horizon = time_horizon,
+  cl = cl,
+  n_sim = n_sim
+)
+
+# Create PSA object
+psa_obj_scenario2 <- dampack::make_psa_obj(
+  cost = as.data.frame(psa_results_scenario2$cost),
+  effect = as.data.frame(psa_results_scenario2$effect),
+  strategies = strategies,
+  currency = "€"
+)
+
+# PSA summary
+psa_summary_s2 <- summary(psa_obj_scenario2, calc_sds = TRUE)
+```
+
+**Table: PSA Summary Statistics - Scenario 2**
+
+```{r scenario2-psa-summary}
+knitr::kable(psa_summary_s2,
+             digits = 2,
+             booktabs = TRUE,
+             caption = "PSA Summary - Scenario 2 (Alternative Utilities)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r scenario2-psa-scatter}
+#| fig-cap: "PSA Scatterplot - Scenario 2 (Alternative Utilities)"
+
+psa_plot_s2 <- plot(psa_obj_scenario2, 
+                    frontier = TRUE, 
+                    points = TRUE,
+                    alpha = 0.4,
+                    txtsize = 11,
+                    currency = "€",
+                    effect_units = "QALYs")
+print(psa_plot_s2)
+```
+
+```{r scenario2-ceac}
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 2"
+
+ceac_obj_s2 <- ceac(c_wtp, psa_obj_scenario2)
+ceac_plot_s2 <- plot(ceac_obj_s2, frontier = TRUE, currency = "€", txtsize = 11)
+print(ceac_plot_s2)
+```
+
+```{r pagebreak-4, results='asis'}
+cat("\\newpage\n")
+```
+
+# Comparative Analysis Across All Scenarios
+
+```{r utility-comparison-table}
+utility_comparison <- data.frame(
+  Scenario = c("Base Case", "Scenario 1 (Life Years)", "Scenario 2 (Alternative)"),
+  u_np = c(l_params_basecase$u_np, l_params_scenario1$u_np, l_params_scenario2$u_np),
+  u_p = c(l_params_basecase$u_p, l_params_scenario1$u_p, l_params_scenario2$u_p),
+  Description = c(
+    "Standard utility values from literature",
+    "No quality adjustment (all utilities = 1.0)",
+    "Lower/conservative utility estimates"
+  )
+)
+
+knitr::kable(utility_comparison,
+             digits = 4,
+             col.names = c("Scenario", "u_np", "u_p", "Description"),
+             align = c("l", "r", "r", "l"),
+             booktabs = TRUE,
+             caption = "Utility Parameter Values Across Scenarios") %>%
+  kableExtra::column_spec(1, width = "3.5cm") %>%
+  kableExtra::column_spec(2:3, width = "1.5cm") %>%
+  kableExtra::column_spec(4, width = "6cm") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r comparison-table}
+# Combine results from all three scenarios
+comparison_results <- data.frame(
+  Scenario = rep(c("Base Case", "Scenario 1", "Scenario 2"), each = length(strategies)),
+  Strategy = rep(strategies, 3),
+  Cost = c(base_results$Cost, base_results_scenario1$Cost, base_results_scenario2$Cost),
+  Effect = c(base_results$Effect, base_results_scenario1$Effect, base_results_scenario2$Effect)
+)
+
+# Add NMB at WTP threshold
+comparison_results$NMB <- comparison_results$Effect * WTP - comparison_results$Cost
+
+# Format for display
+comparison_display <- comparison_results %>%
+  mutate(
+    Strategy = case_when(
+      Strategy == "control" ~ "Standard of Care",
+      Strategy == "crp" ~ "CRP-guided",
+      Strategy == "tlr" ~ "TLR-guided",
+      Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+      TRUE ~ Strategy
+    ),
+    Cost = scales::dollar(Cost, accuracy = 1),
+    Effect = sprintf("%.3f", Effect),
+    NMB = scales::dollar(NMB, accuracy = 1)
+  )
+
+knitr::kable(comparison_display,
+             align = c("l", "l", "r", "r", "r"),
+             col.names = c("Scenario", "Strategy", "Cost (€)", "Effect", "NMB (€)"),
+             booktabs = TRUE,
+             caption = "Cost-Effectiveness Results Comparison Across Scenarios") %>%
+  kableExtra::collapse_rows(columns = 1, valign = "top") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r effect-comparison-plot}
+#| fig-cap: "Comparison of Effects Across Scenarios by Strategy"
+#| fig-height: 7
+#| fig-width: 10
+
+effect_comparison_data <- comparison_results %>%
+  mutate(
+    Strategy = case_when(
+      Strategy == "control" ~ "Standard of Care",
+      Strategy == "crp" ~ "CRP-guided",
+      Strategy == "tlr" ~ "TLR-guided",
+      Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+      TRUE ~ Strategy
+    ),
+    Scenario = factor(Scenario, levels = c("Base Case", "Scenario 1", "Scenario 2"))
+  )
+
+p_effect <- ggplot(effect_comparison_data, aes(x = Strategy, y = Effect, fill = Scenario)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("Base Case" = "#2E86AB", 
+                                "Scenario 1" = "#A23B72", 
+                                "Scenario 2" = "#F18F01")) +
+  labs(
+    title = "Effect Comparison Across Scenarios",
+    subtitle = "Base Case (QALYs), Scenario 1 (Life Years), Scenario 2 (Alternative QALYs)",
+    x = "Strategy",
+    y = "Effect (QALYs / Life Years)",
+    fill = "Scenario"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+print(p_effect)
+```
+
+```{r icer-comparison}
+# Extract ICERs from each scenario
+icer_base <- as.data.frame(icer_obj) %>%
+  select(Strategy, ICER) %>%
+  mutate(Scenario = "Base Case")
+
+icer_s1 <- as.data.frame(icer_obj_scenario1) %>%
+  select(Strategy, ICER) %>%
+  mutate(Scenario = "Scenario 1")
+
+icer_s2 <- as.data.frame(icer_obj_scenario2) %>%
+  select(Strategy, ICER) %>%
+  mutate(Scenario = "Scenario 2")
+
+# Combine
+icer_comparison <- rbind(icer_base, icer_s1, icer_s2) %>%
+  mutate(
+    Strategy = case_when(
+      Strategy == "control" ~ "Standard of Care",
+      Strategy == "crp" ~ "CRP-guided",
+      Strategy == "tlr" ~ "TLR-guided",
+      Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+      TRUE ~ Strategy
+    ),
+    ICER_formatted = ifelse(!is.na(ICER), 
+                            scales::dollar(ICER, accuracy = 1), 
+                            "Reference")
+  ) %>%
+  select(Scenario, Strategy, ICER_formatted) %>%
+  pivot_wider(names_from = Scenario, values_from = ICER_formatted)
+
+knitr::kable(icer_comparison,
+             align = c("l", "r", "r", "r"),
+             col.names = c("Strategy", "Base Case", "Scenario 1", "Scenario 2"),
+             booktabs = TRUE,
+             caption = "ICER Comparison Across Scenarios (€ per QALY/Life Year)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r nmb-comparison-plot}
+#| fig-cap: "Net Monetary Benefit Comparison Across Scenarios (WTP = €51,000)"
+#| fig-height: 7
+#| fig-width: 10
+
+nmb_comparison_data <- comparison_results %>%
+  mutate(
+    Strategy = case_when(
+      Strategy == "control" ~ "Standard of Care",
+      Strategy == "crp" ~ "CRP-guided",
+      Strategy == "tlr" ~ "TLR-guided",
+      Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+      TRUE ~ Strategy
+    ),
+    Scenario = factor(Scenario, levels = c("Base Case", "Scenario 1", "Scenario 2"))
+  )
+
+p_nmb <- ggplot(nmb_comparison_data, aes(x = Strategy, y = NMB, fill = Scenario)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("Base Case" = "#2E86AB", 
+                                "Scenario 1" = "#A23B72", 
+                                "Scenario 2" = "#F18F01")) +
+  scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+  labs(
+    title = "Net Monetary Benefit Comparison Across Scenarios",
+    subtitle = paste0("Willingness-to-Pay Threshold: €", scales::comma(WTP)),
+    x = "Strategy",
+    y = "Net Monetary Benefit (€)",
+    fill = "Scenario"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+print(p_nmb)
+```
+
+```{r optimal-strategy-comparison}
+# Determine optimal strategy for each scenario
+optimal_base <- comparison_results %>%
+  filter(Scenario == "Base Case") %>%
+  slice_max(NMB, n = 1) %>%
+  pull(Strategy)
+
+optimal_s1 <- comparison_results %>%
+  filter(Scenario == "Scenario 1") %>%
+  slice_max(NMB, n = 1) %>%
+  pull(Strategy)
+
+optimal_s2 <- comparison_results %>%
+  filter(Scenario == "Scenario 2") %>%
+  slice_max(NMB, n = 1) %>%
+  pull(Strategy)
+
+optimal_summary <- data.frame(
+  Scenario = c("Base Case", "Scenario 1 (Life Years)", "Scenario 2 (Alternative)"),
+  Optimal_Strategy = c(optimal_base, optimal_s1, optimal_s2),
+  WTP_Threshold = rep(scales::dollar(WTP), 3)
+)
+
+optimal_summary$Optimal_Strategy <- case_when(
+  optimal_summary$Optimal_Strategy == "control" ~ "Standard of Care",
+  optimal_summary$Optimal_Strategy == "crp" ~ "CRP-guided",
+  optimal_summary$Optimal_Strategy == "tlr" ~ "TLR-guided",
+  optimal_summary$Optimal_Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+  TRUE ~ optimal_summary$Optimal_Strategy
+)
+
+knitr::kable(optimal_summary,
+             align = c("l", "l", "r"),
+             col.names = c("Scenario", "Optimal Strategy", "WTP Threshold"),
+             booktabs = TRUE,
+             caption = "Optimal Strategy by Scenario at WTP Threshold") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r pagebreak-5, results='asis'}
+cat("\\newpage\n")
+```
+
+# Summary
+
+This scenario analysis examined the impact of utility assumptions on the METIMMOX+1 model. The cut-off effectiveness from the base case scatter plot disappears when using alternative values.
+
+---
+
+**Report completed on:** `r Sys.Date()`  
+**Repository:** ben-geisler/METIMMOX-1  
+**Report version:** 1.0
