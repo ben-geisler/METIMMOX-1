@@ -594,41 +594,89 @@ The following figures compare survival outcomes between biomarker-positive and b
 ## CRP Biomarker Strategy
 
 ```{r crp-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for CRP biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are CRP-positive versus CRP-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of CRP status for treatment benefit."
+#| fig-cap: "Overall survival and progression-free survival for CRP biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of CRP status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
-  # Source plotting functions
-  if (file.exists(here("scripts/R/functions/survival_plots.R"))) {
-    source(here("scripts/R/functions/survival_plots.R"))
-  }
-  
-  # Generate the plots WITHOUT suppressing output
   tryCatch({
-    os_plot <- plot_biomarker_survival(
-      predictions = predictions,
-      biomarker_name = "crp",
-      outcome_type = "OS",
-      time_points = time_points
-    )
+    # Create OS plot
+    biomarker_pred <- predictions[["crp"]]
     
-    pfs_plot <- plot_biomarker_survival(
-      predictions = predictions, 
-      biomarker_name = "crp",
-      outcome_type = "PFS",
-      time_points = time_points
-    )
-    
-    # Now add KM estimates to last plots if they exist in current device
-    # Get KM data
-    km_data_os <- add_biomarker_km(data_complete, "crp", "OS")
-    km_data_pfs <- add_biomarker_km(data_complete, "crp", "PFS")
-    
-    # This approach: regenerate the plots with KM overlaid
-    # by calling the function and capturing the last output
-    
+    if (!is.null(biomarker_pred)) {
+      # OS data - only biomarker+ and biomarker-
+      plot_data_os <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$os,
+          biomarker_pred$biomarker_negative$os
+        ),
+        group = rep(c("CRP+", "CRP-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_os <- add_biomarker_km(data_complete, "crp", "OS")
+      
+      # Create OS plot
+      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("CRP+" = "#E31A1C", "CRP-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_os)) {
+        p_os <- p_os +
+          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # PFS data - only biomarker+ and biomarker-
+      plot_data_pfs <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$pfs,
+          biomarker_pred$biomarker_negative$pfs
+        ),
+        group = rep(c("CRP+", "CRP-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_pfs <- add_biomarker_km(data_complete, "crp", "PFS")
+      
+      # Create PFS plot
+      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("CRP+" = "#E31A1C", "CRP-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_pfs)) {
+        p_pfs <- p_pfs +
+          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # Combine plots
+      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+    }
   }, error = function(e) {
     cat("CRP plots not available\n")
+    print(e)
   })
 }
 ```
@@ -640,28 +688,89 @@ cat("\\newpage\n")
 ## TLR Biomarker Strategy
 
 ```{r tlr-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for TLR (target lesion reduction) biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are TLR-positive versus TLR-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of TLR status for treatment benefit."
+#| fig-cap: "Overall survival and progression-free survival for TLR (target lesion reduction) biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of TLR status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
-  # Generate the plots WITHOUT suppressing output
   tryCatch({
-    os_plot <- plot_biomarker_survival(
-      predictions = predictions,
-      biomarker_name = "tlr",
-      outcome_type = "OS",
-      time_points = time_points
-    )
+    # Create OS plot
+    biomarker_pred <- predictions[["tlr"]]
     
-    pfs_plot <- plot_biomarker_survival(
-      predictions = predictions, 
-      biomarker_name = "tlr",
-      outcome_type = "PFS",
-      time_points = time_points
-    )
-    
+    if (!is.null(biomarker_pred)) {
+      # OS data - only biomarker+ and biomarker-
+      plot_data_os <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$os,
+          biomarker_pred$biomarker_negative$os
+        ),
+        group = rep(c("TLR+", "TLR-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_os <- add_biomarker_km(data_complete, "tlr", "OS")
+      
+      # Create OS plot
+      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("TLR+" = "#E31A1C", "TLR-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_os)) {
+        p_os <- p_os +
+          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # PFS data - only biomarker+ and biomarker-
+      plot_data_pfs <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$pfs,
+          biomarker_pred$biomarker_negative$pfs
+        ),
+        group = rep(c("TLR+", "TLR-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_pfs <- add_biomarker_km(data_complete, "tlr", "PFS")
+      
+      # Create PFS plot
+      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("TLR+" = "#E31A1C", "TLR-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_pfs)) {
+        p_pfs <- p_pfs +
+          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # Combine plots
+      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+    }
   }, error = function(e) {
     cat("TLR plots not available\n")
+    print(e)
   })
 }
 ```
@@ -673,28 +782,89 @@ cat("\\newpage\n")
 ## TMB_BRAF Biomarker Strategy
 
 ```{r tmb-braf-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for TMB_BRAF biomarker-positive versus biomarker-negative patients. Curves show predicted survival from the selected parametric model for patients who are TMB_BRAF-positive versus TMB_BRAF-negative. Kaplan-Meier estimates are shown for the treated (biomarker-positive, experimental arm) and untreated (biomarker-negative, control arm) subgroups. Differences between curves indicate the predictive value of TMB_BRAF status for treatment benefit."
+#| fig-cap: "Overall survival and progression-free survival for TMB_BRAF biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of TMB_BRAF status for treatment benefit."
 
 if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
   
-  # Generate the plots WITHOUT suppressing output
   tryCatch({
-    os_plot <- plot_biomarker_survival(
-      predictions = predictions,
-      biomarker_name = "tmb_braf",
-      outcome_type = "OS",
-      time_points = time_points
-    )
+    # Create OS plot
+    biomarker_pred <- predictions[["tmb_braf"]]
     
-    pfs_plot <- plot_biomarker_survival(
-      predictions = predictions, 
-      biomarker_name = "tmb_braf",
-      outcome_type = "PFS",
-      time_points = time_points
-    )
-    
+    if (!is.null(biomarker_pred)) {
+      # OS data - only biomarker+ and biomarker-
+      plot_data_os <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$os,
+          biomarker_pred$biomarker_negative$os
+        ),
+        group = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_os <- add_biomarker_km(data_complete, "tmb_braf", "OS")
+      
+      # Create OS plot
+      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("TMB_BRAF+" = "#E31A1C", "TMB_BRAF-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_os)) {
+        p_os <- p_os +
+          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # PFS data - only biomarker+ and biomarker-
+      plot_data_pfs <- data.frame(
+        time = rep(time_points, 2),
+        survival = c(
+          biomarker_pred$biomarker_positive$pfs,
+          biomarker_pred$biomarker_negative$pfs
+        ),
+        group = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points))
+      )
+      
+      # Get KM data
+      km_data_pfs <- add_biomarker_km(data_complete, "tmb_braf", "PFS")
+      
+      # Create PFS plot
+      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
+        geom_line(linewidth = 1.2) +
+        scale_color_manual(values = c("TMB_BRAF+" = "#E31A1C", "TMB_BRAF-" = "#1F78B4"),
+                          name = "Parametric Model") +
+        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
+        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
+        theme_minimal() +
+        theme(legend.position = "bottom")
+      
+      # Add KM estimates if available
+      if (!is.null(km_data_pfs)) {
+        p_pfs <- p_pfs +
+          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
+                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
+          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid", 
+                                          "Biomarker- (Ctrl)" = "dashed"),
+                               name = "Kaplan-Meier")
+      }
+      
+      # Combine plots
+      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+    }
   }, error = function(e) {
     cat("TMB_BRAF plots not available\n")
+    print(e)
   })
 }
 ```
