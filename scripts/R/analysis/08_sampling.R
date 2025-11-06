@@ -1,13 +1,11 @@
 #libraries
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here)
+p_load(here, survival, flexsurv, dplyr, tidyr)
 
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
-
-source(here::here("scripts/R/functions/bootstrap_survival_model.R"))
 
 # ===============================================================================
 # MODEL FORMULA SELECTION BASED ON PARAMETRIC SURVIVAL ANALYSIS SWITCH
@@ -75,64 +73,180 @@ if (USE_BOTH_MODELS == 0) {
 }
 
 # ===============================================================================
-# BOOTSTRAP MODEL FITTING
+# CORRELATED BOOTSTRAP FUNCTION
+# ===============================================================================
+# This function implements non-parametric bootstrap that maintains correlation
+# between PFS and OS by resampling patients and fitting both models to the same
+# resampled dataset.
+# ===============================================================================
+
+bootstrap_correlated_survival <- function(formula_os, formula_pfs, data, 
+                                          dist = "weibull", n_boot = n_samples) {
+  
+  # Get the best-fitting distribution from parametric analysis if available
+  if (exists("models") && !is.null(models$best_fit$os_distribution)) {
+    dist <- models$best_fit$os_distribution
+    cat("Using distribution from parametric analysis:", dist, "\n")
+  }
+  
+  n_patients <- nrow(data)
+  boot_samples <- vector("list", n_boot)
+  n_failed <- 0
+  
+  cat("Generating", n_boot, "correlated bootstrap samples for", n_patients, "patients...\n")
+  cat("This preserves PFS-OS correlation by fitting both models to the same resampled data\n")
+  
+  # Fit original models for reference
+  original_os <- flexsurvreg(formula_os, data = data, dist = dist)
+  original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist)
+  
+  for (i in 1:n_boot) {
+    # Resample patients with replacement (non-parametric bootstrap)
+    boot_idx <- sample(1:n_patients, size = n_patients, replace = TRUE)
+    boot_data <- data[boot_idx, ]
+    
+    # Fit BOTH models to the SAME resampled dataset
+    # This is critical: PFS and OS share the same patient cohort
+    tryCatch({
+      os_model <- flexsurvreg(formula_os, data = boot_data, dist = dist)
+      pfs_model <- flexsurvreg(formula_pfs, data = boot_data, dist = dist)
+      
+      boot_samples[[i]] <- list(
+        os = list(
+          model = os_model,
+          coefficients = os_model$coefficients,
+          dist = dist
+        ),
+        pfs = list(
+          model = pfs_model,
+          coefficients = pfs_model$coefficients,
+          dist = dist
+        ),
+        boot_idx = boot_idx  # Store for reproducibility/debugging
+      )
+    }, error = function(e) {
+      # If bootstrap sample fails, use original model
+      cat("Warning: Bootstrap sample", i, "failed:", conditionMessage(e), "\n")
+      boot_samples[[i]] <- list(
+        os = list(
+          model = original_os,
+          coefficients = original_os$coefficients,
+          dist = dist
+        ),
+        pfs = list(
+          model = original_pfs,
+          coefficients = original_pfs$coefficients,
+          dist = dist
+        ),
+        failed = TRUE
+      )
+      n_failed <<- n_failed + 1
+    })
+    
+    if (i %% 500 == 0) {
+      cat("Completed", i, "/", n_boot, "bootstrap samples (", n_failed, "failures)\n")
+    }
+  }
+  
+  cat("Bootstrap complete:", n_boot - n_failed, "successful,", n_failed, "failed\n")
+  
+  return(list(
+    samples = boot_samples,
+    original_os = original_os,
+    original_pfs = original_pfs,
+    n_boot = n_boot,
+    n_failed = n_failed,
+    dist = dist
+  ))
+}
+
+# ===============================================================================
+# BOOTSTRAP MODEL FITTING WITH CORRELATION
 # ===============================================================================
 
 # Initialize list to store bootstrapped models
 boot_models <- list()
 
+cat("\n=== Starting correlated bootstrap sampling ===\n")
+
 # Bootstrap control models with age and sex adjustments
-boot_models$control <- list(
-  os = bootstrap_survival_model(control_os_formula, data = data_control),
-  pfs = bootstrap_survival_model(control_pfs_formula, data = data_control)
+cat("\nBootstrapping control strategy...\n")
+boot_models$control <- bootstrap_correlated_survival(
+  formula_os = control_os_formula,
+  formula_pfs = control_pfs_formula,
+  data = data_control,
+  n_boot = n_samples
 )
 
 # Bootstrap biomarker models with age and sex adjustments
 for (biomarker in biomarkers) {
+  cat("\nBootstrapping", biomarker, "strategy...\n")
+  
   # OS model with age, sex, biomarker, treatment, and interaction
   os_formula <- create_biomarker_formula("os", biomarker)
-  boot_models[[biomarker]]$os <- bootstrap_survival_model(os_formula, data = data)
-  
-  # PFS model with age, sex, biomarker, treatment, and interaction
   pfs_formula <- create_biomarker_formula("pfs", biomarker)
-  boot_models[[biomarker]]$pfs <- bootstrap_survival_model(pfs_formula, data = data)
+  
+  boot_models[[biomarker]] <- bootstrap_correlated_survival(
+    formula_os = os_formula,
+    formula_pfs = pfs_formula,
+    data = data,
+    n_boot = n_samples
+  )
 }
 
 # Print confirmation of model structures
-cat("Bootstrap model structures created:\n")
+cat("\n=== Bootstrap model structures created ===\n")
 cat("- Control models: Age + sex adjusted\n")
 cat("- Biomarker models: Age + sex + biomarker + treatment + interaction\n")
 cat("- Model type used:", model_type, "\n")
+cat("- Number of bootstrap samples:", n_samples, "\n")
+cat("- PFS and OS are CORRELATED within each bootstrap sample\n")
 
-# Function to generate survival predictions from normboot samples
-generate_bootstrap_predictions <- function(boot_model, newdata = NULL, sample_idx = 1, time_points) {
+# ===============================================================================
+# PREDICTION FUNCTION FOR BOOTSTRAP SAMPLES
+# ===============================================================================
+
+generate_bootstrap_predictions <- function(boot_model_list, outcome = "os", 
+                                           sample_idx = 1, newdata = NULL, 
+                                           time_points) {
   # Make sure time_points passed in has correct length
   if (length(time_points) != time_points_length) {
     warning("time_points length mismatch in bootstrap predictions")
     time_points <- time_points[1:min(length(time_points), time_points_length)]
   }
-  # Get the sampling coefficients for this sample
-  # Format is different from boot() - we need to extract from transposed matrix
-  boot_coeffs <- boot_model$bootstrap[, sample_idx]
   
-  # Create a temporary model with sample coefficients
-  temp_model <- boot_model$original
-  temp_model$coefficients <- boot_coeffs
+  # Extract the specific bootstrap sample
+  boot_sample <- boot_model_list$samples[[sample_idx]]
   
-  # Generate predictions
-  if (is.null(newdata)) {
-    pred <- predict(temp_model, type = "survival", times = time_points)
+  if (is.null(boot_sample)) {
+    warning("Bootstrap sample ", sample_idx, " is NULL, using original model")
+    model_obj <- if (outcome == "os") boot_model_list$original_os else boot_model_list$original_pfs
   } else {
-    pred <- predict(temp_model, newdata = newdata, type = "survival", times = time_points)
+    # Get the model for the requested outcome (os or pfs)
+    model_obj <- boot_sample[[outcome]]$model
   }
   
-  # Unnest and return survival probabilities
-  pred_unnested <- unnest(pred, .pred)
-  return(pred_unnested$.pred_survival)
+  # Generate predictions using the bootstrap-fitted model
+  tryCatch({
+    if (is.null(newdata)) {
+      pred <- predict(model_obj, type = "survival", times = time_points)
+    } else {
+      pred <- predict(model_obj, newdata = newdata, type = "survival", times = time_points)
+    }
+    
+    # Unnest and return survival probabilities
+    pred_unnested <- unnest(pred, .pred)
+    return(pred_unnested$.pred_survival)
+    
+  }, error = function(e) {
+    warning("Prediction failed for bootstrap sample ", sample_idx, ": ", conditionMessage(e))
+    # Return NA vector of correct length
+    return(rep(NA, length(time_points)))
+  })
 }
 
 # ===============================================================================
-# PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS
+# PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS (NON-SURVIVAL PARAMETERS)
 # ===============================================================================
 
 # Create parameter distributions for other model parameters
@@ -191,6 +305,7 @@ dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utili
 dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
 
 # Create comprehensive parameter distributions list
+# Note: Survival curves are NOT in this list - they come from bootstrap samples
 param_distributions <- list(
   # Cost parameters
   c_drug_nivo = dist_c_drug_nivo,
@@ -207,3 +322,9 @@ param_distributions <- list(
   u_np = dist_u_np,
   u_p = dist_u_p
 )
+
+cat("\n=== Parameter distributions configured ===\n")
+cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
+cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
+cat("- Survival parameters: Correlated bootstrap samples (n =", n_samples, ")\n")
+cat("\nReady for PSA analysis\n")
