@@ -1,3 +1,6 @@
+#To force regeneration of bootstrap samples: in R console
+#unlink(here("data", "bootstrap_cache"), recursive = TRUE)
+
 #libraries
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
@@ -6,6 +9,22 @@ p_load(here, survival, flexsurv, dplyr, tidyr)
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
+
+# ===============================================================================
+# BOOTSTRAP CACHE CONFIGURATION
+# ===============================================================================
+
+# Define cache directory and file paths
+cache_dir <- here("data", "bootstrap_cache")
+if (!dir.exists(cache_dir)) {
+  dir.create(cache_dir, recursive = TRUE)
+  cat("Created bootstrap cache directory:", cache_dir, "\n")
+}
+
+# Create cache file path based on n_samples and model configuration
+cache_file <- here(cache_dir, paste0("boot_models_n", n_samples, "_", 
+                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"), 
+                                     ".rds"))
 
 # ===============================================================================
 # MODEL FORMULA SELECTION BASED ON PARAMETRIC SURVIVAL ANALYSIS SWITCH
@@ -100,6 +119,9 @@ bootstrap_correlated_survival <- function(formula_os, formula_pfs, data,
   original_os <- flexsurvreg(formula_os, data = data, dist = dist)
   original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist)
   
+  # Set up progress reporting
+  start_time <- Sys.time()
+  
   for (i in 1:n_boot) {
     # Resample patients with replacement (non-parametric bootstrap)
     boot_idx <- sample(1:n_patients, size = n_patients, replace = TRUE)
@@ -143,12 +165,19 @@ bootstrap_correlated_survival <- function(formula_os, formula_pfs, data,
       n_failed <<- n_failed + 1
     })
     
+    # Progress reporting
     if (i %% 500 == 0) {
-      cat("Completed", i, "/", n_boot, "bootstrap samples (", n_failed, "failures)\n")
+      elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
+      rate <- i / elapsed
+      remaining <- (n_boot - i) / rate
+      cat(sprintf("Completed %d/%d bootstrap samples (%.1f%%) - %d failures - ETA: %.1f min\n", 
+                  i, n_boot, 100*i/n_boot, n_failed, remaining))
     }
   }
   
-  cat("Bootstrap complete:", n_boot - n_failed, "successful,", n_failed, "failed\n")
+  total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
+  cat(sprintf("Bootstrap complete: %d successful, %d failed in %.1f minutes\n", 
+              n_boot - n_failed, n_failed, total_time))
   
   return(list(
     samples = boot_samples,
@@ -156,50 +185,104 @@ bootstrap_correlated_survival <- function(formula_os, formula_pfs, data,
     original_pfs = original_pfs,
     n_boot = n_boot,
     n_failed = n_failed,
-    dist = dist
+    dist = dist,
+    creation_time = Sys.time()
   ))
 }
 
 # ===============================================================================
-# BOOTSTRAP MODEL FITTING WITH CORRELATION
+# CHECK CACHE OR GENERATE BOOTSTRAP SAMPLES
 # ===============================================================================
 
-# Initialize list to store bootstrapped models
-boot_models <- list()
-
-cat("\n=== Starting correlated bootstrap sampling ===\n")
-
-# Bootstrap control models with age and sex adjustments
-cat("\nBootstrapping control strategy...\n")
-boot_models$control <- bootstrap_correlated_survival(
-  formula_os = control_os_formula,
-  formula_pfs = control_pfs_formula,
-  data = data_control,
-  n_boot = n_samples
-)
-
-# Bootstrap biomarker models with age and sex adjustments
-for (biomarker in biomarkers) {
-  cat("\nBootstrapping", biomarker, "strategy...\n")
+if (file.exists(cache_file)) {
+  cat("\n=== Loading bootstrap samples from cache ===\n")
+  cat("Cache file:", cache_file, "\n")
   
-  # OS model with age, sex, biomarker, treatment, and interaction
-  os_formula <- create_biomarker_formula("os", biomarker)
-  pfs_formula <- create_biomarker_formula("pfs", biomarker)
+  boot_models <- readRDS(cache_file)
   
-  boot_models[[biomarker]] <- bootstrap_correlated_survival(
-    formula_os = os_formula,
-    formula_pfs = pfs_formula,
-    data = data,
+  # Validate cache
+  if (is.list(boot_models) && 
+      "control" %in% names(boot_models) &&
+      all(biomarkers %in% names(boot_models))) {
+    
+    cat("Cache loaded successfully!\n")
+    cat("- Control samples:", boot_models$control$n_boot, "\n")
+    cat("- Biomarkers:", paste(biomarkers, collapse = ", "), "\n")
+    cat("- Created:", format(boot_models$control$creation_time), "\n")
+    cat("- Distribution:", boot_models$control$dist, "\n")
+    
+    # Check if n_samples matches
+    if (boot_models$control$n_boot != n_samples) {
+      cat("WARNING: Cached samples (", boot_models$control$n_boot, 
+          ") != requested (", n_samples, ")\n")
+      cat("Will use cached samples. Delete cache file to regenerate.\n")
+    }
+    
+  } else {
+    cat("Cache file corrupted or incomplete. Regenerating...\n")
+    boot_models <- NULL
+  }
+  
+} else {
+  cat("\n=== No cache found - will generate bootstrap samples ===\n")
+  boot_models <- NULL
+}
+
+# ===============================================================================
+# BOOTSTRAP MODEL FITTING WITH CORRELATION (if not cached)
+# ===============================================================================
+
+if (is.null(boot_models)) {
+  
+  # Initialize list to store bootstrapped models
+  boot_models <- list()
+  
+  cat("\n=== Starting correlated bootstrap sampling ===\n")
+  cat("This will take some time but only needs to run once.\n")
+  cat("Results will be cached to:", cache_file, "\n\n")
+  
+  # Bootstrap control models with age and sex adjustments
+  cat("\nBootstrapping control strategy...\n")
+  boot_models$control <- bootstrap_correlated_survival(
+    formula_os = control_os_formula,
+    formula_pfs = control_pfs_formula,
+    data = data_control,
     n_boot = n_samples
   )
+  
+  # Bootstrap biomarker models with age and sex adjustments
+  for (biomarker in biomarkers) {
+    cat("\nBootstrapping", biomarker, "strategy...\n")
+    
+    # OS model with age, sex, biomarker, treatment, and interaction
+    os_formula <- create_biomarker_formula("os", biomarker)
+    pfs_formula <- create_biomarker_formula("pfs", biomarker)
+    
+    boot_models[[biomarker]] <- bootstrap_correlated_survival(
+      formula_os = os_formula,
+      formula_pfs = pfs_formula,
+      data = data,
+      n_boot = n_samples
+    )
+  }
+  
+  # Save to cache
+  cat("\n=== Saving bootstrap samples to cache ===\n")
+  tryCatch({
+    saveRDS(boot_models, cache_file)
+    cat("Bootstrap samples saved successfully to:", cache_file, "\n")
+    cat("File size:", format(file.info(cache_file)$size / 1024^2, digits = 2), "MB\n")
+  }, error = function(e) {
+    cat("WARNING: Failed to save cache:", conditionMessage(e), "\n")
+  })
 }
 
 # Print confirmation of model structures
-cat("\n=== Bootstrap model structures created ===\n")
+cat("\n=== Bootstrap model structures ready ===\n")
 cat("- Control models: Age + sex adjusted\n")
 cat("- Biomarker models: Age + sex + biomarker + treatment + interaction\n")
 cat("- Model type used:", model_type, "\n")
-cat("- Number of bootstrap samples:", n_samples, "\n")
+cat("- Number of bootstrap samples:", boot_models$control$n_boot, "\n")
 cat("- PFS and OS are CORRELATED within each bootstrap sample\n")
 
 # ===============================================================================
@@ -326,5 +409,5 @@ param_distributions <- list(
 cat("\n=== Parameter distributions configured ===\n")
 cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
 cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
-cat("- Survival parameters: Correlated bootstrap samples (n =", n_samples, ")\n")
+cat("- Survival parameters: Correlated bootstrap samples (n =", boot_models$control$n_boot, ")\n")
 cat("\nReady for PSA analysis\n")

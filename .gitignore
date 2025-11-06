@@ -3,6 +3,8 @@ data/
 data/raw/
 data/sensitive/
 data/tidy/
+# Bootstrap cache files (large, can be regenerated)
+data/bootstrap_cache/*.rds
 
 # Specific file types
 *.csv
