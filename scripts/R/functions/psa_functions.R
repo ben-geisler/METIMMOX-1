@@ -52,12 +52,16 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   effect_matrix <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                           dimnames = list(NULL, strategies))
   
+  # Progress reporting
+  cat("Running PSA with", n_sim, "simulations...\n")
+  start_time <- Sys.time()
+  
   # Run the model for each simulation
   for (i in 1:n_sim) {
     # Create parameter set for this simulation
     sim_params <- l_params_base
     
-    # Update parameters with PSA sample values
+    # Update parameters with PSA sample values (costs and utilities)
     for (param_name in names(param_distributions)) {
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
@@ -69,7 +73,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         time_horizon = time_horizon,
         cl = cl,
         determpsa = "psa",
-        return_traces = FALSE
+        return_traces = FALSE,
+        sim_idx = i  # THIS IS THE CRITICAL FIX - passes bootstrap sample index
       )
       
       # Store results
@@ -116,7 +121,19 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         }
       }
     })
+    
+    # Progress reporting
+    if (i %% 100 == 0) {
+      elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
+      rate <- i / elapsed
+      remaining <- (n_sim - i) / rate
+      cat(sprintf("Completed %d/%d PSA iterations (%.1f%%) - ETA: %.1f min\n", 
+                  i, n_sim, 100*i/n_sim, remaining))
+    }
   }
+  
+  total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
+  cat(sprintf("PSA complete: %d simulations in %.1f minutes\n", n_sim, total_time))
   
   # Replace any remaining NAs with column means
   for (strat in strategies) {
