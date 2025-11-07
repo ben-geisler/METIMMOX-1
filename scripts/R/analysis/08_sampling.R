@@ -1,6 +1,3 @@
-#To force regeneration of bootstrap samples: in R console
-#unlink(here("data", "bootstrap_cache"), recursive = TRUE)
-
 #libraries
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
