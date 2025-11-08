@@ -44,8 +44,13 @@ knitr::opts_chunk$set(
 # Set working directory to project root
 knitr::opts_knit$set(root.dir = here::here())
 
-# Load required libraries
+# Load required libraries in specific order
 if (!require("pacman")) install.packages("pacman")
+
+# Load rlang explicitly first
+library(rlang)
+
+# Then load other packages
 pacman::p_load(
   here, knitr, kableExtra, ggplot2, dplyr, 
   flextable, officer, scales, gridExtra,
