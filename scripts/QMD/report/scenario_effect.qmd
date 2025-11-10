@@ -886,4 +886,4 @@ This scenario analysis examined the impact of utility assumptions on the METIMMO
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Report version:** 1.1
