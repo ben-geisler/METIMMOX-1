@@ -1,10 +1,10 @@
 # METIMMOX-1
 
-Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic Colorectal Cancer
+Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic MSS/pMMR Colorectal Cancer
 
 ## Overview
 
-This repository contains the R code for a cost-effectiveness analysis comparing three biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic mismatch repair-proficient (pMMR)/microsatellite-stable (MSS) colorectal cancer patients receiving first-line treatment.
+This repository contains the R code for a cost-effectiveness analysis comparing three biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
 
 **METIMMOX** stands for: **Colorectal Cancer METastasis - Shaping Anti-tumor IMMunity by OXaliplatin**
 
