@@ -117,6 +117,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           time_points = seq(0, time_horizon)
         )
         
+        # DIAGNOSTIC CODE - ADD TEMPORARILY
+        if (sim_idx == 1 && biomarker == "crp") {
+          cat("\n=== DIAGNOSTIC OUTPUT FOR CRP, SIM 1 ===\n")
+          cat("os_pos_exp length:", length(os_pos_exp), "\n")
+          cat("os_pos_exp range:", range(os_pos_exp, na.rm=TRUE), "\n")
+          cat("pfs_pos_exp length:", length(pfs_pos_exp), "\n")
+          cat("pfs_pos_exp range:", range(pfs_pos_exp, na.rm=TRUE), "\n")
+          cat("os_neg_ctrl range:", range(os_neg_ctrl, na.rm=TRUE), "\n")
+          cat("pfs_neg_ctrl range:", range(pfs_neg_ctrl, na.rm=TRUE), "\n")
+          cat("Base case os_pos range:", range(params$p_os$crp_pos_OS, na.rm=TRUE), "\n")
+          cat("Base case pfs_pos range:", range(params$p_pfs$crp_pos_PFS, na.rm=TRUE), "\n")
+        }
+        
         os_neg_ctrl <- generate_bootstrap_predictions(
           boot_model_list = boot_models[[biomarker]],
           outcome = "os",

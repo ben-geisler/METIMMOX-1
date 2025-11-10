@@ -283,7 +283,7 @@ cat("- Number of bootstrap samples:", boot_models$control$n_boot, "\n")
 cat("- PFS and OS are CORRELATED within each bootstrap sample\n")
 
 # ===============================================================================
-# PREDICTION FUNCTION FOR BOOTSTRAP SAMPLES
+# PREDICTION FUNCTION FOR BOOTSTRAP SAMPLES - CORRECTED VERSION
 # ===============================================================================
 
 generate_bootstrap_predictions <- function(boot_model_list, outcome = "os", 
@@ -309,14 +309,55 @@ generate_bootstrap_predictions <- function(boot_model_list, outcome = "os",
   # Generate predictions using the bootstrap-fitted model
   tryCatch({
     if (is.null(newdata)) {
+      # No newdata - predict at mean covariate values
       pred <- predict(model_obj, type = "survival", times = time_points)
     } else {
+      # With newdata - predict for specific covariate combination
       pred <- predict(model_obj, newdata = newdata, type = "survival", times = time_points)
     }
     
-    # Unnest and return survival probabilities
-    pred_unnested <- unnest(pred, .pred)
-    return(pred_unnested$.pred_survival)
+    # ========================================================================
+    # CRITICAL FIX: Extract survival predictions from nested tibble structure
+    # ========================================================================
+    # predict.flexsurvreg returns a tibble with a list column called .pred
+    # Each element of .pred is itself a tibble with columns:
+    #   .eval_time (the time points) and .pred_survival (the survival probabilities)
+    
+    if (is.data.frame(pred) && ".pred" %in% names(pred)) {
+      # This is the nested tibble structure from flexsurv
+      
+      if (is.null(newdata)) {
+        # Without newdata: multiple rows (one per patient in original data)
+        # We want to take the MEAN across all patients
+        # Extract all survival predictions and average them
+        all_surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+        
+        # Convert list to matrix (each column is a patient, each row is a time point)
+        surv_matrix <- do.call(cbind, all_surv_probs)
+        
+        # Take row means (average across patients at each time point)
+        mean_survival <- rowMeans(surv_matrix, na.rm = TRUE)
+        
+        return(mean_survival)
+        
+      } else {
+        # With newdata: typically just one row
+        # Extract the survival predictions for that row
+        if (nrow(pred) == 1) {
+          # Single prediction
+          survival_pred <- pred$.pred[[1]]$.pred_survival
+          return(survival_pred)
+        } else {
+          # Multiple rows in newdata - take the first one
+          warning("Multiple rows in newdata, using first row")
+          survival_pred <- pred$.pred[[1]]$.pred_survival
+          return(survival_pred)
+        }
+      }
+    } else {
+      warning("Unexpected prediction structure from flexsurvreg")
+      return(rep(NA, length(time_points)))
+    }
     
   }, error = function(e) {
     warning("Prediction failed for bootstrap sample ", sample_idx, ": ", conditionMessage(e))
