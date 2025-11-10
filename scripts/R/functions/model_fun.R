@@ -19,7 +19,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # from bootstrap samples for this specific simulation
     # CRITICAL: PFS and OS come from the SAME bootstrap sample to maintain correlation
     
-    cat("PSA iteration", sim_idx, "- generating correlated survival curves\n")
+    if (sim_idx %% 100 == 0) {
+      cat("PSA iteration", sim_idx, "- generating correlated survival curves\n")
+    }
     
     # Generate control strategy survival curves from bootstrap sample #sim_idx
     tryCatch({
@@ -64,25 +66,38 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         exp_rx <- levels(data$Rx)[2]
         ctrl_rx <- levels(data$Rx)[1]
         
-        # Get reference values for age and sex (mean/modal)
+        # Get reference values for ALL covariates (mean/modal)
+        # CRITICAL FIX: Must get reference values for ALL THREE biomarkers
         ref_age <- mean(data$Age, na.rm = TRUE)
         ref_sex <- as.numeric(names(sort(table(data$sex), decreasing = TRUE))[1])
+        ref_crp <- as.numeric(names(sort(table(data$crp), decreasing = TRUE))[1])
+        ref_tlr <- as.numeric(names(sort(table(data$tlr), decreasing = TRUE))[1])
+        ref_tmb_braf <- as.numeric(names(sort(table(data$tmb_braf), decreasing = TRUE))[1])
         
         # Create newdata for biomarker positive + experimental treatment
+        # CRITICAL FIX: Must include ALL biomarker variables (crp, tlr, tmb_braf)
+        # The bootstrap models were fitted with all three biomarkers as covariates
+        # Setting the target biomarker to 1, others to their reference values
         newdata_pos_exp <- data.frame(
           Age = ref_age,
           sex = factor(ref_sex, levels = levels(data$sex)),
-          Rx = factor(exp_rx, levels = levels(data$Rx))
+          Rx = factor(exp_rx, levels = levels(data$Rx)),
+          crp = factor(ifelse(biomarker == "crp", 1, ref_crp), levels = c(0, 1)),
+          tlr = factor(ifelse(biomarker == "tlr", 1, ref_tlr), levels = c(0, 1)),
+          tmb_braf = factor(ifelse(biomarker == "tmb_braf", 1, ref_tmb_braf), levels = c(0, 1))
         )
-        newdata_pos_exp[[biomarker]] <- factor(1, levels = c(0, 1))
         
         # Create newdata for biomarker negative + control treatment
+        # CRITICAL FIX: Must include ALL biomarker variables (crp, tlr, tmb_braf)
+        # Setting the target biomarker to 0, others to their reference values
         newdata_neg_ctrl <- data.frame(
           Age = ref_age,
           sex = factor(ref_sex, levels = levels(data$sex)),
-          Rx = factor(ctrl_rx, levels = levels(data$Rx))
+          Rx = factor(ctrl_rx, levels = levels(data$Rx)),
+          crp = factor(ifelse(biomarker == "crp", 0, ref_crp), levels = c(0, 1)),
+          tlr = factor(ifelse(biomarker == "tlr", 0, ref_tlr), levels = c(0, 1)),
+          tmb_braf = factor(ifelse(biomarker == "tmb_braf", 0, ref_tmb_braf), levels = c(0, 1))
         )
-        newdata_neg_ctrl[[biomarker]] <- factor(0, levels = c(0, 1))
         
         # Generate all four predictions for this simulation from SAME bootstrap sample
         # This maintains correlation between PFS and OS
