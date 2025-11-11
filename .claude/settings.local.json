@@ -1,10 +1,15 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(\"C:\\Program Files\\GitHub CLI\\gh.exe\" issue create --title \"[P4] Initial state constraint not verified (OS curve should start at 1.0)\" --label \"enhancement\" --body \"$(cat <<''EOF''\n## Priority: 🔵 P4 - Low\n\n## Location\n`scripts/R/functions/model_fun.R:217-220`\n\n## Description\nThe code forces `p_d_control[1] <- 0.0` but doesn''t verify that the OS survival curve starts at 1.0, which could lead to inconsistent initial states.\n\n## Current Code\n```r\n# Force initial state to be 100% progression-free (all patients start alive)\np_pf_control[1] <- 1.0\np_p_control[1] <- 0.0\np_d_control[1] <- 0.0\n```\n\nBut earlier:\n```r\np_pf_control <- pfs_control\np_p_control <- pmax(os_control - pfs_control, 0)\np_d_control <- 1 - os_control\n```\n\n## Problem\n- If `os_control[1]` ≠ 1.0 (due to censoring or extrapolation), the initial state is inconsistent\n- The forced values override calculated values, which could mask data issues\n- No validation that survival curves start at 1.0 as expected\n\n## Impact\n- Likely small (survival curves probably start at or near 1.0)\n- Could hide issues with survival curve generation\n- Early cycle calculations may be biologically implausible if OS curve doesn''t start at 1.0\n\n## Recommended Fix\nAdd validation before forcing initial state:\n\n```r\n# Validate survival curves start at 1.0 (or very close)\nif (abs(os_control[1] - 1.0) > 0.01 || abs(pfs_control[1] - 1.0) > 0.01) {\n  warning(\"Survival curves do not start at 1.0: \",\n          \"OS[1] = \", os_control[1], \", PFS[1] = \", pfs_control[1])\n}\n\n# Force initial state to be 100% progression-free (all patients start alive)\np_pf_control[1] <- 1.0\np_p_control[1] <- 0.0\np_d_control[1] <- 0.0\n```\n\n## Verification\nRun model and check if any warnings appear. If so, investigate survival curve generation.\n\n## Effort\n5 lines\nEOF\n)\")",
-      "Bash(\"C:\\Program Files\\GitHub CLI\\gh.exe\" issue create --title \"[P4] Library call syntax error - only loads pacman, not here\" --label \"bug\" --body \"$(cat <<''EOF''\n## Priority: 🔵 P4 - Low\n\n## Location\n`scripts/R/analysis/06_parametric_survival analysis.R:14`\n\n## Description\nThe `library()` function doesn''t accept multiple package names, so only `pacman` is loaded and `here` is not.\n\n## Current Code\n```r\nlibrary(pacman, here)\n```\n\n## Problem\n- `library()` doesn''t support loading multiple packages with comma separation\n- Only the first argument (`pacman`) is loaded\n- `here` is ignored\n- Later calls to `here::here()` may fail if `here` isn''t loaded elsewhere\n\n## Impact\n- If `here` is loaded by another script, no immediate failure\n- If script 06 is run in isolation, calls to `here::here()` will fail\n- Reduces script portability and reproducibility\n\n## Correct Fix\n\n### Option 1: Use pacman''s p_load\n```r\nlibrary(pacman)\np_load(here, survival, flexsurv, ggplot2, ...)\n```\n\n### Option 2: Separate library calls\n```r\nlibrary(pacman)\nlibrary(here)\n```\n\n### Option 3: Use require with check\n```r\nif (!require(pacman)) install.packages(\"pacman\")\nif (!require(here)) install.packages(\"here\")\n```\n\n## Verification\nRun script 06 in a fresh R session and verify no errors related to `here` package.\n\n## Effort\n1-2 lines\nEOF\n)\")"
-    ],
-    "deny": [],
-    "ask": []
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json, sys; data=json.load(sys.stdin); cmd=data.get('tool_input',{}).get('command',''); sys.exit(2) if any(x in cmd for x in ['git commit', 'git push']) else sys.exit(0)\""
+          }
+        ]
+      }
+    ]
   }
 }
