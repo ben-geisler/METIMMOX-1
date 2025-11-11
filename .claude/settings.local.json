@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:\\Program Files\\GitHub CLI\\gh.exe\" issue create --title \"[P4] Missing null checks for list element access in model_fun()\" --label \"enhancement\" --body \"$(cat <<''EOF''\n## Priority: 🔵 P4 - Low\n\n## Location\n`scripts/R/functions/model_fun.R:206-207`\n\n## Description\nDirect access to nested list elements without checking if they exist or are NULL.\n\n## Current Code\n```r\nos_control <- params$p_os[[\"control_OS\"]]\npfs_control <- params$p_pfs[[\"control_PFS\"]]\n```\n\n## Problem\n- If `params$p_os` is NULL or doesn''t contain \"control_OS\", this fails with cryptic error\n- Similar issues throughout the function for biomarker strategies\n- No graceful handling of misconfigured parameter lists\n\n## Impact\n- Cryptic error messages: \"subscript out of bounds\" or \"object of type 'NULL'\"\n- Difficult to diagnose when parameter lists are misconfigured\n- Poor user experience when setting up new scenarios\n\n## Recommended Fix\nAdd defensive checks:\n\n```r\n# Validate control survival curves exist\nif (is.null(params$p_os) || is.null(params$p_os[[\"control_OS\"]])) {\n  stop(\"Missing control OS curve in params$p_os$control_OS\")\n}\nif (is.null(params$p_pfs) || is.null(params$p_pfs[[\"control_PFS\"]])) {\n  stop(\"Missing control PFS curve in params$p_pfs$control_PFS\")\n}\n\nos_control <- params$p_os[[\"control_OS\"]]\npfs_control <- params$p_pfs[[\"control_PFS\"]]\n```\n\nOr more concisely:\n```r\nos_control <- params$p_os[[\"control_OS\"]]\npfs_control <- params$p_pfs[[\"control_PFS\"]]\nif (is.null(os_control) || is.null(pfs_control)) {\n  stop(\"Missing control survival curves in params\")\n}\n```\n\n## Effort\n3-5 lines per strategy (control + 3 biomarkers = ~15 lines total)\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
