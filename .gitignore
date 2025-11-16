@@ -17,4 +17,4 @@ data/bootstrap_cache/*.rds
 .Rproj.user/
 .Rhistory
 .RData
-.Ruserdata
+.RuserdataRplots.pdf
