@@ -1,0 +1,516 @@
+---
+title: "METIMMOX-1 Bug Fix Impact Analysis"
+subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+<!--
+SNAPSHOT SYSTEM OVERVIEW:
+
+PURPOSE:
+  Track the impact of bug fixes on cost-effectiveness analysis results by
+  comparing baseline (before fix) and fixed (after fix) snapshots.
+
+WORKFLOW:
+  1. Before fixing bug: Rscript 15_save_snapshot.R <issue> baseline
+  2. Fix the bug and commit changes
+  3. After fixing bug:  Rscript 15_save_snapshot.R <issue> fixed
+  4. Generate this report: quarto render bug_fix_impact.qmd
+
+FILE NAMING:
+  - snapshot_<issue>_baseline_<commit>.rds  (before fix)
+  - snapshot_<issue>_fixed_<commit>.rds     (after fix)
+  - psa_<issue>_baseline_<commit>.rds       (PSA before)
+  - psa_<issue>_fixed_<commit>.rds          (PSA after)
+
+REPORT BEHAVIOR:
+  - Automatically finds the most recent baseline/fixed snapshot pair
+  - Loads snapshots directly from data/tidy/snapshots/
+  - Computes all comparisons on-the-fly (no intermediate files)
+  - Shows detailed results including PSA scatter plots
+-->
+
+```{r setup, include=FALSE}
+# Set global knitr options
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+
+# Load required libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, knitr, kableExtra, ggplot2, dplyr,
+  flextable, officer, scales, gridExtra,
+  png, grid
+)
+
+# Set ggplot theme
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    strip.text = element_text(size = 11, face = "bold")
+  ))
+```
+
+```{r load-snapshots}
+# Find all snapshot files
+snapshots_dir <- here::here("data", "tidy", "snapshots")
+all_files <- list.files(snapshots_dir, pattern = "^snapshot_.*\\.rds$", full.names = TRUE)
+
+if (length(all_files) == 0) {
+  stop("No snapshot files found in data/tidy/snapshots/. Please run 15_save_snapshot.R first.")
+}
+
+# Extract issue numbers and status from filenames
+file_info <- data.frame(
+  path = all_files,
+  filename = basename(all_files),
+  stringsAsFactors = FALSE
+)
+
+# Parse filenames: snapshot_<issue>_<status>_<commit>.rds
+file_info$issue <- gsub("snapshot_(\\d+)_.*", "\\1", file_info$filename)
+file_info$status <- gsub("snapshot_\\d+_(baseline|fixed)_.*", "\\1", file_info$filename)
+file_info$commit <- gsub("snapshot_\\d+_(baseline|fixed)_(.*)\\.rds", "\\2", file_info$filename)
+
+# Find the most recent issue number (highest number)
+latest_issue <- max(as.numeric(file_info$issue))
+
+# Get baseline and fixed files for this issue
+baseline_file <- file_info$path[file_info$issue == latest_issue & file_info$status == "baseline"]
+fixed_file <- file_info$path[file_info$issue == latest_issue & file_info$status == "fixed"]
+
+if (length(baseline_file) == 0) {
+  stop("No baseline snapshot found for issue #", latest_issue,
+       ". Run: Rscript 15_save_snapshot.R ", latest_issue, " baseline")
+}
+
+if (length(fixed_file) == 0) {
+  stop("No fixed snapshot found for issue #", latest_issue,
+       ". Run: Rscript 15_save_snapshot.R ", latest_issue, " fixed")
+}
+
+# Load snapshots
+baseline_snapshot <- readRDS(baseline_file[1])
+fixed_snapshot <- readRDS(fixed_file[1])
+
+# Load PSA objects
+baseline_psa_file <- gsub("snapshot_", "psa_", baseline_file[1])
+fixed_psa_file <- gsub("snapshot_", "psa_", fixed_file[1])
+
+baseline_psa <- readRDS(baseline_psa_file)
+fixed_psa <- readRDS(fixed_psa_file)
+
+# Extract metadata
+issue_num <- latest_issue
+before_meta <- baseline_snapshot$metadata
+after_meta <- fixed_snapshot$metadata
+```
+
+# Summary
+
+This report compares cost-effectiveness analysis results before and after addressing GitHub issue #`r issue_num`. The comparison assesses whether bug fixes or model changes affected results.
+
+**Snapshots Compared:**
+
+- **Baseline:** Commit `r before_meta$git_commit` (`r before_meta$timestamp`)
+- **Fixed:** Commit `r after_meta$git_commit` (`r after_meta$timestamp`)
+
+```{r compute-comparisons}
+# Compare base case results
+base_before <- baseline_snapshot$icer_obj
+base_after <- fixed_snapshot$icer_obj
+
+base_comp <- merge(
+  base_before[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+  base_after[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+  by = "Strategy",
+  suffixes = c("_before", "_after")
+)
+
+base_comp$Cost_diff <- base_comp$Cost_after - base_comp$Cost_before
+base_comp$Effect_diff <- base_comp$Effect_after - base_comp$Effect_before
+base_comp$Cost_pct_change <- (base_comp$Cost_diff / base_comp$Cost_before) * 100
+base_comp$Effect_pct_change <- (base_comp$Effect_diff / base_comp$Effect_before) * 100
+base_comp$ICER_diff <- ifelse(
+  is.na(base_comp$ICER_before) | is.na(base_comp$ICER_after),
+  NA,
+  base_comp$ICER_after - base_comp$ICER_before
+)
+
+# Compare NMB
+nmb_before <- baseline_snapshot$nmb_at_wtp
+nmb_after <- fixed_snapshot$nmb_at_wtp
+
+nmb_comp <- merge(
+  nmb_before[, c("Strategy", "NMB")],
+  nmb_after[, c("Strategy", "NMB")],
+  by = "Strategy",
+  suffixes = c("_before", "_after")
+)
+nmb_comp$NMB_diff <- nmb_comp$NMB_after - nmb_comp$NMB_before
+nmb_comp <- nmb_comp[order(-nmb_comp$NMB_after), ]
+
+optimal_before <- nmb_before$Strategy[which.max(nmb_before$NMB)]
+optimal_after <- nmb_after$Strategy[which.max(nmb_after$NMB)]
+
+# Compare PSA
+psa_before <- baseline_snapshot$psa_summary
+psa_after <- fixed_snapshot$psa_summary
+
+psa_comp <- merge(
+  psa_before,
+  psa_after,
+  by = "Strategy",
+  suffixes = c("_before", "_after")
+)
+psa_comp$meanCost_diff <- psa_comp$meanCost_after - psa_comp$meanCost_before
+psa_comp$meanEffect_diff <- psa_comp$meanEffect_after - psa_comp$meanEffect_before
+
+# Check for parameter changes
+param_names <- names(before_meta$parameters)
+param_changes <- c()
+for (param in param_names) {
+  before_val <- before_meta$parameters[[param]]
+  after_val <- after_meta$parameters[[param]]
+  if (!identical(before_val, after_val)) {
+    param_changes <- c(param_changes, param)
+  }
+}
+
+# Calculate significance thresholds
+max_cost_change <- max(abs(base_comp$Cost_diff), na.rm = TRUE)
+max_effect_change <- max(abs(base_comp$Effect_diff), na.rm = TRUE)
+max_icer_change <- max(abs(base_comp$ICER_diff), na.rm = TRUE)
+
+optimal_changed <- optimal_before != optimal_after
+cost_significant <- max_cost_change > 100
+effect_significant <- max_effect_change > 0.01
+icer_significant <- max_icer_change > 1000
+```
+
+**Key Findings:**
+
+- **Optimal Strategy:** `r if(optimal_changed) paste0("Changed from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
+- **Maximum Cost Change:** €`r format(max_cost_change, big.mark = ",", digits = 0, nsmall = 2)`
+- **Maximum Effect Change:** `r format(max_effect_change, digits = 3, nsmall = 3)` QALYs
+- **Maximum ICER Change:** €`r format(max_icer_change, big.mark = ",", digits = 0, nsmall = 0)`/QALY
+- **Parameter Changes:** `r if(length(param_changes) > 0) paste(param_changes, collapse = ", ") else "None detected"`
+
+\newpage
+
+# Metadata Comparison
+
+```{r metadata-table}
+metadata_comp <- data.frame(
+  Item = c("Git Commit", "Timestamp", "R Version", "Issue Number"),
+  Baseline = c(
+    before_meta$git_commit,
+    before_meta$timestamp,
+    before_meta$r_version,
+    before_meta$issue_number
+  ),
+  Fixed = c(
+    after_meta$git_commit,
+    after_meta$timestamp,
+    after_meta$r_version,
+    after_meta$issue_number
+  )
+)
+
+kable(metadata_comp,
+      caption = "Metadata Comparison",
+      booktabs = TRUE,
+      format = "latex") %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+## Global Parameters
+
+```{r parameters-table}
+param_comp <- data.frame(
+  Parameter = param_names,
+  Baseline = sapply(param_names, function(p) {
+    val <- before_meta$parameters[[p]]
+    if (is.na(val)) return("NA")
+    if (is.numeric(val)) return(format(val, scientific = FALSE, big.mark = ","))
+    return(as.character(val))
+  }),
+  Fixed = sapply(param_names, function(p) {
+    val <- after_meta$parameters[[p]]
+    if (is.na(val)) return("NA")
+    if (is.numeric(val)) return(format(val, scientific = FALSE, big.mark = ","))
+    return(as.character(val))
+  }),
+  stringsAsFactors = FALSE
+)
+
+param_comp$Changed <- ifelse(param_comp$Baseline != param_comp$Fixed, "Yes", "No")
+
+kable(param_comp,
+      caption = "Global Parameter Comparison",
+      booktabs = TRUE,
+      format = "latex") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down")) %>%
+  row_spec(which(param_comp$Changed == "Yes"), bold = TRUE, color = "red")
+```
+
+\newpage
+
+# Base Case Results Comparison
+
+```{r base-case-table}
+base_display <- base_comp %>%
+  select(Strategy,
+         Cost_before, Cost_after, Cost_diff, Cost_pct_change,
+         Effect_before, Effect_after, Effect_diff, Effect_pct_change,
+         ICER_before, ICER_after, ICER_diff) %>%
+  mutate(
+    Cost_before = format(Cost_before, big.mark = ",", digits = 0, nsmall = 2),
+    Cost_after = format(Cost_after, big.mark = ",", digits = 0, nsmall = 2),
+    Cost_diff = format(Cost_diff, big.mark = ",", digits = 0, nsmall = 2),
+    Cost_pct_change = format(Cost_pct_change, digits = 2, nsmall = 2),
+    Effect_before = format(Effect_before, digits = 4, nsmall = 4),
+    Effect_after = format(Effect_after, digits = 4, nsmall = 4),
+    Effect_diff = format(Effect_diff, digits = 4, nsmall = 4),
+    Effect_pct_change = format(Effect_pct_change, digits = 2, nsmall = 2),
+    ICER_before = ifelse(is.na(ICER_before), "—", format(ICER_before, big.mark = ",", digits = 0, nsmall = 0)),
+    ICER_after = ifelse(is.na(ICER_after), "—", format(ICER_after, big.mark = ",", digits = 0, nsmall = 0)),
+    ICER_diff = ifelse(is.na(ICER_diff), "—", format(ICER_diff, big.mark = ",", digits = 0, nsmall = 0))
+  )
+
+kable(base_display,
+      caption = "Base Case Cost-Effectiveness Results Comparison",
+      col.names = c("Strategy",
+                    "Baseline", "Fixed", "Difference", "% Change",
+                    "Baseline", "Fixed", "Difference", "% Change",
+                    "Baseline", "Fixed", "Difference"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", rep("r", 11))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, "Cost (€)" = 4, "Effect (QALYs)" = 4, "ICER (€/QALY)" = 3))
+```
+
+## Net Monetary Benefit Comparison
+
+```{r nmb-table}
+nmb_display <- nmb_comp %>%
+  mutate(
+    NMB_before = format(NMB_before, big.mark = ",", digits = 0, nsmall = 2),
+    NMB_after = format(NMB_after, big.mark = ",", digits = 0, nsmall = 2),
+    NMB_diff = format(NMB_diff, big.mark = ",", digits = 0, nsmall = 2)
+  )
+
+kable(nmb_display,
+      caption = paste0("Net Monetary Benefit Comparison at WTP = €",
+                      format(before_meta$parameters$WTP, big.mark = ",")),
+      col.names = c("Strategy", "Baseline (€)", "Fixed (€)", "Difference (€)"),
+      booktabs = TRUE,
+      format = "latex") %>%
+  kable_styling(latex_options = c("striped", "hold_position")) %>%
+  row_spec(1, bold = TRUE, background = "#E8F4F8")
+```
+
+**Optimal Strategy:** `r if(optimal_changed) paste0("**Changed** from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
+
+\newpage
+
+# PSA Results Comparison
+
+## Summary Statistics
+
+```{r psa-summary-table}
+psa_display <- psa_comp %>%
+  select(Strategy,
+         meanCost_before, meanCost_after, meanCost_diff,
+         meanEffect_before, meanEffect_after, meanEffect_diff) %>%
+  mutate(
+    meanCost_before = format(meanCost_before, big.mark = ",", digits = 0, nsmall = 2),
+    meanCost_after = format(meanCost_after, big.mark = ",", digits = 0, nsmall = 2),
+    meanCost_diff = format(meanCost_diff, big.mark = ",", digits = 0, nsmall = 2),
+    meanEffect_before = format(meanEffect_before, digits = 4, nsmall = 4),
+    meanEffect_after = format(meanEffect_after, digits = 4, nsmall = 4),
+    meanEffect_diff = format(meanEffect_diff, digits = 4, nsmall = 4)
+  )
+
+kable(psa_display,
+      caption = paste0("PSA Mean Costs and Effects (n = ",
+                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
+      col.names = c("Strategy",
+                    "Baseline", "Fixed", "Difference",
+                    "Baseline", "Fixed", "Difference"),
+      booktabs = TRUE,
+      format = "latex") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 10) %>%
+  add_header_above(c(" " = 1, "Mean Cost (€)" = 3, "Mean Effect (QALYs)" = 3))
+```
+
+## 95% Credible Intervals
+
+```{r psa-ci-table}
+psa_ci_display <- psa_comp %>%
+  select(Strategy,
+         Cost_2.5_percent_before, Cost_97.5_percent_before,
+         Cost_2.5_percent_after, Cost_97.5_percent_after,
+         Effect_2.5_percent_before, Effect_97.5_percent_before,
+         Effect_2.5_percent_after, Effect_97.5_percent_after) %>%
+  mutate(
+    across(starts_with("Cost"), ~ format(.x, big.mark = ",", digits = 0, nsmall = 2)),
+    across(starts_with("Effect"), ~ format(.x, digits = 4, nsmall = 4))
+  )
+
+kable(psa_ci_display,
+      caption = "PSA 95% Credible Intervals",
+      col.names = c("Strategy",
+                    "2.5%", "97.5%", "2.5%", "97.5%",
+                    "2.5%", "97.5%", "2.5%", "97.5%"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", rep("r", 8))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, "Cost Baseline" = 2, "Cost Fixed" = 2, "Effect Baseline" = 2, "Effect Fixed" = 2))
+```
+
+\newpage
+
+# Visual Comparison
+
+## PSA Scatter Plots (Side-by-Side)
+
+```{r psa-sidebyside, fig.cap="Cost-effectiveness plane showing PSA simulations baseline (left) and fixed (right)", out.width="100%", fig.height=5}
+# Extract PSA data
+baseline_psa_data <- data.frame(
+  Strategy = rep(baseline_psa$strategies, each = baseline_psa$n_sim),
+  Cost = as.vector(as.matrix(baseline_psa$cost)),
+  Effect = as.vector(as.matrix(baseline_psa$effectiveness)),
+  Snapshot = "Baseline"
+)
+
+fixed_psa_data <- data.frame(
+  Strategy = rep(fixed_psa$strategies, each = fixed_psa$n_sim),
+  Cost = as.vector(as.matrix(fixed_psa$cost)),
+  Effect = as.vector(as.matrix(fixed_psa$effectiveness)),
+  Snapshot = "Fixed"
+)
+
+# Create side-by-side plots
+plot_baseline <- ggplot(baseline_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
+  geom_point(alpha = 0.3, size = 1) +
+  labs(title = "Baseline", x = "Effect (QALYs)", y = "Cost (€)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+plot_fixed <- ggplot(fixed_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
+  geom_point(alpha = 0.3, size = 1) +
+  labs(title = "Fixed", x = "Effect (QALYs)", y = "Cost (€)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+gridExtra::grid.arrange(plot_baseline, plot_fixed, ncol = 2)
+```
+
+## PSA Scatter Plots (Overlaid)
+
+```{r psa-overlaid, fig.cap="Cost-effectiveness plane with overlaid baseline and fixed PSA simulations", out.width="80%", fig.height=6}
+# Combine data
+combined_psa_data <- rbind(baseline_psa_data, fixed_psa_data)
+
+ggplot(combined_psa_data, aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
+  geom_point(alpha = 0.3, size = 1.5) +
+  scale_shape_manual(values = c("Baseline" = 1, "Fixed" = 16)) +
+  labs(title = "Baseline vs Fixed Comparison",
+       x = "Effect (QALYs)",
+       y = "Cost (€)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+\newpage
+
+# Impact Assessment
+
+## Summary of Changes
+
+**Cost Changes:** `r if(cost_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: €`r format(max_cost_change, big.mark = ",", digits = 0, nsmall = 2)`)
+
+**Effect Changes:** `r if(effect_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: `r format(max_effect_change, digits = 3, nsmall = 3)` QALYs)
+
+**ICER Changes:** `r if(icer_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: €`r format(max_icer_change, big.mark = ",", digits = 0, nsmall = 0)`/QALY)
+
+## Interpretation
+
+The comparison between baseline (commit `r before_meta$git_commit`) and fixed (commit `r after_meta$git_commit`) for issue #`r issue_num` reveals:
+
+```{r interpretation-text, results='asis'}
+if (optimal_changed) {
+  cat("- **The optimal strategy changed**, which represents a substantial impact on decision-making.\n")
+} else {
+  cat("- The optimal strategy remained unchanged.\n")
+}
+
+if (length(param_changes) > 0) {
+  cat("- Global parameters were modified:", paste(param_changes, collapse = ", "), "\n")
+}
+
+if (cost_significant || effect_significant || icer_significant) {
+  cat("- Changes to costs and/or effects exceed typical thresholds for clinical or economic significance.\n")
+} else {
+  cat("- Changes to costs and effects are within expected numerical precision and do not materially affect conclusions.\n")
+}
+```
+
+## Recommendations
+
+Based on the magnitude of changes observed:
+
+1. `r if(optimal_changed || cost_significant || effect_significant || icer_significant) "Results should be carefully reviewed to ensure changes align with intended bug fixes." else "Changes appear to be within expected bounds for bug fixes that improve numerical stability or code quality."`
+
+2. `r if(length(param_changes) > 0) "Parameter changes should be documented and justified in the model documentation." else "No parameter changes were detected."`
+
+3. `r if(optimal_changed) "The change in optimal strategy warrants additional investigation and sensitivity analysis." else ""`
+
+---
+
+**Report completed on:** `r Sys.Date()`
+**Repository:** ben-geisler/METIMMOX-1
+**Report version:** 1.0

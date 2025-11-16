@@ -7,6 +7,31 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
+# Generate traces by running the model with return_traces = TRUE
+cat("Generating state occupancy traces for all strategies...\n")
+
+# Initialize traces list
+traces <- list()
+
+# Generate traces for each strategy
+for (strategy in strategies) {
+  cat(paste0("  Generating traces for ", strategy, "...\n"))
+  traces[[strategy]] <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                                  determpsa = "det", return_traces = TRUE, sim_idx = NULL)
+}
+
+# Generate traces for biomarker subgroups
+for (biomarker in biomarkers) {
+  cat(paste0("  Generating traces for ", biomarker, " subgroups...\n"))
+  traces[[biomarker]] <- list()
+  traces[[biomarker]]$positive <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                                           determpsa = "det", return_traces = TRUE, sim_idx = NULL)
+  traces[[biomarker]]$negative <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                                           determpsa = "det", return_traces = TRUE, sim_idx = NULL)
+}
+
+cat("Traces generated successfully.\n")
+
 # Create faceted plot for all four strategies
 cat("Creating faceted plot for all strategies...\n")
 
