@@ -18,29 +18,92 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
-# Generate PSA samples
-cat("Generating PSA samples for", n_sim, "simulations\n")
-psa_params <- generate_psa_samples(param_distributions, n_sim)
+# Define cache file paths
+cache_file_obj <- here("data", "tidy", "psa_obj.rds")
+cache_file_params <- here("data", "tidy", "psa_params.rds")
 
-# Run the PSA
-cat("Starting PSA with", n_sim, "simulations\n")
-psa_results <- run_psa_analysis(
-  psa_params = psa_params,
-  l_params_base = l_params_base,
-  param_distributions = param_distributions,
-  strategies = strategies,
-  time_horizon = time_horizon,
-  cl = cl,
-  n_sim = n_sim
-)
+# Check if PSA cache exists and is valid
+psa_cached <- FALSE
+if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
+  cat("PSA cache files detected. Attempting to load...\n")
 
-# Create the PSA object using dampack's make_psa_obj function
-psa_obj <- dampack::make_psa_obj(
-  cost = as.data.frame(psa_results$cost),
-  effect = as.data.frame(psa_results$effect),
-  strategies = strategies,
-  currency = "€"
-)
+  # Try to load cached PSA results
+  tryCatch({
+    psa_obj <- readRDS(cache_file_obj)
+    psa_params <- readRDS(cache_file_params)
+
+    # Validate cache
+    cache_valid <- TRUE
+
+    # Check if n_sim matches
+    if (psa_obj$n_sim != n_sim) {
+      cat("  Cache validation failed: n_sim mismatch (cached:", psa_obj$n_sim,
+          ", expected:", n_sim, ")\n")
+      cache_valid <- FALSE
+    }
+
+    # Check if strategies match
+    if (!all(psa_obj$strategies == strategies)) {
+      cat("  Cache validation failed: strategy mismatch\n")
+      cache_valid <- FALSE
+    }
+
+    # Check if psa_params has correct number of rows
+    if (nrow(psa_params) != n_sim) {
+      cat("  Cache validation failed: psa_params row count mismatch\n")
+      cache_valid <- FALSE
+    }
+
+    if (cache_valid) {
+      cat("  Cache validation successful!\n")
+      cat("  Loaded PSA results from cache:\n")
+      cat("    - File:", cache_file_obj, "\n")
+      cat("    - Modified:", format(file.info(cache_file_obj)$mtime, "%Y-%m-%d %H:%M:%S"), "\n")
+      cat("    - Simulations:", psa_obj$n_sim, "\n")
+      cat("    - Strategies:", psa_obj$n_strategies, "\n")
+      psa_cached <- TRUE
+    } else {
+      cat("  Cache invalid. PSA will be regenerated.\n")
+      psa_cached <- FALSE
+    }
+
+  }, error = function(e) {
+    cat("  Error loading cache:", e$message, "\n")
+    cat("  PSA will be regenerated.\n")
+    psa_cached <- FALSE
+  })
+}
+
+# Only run PSA if cache was not loaded
+if (!psa_cached) {
+  cat("\n=== Generating new PSA results ===\n")
+
+  # Generate PSA samples
+  cat("Generating PSA samples for", n_sim, "simulations\n")
+  psa_params <- generate_psa_samples(param_distributions, n_sim)
+
+  # Run the PSA
+  cat("Starting PSA with", n_sim, "simulations\n")
+  psa_results <- run_psa_analysis(
+    psa_params = psa_params,
+    l_params_base = l_params_base,
+    param_distributions = param_distributions,
+    strategies = strategies,
+    time_horizon = time_horizon,
+    cl = cl,
+    n_sim = n_sim
+  )
+
+  # Create the PSA object using dampack's make_psa_obj function
+  psa_obj <- dampack::make_psa_obj(
+    cost = as.data.frame(psa_results$cost),
+    effect = as.data.frame(psa_results$effect),
+    strategies = strategies,
+    currency = "€"
+  )
+
+  cat("\n=== PSA generation complete ===\n")
+}
 
 # Verify the PSA object structure
 cat("PSA object created with:\n")
@@ -69,6 +132,18 @@ ceac_sum <- summary(ceac_obj)
 print(ceac_sum)
 plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 
-#save results
-saveRDS(psa_params, here("data", "tidy", "psa_params.rds"))
-saveRDS(psa_obj, here("data", "tidy", "psa_obj.rds"))
+# Save results (only if newly generated)
+if (!psa_cached) {
+  cat("\nSaving PSA results to cache...\n")
+  tryCatch({
+    saveRDS(psa_params, cache_file_params)
+    saveRDS(psa_obj, cache_file_obj)
+    cat("  PSA results saved successfully to:\n")
+    cat("    - ", cache_file_params, "\n")
+    cat("    - ", cache_file_obj, "\n")
+  }, error = function(e) {
+    warning("Failed to save PSA cache: ", e$message)
+  })
+} else {
+  cat("\nUsing cached PSA results (not saving).\n")
+}
