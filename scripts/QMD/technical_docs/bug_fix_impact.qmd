@@ -1,6 +1,6 @@
 ---
-title: "METIMMOX-1 Bug Fix Impact Analysis"
-subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
+title: "Bug Fix Impact Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -60,7 +60,7 @@ knitr::opts_chunk$set(
   echo = FALSE,
   warning = FALSE,
   message = FALSE,
-  fig.align = "center",
+  fig.align = "left",
   fig.width = 8,
   fig.height = 6,
   dpi = 300,
@@ -112,30 +112,77 @@ file_info$issue <- gsub("snapshot_(\\d+)_.*", "\\1", file_info$filename)
 file_info$status <- gsub("snapshot_\\d+_(baseline|fixed)_.*", "\\1", file_info$filename)
 file_info$commit <- gsub("snapshot_\\d+_(baseline|fixed)_(.*)\\.rds", "\\2", file_info$filename)
 
-# Find the most recent issue number (highest number)
-latest_issue <- max(as.numeric(file_info$issue))
+# Identify all complete snapshot pairs (issues with both baseline and fixed)
+all_issues <- unique(file_info$issue)
+complete_pairs <- data.frame(
+  Issue = character(),
+  Baseline_Commit = character(),
+  Fixed_Commit = character(),
+  Baseline_File = character(),
+  Fixed_File = character(),
+  stringsAsFactors = FALSE
+)
 
-# Get baseline and fixed files for this issue
-baseline_file <- file_info$path[file_info$issue == latest_issue & file_info$status == "baseline"]
-fixed_file <- file_info$path[file_info$issue == latest_issue & file_info$status == "fixed"]
+for (issue in all_issues) {
+  baseline_exists <- any(file_info$issue == issue & file_info$status == "baseline")
+  fixed_exists <- any(file_info$issue == issue & file_info$status == "fixed")
 
-if (length(baseline_file) == 0) {
-  stop("No baseline snapshot found for issue #", latest_issue,
-       ". Run: Rscript 15_save_snapshot.R ", latest_issue, " baseline")
+  if (baseline_exists && fixed_exists) {
+    baseline_commit <- file_info$commit[file_info$issue == issue & file_info$status == "baseline"][1]
+    fixed_commit <- file_info$commit[file_info$issue == issue & file_info$status == "fixed"][1]
+    baseline_file <- file_info$path[file_info$issue == issue & file_info$status == "baseline"][1]
+    fixed_file <- file_info$path[file_info$issue == issue & file_info$status == "fixed"][1]
+
+    # Get timestamp from fixed snapshot file
+    fixed_snap_temp <- readRDS(fixed_file)
+    timestamp <- fixed_snap_temp$metadata$timestamp
+
+    complete_pairs <- rbind(complete_pairs, data.frame(
+      Issue = issue,
+      Baseline_Commit = baseline_commit,
+      Fixed_Commit = fixed_commit,
+      Baseline_File = baseline_file,
+      Fixed_File = fixed_file,
+      Timestamp = timestamp,
+      stringsAsFactors = FALSE
+    ))
+  }
 }
 
-if (length(fixed_file) == 0) {
-  stop("No fixed snapshot found for issue #", latest_issue,
-       ". Run: Rscript 15_save_snapshot.R ", latest_issue, " fixed")
+# Sort by timestamp (most recent first)
+complete_pairs <- complete_pairs[order(complete_pairs$Timestamp, decreasing = TRUE), ]
+
+# Fetch issue titles from GitHub
+complete_pairs$Issue_Title <- sapply(complete_pairs$Issue, function(issue_num) {
+  tryCatch({
+    # Use gh CLI to fetch issue title
+    result <- system(paste0("gh issue view ", issue_num, " --json title --jq .title"),
+                     intern = TRUE, ignore.stderr = TRUE)
+    if (length(result) > 0 && result != "") {
+      return(result[1])
+    } else {
+      return("")
+    }
+  }, error = function(e) {
+    return("")
+  })
+})
+
+if (nrow(complete_pairs) == 0) {
+  stop("No complete snapshot pairs found. Each issue needs both baseline and fixed snapshots.")
 }
 
-# Load snapshots
-baseline_snapshot <- readRDS(baseline_file[1])
-fixed_snapshot <- readRDS(fixed_file[1])
+# Get the most recent snapshot pair (first row, since sorted by timestamp descending)
+latest_pair <- complete_pairs[1, ]
+latest_issue <- latest_pair$Issue
+
+# Load snapshots for the most recent issue
+baseline_snapshot <- readRDS(latest_pair$Baseline_File)
+fixed_snapshot <- readRDS(latest_pair$Fixed_File)
 
 # Load PSA objects
-baseline_psa_file <- gsub("snapshot_", "psa_", baseline_file[1])
-fixed_psa_file <- gsub("snapshot_", "psa_", fixed_file[1])
+baseline_psa_file <- gsub("snapshot_", "psa_", latest_pair$Baseline_File)
+fixed_psa_file <- gsub("snapshot_", "psa_", latest_pair$Fixed_File)
 
 baseline_psa <- readRDS(baseline_psa_file)
 fixed_psa <- readRDS(fixed_psa_file)
@@ -150,10 +197,38 @@ after_meta <- fixed_snapshot$metadata
 
 This report compares cost-effectiveness analysis results before and after addressing GitHub issue #`r issue_num`. The comparison assesses whether bug fixes or model changes affected results.
 
-**Snapshots Compared:**
+**Current Comparison:**
 
+- **Issue:** #`r issue_num`
 - **Baseline:** Commit `r before_meta$git_commit` (`r before_meta$timestamp`)
 - **Fixed:** Commit `r after_meta$git_commit` (`r after_meta$timestamp`)
+
+## Available Snapshot Pairs
+
+```{r available-snapshots-table}
+if (nrow(complete_pairs) > 0) {
+  pairs_display <- complete_pairs %>%
+    select(Issue, Issue_Title, Baseline_Commit, Fixed_Commit) %>%
+    mutate(
+      Issue = paste0("#", Issue),
+      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title),
+      Status = ifelse(Issue == paste0("#", issue_num), "Current", "")
+    )
+
+  kable(pairs_display,
+        caption = "All Available Snapshot Pairs",
+        col.names = c("Issue", "Title", "Baseline Commit", "Fixed Commit", "Status"),
+        booktabs = TRUE,
+        format = "latex",
+        align = c("l", "l", "l", "l", "c")) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
+    row_spec(which(pairs_display$Status == "Current"), bold = TRUE, background = "#E8F4F8")
+} else {
+  cat("No snapshot pairs available.\n")
+}
+```
+
+\newpage
 
 ```{r compute-comparisons}
 # Compare base case results
@@ -228,14 +303,6 @@ effect_significant <- max_effect_change > 0.01
 icer_significant <- max_icer_change > 1000
 ```
 
-**Key Findings:**
-
-- **Optimal Strategy:** `r if(optimal_changed) paste0("Changed from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
-- **Maximum Cost Change:** €`r format(max_cost_change, big.mark = ",", digits = 0, nsmall = 2)`
-- **Maximum Effect Change:** `r format(max_effect_change, digits = 3, nsmall = 3)` QALYs
-- **Maximum ICER Change:** €`r format(max_icer_change, big.mark = ",", digits = 0, nsmall = 0)`/QALY
-- **Parameter Changes:** `r if(length(param_changes) > 0) paste(param_changes, collapse = ", ") else "None detected"`
-
 \newpage
 
 # Metadata Comparison
@@ -305,17 +372,17 @@ base_display <- base_comp %>%
          Effect_before, Effect_after, Effect_diff, Effect_pct_change,
          ICER_before, ICER_after, ICER_diff) %>%
   mutate(
-    Cost_before = format(Cost_before, big.mark = ",", digits = 0, nsmall = 2),
-    Cost_after = format(Cost_after, big.mark = ",", digits = 0, nsmall = 2),
-    Cost_diff = format(Cost_diff, big.mark = ",", digits = 0, nsmall = 2),
-    Cost_pct_change = format(Cost_pct_change, digits = 2, nsmall = 2),
-    Effect_before = format(Effect_before, digits = 4, nsmall = 4),
-    Effect_after = format(Effect_after, digits = 4, nsmall = 4),
-    Effect_diff = format(Effect_diff, digits = 4, nsmall = 4),
-    Effect_pct_change = format(Effect_pct_change, digits = 2, nsmall = 2),
-    ICER_before = ifelse(is.na(ICER_before), "—", format(ICER_before, big.mark = ",", digits = 0, nsmall = 0)),
-    ICER_after = ifelse(is.na(ICER_after), "—", format(ICER_after, big.mark = ",", digits = 0, nsmall = 0)),
-    ICER_diff = ifelse(is.na(ICER_diff), "—", format(ICER_diff, big.mark = ",", digits = 0, nsmall = 0))
+    Cost_before = format(round(Cost_before, 2), big.mark = ",", nsmall = 2),
+    Cost_after = format(round(Cost_after, 2), big.mark = ",", nsmall = 2),
+    Cost_diff = format(round(Cost_diff, 2), big.mark = ",", nsmall = 2),
+    Cost_pct_change = format(round(Cost_pct_change, 2), nsmall = 2),
+    Effect_before = format(round(Effect_before, 4), nsmall = 4),
+    Effect_after = format(round(Effect_after, 4), nsmall = 4),
+    Effect_diff = format(round(Effect_diff, 4), nsmall = 4),
+    Effect_pct_change = format(round(Effect_pct_change, 2), nsmall = 2),
+    ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
+    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ",")),
+    ICER_diff = ifelse(is.na(ICER_diff), "—", format(round(ICER_diff, 0), big.mark = ","))
   )
 
 kable(base_display,
@@ -336,9 +403,9 @@ kable(base_display,
 ```{r nmb-table}
 nmb_display <- nmb_comp %>%
   mutate(
-    NMB_before = format(NMB_before, big.mark = ",", digits = 0, nsmall = 2),
-    NMB_after = format(NMB_after, big.mark = ",", digits = 0, nsmall = 2),
-    NMB_diff = format(NMB_diff, big.mark = ",", digits = 0, nsmall = 2)
+    NMB_before = format(round(NMB_before, 2), big.mark = ",", nsmall = 2),
+    NMB_after = format(round(NMB_after, 2), big.mark = ",", nsmall = 2),
+    NMB_diff = format(round(NMB_diff, 2), big.mark = ",", nsmall = 2)
   )
 
 kable(nmb_display,
@@ -365,12 +432,12 @@ psa_display <- psa_comp %>%
          meanCost_before, meanCost_after, meanCost_diff,
          meanEffect_before, meanEffect_after, meanEffect_diff) %>%
   mutate(
-    meanCost_before = format(meanCost_before, big.mark = ",", digits = 0, nsmall = 2),
-    meanCost_after = format(meanCost_after, big.mark = ",", digits = 0, nsmall = 2),
-    meanCost_diff = format(meanCost_diff, big.mark = ",", digits = 0, nsmall = 2),
-    meanEffect_before = format(meanEffect_before, digits = 4, nsmall = 4),
-    meanEffect_after = format(meanEffect_after, digits = 4, nsmall = 4),
-    meanEffect_diff = format(meanEffect_diff, digits = 4, nsmall = 4)
+    meanCost_before = format(round(meanCost_before, 2), big.mark = ",", nsmall = 2),
+    meanCost_after = format(round(meanCost_after, 2), big.mark = ",", nsmall = 2),
+    meanCost_diff = format(round(meanCost_diff, 2), big.mark = ",", nsmall = 2),
+    meanEffect_before = format(round(meanEffect_before, 4), nsmall = 4),
+    meanEffect_after = format(round(meanEffect_after, 4), nsmall = 4),
+    meanEffect_diff = format(round(meanEffect_diff, 4), nsmall = 4)
   )
 
 kable(psa_display,
@@ -388,6 +455,8 @@ kable(psa_display,
 ## 95% Credible Intervals
 
 ```{r psa-ci-table}
+#| tbl-cap: "PSA 95% Credible Intervals"
+
 psa_ci_display <- psa_comp %>%
   select(Strategy,
          Cost_2.5_percent_before, Cost_97.5_percent_before,
@@ -395,19 +464,25 @@ psa_ci_display <- psa_comp %>%
          Effect_2.5_percent_before, Effect_97.5_percent_before,
          Effect_2.5_percent_after, Effect_97.5_percent_after) %>%
   mutate(
-    across(starts_with("Cost"), ~ format(.x, big.mark = ",", digits = 0, nsmall = 2)),
-    across(starts_with("Effect"), ~ format(.x, digits = 4, nsmall = 4))
+    Cost_2.5_percent_before = format(round(Cost_2.5_percent_before, 2), big.mark = ",", nsmall = 2),
+    Cost_97.5_percent_before = format(round(Cost_97.5_percent_before, 2), big.mark = ",", nsmall = 2),
+    Cost_2.5_percent_after = format(round(Cost_2.5_percent_after, 2), big.mark = ",", nsmall = 2),
+    Cost_97.5_percent_after = format(round(Cost_97.5_percent_after, 2), big.mark = ",", nsmall = 2),
+    Effect_2.5_percent_before = format(round(Effect_2.5_percent_before, 4), nsmall = 4),
+    Effect_97.5_percent_before = format(round(Effect_97.5_percent_before, 4), nsmall = 4),
+    Effect_2.5_percent_after = format(round(Effect_2.5_percent_after, 4), nsmall = 4),
+    Effect_97.5_percent_after = format(round(Effect_97.5_percent_after, 4), nsmall = 4)
   )
 
 kable(psa_ci_display,
-      caption = "PSA 95% Credible Intervals",
       col.names = c("Strategy",
                     "2.5%", "97.5%", "2.5%", "97.5%",
                     "2.5%", "97.5%", "2.5%", "97.5%"),
       booktabs = TRUE,
       format = "latex",
-      align = c("l", rep("r", 8))) %>%
-  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
+      align = c("l", rep("r", 8)),
+      linesep = "") %>%
+  kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"), font_size = 9) %>%
   add_header_above(c(" " = 1, "Cost Baseline" = 2, "Cost Fixed" = 2, "Effect Baseline" = 2, "Effect Fixed" = 2))
 ```
 
@@ -467,50 +542,109 @@ ggplot(combined_psa_data, aes(x = Effect, y = Cost, color = Strategy, shape = Sn
 
 \newpage
 
-# Impact Assessment
+```{r multi-issue-comparison, results='asis'}
+# Compare across multiple recent issues if available
+n_issues_available <- nrow(complete_pairs)
 
-## Summary of Changes
+if (n_issues_available >= 2) {
+  cat("# Comparison Across Recent Issues\n\n")
 
-**Cost Changes:** `r if(cost_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: €`r format(max_cost_change, big.mark = ",", digits = 0, nsmall = 2)`)
+  # Get up to 5 most recent issues (already sorted by timestamp descending)
+  n_to_compare <- min(5, n_issues_available)
+  recent_issues <- head(complete_pairs, n_to_compare)
 
-**Effect Changes:** `r if(effect_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: `r format(max_effect_change, digits = 3, nsmall = 3)` QALYs)
+  # Build comparison table
+  multi_comp <- data.frame(
+    Issue = character(),
+    Issue_Title = character(),
+    Optimal_Baseline = character(),
+    Optimal_Fixed = character(),
+    Changed = character(),
+    Max_Cost_Change = numeric(),
+    Max_Effect_Change = numeric(),
+    Max_ICER_Change = numeric(),
+    stringsAsFactors = FALSE
+  )
 
-**ICER Changes:** `r if(icer_significant) "Substantial changes detected" else "Minor changes detected"` (maximum: €`r format(max_icer_change, big.mark = ",", digits = 0, nsmall = 0)`/QALY)
+  for (i in 1:nrow(recent_issues)) {
+    issue_row <- recent_issues[i, ]
 
-## Interpretation
+    # Load snapshots
+    snap_base <- readRDS(issue_row$Baseline_File)
+    snap_fixed <- readRDS(issue_row$Fixed_File)
 
-The comparison between baseline (commit `r before_meta$git_commit`) and fixed (commit `r after_meta$git_commit`) for issue #`r issue_num` reveals:
+    # Compare
+    base_comp_temp <- merge(
+      snap_base$icer_obj[, c("Strategy", "Cost", "Effect", "ICER")],
+      snap_fixed$icer_obj[, c("Strategy", "Cost", "Effect", "ICER")],
+      by = "Strategy",
+      suffixes = c("_before", "_after")
+    )
 
-```{r interpretation-text, results='asis'}
-if (optimal_changed) {
-  cat("- **The optimal strategy changed**, which represents a substantial impact on decision-making.\n")
-} else {
-  cat("- The optimal strategy remained unchanged.\n")
-}
+    base_comp_temp$Cost_diff <- base_comp_temp$Cost_after - base_comp_temp$Cost_before
+    base_comp_temp$Effect_diff <- base_comp_temp$Effect_after - base_comp_temp$Effect_before
+    base_comp_temp$ICER_diff <- ifelse(
+      is.na(base_comp_temp$ICER_before) | is.na(base_comp_temp$ICER_after),
+      NA,
+      base_comp_temp$ICER_after - base_comp_temp$ICER_before
+    )
 
-if (length(param_changes) > 0) {
-  cat("- Global parameters were modified:", paste(param_changes, collapse = ", "), "\n")
-}
+    nmb_base <- snap_base$nmb_at_wtp
+    nmb_fixed <- snap_fixed$nmb_at_wtp
+    opt_base <- nmb_base$Strategy[which.max(nmb_base$NMB)]
+    opt_fixed <- nmb_fixed$Strategy[which.max(nmb_fixed$NMB)]
 
-if (cost_significant || effect_significant || icer_significant) {
-  cat("- Changes to costs and/or effects exceed typical thresholds for clinical or economic significance.\n")
-} else {
-  cat("- Changes to costs and effects are within expected numerical precision and do not materially affect conclusions.\n")
+    multi_comp <- rbind(multi_comp, data.frame(
+      Issue = paste0("#", issue_row$Issue),
+      Issue_Title = ifelse(issue_row$Issue_Title == "", "—", issue_row$Issue_Title),
+      Optimal_Baseline = opt_base,
+      Optimal_Fixed = opt_fixed,
+      Changed = ifelse(opt_base != opt_fixed, "Yes", "No"),
+      Max_Cost_Change = max(abs(base_comp_temp$Cost_diff), na.rm = TRUE),
+      Max_Effect_Change = max(abs(base_comp_temp$Effect_diff), na.rm = TRUE),
+      Max_ICER_Change = max(abs(base_comp_temp$ICER_diff), na.rm = TRUE),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  # Format for display
+  multi_comp_display <- multi_comp %>%
+    mutate(
+      Max_Cost_Change = format(round(Max_Cost_Change, 2), big.mark = ",", nsmall = 2),
+      Max_Effect_Change = format(round(Max_Effect_Change, 4), nsmall = 4),
+      Max_ICER_Change = format(round(Max_ICER_Change, 0), big.mark = ",")
+    )
+
+  cat("This table summarizes the impact of bug fixes across the", n_to_compare, "most recent issues:\n\n")
+
+  print(kable(multi_comp_display,
+        caption = paste0("Summary of Bug Fix Impacts (", n_to_compare, " Most Recent Issues)"),
+        col.names = c("Issue", "Title", "Optimal (Baseline)", "Optimal (Fixed)", "Changed?",
+                      "Max Cost Change (€)", "Max Effect Change (QALYs)", "Max ICER Change (€/QALY)"),
+        booktabs = TRUE,
+        format = "latex",
+        align = c("l", "l", "l", "l", "c", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 8) %>%
+    row_spec(which(multi_comp$Issue == paste0("#", issue_num)), bold = TRUE, background = "#E8F4F8"))
+
+  cat("\n\n\\newpage\n\n")
 }
 ```
 
-## Recommendations
+# Summary
 
-Based on the magnitude of changes observed:
+The comparison for issue #`r issue_num` shows:
 
-1. `r if(optimal_changed || cost_significant || effect_significant || icer_significant) "Results should be carefully reviewed to ensure changes align with intended bug fixes." else "Changes appear to be within expected bounds for bug fixes that improve numerical stability or code quality."`
+- **Optimal Strategy:** `r if(optimal_changed) paste0("Changed from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
+- **Maximum Cost Change:** €`r format(round(max_cost_change, 2), big.mark = ",", nsmall = 2)` (`r if(cost_significant) "substantial" else "minor"`)
+- **Maximum Effect Change:** `r format(round(max_effect_change, 3), nsmall = 3)` QALYs (`r if(effect_significant) "substantial" else "minor"`)
+- **Maximum ICER Change:** €`r format(round(max_icer_change, 0), big.mark = ",")`/QALY (`r if(icer_significant) "substantial" else "minor"`)
+- **Parameter Changes:** `r if(length(param_changes) > 0) paste(param_changes, collapse = ", ") else "None detected"`
 
-2. `r if(length(param_changes) > 0) "Parameter changes should be documented and justified in the model documentation." else "No parameter changes were detected."`
-
-3. `r if(optimal_changed) "The change in optimal strategy warrants additional investigation and sensitivity analysis." else ""`
+`r if(optimal_changed || cost_significant || effect_significant || icer_significant) "**Interpretation:** Changes exceed typical thresholds and should be carefully reviewed to ensure they align with the intended bug fix." else "**Interpretation:** Changes are within expected bounds for bug fixes that improve numerical stability or code quality."`
 
 ---
 
-**Report completed on:** `r Sys.Date()`
-**Repository:** ben-geisler/METIMMOX-1
+**Report completed on:** `r Sys.Date()`  
+**Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0
