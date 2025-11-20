@@ -74,7 +74,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         cl = cl,
         determpsa = "psa",
         return_traces = FALSE,
-        sim_idx = i  # THIS IS THE CRITICAL FIX - passes bootstrap sample index
+        sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
       )
       
       # Store results

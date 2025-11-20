@@ -24,7 +24,7 @@ source("scripts/R/analysis/03_biomarker_strategies.R")
 source("scripts/R/analysis/06_parametric_survival analysis.R")
 source("scripts/R/analysis/07_basecase_input_parameters.R")
 
-# Bootstrap sampling (generates cache - takes time on first run)
+# Survival resampling (generates cache - takes time on first run)
 source("scripts/R/analysis/08_sampling.R")
 
 # Model execution
@@ -70,7 +70,7 @@ quarto render scripts/QMD/report/
 
 **Prerequisites for rendering**:
 - All analysis scripts (02-13) must be run first to generate required data objects
-- Bootstrap cache must exist (from running [08_sampling.R](scripts/R/analysis/08_sampling.R))
+- Sampling cache must exist (from running [08_sampling.R](scripts/R/analysis/08_sampling.R))
 - Results objects (e.g., `cea_results`, `owsa_results`, `psa_results`, `evppi_results`) must be in the R environment or saved as `.rds` files
 
 ### Complete Analysis & Reporting Workflow
@@ -129,7 +129,7 @@ cl <- 1/52              # Cycle length: 1 week
 time_horizon <- 520     # 10 years in weeks
 WTP <- 51000           # Willingness-to-pay threshold (Euros)
 DSA_mult <- 0.2        # ±20% variation for DSA
-n_samples <- 5000      # Bootstrap/PSA sample size
+n_samples <- 5000      # Resampling/PSA sample size
 dr <- 0.04             # Discount rate (4%)
 USE_BOTH_MODELS <- 0   # 0 = full model only, 1 = both models
 ```
@@ -147,15 +147,15 @@ Each strategy has:
 - **Biomarker-negative subgroup**: Receives standard treatment (FLOX only)
 - **Population-level outcomes**: Weighted by biomarker prevalence
 
-### Bootstrap Sampling & Correlation
+### Survival Resampling & Correlation
 
-The model uses **correlated bootstrap sampling** ([08_sampling.R](scripts/R/analysis/08_sampling.R:93-189)) to maintain the correlation between PFS and OS:
+The model uses **correlated survival resampling** ([08_sampling.R](scripts/R/analysis/08_sampling.R:103-200)) to maintain the correlation between PFS and OS:
 
 - Both PFS and OS models are fitted to the **same resampled patient cohort**
-- Results are cached in `data/bootstrap_cache/`
-- Cache file naming: `boot_models_n{n_samples}_{model_type}.rds`
+- Results are cached in `data/tidy/`
+- Cache file naming: `sampling_models_n{n_samples}_{model_type}.rds`
 
-**IMPORTANT**: The first run of `08_sampling.R` will take significant time (generates 5000 bootstrap samples). Subsequent runs load from cache.
+**IMPORTANT**: The first run of `08_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
 
 ### Main Model Function
 
@@ -168,13 +168,13 @@ model_fun(params, time_horizon = 520, cl = 1/52,
 
 **Parameters**:
 - `determpsa`: "det" for deterministic, "psa" for probabilistic
-- `sim_idx`: Bootstrap sample index (required for PSA mode)
+- `sim_idx`: Resampled model index (required for PSA mode)
 - `return_traces`: If TRUE, returns state occupancy over time
 
 **PSA Mode Behavior** (lines 17-177):
-- When `determpsa = "psa"` and `sim_idx` is provided, survival curves are generated from bootstrap sample #`sim_idx`
-- PFS and OS always come from the **same** bootstrap sample to maintain correlation
-- If bootstrap prediction fails, falls back to base case curves
+- When `determpsa = "psa"` and `sim_idx` is provided, survival curves are generated from resampled model #`sim_idx`
+- PFS and OS always come from the **same** resampled model to maintain correlation
+- If prediction from resampled model fails, falls back to base case curves
 
 ### Parameter Structure
 
@@ -241,7 +241,7 @@ Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
 ### Key Functions
 
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
-- **[bootstrap_survival_model.R](scripts/R/functions/bootstrap_survival_model.R)**: Alternative bootstrap approach (not used in main analysis)
+- **[bootstrap_survival_model.R](scripts/R/functions/bootstrap_survival_model.R)**: Alternative resampling approach (not used in main analysis)
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
@@ -263,7 +263,7 @@ Treatment administration is defined by binary vectors indicating weeks when trea
 
 ### Ensuring Non-Negative States
 
-The model enforces `p_p = pmax(os - pfs, 0)` to prevent negative progressed state occupancy when PFS and OS curves cross (can happen in bootstrap samples).
+The model enforces `p_p = pmax(os - pfs, 0)` to prevent negative progressed state occupancy when PFS and OS curves cross (can happen in resampled models).
 
 ### Initial State Constraints
 
@@ -276,12 +276,12 @@ p_d[1] <- 0.0
 
 ### Biomarker Prediction in PSA
 
-When generating bootstrap predictions for biomarker strategies ([model_fun.R](scripts/R/functions/model_fun.R:73-100)), **all three biomarker variables must be included** in the newdata frame:
+When generating predictions from resampled models for biomarker strategies ([model_fun.R](scripts/R/functions/model_fun.R:73-100)), **all three biomarker variables must be included** in the newdata frame:
 - Set target biomarker to 1 (positive) or 0 (negative)
 - Set other biomarkers to reference values (modal values from data)
 - Include age, sex, and treatment (Rx)
 
-This is required because bootstrap models were fitted with all biomarkers as covariates.
+This is required because resampled models were fitted with all biomarkers as covariates.
 
 ### Discount Factor Application
 
@@ -390,21 +390,63 @@ if (!exists("cea_results")) {
 ### Common Quarto Report Issues
 
 1. **"Object not found" errors**: Run the required analysis scripts first (especially 02, 03, 06-13)
-2. **Bootstrap cache missing**: Run [08_sampling.R](scripts/R/analysis/08_sampling.R) to generate bootstrap samples
+2. **Sampling cache missing**: Run [08_sampling.R](scripts/R/analysis/08_sampling.R) to generate sampling models
 3. **Rendering hangs**: Some reports (especially CEA, EVPPI) may take minutes to render due to re-sourcing analysis scripts
 4. **USE_BOTH_MODELS conflict**: The `para_models.qmd` report overrides this to 1 for comparison purposes; other reports respect the global setting
 
 ## Cache Management
 
-Bootstrap cache files can become large (hundreds of MB). To regenerate:
+The analysis uses two cache systems to speed up computation:
+
+### 1. Sampling Cache (Survival Models)
+
+**Location**: `data/tidy/sampling_models_n*.rds`
+**Purpose**: Cached correlated PFS/OS survival model fits
+**Generation**: Script [08_sampling.R](scripts/R/analysis/08_sampling.R) (~first run takes time)
+**Size**: Hundreds of MB
+**When to regenerate**: Delete cache file when:
+- Survival model formulas change
+- `n_samples` changes
+- `USE_BOTH_MODELS` setting changes
+- Clinical data is updated
+
+**To regenerate**:
 ```r
 # Delete cache file
-cache_file <- here("data", "bootstrap_cache",
-                   paste0("boot_models_n", n_samples, "_full.rds"))
+cache_file <- here("data", "tidy",
+                   paste0("sampling_models_n", n_samples, "_full.rds"))
 file.remove(cache_file)
 # Re-run 08_sampling.R
 source("scripts/R/analysis/08_sampling.R")
 ```
+
+### 2. PSA Cache (Analysis Results)
+
+**Location**: `data/tidy/psa_obj.rds` and `psa_params.rds`
+**Purpose**: Cached PSA simulation results (5000 runs)
+**Generation**: Script [12_PSA.R](scripts/R/analysis/12_PSA.R) (~20-60 minutes first run)
+**Size**: ~660 KB total
+**When to regenerate**: Delete cache files when:
+- Model structure changes ([model_fun.R](scripts/R/functions/model_fun.R))
+- Base parameters change
+- Sampling cache is regenerated
+- Parameter distributions change
+
+**To regenerate**:
+```r
+# Delete PSA cache files
+file.remove(here("data", "tidy", "psa_obj.rds"))
+file.remove(here("data", "tidy", "psa_params.rds"))
+# Re-run 12_PSA.R
+source("scripts/R/analysis/12_PSA.R")
+```
+
+### Cache Workflow
+
+1. **First run**: [08_sampling.R](scripts/R/analysis/08_sampling.R) generates sampling cache
+2. **PSA uses sampling cache**: [12_PSA.R](scripts/R/analysis/12_PSA.R) generates PSA cache
+3. **Subsequent runs**: Both load from cache (fast)
+4. **Manual invalidation**: Delete specific cache file(s) to regenerate
 
 ## Clinical Context
 

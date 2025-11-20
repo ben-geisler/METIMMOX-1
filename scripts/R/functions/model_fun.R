@@ -3,38 +3,38 @@
 # ===============================================================================
 # This function runs the cost-effectiveness model for all strategies
 # Supports both deterministic and probabilistic sensitivity analysis (PSA)
-# In PSA mode, uses correlated bootstrap samples for PFS and OS
+# In PSA mode, uses correlated resampled models for PFS and OS
 # ===============================================================================
 
-model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det", 
+model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # Get the strategies from our global variables
   strat_names <- strategies  # This should be defined in section 2
-  
+
   # =========================================================================
-  # PSA MODE: Generate survival curves from correlated bootstrap samples
+  # PSA MODE: Generate survival curves from correlated resampled models
   # =========================================================================
   if(determpsa == "psa" && !is.null(sim_idx)) {
     # In PSA mode with sim_idx provided, we generate survival curves
-    # from bootstrap samples for this specific simulation
-    # CRITICAL: PFS and OS come from the SAME bootstrap sample to maintain correlation
+    # from resampled models for this specific simulation
+    # CRITICAL: PFS and OS come from the SAME resampled model to maintain correlation
     
     if (sim_idx %% 100 == 0) {
       cat("PSA iteration", sim_idx, "- generating correlated survival curves\n")
     }
     
-    # Generate control strategy survival curves from bootstrap sample #sim_idx
+    # Generate control strategy survival curves from resampled model #sim_idx
     tryCatch({
-      os_control <- generate_bootstrap_predictions(
-        boot_model_list = boot_models$control,
+      os_control <- generate_sampling_predictions(
+        sampling_model_list = sampling_models$control,
         outcome = "os",
-        sample_idx = sim_idx, 
+        sample_idx = sim_idx,
         newdata = NULL,
         time_points = seq(0, time_horizon)
       )
-      
-      pfs_control <- generate_bootstrap_predictions(
-        boot_model_list = boot_models$control,
+
+      pfs_control <- generate_sampling_predictions(
+        sampling_model_list = sampling_models$control,
         outcome = "pfs",
         sample_idx = sim_idx,
         newdata = NULL,
@@ -48,7 +48,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         os_control <- params$p_os$control_OS
         pfs_control <- params$p_pfs$control_PFS
       } else {
-        # Update params with these bootstrap-sampled curves
+        # Update params with these resampled curves
         params$p_os$control_OS <- os_control
         params$p_pfs$control_PFS <- pfs_control
       }
@@ -76,7 +76,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         
         # Create newdata for biomarker positive + experimental treatment
         # CRITICAL FIX: Must include ALL biomarker variables (crp, tlr, tmb_braf)
-        # The bootstrap models were fitted with all three biomarkers as covariates
+        # The resampled models were fitted with all three biomarkers as covariates
         # Setting the target biomarker to 1, others to their reference values
         newdata_pos_exp <- data.frame(
           Age = ref_age,
@@ -99,21 +99,21 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           tmb_braf = factor(ifelse(biomarker == "tmb_braf", 0, ref_tmb_braf), levels = c(0, 1))
         )
         
-        # Generate all four predictions for this simulation from SAME bootstrap sample
+        # Generate all four predictions for this simulation from SAME resampled model
         # This maintains correlation between PFS and OS
-        os_pos_exp <- generate_bootstrap_predictions(
-          boot_model_list = boot_models[[biomarker]],
+        os_pos_exp <- generate_sampling_predictions(
+          sampling_model_list = sampling_models[[biomarker]],
           outcome = "os",
-          newdata = newdata_pos_exp, 
-          sample_idx = sim_idx, 
+          newdata = newdata_pos_exp,
+          sample_idx = sim_idx,
           time_points = seq(0, time_horizon)
         )
-        
-        pfs_pos_exp <- generate_bootstrap_predictions(
-          boot_model_list = boot_models[[biomarker]],
+
+        pfs_pos_exp <- generate_sampling_predictions(
+          sampling_model_list = sampling_models[[biomarker]],
           outcome = "pfs",
-          newdata = newdata_pos_exp, 
-          sample_idx = sim_idx, 
+          newdata = newdata_pos_exp,
+          sample_idx = sim_idx,
           time_points = seq(0, time_horizon)
         )
         
@@ -130,19 +130,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           cat("Base case pfs_pos range:", range(params$p_pfs$crp_pos_PFS, na.rm=TRUE), "\n")
         }
         
-        os_neg_ctrl <- generate_bootstrap_predictions(
-          boot_model_list = boot_models[[biomarker]],
+        os_neg_ctrl <- generate_sampling_predictions(
+          sampling_model_list = sampling_models[[biomarker]],
           outcome = "os",
-          newdata = newdata_neg_ctrl, 
-          sample_idx = sim_idx, 
+          newdata = newdata_neg_ctrl,
+          sample_idx = sim_idx,
           time_points = seq(0, time_horizon)
         )
-        
-        pfs_neg_ctrl <- generate_bootstrap_predictions(
-          boot_model_list = boot_models[[biomarker]],
+
+        pfs_neg_ctrl <- generate_sampling_predictions(
+          sampling_model_list = sampling_models[[biomarker]],
           outcome = "pfs",
-          newdata = newdata_neg_ctrl, 
-          sample_idx = sim_idx, 
+          newdata = newdata_neg_ctrl,
+          sample_idx = sim_idx,
           time_points = seq(0, time_horizon)
         )
         
@@ -202,7 +202,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # CONTROL STRATEGY
   # =========================================================================
   
-  # Get control survival curves (either base case or from bootstrap)
+  # Get control survival curves (either base case or from resampling)
   os_control <- params$p_os[["control_OS"]]
   pfs_control <- params$p_pfs[["control_PFS"]]
   

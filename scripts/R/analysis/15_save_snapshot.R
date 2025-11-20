@@ -9,6 +9,15 @@
 #
 # WORKFLOW:
 #   1. Before fixing bug: Rscript 15_save_snapshot.R 64 baseline
+#      Alternative:
+#      Set the command line arguments
+#commandArgs <- function(trailingOnly = TRUE) {
+#  if (trailingOnly) {
+#    return(c("62", "baseline"))
+#  }
+#}
+#      Then source the script
+#source("scripts/R/analysis/15_save_snapshot.R")
 #   2. Fix the bug and commit changes
 #   3. After fixing bug:  Rscript 15_save_snapshot.R 64 fixed
 #   4. Generate report:   quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd
@@ -19,7 +28,7 @@
 #
 # NOTES:
 #   - Runs scripts 02, 03, 06, 07, 08, 10, 12 (takes 20-60 min for PSA)
-#   - Uses bootstrap cache if available (much faster on subsequent runs)
+#   - Uses sampling cache if available (much faster on subsequent runs)
 #   - Snapshots saved to data/tidy/snapshots/
 
 # Load required packages

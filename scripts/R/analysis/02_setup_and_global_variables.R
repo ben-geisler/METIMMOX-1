@@ -24,7 +24,7 @@ time_horizon = 520 # 10 years in weeks
 ## analysis parameters
 WTP <- 51000       # CE threshold (in Euros)
 DSA_mult <- 0.2    # +/- 20% variations as standard for DSA
-n_samples <- 5000  # number of bootstrap samples
+n_samples <- 5000  # number of resampled models
 n_sim <- n_samples # number of PSA simulations
 set.seed(123)      #set seed for reproducibility
 

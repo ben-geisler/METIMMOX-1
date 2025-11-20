@@ -74,21 +74,21 @@ global_params <- data.frame(
                "Discount Rate", 
                "WTP Threshold",
                "PSA Sample Size",
-               "Bootstrap Samples",
+               "Sampling Models",
                "DSA Variation Range"),
-  Value = c("520 weeks (10 years)", 
-           "1 week", 
-           "4% per annum", 
+  Value = c("520 weeks (10 years)",
+           "1 week",
+           "4% per annum",
            "€51,000 per QALY",
            "5,000 iterations",
-           "5,000 samples",
+           "5,000 models",
            "±20%"),
-  Description = c("Model time horizon", 
-                 "Cycle length for discrete-time model", 
-                 "Annual discount rate for costs and effects", 
+  Description = c("Model time horizon",
+                 "Cycle length for discrete-time model",
+                 "Annual discount rate for costs and effects",
                  "Willingness-to-pay threshold",
                  "Number of Monte Carlo iterations for PSA",
-                 "Bootstrap samples for survival uncertainty",
+                 "Resampled models for survival uncertainty",
                  "Parameter variation range for DSA"),
   Source = c("Clinical follow-up period", 
             "Model assumption", 
@@ -202,7 +202,7 @@ survival_data <- data.frame(
   Parameter = "OS and PFS curves by biomarker status",
   Base_Case = "Fitted parametric survival models",
   DSA_Range = "Not varied",
-  PSA_Distribution = "Bootstrap sampling (5,000 samples)",
+  PSA_Distribution = "Survival resampling (5,000 models)",
   stringsAsFactors = FALSE
 )
 
@@ -231,7 +231,7 @@ kable(comprehensive_params,
   pack_rows("Survival Parameters", 15, 15, latex_gap_space = "0.5em") %>%
   footnote(general = c("DSA ranges calculated as base case ± 20%. Utility upper bounds capped at 1.0.",
                       "PSA: Gamma distributions for costs (CV=20%), Beta for utilities (CV=15%).",
-                      "Survival curves use bootstrap sampling with age and sex adjustments."),
+                      "Survival curves use non-parametric resampling with age and sex adjustments."),
            general_title = "Notes:")
 ```
 
