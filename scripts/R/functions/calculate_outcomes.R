@@ -64,8 +64,12 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
     follow_up_costs[quarterly_cycles] <- params$c_other_follow * p_p[quarterly_cycles]
   }
   
-  # End-of-life costs
-  death_transitions <- c(p_d[1], diff(p_d))
+  # End-of-life costs: one-time cost applied when patients transition to death
+  # At t=0: no deaths yet (everyone starts alive)
+  # At t>0: incremental deaths from previous time point
+  # pmax ensures non-negative values for numerical stability in PSA runs
+  death_transitions <- c(0, diff(p_d))
+  death_transitions <- pmax(death_transitions, 0)
   end_life_costs <- death_transitions * params$c_other_last
   
   # Total costs
