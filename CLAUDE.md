@@ -8,6 +8,20 @@ METIMMOX-1 is a cost-effectiveness analysis comparing biomarker-guided immunothe
 
 **Target Audience**: Health economists and researchers developing decision-analytic models in R.
 
+## Version Control
+
+This repository uses Git for version control. **Important**: Claude Code should NOT commit changes or push to remote repositories. All Git operations (commits, pushes, branch management, pull requests) are the responsibility of the user.
+
+Claude Code may:
+- Read Git status and history for context
+- Create or modify files as part of analysis workflows
+
+Claude Code should NOT:
+- Create commits
+- Push changes to remote repositories
+- Modify Git configuration
+- Create or manage branches
+
 ## Essential Commands
 
 ### Running the Analysis
