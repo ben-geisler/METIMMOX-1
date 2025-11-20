@@ -29,7 +29,7 @@
 # NOTES:
 #   - Runs scripts 02, 03, 06, 07, 08, 10, 12 (takes 20-60 min for PSA)
 #   - Uses sampling cache if available (much faster on subsequent runs)
-#   - Snapshots saved to data/tidy/snapshots/
+#   - Snapshots saved to data/output/snapshots/
 
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
@@ -157,7 +157,7 @@ commit <- get_git_commit()
 snapshot_filename <- paste0("snapshot_", issue_number, "_", snapshot_status, "_", commit, ".rds")
 psa_filename <- paste0("psa_", issue_number, "_", snapshot_status, "_", commit, ".rds")
 
-snapshots_dir <- here::here("data", "tidy", "snapshots")
+snapshots_dir <- here::here("data", "output", "snapshots")
 
 # Save snapshot file
 cat("\nSaving snapshot file...\n")

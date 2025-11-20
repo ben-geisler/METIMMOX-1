@@ -1,8 +1,9 @@
-# Sensitive data folders
-data/
+# Sensitive data folders (but NOT data/output/snapshots/)
 data/raw/
 data/sensitive/
 data/tidy/
+data/output/*
+!data/output/snapshots/
 
 # Cache files (can be regenerated, manual deletion triggers regeneration)
 # ----------------------------------------------------------------------
@@ -32,6 +33,11 @@ data/tidy/
 *.rds
 *.dta
 *.sav
+
+# EXCEPTION: Allow tracking ONLY the snapshots subfolder within data/output/
+# (must come AFTER *.rds ignore to override it)
+!data/output/snapshots/
+!data/output/snapshots/*.rds
 
 # R-specific ignores
 .Rproj.user/

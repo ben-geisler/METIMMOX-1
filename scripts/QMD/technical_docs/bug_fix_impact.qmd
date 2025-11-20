@@ -49,7 +49,7 @@ FILE NAMING:
 
 REPORT BEHAVIOR:
   - Automatically finds the most recent baseline/fixed snapshot pair
-  - Loads snapshots directly from data/tidy/snapshots/
+  - Loads snapshots directly from data/output/snapshots/
   - Computes all comparisons on-the-fly (no intermediate files)
   - Shows detailed results including PSA scatter plots
 -->
@@ -93,11 +93,11 @@ theme_set(theme_minimal() +
 
 ```{r load-snapshots}
 # Find all snapshot files
-snapshots_dir <- here::here("data", "tidy", "snapshots")
+snapshots_dir <- here::here("data", "output", "snapshots")
 all_files <- list.files(snapshots_dir, pattern = "^snapshot_.*\\.rds$", full.names = TRUE)
 
 if (length(all_files) == 0) {
-  stop("No snapshot files found in data/tidy/snapshots/. Please run 15_save_snapshot.R first.")
+  stop("No snapshot files found in data/output/snapshots/. Please run 15_save_snapshot.R first.")
 }
 
 # Extract issue numbers and status from filenames

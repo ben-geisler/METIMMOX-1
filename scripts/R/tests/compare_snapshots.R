@@ -26,7 +26,7 @@ snapshot_pairs <- select_snapshots_for_comparison(issue_number)
 cat("\nLoading snapshots...\n")
 
 # Load snapshots
-snapshots_dir <- here::here("data", "tidy", "snapshots")
+snapshots_dir <- here::here("data", "output", "snapshots")
 before_snapshot <- load_snapshot(snapshot_pairs$before$snapshot, snapshots_dir)
 after_snapshot <- load_snapshot(snapshot_pairs$after$snapshot, snapshots_dir)
 before_psa <- load_snapshot(snapshot_pairs$before$psa, snapshots_dir)

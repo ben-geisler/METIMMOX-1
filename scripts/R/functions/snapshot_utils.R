@@ -88,9 +88,9 @@ generate_snapshot_filename <- function(type, issue_number,
 #' Lists all snapshot files for a given issue number
 #'
 #' @param issue_number GitHub issue number
-#' @param snapshots_dir Directory containing snapshots (default: data/tidy/snapshots/)
+#' @param snapshots_dir Directory containing snapshots (default: data/output/snapshots/)
 #' @return Data frame with snapshot information (filename, type, timestamp, commit)
-list_snapshots <- function(issue_number, snapshots_dir = here::here("data", "tidy", "snapshots")) {
+list_snapshots <- function(issue_number, snapshots_dir = here::here("data", "output", "snapshots")) {
   pattern <- paste0("^(snapshot|psa)_", issue_number, "_")
   files <- list.files(snapshots_dir, pattern = pattern, full.names = FALSE)
 
@@ -131,7 +131,7 @@ list_snapshots <- function(issue_number, snapshots_dir = here::here("data", "tid
 #' @param filename Snapshot filename (without path)
 #' @param snapshots_dir Directory containing snapshots
 #' @return Snapshot object (list)
-load_snapshot <- function(filename, snapshots_dir = here::here("data", "tidy", "snapshots")) {
+load_snapshot <- function(filename, snapshots_dir = here::here("data", "output", "snapshots")) {
   filepath <- file.path(snapshots_dir, filename)
 
   if (!file.exists(filepath)) {
@@ -166,7 +166,7 @@ load_snapshot <- function(filename, snapshots_dir = here::here("data", "tidy", "
 #' @param snapshot_file Snapshot filename
 #' @param snapshots_dir Directory containing snapshots
 #' @return List with snapshot and psa filenames, or NULL if no match
-find_snapshot_pair <- function(snapshot_file, snapshots_dir = here::here("data", "tidy", "snapshots")) {
+find_snapshot_pair <- function(snapshot_file, snapshots_dir = here::here("data", "output", "snapshots")) {
   # Extract timestamp and commit from snapshot filename
   parts <- strsplit(snapshot_file, "_")[[1]]
   issue <- parts[2]
@@ -194,7 +194,7 @@ find_snapshot_pair <- function(snapshot_file, snapshots_dir = here::here("data",
 #' @param snapshots_dir Directory containing snapshots
 #' @return List with two snapshot pairs (before and after)
 select_snapshots_for_comparison <- function(issue_number,
-                                           snapshots_dir = here::here("data", "tidy", "snapshots")) {
+                                           snapshots_dir = here::here("data", "output", "snapshots")) {
   snapshot_info <- list_snapshots(issue_number, snapshots_dir)
 
   # Filter to only snapshot files (not psa)
