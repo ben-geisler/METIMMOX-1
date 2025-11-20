@@ -33,7 +33,87 @@ When running R scripts from the command line (e.g., via Bash tool), use:
 
 **Note**: For interactive development, users typically work in RStudio rather than command line.
 
+## GitHub CLI
+
+GitHub CLI (`gh`) is installed and available for viewing issues, pull requests, and other repository information.
+
+### Common GitHub CLI Commands
+
+```bash
+# View a specific issue (e.g., issue #42)
+gh issue view 42
+
+# List all open issues
+gh issue list --state open
+
+# List all issues (open and closed)
+gh issue list --state all --limit 50
+
+# Search for issues by keyword
+gh issue list --search "bug" --state all
+
+# View issue with comments
+gh issue view 42 --comments
+
+# View pull request
+gh pr view 123
+
+# Get repository information
+gh repo view
+```
+
+**Important for Claude Code**: When a user references an issue number (e.g., "issue #42"), use `gh issue view <number>` to fetch the full issue description and context before proceeding with the fix.
+
 ## Essential Commands
+
+### R Sourcing Patterns
+
+R analysis scripts depend on functions defined in `scripts/R/functions/`. When running model code, you must source dependencies in the correct order:
+
+#### Minimal Test Setup
+```r
+# For testing model_fun() and calculate_outcomes()
+source("scripts/R/analysis/02_setup_and_global_variables.R")  # Global vars: time_horizon, cl, dr, etc.
+source("scripts/R/analysis/03_biomarker_strategies.R")         # Biomarker definitions
+source("scripts/R/analysis/06_parametric_survival analysis.R") # Fit survival models
+source("scripts/R/analysis/07_basecase_input_parameters.R")    # Parameter list: l_params_base
+
+# Source required functions
+source("scripts/R/functions/model_fun.R")
+source("scripts/R/functions/calculate_outcomes.R")
+
+# Now you can run the model
+result <- model_fun(l_params_base, determpsa = "det", return_traces = FALSE)
+```
+
+#### Common Function Dependencies
+- **model_fun.R** requires:
+  - `calculate_outcomes.R` (cost/QALY calculations)
+  - `prediction_functions.R` (for PSA mode with resampled models)
+
+- **PSA/EVPPI scripts** (12, 13) require:
+  - `model_fun.R`
+  - `calculate_outcomes.R`
+  - `psa_functions.R` and/or `evppi_functions.R`
+
+#### From Command Line
+```bash
+# Test a fix by sourcing all dependencies
+"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" -e "
+  setwd('c:/Users/benjampg/git/METIMMOX-1');
+  source('scripts/R/analysis/02_setup_and_global_variables.R');
+  source('scripts/R/analysis/03_biomarker_strategies.R');
+  source('scripts/R/analysis/06_parametric_survival analysis.R');
+  source('scripts/R/analysis/07_basecase_input_parameters.R');
+  source('scripts/R/functions/model_fun.R');
+  source('scripts/R/functions/calculate_outcomes.R');
+  cat('Testing model_fun...\n');
+  result <- model_fun(l_params_base, determpsa = 'det');
+  cat('Success! Control cost:', result[['Cost']][1], '\n');
+"
+```
+
+**Key principle**: Always check which analysis scripts source which function files (use `grep "source.*functions" scripts/R/analysis/*.R`) to understand dependencies.
 
 ### Running the Analysis
 
