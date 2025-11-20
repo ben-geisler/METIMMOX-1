@@ -22,6 +22,17 @@ Claude Code should NOT:
 - Modify Git configuration
 - Create or manage branches
 
+## R Installation
+
+R is installed at: `C:\Program Files\R\R-4.3.2\bin\x64\`
+
+When running R scripts from the command line (e.g., via Bash tool), use:
+```bash
+"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" -e "your R code here"
+```
+
+**Note**: For interactive development, users typically work in RStudio rather than command line.
+
 ## Essential Commands
 
 ### Running the Analysis
