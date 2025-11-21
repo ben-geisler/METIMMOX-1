@@ -8,6 +8,10 @@ data$crp <- as.numeric(data$CRP1cat == 1)
 data$tlr <- as.numeric(data$TLRcat == 1)
 data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
 
+# Convert sex to factor BEFORE creating subsets
+# This ensures all subset datasets (data_control, data_crp, etc.) have sex as factor
+data$sex <- as.factor(data$sex)
+
 # Create limited dataset with only the variables we need
 data <- data %>%
   select(ID, PFSwk, Progression, OSwk, Death, Rx, crp, tlr, tmb_braf, Age, sex)

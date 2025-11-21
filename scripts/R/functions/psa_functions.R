@@ -35,13 +35,13 @@ generate_psa_samples <- function(param_distributions, n_sim) {
 }
 
 #' Run PSA analysis across all simulations
-#' 
+#'
 #' @param psa_params Data frame with PSA parameter samples
 #' @param l_params_base Base case parameter list
 #' @param param_distributions Parameter distributions list
 #' @param strategies Vector of strategy names
 #' @param time_horizon Time horizon for analysis
-#' @param cl Cluster object for parallel processing
+#' @param cl Cycle length (1/52 weeks)
 #' @param n_sim Number of simulations
 #' @return List with cost and effect matrices
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions, 
