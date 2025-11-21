@@ -12,24 +12,49 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   strat_names <- strategies  # This should be defined in section 2
 
   # =========================================================================
-  # PSA MODE: Generate survival curves from correlated resampled models
+  # PSA MODE: Second-order Monte Carlo simulation
+  # =========================================================================
+  # Each PSA iteration samples ONE individual patient from the dataset
+  # That patient is evaluated across all strategies with treatment assigned
+  # based on their biomarker status. This approach captures:
+  #   1. Parameter uncertainty (from resampled survival models)
+  #   2. Patient heterogeneity (from sampling individuals with varying covariates)
+  # Over many iterations, biomarker prevalence is naturally reflected in the
+  # proportion of iterations where sampled patients are biomarker-positive.
+  # See GitHub Issue #70 for detailed methodology discussion.
   # =========================================================================
   if(determpsa == "psa" && !is.null(sim_idx)) {
-    # In PSA mode with sim_idx provided, we generate survival curves
-    # from resampled models for this specific simulation
-    # CRITICAL: PFS and OS come from the SAME resampled model to maintain correlation
-    
+
     if (sim_idx %% 100 == 0) {
-      cat("PSA iteration", sim_idx, "- generating correlated survival curves\n")
+      cat("PSA iteration", sim_idx, "- second-order Monte Carlo simulation\n")
     }
-    
-    # Generate control strategy survival curves from resampled model #sim_idx
+
+    # -----------------------------------------------------------------------
+    # STEP 1: Sample ONE patient from the dataset
+    # -----------------------------------------------------------------------
+    # Use modulo to cycle through patients if n_samples > n_patients
+    patient_idx <- ((sim_idx - 1) %% nrow(data)) + 1
+    sampled_patient <- data[patient_idx, ]
+
+    # Extract treatment level references
+    exp_rx <- levels(data$Rx)[2]  # Experimental treatment
+    ctrl_rx <- levels(data$Rx)[1]  # Control treatment
+
+    # -----------------------------------------------------------------------
+    # STEP 2: CONTROL STRATEGY - Sampled patient receives control treatment
+    # -----------------------------------------------------------------------
+
     tryCatch({
+      # Create patient data with control treatment assigned
+      patient_ctrl <- sampled_patient
+      patient_ctrl$Rx <- factor(ctrl_rx, levels = levels(data$Rx))
+
+      # Predict for this patient using resampled model #sim_idx
       os_control <- generate_sampling_predictions(
         sampling_model_list = sampling_models$control,
         outcome = "os",
         sample_idx = sim_idx,
-        newdata = NULL,
+        newdata = patient_ctrl,
         time_points = seq(0, time_horizon)
       )
 
@@ -37,137 +62,84 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         sampling_model_list = sampling_models$control,
         outcome = "pfs",
         sample_idx = sim_idx,
-        newdata = NULL,
+        newdata = patient_ctrl,
         time_points = seq(0, time_horizon)
       )
-      
+
       # Check for NA values and handle
       if (any(is.na(os_control)) || any(is.na(pfs_control))) {
-        warning("NA values in control survival curves for sim ", sim_idx, 
+        warning("NA values in control survival curves for sim ", sim_idx,
                 " - using base case curves")
         os_control <- params$p_os$control_OS
         pfs_control <- params$p_pfs$control_PFS
       } else {
-        # Update params with these resampled curves
+        # Update params with this patient's predictions
         params$p_os$control_OS <- os_control
         params$p_pfs$control_PFS <- pfs_control
       }
-      
+
     }, error = function(e) {
-      warning("Failed to generate control curves for sim ", sim_idx, ": ", 
+      warning("Failed to generate control curves for sim ", sim_idx, ": ",
               conditionMessage(e), " - using base case")
       # Keep base case curves in params
     })
-    
-    # Generate curves for each biomarker strategy
+
+    # -----------------------------------------------------------------------
+    # STEP 3: BIOMARKER STRATEGIES - Treatment assigned by patient's biomarker
+    # -----------------------------------------------------------------------
+    # For each biomarker strategy, the sampled patient's biomarker status
+    # determines their treatment: biomarker+ → experimental, biomarker- → control
+
     for(biomarker in biomarkers) {
       tryCatch({
-        # Get reference to experimental and control treatment levels
-        exp_rx <- levels(data$Rx)[2]
-        ctrl_rx <- levels(data$Rx)[1]
-        
-        # Get reference values for ALL covariates (mean/modal)
-        # CRITICAL FIX: Must get reference values for ALL THREE biomarkers
-        ref_age <- mean(data$Age, na.rm = TRUE)
-        ref_sex <- as.numeric(names(sort(table(data$sex), decreasing = TRUE))[1])
-        ref_crp <- as.numeric(names(sort(table(data$crp), decreasing = TRUE))[1])
-        ref_tlr <- as.numeric(names(sort(table(data$tlr), decreasing = TRUE))[1])
-        ref_tmb_braf <- as.numeric(names(sort(table(data$tmb_braf), decreasing = TRUE))[1])
-        
-        # Create newdata for biomarker positive + experimental treatment
-        # CRITICAL FIX: Must include ALL biomarker variables (crp, tlr, tmb_braf)
-        # The resampled models were fitted with all three biomarkers as covariates
-        # Setting the target biomarker to 1, others to their reference values
-        newdata_pos_exp <- data.frame(
-          Age = ref_age,
-          sex = factor(ref_sex, levels = levels(data$sex)),
-          Rx = factor(exp_rx, levels = levels(data$Rx)),
-          crp = factor(ifelse(biomarker == "crp", 1, ref_crp), levels = c(0, 1)),
-          tlr = factor(ifelse(biomarker == "tlr", 1, ref_tlr), levels = c(0, 1)),
-          tmb_braf = factor(ifelse(biomarker == "tmb_braf", 1, ref_tmb_braf), levels = c(0, 1))
-        )
-        
-        # Create newdata for biomarker negative + control treatment
-        # CRITICAL FIX: Must include ALL biomarker variables (crp, tlr, tmb_braf)
-        # Setting the target biomarker to 0, others to their reference values
-        newdata_neg_ctrl <- data.frame(
-          Age = ref_age,
-          sex = factor(ref_sex, levels = levels(data$sex)),
-          Rx = factor(ctrl_rx, levels = levels(data$Rx)),
-          crp = factor(ifelse(biomarker == "crp", 0, ref_crp), levels = c(0, 1)),
-          tlr = factor(ifelse(biomarker == "tlr", 0, ref_tlr), levels = c(0, 1)),
-          tmb_braf = factor(ifelse(biomarker == "tmb_braf", 0, ref_tmb_braf), levels = c(0, 1))
-        )
-        
-        # Generate all four predictions for this simulation from SAME resampled model
-        # This maintains correlation between PFS and OS
-        os_pos_exp <- generate_sampling_predictions(
+        # Check this patient's biomarker status
+        biomarker_status <- as.character(sampled_patient[[biomarker]])
+
+        # Determine treatment based on biomarker status
+        treatment_for_patient <- if(biomarker_status == "1") exp_rx else ctrl_rx
+
+        # Create patient data with assigned treatment
+        patient_biomarker <- sampled_patient
+        patient_biomarker$Rx <- factor(treatment_for_patient, levels = levels(data$Rx))
+
+        # Predict for this patient using resampled model #sim_idx
+        os_pred <- generate_sampling_predictions(
           sampling_model_list = sampling_models[[biomarker]],
           outcome = "os",
-          newdata = newdata_pos_exp,
           sample_idx = sim_idx,
+          newdata = patient_biomarker,
           time_points = seq(0, time_horizon)
         )
 
-        pfs_pos_exp <- generate_sampling_predictions(
+        pfs_pred <- generate_sampling_predictions(
           sampling_model_list = sampling_models[[biomarker]],
           outcome = "pfs",
-          newdata = newdata_pos_exp,
           sample_idx = sim_idx,
-          time_points = seq(0, time_horizon)
-        )
-        
-        # DIAGNOSTIC CODE - ADD TEMPORARILY
-        if (sim_idx == 1 && biomarker == "crp") {
-          cat("\n=== DIAGNOSTIC OUTPUT FOR CRP, SIM 1 ===\n")
-          cat("os_pos_exp length:", length(os_pos_exp), "\n")
-          cat("os_pos_exp range:", range(os_pos_exp, na.rm=TRUE), "\n")
-          cat("pfs_pos_exp length:", length(pfs_pos_exp), "\n")
-          cat("pfs_pos_exp range:", range(pfs_pos_exp, na.rm=TRUE), "\n")
-          cat("os_neg_ctrl range:", range(os_neg_ctrl, na.rm=TRUE), "\n")
-          cat("pfs_neg_ctrl range:", range(pfs_neg_ctrl, na.rm=TRUE), "\n")
-          cat("Base case os_pos range:", range(params$p_os$crp_pos_OS, na.rm=TRUE), "\n")
-          cat("Base case pfs_pos range:", range(params$p_pfs$crp_pos_PFS, na.rm=TRUE), "\n")
-        }
-        
-        os_neg_ctrl <- generate_sampling_predictions(
-          sampling_model_list = sampling_models[[biomarker]],
-          outcome = "os",
-          newdata = newdata_neg_ctrl,
-          sample_idx = sim_idx,
+          newdata = patient_biomarker,
           time_points = seq(0, time_horizon)
         )
 
-        pfs_neg_ctrl <- generate_sampling_predictions(
-          sampling_model_list = sampling_models[[biomarker]],
-          outcome = "pfs",
-          newdata = newdata_neg_ctrl,
-          sample_idx = sim_idx,
-          time_points = seq(0, time_horizon)
-        )
-        
         # Check for NA values
-        if (any(is.na(os_pos_exp)) || any(is.na(pfs_pos_exp)) ||
-            any(is.na(os_neg_ctrl)) || any(is.na(pfs_neg_ctrl))) {
+        if (any(is.na(os_pred)) || any(is.na(pfs_pred))) {
           warning("NA values in ", biomarker, " survival curves for sim ", sim_idx,
                   " - using base case curves")
           # Keep base case curves
         } else {
-          # Update params with these curves
-          params$p_os[[paste0(biomarker, "_pos_OS")]] <- os_pos_exp
-          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- pfs_pos_exp
-          params$p_os[[paste0(biomarker, "_neg_OS")]] <- os_neg_ctrl
-          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- pfs_neg_ctrl
-          
-          # Also update weighted averages
-          biomarker_prev <- params[[paste0("p_", biomarker)]]
-          params$p_os[[paste0(biomarker, "_weighted_OS")]] <- 
-            biomarker_prev * os_pos_exp + (1 - biomarker_prev) * os_neg_ctrl
-          
-          params$p_pfs[[paste0(biomarker, "_weighted_PFS")]] <- 
-            biomarker_prev * pfs_pos_exp + (1 - biomarker_prev) * pfs_neg_ctrl
+          # For second-order Monte Carlo, we have ONE patient per iteration
+          # Store their predictions in both pos/neg curves (same values)
+          # and adjust prevalence to reflect this patient's status
+          params$p_os[[paste0(biomarker, "_pos_OS")]] <- os_pred
+          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- pfs_pred
+          params$p_os[[paste0(biomarker, "_neg_OS")]] <- os_pred
+          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- pfs_pred
+
+          # Update prevalence for this iteration:
+          # If patient is biomarker+: prevalence = 1.0
+          # If patient is biomarker-: prevalence = 0.0
+          # This ensures the weighted calculation gives the patient's outcome
+          params[[paste0("p_", biomarker)]] <- as.numeric(biomarker_status == "1")
         }
-        
+
       }, error = function(e) {
         warning("Failed to generate ", biomarker, " curves for sim ", sim_idx, ": ",
                 conditionMessage(e), " - using base case")

@@ -456,8 +456,107 @@ param_distributions <- list(
   u_p = dist_u_p
 )
 
+# ===============================================================================
+# POPULATION AVERAGING FUNCTION FOR PSA (BIOMARKER STRATEGIES)
+# ===============================================================================
+# This function implements population averaging for biomarker strategies in PSA
+# Uses the resampled dataset to maintain consistency with correlated sampling
+# ===============================================================================
+
+generate_psa_population_averaged_predictions <- function(sampling_model_list,
+                                                         biomarker_name,
+                                                         outcome = "os",
+                                                         sample_idx = 1,
+                                                         data_original,
+                                                         time_points) {
+
+  # Extract the resampled model and resample indices
+  sampled_model <- sampling_model_list$samples[[sample_idx]]
+
+  if (is.null(sampled_model) || is.null(sampled_model$resample_idx)) {
+    warning("Cannot access resampled data for sim ", sample_idx, " - falling back to reference patient")
+    return(NULL)
+  }
+
+  # Recreate the resampled dataset using stored indices
+  resample_idx <- sampled_model$resample_idx
+  resampled_data <- data_original[resample_idx, ]
+
+  # Get treatment levels
+  exp_rx <- levels(data_original$Rx)[2]
+  ctrl_rx <- levels(data_original$Rx)[1]
+
+  # Get the model object for this outcome
+  model_obj <- sampled_model[[outcome]]$model
+
+  # -----------------------------------------------------------------------
+  # BIOMARKER-POSITIVE SUBGROUP: Predict with experimental treatment
+  # -----------------------------------------------------------------------
+
+  biomarker_pos_data <- resampled_data[resampled_data[[biomarker_name]] == 1, ]
+
+  if (nrow(biomarker_pos_data) > 0) {
+    # Assign experimental treatment
+    biomarker_pos_data$Rx <- factor(exp_rx, levels = levels(data_original$Rx))
+
+    # Predict for all biomarker+ patients
+    tryCatch({
+      pred_pos <- predict(model_obj, newdata = biomarker_pos_data,
+                         type = "survival", times = time_points)
+
+      # Extract and average survival probabilities
+      all_surv_probs_pos <- lapply(pred_pos$.pred, function(x) x$.pred_survival)
+      surv_matrix_pos <- do.call(cbind, all_surv_probs_pos)
+      survival_pos <- rowMeans(surv_matrix_pos, na.rm = TRUE)
+
+    }, error = function(e) {
+      warning("Prediction failed for ", biomarker_name, "+ in sim ", sample_idx)
+      survival_pos <<- rep(NA, length(time_points))
+    })
+  } else {
+    # No biomarker+ patients in this resample
+    survival_pos <- rep(NA, length(time_points))
+  }
+
+  # -----------------------------------------------------------------------
+  # BIOMARKER-NEGATIVE SUBGROUP: Predict with control treatment
+  # -----------------------------------------------------------------------
+
+  biomarker_neg_data <- resampled_data[resampled_data[[biomarker_name]] == 0, ]
+
+  if (nrow(biomarker_neg_data) > 0) {
+    # Assign control treatment
+    biomarker_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_original$Rx))
+
+    # Predict for all biomarker- patients
+    tryCatch({
+      pred_neg <- predict(model_obj, newdata = biomarker_neg_data,
+                         type = "survival", times = time_points)
+
+      # Extract and average survival probabilities
+      all_surv_probs_neg <- lapply(pred_neg$.pred, function(x) x$.pred_survival)
+      surv_matrix_neg <- do.call(cbind, all_surv_probs_neg)
+      survival_neg <- rowMeans(surv_matrix_neg, na.rm = TRUE)
+
+    }, error = function(e) {
+      warning("Prediction failed for ", biomarker_name, "- in sim ", sample_idx)
+      survival_neg <<- rep(NA, length(time_points))
+    })
+  } else {
+    # No biomarker- patients in this resample
+    survival_neg <- rep(NA, length(time_points))
+  }
+
+  # Return both subgroup predictions
+  return(list(
+    positive = survival_pos,
+    negative = survival_neg
+  ))
+}
+
 cat("\n=== Parameter distributions configured ===\n")
 cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
 cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
 cat("- Survival parameters: Correlated resampled models (n =", sampling_models$control$n_samples, ")\n")
+cat("- PSA population averaging function ready\n")
 cat("\nReady for PSA analysis\n")

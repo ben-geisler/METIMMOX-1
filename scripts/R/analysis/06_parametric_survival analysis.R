@@ -235,42 +235,35 @@ if (!is.null(all_pfs_aic) && nrow(all_pfs_aic) > 0) {
 # ===============================================================================
 # POPULATION-LEVEL PREDICTIONS
 # ===============================================================================
+# Uses population averaging approach to account for heterogeneity in patient
+# characteristics (age, sex, biomarkers). Predictions are generated for all
+# patients using their actual covariate values, then averaged within relevant
+# subgroups. This is the methodologically rigorous approach for CEA.
+# See GitHub Issue #69 for methodology discussion.
+# ===============================================================================
 
 # Proceed only if both best models were successfully identified
 if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
-  
+
   # Create model list for prediction functions
   best_models <- list(
     os = models$best_fit$os,
     pfs = models$best_fit$pfs
   )
-  
-  # Extract treatment level references
-  exp_rx <- levels(data_complete$Rx)[2]  # Experimental treatment
-  ctrl_rx <- levels(data_complete$Rx)[1]  # Control treatment
-  
-  # Calculate reference values for population-representative predictions
-  ref_age <- mean(data_complete$Age, na.rm = TRUE)
-  ref_sex <- get_modal_category(data_complete$sex)
-  ref_crp <- get_modal_category(data_complete$crp)
-  ref_tlr <- get_modal_category(data_complete$tlr)
-  ref_tmb_braf <- get_modal_category(data_complete$tmb_braf)
-  
-  # Generate predictions for all strategies using prediction functions
-  predictions <- generate_all_strategy_predictions(
+
+  # Generate population-averaged predictions for all strategies
+  # This function:
+  # 1. Predicts survival for EACH patient using their actual age, sex, biomarkers
+  # 2. For each strategy, assigns treatment based on biomarker status
+  # 3. Averages predictions within relevant subgroups (biomarker+, biomarker-)
+  # 4. Computes population-weighted averages using observed prevalence
+  predictions <- generate_population_averaged_predictions(
     models = best_models,
     strategies_df = strategies_df,
-    ref_age = ref_age,
-    ref_sex = ref_sex,
-    ref_crp = ref_crp,
-    ref_tlr = ref_tlr,
-    ref_tmb_braf = ref_tmb_braf,
-    exp_rx = exp_rx,
-    ctrl_rx = ctrl_rx,
-    time_points = time_points,
-    data_complete = data_complete
+    data_complete = data_complete,
+    time_points = time_points
   )
-  
+
 } else {
   # If model selection failed, create empty predictions object
   predictions <- list()
