@@ -75,7 +75,7 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
   here, knitr, kableExtra, ggplot2, dplyr,
   flextable, officer, scales, gridExtra,
-  png, grid
+  png, grid, dampack
 )
 
 # Set ggplot theme
@@ -199,34 +199,9 @@ This report compares cost-effectiveness analysis results before and after addres
 
 **Current Comparison:**
 
-- **Issue:** #`r issue_num`
+- **Issue:** #`r issue_num` - `r if(latest_pair$Issue_Title != "") latest_pair$Issue_Title else "No title available"`
 - **Baseline:** Commit `r before_meta$git_commit` (`r before_meta$timestamp`)
 - **Fixed:** Commit `r after_meta$git_commit` (`r after_meta$timestamp`)
-
-## Available Snapshot Pairs
-
-```{r available-snapshots-table}
-if (nrow(complete_pairs) > 0) {
-  pairs_display <- complete_pairs %>%
-    select(Issue, Issue_Title, Baseline_Commit, Fixed_Commit) %>%
-    mutate(
-      Issue = paste0("#", Issue),
-      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title),
-      Status = ifelse(Issue == paste0("#", issue_num), "Current", "")
-    )
-
-  kable(pairs_display,
-        caption = "All Available Snapshot Pairs",
-        col.names = c("Issue", "Title", "Baseline Commit", "Fixed Commit", "Status"),
-        booktabs = TRUE,
-        format = "latex",
-        align = c("l", "l", "l", "l", "c")) %>%
-    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
-    row_spec(which(pairs_display$Status == "Current"), bold = TRUE, background = "#E8F4F8")
-} else {
-  cat("No snapshot pairs available.\n")
-}
-```
 
 \newpage
 
@@ -365,37 +340,66 @@ kable(param_comp,
 
 # Base Case Results Comparison
 
-```{r base-case-table}
-base_display <- base_comp %>%
-  select(Strategy,
-         Cost_before, Cost_after, Cost_diff, Cost_pct_change,
-         Effect_before, Effect_after, Effect_diff, Effect_pct_change,
-         ICER_before, ICER_after, ICER_diff) %>%
+```{r base-case-incremental-table}
+base_incremental_display <- base_comp %>%
+  select(Strategy, Inc_Cost_before, Inc_Cost_after, Inc_Effect_before, Inc_Effect_after, ICER_before, ICER_after) %>%
   mutate(
-    Cost_before = format(round(Cost_before, 2), big.mark = ",", nsmall = 2),
-    Cost_after = format(round(Cost_after, 2), big.mark = ",", nsmall = 2),
-    Cost_diff = format(round(Cost_diff, 2), big.mark = ",", nsmall = 2),
-    Cost_pct_change = format(round(Cost_pct_change, 2), nsmall = 2),
-    Effect_before = format(round(Effect_before, 4), nsmall = 4),
-    Effect_after = format(round(Effect_after, 4), nsmall = 4),
-    Effect_diff = format(round(Effect_diff, 4), nsmall = 4),
-    Effect_pct_change = format(round(Effect_pct_change, 2), nsmall = 2),
+    Inc_Cost_before = format(round(Inc_Cost_before, 2), big.mark = ",", nsmall = 2),
+    Inc_Cost_after = format(round(Inc_Cost_after, 2), big.mark = ",", nsmall = 2),
+    Inc_Effect_before = format(round(Inc_Effect_before, 4), nsmall = 4),
+    Inc_Effect_after = format(round(Inc_Effect_after, 4), nsmall = 4),
     ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
-    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ",")),
-    ICER_diff = ifelse(is.na(ICER_diff), "—", format(round(ICER_diff, 0), big.mark = ","))
+    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ","))
   )
 
-kable(base_display,
-      caption = "Base Case Cost-Effectiveness Results Comparison",
+kable(base_incremental_display,
+      caption = "Base Case Incremental Cost-Effectiveness Comparison",
       col.names = c("Strategy",
-                    "Baseline", "Fixed", "Difference", "% Change",
-                    "Baseline", "Fixed", "Difference", "% Change",
-                    "Baseline", "Fixed", "Difference"),
+                    "BL ΔCost (€)", "Fix ΔCost (€)",
+                    "BL ΔEffect (QALYs)", "Fix ΔEffect (QALYs)",
+                    "BL ICER (€/QALY)", "Fix ICER (€/QALY)"),
       booktabs = TRUE,
       format = "latex",
-      align = c("l", rep("r", 11))) %>%
-  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 9) %>%
-  add_header_above(c(" " = 1, "Cost (€)" = 4, "Effect (QALYs)" = 4, "ICER (€/QALY)" = 3))
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9) %>%
+  add_header_above(c(" " = 1, "Incremental Cost" = 2, "Incremental Effect" = 2, "ICER" = 2))
+```
+
+## Efficiency Frontier Comparison
+
+```{r efficiency-frontier, fig.cap="Cost-effectiveness efficiency frontier comparison using dampack. Baseline (left) and fixed (right) strategies are shown with the efficiency frontier connecting non-dominated strategies. Dominated strategies appear off the frontier line.", out.width="100%", fig.height=5}
+# Create ICER objects for baseline and fixed using dampack
+baseline_icer <- dampack::calculate_icers(
+  cost = base_before$Cost,
+  effect = base_before$Effect,
+  strategies = base_before$Strategy
+)
+
+fixed_icer <- dampack::calculate_icers(
+  cost = base_after$Cost,
+  effect = base_after$Effect,
+  strategies = base_after$Strategy
+)
+
+# Create plots using dampack's plot method
+plot_baseline_frontier <- plot(baseline_icer,
+                                txtsize = 10,
+                                currency = "€",
+                                effect_units = "QALYs",
+                                label = "all") +
+  labs(title = "Baseline") +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+
+plot_fixed_frontier <- plot(fixed_icer,
+                              txtsize = 10,
+                              currency = "€",
+                              effect_units = "QALYs",
+                              label = "all") +
+  labs(title = "Fixed") +
+  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+
+# Arrange side-by-side
+gridExtra::grid.arrange(plot_baseline_frontier, plot_fixed_frontier, ncol = 2)
 ```
 
 ## Net Monetary Benefit Comparison
@@ -424,73 +428,107 @@ kable(nmb_display,
 
 # PSA Results Comparison
 
-## Summary Statistics
-
-```{r psa-summary-table}
-psa_display <- psa_comp %>%
+```{r psa-cost-table}
+psa_cost_display <- psa_comp %>%
   select(Strategy,
-         meanCost_before, meanCost_after, meanCost_diff,
-         meanEffect_before, meanEffect_after, meanEffect_diff) %>%
+         meanCost_before, Cost_2.5_percent_before, Cost_97.5_percent_before,
+         meanCost_after, Cost_2.5_percent_after, Cost_97.5_percent_after,
+         meanCost_diff) %>%
   mutate(
-    meanCost_before = format(round(meanCost_before, 2), big.mark = ",", nsmall = 2),
-    meanCost_after = format(round(meanCost_after, 2), big.mark = ",", nsmall = 2),
-    meanCost_diff = format(round(meanCost_diff, 2), big.mark = ",", nsmall = 2),
-    meanEffect_before = format(round(meanEffect_before, 4), nsmall = 4),
-    meanEffect_after = format(round(meanEffect_after, 4), nsmall = 4),
-    meanEffect_diff = format(round(meanEffect_diff, 4), nsmall = 4)
-  )
+    Baseline_Cost = sprintf("€%s (€%s; €%s)",
+                           format(round(meanCost_before, 2), big.mark = ",", nsmall = 2),
+                           format(round(Cost_2.5_percent_before, 2), big.mark = ",", nsmall = 2),
+                           format(round(Cost_97.5_percent_before, 2), big.mark = ",", nsmall = 2)),
+    Fixed_Cost = sprintf("€%s (€%s; €%s)",
+                        format(round(meanCost_after, 2), big.mark = ",", nsmall = 2),
+                        format(round(Cost_2.5_percent_after, 2), big.mark = ",", nsmall = 2),
+                        format(round(Cost_97.5_percent_after, 2), big.mark = ",", nsmall = 2)),
+    Difference = format(round(meanCost_diff, 2), big.mark = ",", nsmall = 2)
+  ) %>%
+  select(Strategy, Baseline_Cost, Fixed_Cost, Difference)
 
-kable(psa_display,
-      caption = paste0("PSA Mean Costs and Effects (n = ",
+kable(psa_cost_display,
+      caption = paste0("PSA Cost Results (n = ",
                       format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
-      col.names = c("Strategy",
-                    "Baseline", "Fixed", "Difference",
-                    "Baseline", "Fixed", "Difference"),
-      booktabs = TRUE,
-      format = "latex") %>%
-  kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 10) %>%
-  add_header_above(c(" " = 1, "Mean Cost (€)" = 3, "Mean Effect (QALYs)" = 3))
-```
-
-## 95% Credible Intervals
-
-```{r psa-ci-table}
-#| tbl-cap: "PSA 95% Credible Intervals"
-
-psa_ci_display <- psa_comp %>%
-  select(Strategy,
-         Cost_2.5_percent_before, Cost_97.5_percent_before,
-         Cost_2.5_percent_after, Cost_97.5_percent_after,
-         Effect_2.5_percent_before, Effect_97.5_percent_before,
-         Effect_2.5_percent_after, Effect_97.5_percent_after) %>%
-  mutate(
-    Cost_2.5_percent_before = format(round(Cost_2.5_percent_before, 2), big.mark = ",", nsmall = 2),
-    Cost_97.5_percent_before = format(round(Cost_97.5_percent_before, 2), big.mark = ",", nsmall = 2),
-    Cost_2.5_percent_after = format(round(Cost_2.5_percent_after, 2), big.mark = ",", nsmall = 2),
-    Cost_97.5_percent_after = format(round(Cost_97.5_percent_after, 2), big.mark = ",", nsmall = 2),
-    Effect_2.5_percent_before = format(round(Effect_2.5_percent_before, 4), nsmall = 4),
-    Effect_97.5_percent_before = format(round(Effect_97.5_percent_before, 4), nsmall = 4),
-    Effect_2.5_percent_after = format(round(Effect_2.5_percent_after, 4), nsmall = 4),
-    Effect_97.5_percent_after = format(round(Effect_97.5_percent_after, 4), nsmall = 4)
-  )
-
-kable(psa_ci_display,
-      col.names = c("Strategy",
-                    "2.5%", "97.5%", "2.5%", "97.5%",
-                    "2.5%", "97.5%", "2.5%", "97.5%"),
+      col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)", "Fixed Mean (2.5%; 97.5%)", "Difference (€)"),
       booktabs = TRUE,
       format = "latex",
-      align = c("l", rep("r", 8)),
-      linesep = "") %>%
-  kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"), font_size = 9) %>%
-  add_header_above(c(" " = 1, "Cost Baseline" = 2, "Cost Fixed" = 2, "Effect Baseline" = 2, "Effect Fixed" = 2))
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
 ```
 
-\newpage
+\vspace{0.5em}
 
-# Visual Comparison
+```{r psa-effect-table}
+psa_effect_display <- psa_comp %>%
+  select(Strategy,
+         meanEffect_before, Effect_2.5_percent_before, Effect_97.5_percent_before,
+         meanEffect_after, Effect_2.5_percent_after, Effect_97.5_percent_after,
+         meanEffect_diff) %>%
+  mutate(
+    Baseline_Effect = sprintf("%.4f (%.4f; %.4f)",
+                             meanEffect_before,
+                             Effect_2.5_percent_before,
+                             Effect_97.5_percent_before),
+    Fixed_Effect = sprintf("%.4f (%.4f; %.4f)",
+                          meanEffect_after,
+                          Effect_2.5_percent_after,
+                          Effect_97.5_percent_after),
+    Difference = sprintf("%.4f", meanEffect_diff)
+  ) %>%
+  select(Strategy, Baseline_Effect, Fixed_Effect, Difference)
 
-## PSA Scatter Plots (Side-by-Side)
+kable(psa_effect_display,
+      caption = paste0("PSA Effects Results (n = ",
+                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
+      col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)", "Fixed Mean (2.5%; 97.5%)", "Difference (QALYs)"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+```
+
+\vspace{0.5em}
+
+```{r psa-icer-table}
+# Calculate ICERs from PSA means as point estimates
+# Note: This is an approximation; ideally would calculate from iteration-level data
+psa_icer_display <- psa_comp %>%
+  select(Strategy, meanCost_before, meanEffect_before, meanCost_after, meanEffect_after) %>%
+  # Assume first strategy is reference (control)
+  mutate(
+    # For baseline
+    inc_cost_bl = meanCost_before - meanCost_before[1],
+    inc_effect_bl = meanEffect_before - meanEffect_before[1],
+    icer_bl = ifelse(inc_effect_bl > 0.0001, inc_cost_bl / inc_effect_bl, NA),
+    # For fixed
+    inc_cost_fx = meanCost_after - meanCost_after[1],
+    inc_effect_fx = meanEffect_after - meanEffect_after[1],
+    icer_fx = ifelse(inc_effect_fx > 0.0001, inc_cost_fx / inc_effect_fx, NA)
+  ) %>%
+  mutate(
+    Baseline_ICER = ifelse(is.na(icer_bl), "—",
+                           sprintf("€%s/QALY", format(round(icer_bl, 0), big.mark = ","))),
+    Fixed_ICER = ifelse(is.na(icer_fx), "—",
+                       sprintf("€%s/QALY", format(round(icer_fx, 0), big.mark = ",")))
+  ) %>%
+  select(Strategy, Baseline_ICER, Fixed_ICER)
+
+kable(psa_icer_display,
+      caption = paste0("PSA ICER Results (n = ",
+                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
+      col.names = c("Strategy", "Baseline Mean ICER", "Fixed Mean ICER"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
+```
+
+*Note: ICERs calculated from PSA mean costs and effects as point estimates.*
+
+## PSA Visual Analysis
+
+### PSA Scatter Plots (Side-by-Side)
 
 ```{r psa-sidebyside, fig.cap="Cost-effectiveness plane showing PSA simulations baseline (left) and fixed (right)", out.width="100%", fig.height=5}
 # Extract PSA data
@@ -510,44 +548,86 @@ fixed_psa_data <- data.frame(
 
 # Create side-by-side plots
 plot_baseline <- ggplot(baseline_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
-  geom_point(alpha = 0.3, size = 1) +
+  geom_point(alpha = 0.4, size = 2.5) +
   labs(title = "Baseline", x = "Effect (QALYs)", y = "Cost (€)") +
   theme_minimal() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 9),
+        axis.title = element_text(size = 10))
 
 plot_fixed <- ggplot(fixed_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
-  geom_point(alpha = 0.3, size = 1) +
+  geom_point(alpha = 0.4, size = 2.5) +
   labs(title = "Fixed", x = "Effect (QALYs)", y = "Cost (€)") +
   theme_minimal() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 9),
+        axis.title = element_text(size = 10))
 
 gridExtra::grid.arrange(plot_baseline, plot_fixed, ncol = 2)
 ```
 
-## PSA Scatter Plots (Overlaid)
+### PSA Scatter Plots (Overlaid)
 
-```{r psa-overlaid, fig.cap="Cost-effectiveness plane with overlaid baseline and fixed PSA simulations", out.width="80%", fig.height=6}
+```{r psa-overlaid, fig.cap="Overlaid cost-effectiveness plane comparing baseline and fixed PSA simulations. This plot overlays all PSA simulation results from both snapshots on a single plane, where each point represents one PSA iteration for a given strategy. Hollow circles indicate baseline simulations, while filled circles indicate fixed simulations. Colors distinguish strategies, while shapes distinguish snapshots. The overlay allows direct visual comparison of how the probabilistic distributions changed after the bug fix: if the fix was purely methodological with no impact on central estimates, baseline and fixed points would overlap completely, whereas systematic shifts in the point clouds indicate changes in underlying model behavior.", out.width="85%", fig.height=6}
 # Combine data
 combined_psa_data <- rbind(baseline_psa_data, fixed_psa_data)
 
 ggplot(combined_psa_data, aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
-  geom_point(alpha = 0.3, size = 1.5) +
-  scale_shape_manual(values = c("Baseline" = 1, "Fixed" = 16)) +
+  geom_point(alpha = 0.3, size = 3) +
+  scale_shape_manual(values = c("Baseline" = 21, "Fixed" = 16),
+                     name = "Snapshot",
+                     labels = c("Baseline (hollow)", "Fixed (filled)")) +
   labs(title = "Baseline vs Fixed Comparison",
        x = "Effect (QALYs)",
-       y = "Cost (€)") +
+       y = "Cost (€)",
+       color = "Strategy") +
   theme_minimal() +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.box = "vertical",
+        legend.text = element_text(size = 9),
+        axis.title = element_text(size = 10))
 ```
 
 \newpage
+
+# Comparison Across Recent Issues
+
+## Available Snapshot Pairs
+
+```{r available-snapshots-table}
+if (nrow(complete_pairs) > 0) {
+  pairs_display <- complete_pairs %>%
+    select(Issue, Issue_Title, Baseline_Commit, Fixed_Commit) %>%
+    mutate(
+      Issue = paste0("#", Issue),
+      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title),
+      Status = ifelse(Issue == paste0("#", issue_num), "Current", "")
+    )
+
+  kable(pairs_display,
+        caption = "All Available Snapshot Pairs",
+        col.names = c("Issue", "Title", "Baseline Commit", "Fixed Commit", "Status"),
+        booktabs = TRUE,
+        format = "latex",
+        align = c("l", "l", "l", "l", "c")) %>%
+    kable_styling(latex_options = c("striped", "hold_position"), font_size = 10) %>%
+    column_spec(2, width = "6cm") %>%
+    column_spec(c(1, 5), width = "1.5cm") %>%
+    column_spec(c(3, 4), width = "2cm") %>%
+    row_spec(which(pairs_display$Status == "Current"), bold = TRUE, background = "#E8F4F8")
+} else {
+  cat("No snapshot pairs available.\n")
+}
+```
+
+## Multi-Issue Impact Summary
 
 ```{r multi-issue-comparison, results='asis'}
 # Compare across multiple recent issues if available
 n_issues_available <- nrow(complete_pairs)
 
 if (n_issues_available >= 2) {
-  cat("# Comparison Across Recent Issues\n\n")
+  cat("This table summarizes the impact of bug fixes across the most recent issues:\n\n")
 
   # Get up to 5 most recent issues (already sorted by timestamp descending)
   n_to_compare <- min(5, n_issues_available)
@@ -615,16 +695,18 @@ if (n_issues_available >= 2) {
       Max_ICER_Change = format(round(Max_ICER_Change, 0), big.mark = ",")
     )
 
-  cat("This table summarizes the impact of bug fixes across the", n_to_compare, "most recent issues:\n\n")
-
   print(kable(multi_comp_display,
         caption = paste0("Summary of Bug Fix Impacts (", n_to_compare, " Most Recent Issues)"),
-        col.names = c("Issue", "Title", "Optimal (Baseline)", "Optimal (Fixed)", "Changed?",
-                      "Max Cost Change (€)", "Max Effect Change (QALYs)", "Max ICER Change (€/QALY)"),
+        col.names = c("Issue", "Title", "Opt. (BL)", "Opt. (Fix)", "Chg?",
+                      "Max Cost Δ (€)", "Max Effect Δ (QALYs)", "Max ICER Δ (€/QALY)"),
         booktabs = TRUE,
         format = "latex",
         align = c("l", "l", "l", "l", "c", "r", "r", "r")) %>%
     kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 8) %>%
+    column_spec(2, width = "4cm") %>%
+    column_spec(c(1, 5), width = "0.8cm") %>%
+    column_spec(c(3, 4), width = "2cm") %>%
+    column_spec(c(6, 7, 8), width = "1.8cm") %>%
     row_spec(which(multi_comp$Issue == paste0("#", issue_num)), bold = TRUE, background = "#E8F4F8"))
 
   cat("\n\n\\newpage\n\n")
@@ -647,4 +729,4 @@ The comparison for issue #`r issue_num` shows:
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Report version:** 1.1

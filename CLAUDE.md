@@ -250,7 +250,45 @@ Three biomarkers are evaluated (defined in [03_biomarker_strategies.R](scripts/R
 Each strategy has:
 - **Biomarker-positive subgroup**: Receives experimental treatment (alternating FLOX + nivolumab)
 - **Biomarker-negative subgroup**: Receives standard treatment (FLOX only)
-- **Population-level outcomes**: Weighted by biomarker prevalence
+- **Analysis approach**: See "Survival Prediction Methodologies" section below for how population-level outcomes are calculated
+
+### Survival Prediction Methodologies
+
+The model uses different but methodologically valid approaches for generating survival predictions in base case (deterministic) versus PSA (probabilistic) analyses. Both methods properly account for patient heterogeneity but in ways appropriate to their analytical purpose.
+
+#### Base Case: Population Averaging (Issue #69)
+
+**Implementation**: [06_parametric_survival analysis.R](scripts/R/analysis/06_parametric_survival analysis.R:260-265) using `generate_population_averaged_predictions()` from [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340)
+
+**Methodology**:
+1. **Control strategy**: Predict survival for ALL patients in the dataset with control treatment assigned, then average across the population
+2. **Biomarker strategies**:
+   - Subset to biomarker-positive patients → assign experimental treatment → predict for each → average within subgroup
+   - Subset to biomarker-negative patients → assign control treatment → predict for each → average within subgroup
+   - Compute population-weighted average using observed biomarker prevalence (e.g., 0.35 for CRP)
+
+**Why this approach**: The base case requires point estimates of population-average outcomes. Predicting for all patients using their actual age, sex, and biomarker values accounts for the full distribution of prognostic factors in the population. This is the methodologically rigorous approach for deterministic cost-effectiveness analysis.
+
+#### PSA: Second-Order Monte Carlo (Issue #70)
+
+**Implementation**: [model_fun.R](scripts/R/functions/model_fun.R:17-148)
+
+**Methodology**:
+1. Each PSA iteration samples **ONE random patient** from the resampled dataset for that iteration
+2. That patient's characteristics (age, sex, biomarkers) are used to generate survival predictions
+3. **For control strategy**: Patient receives control treatment
+4. **For biomarker strategies**:
+   - Patient's biomarker status determines treatment assignment (biomarker+ → experimental, biomarker- → control)
+   - Prevalence parameter is set to 1.0 if patient has biomarker, 0.0 if not (for that iteration)
+5. Over 5000 iterations, the distribution of sampled patients correctly propagates uncertainty from patient heterogeneity
+
+**Why this approach**: PSA requires sampling from the joint distribution of all sources of uncertainty, including patient-level heterogeneity. This second-order Monte Carlo approach (one patient per iteration) is standard practice in health economic modeling. The prevalence varies between 0 and 1 across iterations based on each sampled patient's biomarker status, correctly reflecting uncertainty in treatment allocation.
+
+#### Why Both Methods Are Valid
+
+- **Base case** needs a point estimate of the population-average outcome → population averaging across all patients
+- **PSA** needs to sample from all sources of uncertainty → individual patient sampling across iterations
+- Both account for heterogeneity in age, sex, and biomarkers, but in different ways suited to deterministic vs. probabilistic analysis
 
 ### Survival Resampling & Correlation
 
@@ -276,8 +314,8 @@ model_fun(params, time_horizon = 520, cl = 1/52,
 - `sim_idx`: Resampled model index (required for PSA mode)
 - `return_traces`: If TRUE, returns state occupancy over time
 
-**PSA Mode Behavior** (lines 17-177):
-- When `determpsa = "psa"` and `sim_idx` is provided, survival curves are generated from resampled model #`sim_idx`
+**PSA Mode Behavior** (lines 17-148):
+- Uses second-order Monte Carlo: samples one patient per iteration from resampled datasets (see "Survival Prediction Methodologies" section)
 - PFS and OS always come from the **same** resampled model to maintain correlation
 - If prediction from resampled model fails, falls back to base case curves
 
@@ -379,15 +417,6 @@ p_p[1] <- 0.0
 p_d[1] <- 0.0
 ```
 
-### Biomarker Prediction in PSA
-
-When generating predictions from resampled models for biomarker strategies ([model_fun.R](scripts/R/functions/model_fun.R:73-100)), **all three biomarker variables must be included** in the newdata frame:
-- Set target biomarker to 1 (positive) or 0 (negative)
-- Set other biomarkers to reference values (modal values from data)
-- Include age, sex, and treatment (Rx)
-
-This is required because resampled models were fitted with all biomarkers as covariates.
-
 ### Discount Factor Application
 
 Discount factors are applied using vector multiplication over the time horizon:
@@ -420,6 +449,8 @@ Each report has specific dependencies:
 **[para_models.qmd](scripts/QMD/report/para_models.qmd)** - Parametric Survival Modeling
 - **Sources**: 02, 03, 06
 - **Shows**: Survival model fits, AIC/BIC comparisons, goodness-of-fit diagnostics
+- **Models displayed**: Best-fit model (gamma) AND Weibull PH model for reference (issue #68)
+- **Tables include**: Model parameter exponents for clinical interpretation
 - **Note**: Forces `USE_BOTH_MODELS <- 1` to compare full and reduced models
 
 **[clinical_effectiveness.qmd](scripts/QMD/report/clinical_effectiveness.qmd)** - Clinical Effectiveness Analysis
@@ -477,6 +508,38 @@ if (!exists("cea_results")) {
 # 6. Generate tables and figures using kableExtra/ggplot
 ```
 
+### Report Formatting Standards
+
+All Quarto reports must follow these YAML header and formatting conventions:
+
+**YAML Header Requirements**:
+```yaml
+title: "Concise Description of Report Content"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+```
+
+**Footer Format**: All reports should include a standardized footer with:
+- Horizontal line separator
+- Completion date (uses system date)
+- Repository name: METIMMOX-1
+- Version identifier (when applicable)
+- All elements left-justified
+
+To implement in LaTeX-based PDF output, add to YAML header:
+```yaml
+format:
+  pdf:
+    include-in-header:
+      text: |
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyfoot[L]{\rule{\textwidth}{0.4pt}\\ Completed: \today \\ METIMMOX-1}
+        \fancyfoot[C]{}
+        \fancyfoot[R]{}
+```
+
 ### Key Quarto Report Features
 
 **Self-Contained Execution**: Reports can be rendered independently if the prerequisite analysis scripts have been run, as they re-source all dependencies.
@@ -498,6 +561,7 @@ if (!exists("cea_results")) {
 2. **Sampling cache missing**: Run [08_sampling.R](scripts/R/analysis/08_sampling.R) to generate sampling models
 3. **Rendering hangs**: Some reports (especially CEA, EVPPI) may take minutes to render due to re-sourcing analysis scripts
 4. **USE_BOTH_MODELS conflict**: The `para_models.qmd` report overrides this to 1 for comparison purposes; other reports respect the global setting
+5. **Results changed after methodological updates**: If cost-effectiveness results differ from earlier versions, check if methodological fixes were applied. Issues #69 and #70 (Nov 2024) changed survival prediction methodology from reference patient to population averaging/individual sampling. This **should** change results - it's a methodological improvement. Regenerate both sampling cache and PSA cache after these fixes. See issue #64 for impact documentation approach.
 
 ## Cache Management
 
@@ -532,10 +596,11 @@ source("scripts/R/analysis/08_sampling.R")
 **Generation**: Script [12_PSA.R](scripts/R/analysis/12_PSA.R) (~20-60 minutes first run)
 **Size**: ~660 KB total
 **When to regenerate**: Delete cache files when:
-- Model structure changes ([model_fun.R](scripts/R/functions/model_fun.R))
-- Base parameters change
-- Sampling cache is regenerated
-- Parameter distributions change
+- Model structure changes ([model_fun.R](scripts/R/functions/model_fun.R) or [calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R))
+- **Prediction methodology changes** (e.g., issues #69, #70 fixes to survival curve generation)
+- Base parameters change (costs, utilities, time horizon, discount rates)
+- **Sampling cache is regenerated** (PSA depends on specific resampled models - always regenerate PSA after regenerating sampling cache)
+- Parameter distributions change (distributional assumptions, means, SDs, correlations)
 
 **To regenerate**:
 ```r

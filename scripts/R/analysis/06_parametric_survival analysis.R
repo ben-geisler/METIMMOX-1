@@ -50,9 +50,8 @@ rm(prediction_functions_path)
 time_points <- seq(0, time_horizon, by = 1)
 
 # Ensure categorical variables are properly coded as factors
-if ("sex" %in% names(data) && !is.null(data$sex)) {
-  data$sex <- as.factor(data$sex)
-}
+# Note: sex is converted to factor in script 03 before subsets are created
+# This prevents type mismatch in resampled models (issue #72)
 if ("crp" %in% names(data) && !is.null(data$crp)) {
   data$crp <- as.factor(data$crp)
 }

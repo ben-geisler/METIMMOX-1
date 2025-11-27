@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(gh issue create:*)",
+      "Bash(gh issue view:*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -10,11 +16,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(gh issue create:*)"
     ]
   }
 }
