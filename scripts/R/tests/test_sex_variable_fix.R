@@ -34,7 +34,7 @@ cat("   data_tmb_braf$sex levels:", paste(levels(data_tmb_braf$sex), collapse=",
 
 # Now source script 06 and check it doesn't change types
 cat("\n3. After parametric survival analysis script:\n")
-source("scripts/R/analysis/06_parametric_survival analysis.R")
+source("scripts/R/analysis/06_parametric_survival_analysis.R")
 
 cat("   data$sex type:", class(data$sex), "\n")
 cat("   data_control$sex type:", class(data_control$sex), "\n")

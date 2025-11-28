@@ -39,11 +39,11 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 # MODEL FORMULA SELECTION BASED ON PARAMETRIC SURVIVAL ANALYSIS SWITCH
 # ===============================================================================
 
-# Use the same switch value from 06_parametric_survival analysis.R
+# Use the same switch value from 06_parametric_survival_analysis.R
 # USE_BOTH_MODELS: 0 = full model only, 1 = both models
 # Note: We assume the value is already set in the environment
 
-# Define model formulas based on the switch (matching 06_parametric_survival analysis.R)
+# Define model formulas based on the switch (matching 06_parametric_survival_analysis.R)
 if (USE_BOTH_MODELS == 0) {
   # Only use full model (age- and sex-adjusted) - matching the parametric analysis
   model_type <- "full"

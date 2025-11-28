@@ -75,7 +75,7 @@ R analysis scripts depend on functions defined in `scripts/R/functions/`. When r
 # For testing model_fun() and calculate_outcomes()
 source("scripts/R/analysis/02_setup_and_global_variables.R")  # Global vars: time_horizon, cl, dr, etc.
 source("scripts/R/analysis/03_biomarker_strategies.R")         # Biomarker definitions
-source("scripts/R/analysis/06_parametric_survival analysis.R") # Fit survival models
+source("scripts/R/analysis/06_parametric_survival_analysis.R") # Fit survival models
 source("scripts/R/analysis/07_basecase_input_parameters.R")    # Parameter list: l_params_base
 
 # Source required functions
@@ -103,7 +103,7 @@ result <- model_fun(l_params_base, determpsa = "det", return_traces = FALSE)
   setwd('c:/Users/benjampg/git/METIMMOX-1');
   source('scripts/R/analysis/02_setup_and_global_variables.R');
   source('scripts/R/analysis/03_biomarker_strategies.R');
-  source('scripts/R/analysis/06_parametric_survival analysis.R');
+  source('scripts/R/analysis/06_parametric_survival_analysis.R');
   source('scripts/R/analysis/07_basecase_input_parameters.R');
   source('scripts/R/functions/model_fun.R');
   source('scripts/R/functions/calculate_outcomes.R');
@@ -126,7 +126,7 @@ source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
 
 # Survival analysis
-source("scripts/R/analysis/06_parametric_survival analysis.R")
+source("scripts/R/analysis/06_parametric_survival_analysis.R")
 source("scripts/R/analysis/07_basecase_input_parameters.R")
 
 # Survival resampling (generates cache - takes time on first run)
@@ -140,6 +140,10 @@ source("scripts/R/analysis/10_basecase_analysis.R")
 source("scripts/R/analysis/11_DSA.R")  # Deterministic sensitivity analysis
 source("scripts/R/analysis/12_PSA.R")  # Probabilistic sensitivity analysis
 source("scripts/R/analysis/13_EVPPIs.R")  # Expected value of perfect partial information
+
+# Extended analyses (optional)
+source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+source("scripts/R/analysis/15_save_snapshot.R")    # Save results for impact assessment
 ```
 
 ### Package Installation
@@ -187,7 +191,7 @@ To generate all analysis results and reports from scratch:
 source("scripts/R/analysis/01_data_prep.R")
 source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
-source("scripts/R/analysis/06_parametric_survival analysis.R")
+source("scripts/R/analysis/06_parametric_survival_analysis.R")
 source("scripts/R/analysis/07_basecase_input_parameters.R")
 source("scripts/R/analysis/08_sampling.R")  # Takes time on first run
 source("scripts/R/analysis/09_traces.R")
@@ -195,6 +199,8 @@ source("scripts/R/analysis/10_basecase_analysis.R")
 source("scripts/R/analysis/11_DSA.R")
 source("scripts/R/analysis/12_PSA.R")
 source("scripts/R/analysis/13_EVPPIs.R")
+source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Optional: scenario analysis
+source("scripts/R/analysis/15_save_snapshot.R")    # Optional: save for comparison
 
 # 2. Render reports (from terminal/command line)
 # quarto render scripts/QMD/report/
@@ -239,6 +245,12 @@ dr <- 0.04             # Discount rate (4%)
 USE_BOTH_MODELS <- 0   # 0 = full model only, 1 = both models
 ```
 
+**Note on USE_BOTH_MODELS**: This setting controls whether the analysis uses only the full (gamma) survival model or compares both full and reduced (Weibull PH) models. It is set globally in script 02, but may be overridden by:
+- `para_models.qmd` forces it to 1 (to show model comparison)
+- `CEA.qmd` and `scenario_effect.qmd` reset it to 0
+
+When changed, the sampling cache must be regenerated (different cache file per setting).
+
 ### Biomarker Strategies
 
 Three biomarkers are evaluated (defined in [03_biomarker_strategies.R](scripts/R/analysis/03_biomarker_strategies.R)):
@@ -258,7 +270,7 @@ The model uses different but methodologically valid approaches for generating su
 
 #### Base Case: Population Averaging (Issue #69)
 
-**Implementation**: [06_parametric_survival analysis.R](scripts/R/analysis/06_parametric_survival analysis.R:260-265) using `generate_population_averaged_predictions()` from [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340)
+**Implementation**: [06_parametric_survival_analysis.R](scripts/R/analysis/06_parametric_survival_analysis.R:260-265) using `generate_population_averaged_predictions()` from [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340)
 
 **Methodology**:
 1. **Control strategy**: Predict survival for ALL patients in the dataset with control treatment assigned, then average across the population
@@ -383,11 +395,30 @@ Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
 
 ### Key Functions
 
+**Core Model Functions**:
+- **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
-- **[bootstrap_survival_model.R](scripts/R/functions/bootstrap_survival_model.R)**: Alternative resampling approach (not used in main analysis)
+- **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
+
+**Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions
-- **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
+- **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
+
+**Survival Modeling Functions**:
+- **[para_model_fit.R](scripts/R/functions/para_model_fit.R)**: Parametric model fitting helper
+- **[para_model_fit_table.R](scripts/R/functions/para_model_fit_table.R)**: Model fit summary tables
+- **[survival_plots.R](scripts/R/functions/survival_plots.R)**: Survival curve visualization
+
+**Visualization Functions**:
+- **[create_tornado_plot.R](scripts/R/functions/create_tornado_plot.R)**: DSA tornado diagram generation
+
+**Snapshot/Impact Assessment Functions**:
+- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Snapshot management for bug fix impact assessment
+
+**Archived Functions** (in `scripts/R/archive/`):
+- `bootstrap_survival_model.R`: Alternative resampling approach (not used in main analysis)
+- `ref_values_emm.R`: Reference value calculations (superseded)
 
 ### Treatment Schedules
 
@@ -428,10 +459,15 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
 ## File Organization Principles
 
 - **Numbered analysis scripts** (`scripts/R/analysis/`): Designed to run sequentially, building on previous steps
+  - Scripts 01-03: Core setup and data preparation
+  - Scripts 04-05: Supplementary RMarkdown files (not part of main execution pipeline)
+  - Scripts 06-13: Main analysis pipeline
+  - Scripts 14-15: Extended analyses (scenario EVPPIs, snapshot saving)
 - **Functions directory** (`scripts/R/functions/`): Reusable components that are sourced by analysis scripts
+- **Archive directory** (`scripts/R/archive/`): Deprecated/unused code preserved for reference
 - **Tests directory** (`scripts/R/tests/`): Validation and diagnostic scripts
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports with embedded R code
-- **RMarkdown files** (`.Rmd`): Additional tables and visualizations for reporting
+- **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact reports and technical documentation
 
 ## Quarto Report Architecture
 
@@ -611,12 +647,61 @@ file.remove(here("data", "tidy", "psa_params.rds"))
 source("scripts/R/analysis/12_PSA.R")
 ```
 
+### 3. EVPPI Cache
+
+**Location**: `data/tidy/evppi_results.RData`
+**Purpose**: Cached EVPPI results for parameter groups
+**Generation**: Script [13_EVPPIs.R](scripts/R/analysis/13_EVPPIs.R)
+**When to regenerate**: Delete cache file when PSA cache is regenerated or EVPPI parameter groupings change
+
+### 4. Scenario EVPPI Cache
+
+**Location**: `data/tidy/scenario_evppi_results.RData`
+**Purpose**: Cached scenario-based EVPPI analysis results
+**Generation**: Script [14_scenario_EVPPIs.R](scripts/R/analysis/14_scenario_EVPPIs.R)
+**When to regenerate**: Delete cache file when PSA cache is regenerated or scenario definitions change
+
 ### Cache Workflow
 
 1. **First run**: [08_sampling.R](scripts/R/analysis/08_sampling.R) generates sampling cache
 2. **PSA uses sampling cache**: [12_PSA.R](scripts/R/analysis/12_PSA.R) generates PSA cache
-3. **Subsequent runs**: Both load from cache (fast)
-4. **Manual invalidation**: Delete specific cache file(s) to regenerate
+3. **EVPPI uses PSA cache**: [13_EVPPIs.R](scripts/R/analysis/13_EVPPIs.R) generates EVPPI cache
+4. **Subsequent runs**: All load from cache (fast)
+5. **Manual invalidation**: Delete specific cache file(s) to regenerate
+
+## Snapshot System (Bug Fix Impact Assessment)
+
+The repository includes a snapshot comparison system for assessing the impact of bug fixes on model results.
+
+### Components
+
+- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves current model state (ICER results, PSA results, metadata)
+- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Utility functions for snapshot management
+- **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots to quantify changes
+- **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Report documenting bug fix impacts
+
+### Snapshot Storage
+
+**Location**: `data/output/snapshots/`
+**Format**: `snapshot_NN_[baseline/fixed]_HASH.rds` and `psa_NN_[baseline/fixed]_HASH.rds`
+**Content**: Base case results, PSA results, metadata (git commit, timestamp, issue number)
+
+### Workflow
+
+1. Save "baseline" snapshot before applying a fix
+2. Apply fix
+3. Save "fixed" snapshot after applying a fix
+4. Run `compare_snapshots.R` to quantify the impact
+5. Render `bug_fix_impact.qmd` to document changes
+
+## Test Files
+
+The test suite in `scripts/R/tests/` includes:
+
+- **[test_sex_variable_fix.R](scripts/R/tests/test_sex_variable_fix.R)**: Validates Issue #72 fix (sex variable type consistency in resampled models)
+- **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
+- **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
+- **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
 
 ## Clinical Context
 

@@ -150,8 +150,8 @@ if (!all(c("crp", "tlr", "tmb_braf") %in% names(data))) {
 }
 
 # Now run the survival analysis script
-if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
 } else {
   message("Survival analysis script not found")
 }

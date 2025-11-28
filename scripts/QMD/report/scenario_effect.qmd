@@ -119,8 +119,8 @@ if (!exists("USE_BOTH_MODELS")) {
   USE_BOTH_MODELS <- 0  # Default to age- and sex-adjusted models only
 }
 
-if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
 }
 ```
 

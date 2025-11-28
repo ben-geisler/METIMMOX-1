@@ -83,8 +83,8 @@ source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 cat("[2/7] Running 03_biomarker_strategies.R...\n")
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 
-cat("[3/7] Running 06_parametric_survival analysis.R...\n")
-source(here::here("scripts/R/analysis/06_parametric_survival analysis.R"))
+cat("[3/7] Running 06_parametric_survival_analysis.R...\n")
+source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
 
 cat("[4/7] Running 07_basecase_input_parameters.R...\n")
 source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))

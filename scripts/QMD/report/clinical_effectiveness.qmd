@@ -83,8 +83,8 @@ if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
 }
 
 # 06 - Parametric Survival Analysis
-if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
 }
 
 # 07 - Base Case Input Parameters

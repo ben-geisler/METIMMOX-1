@@ -43,4 +43,11 @@ data/output/*
 .Rproj.user/
 .Rhistory
 .RData
-.RuserdataRplots.pdf
+.Ruserdata
+Rplots.pdf
+
+# Windows artifacts
+nul
+
+# Claude Code settings (but not CLAUDE.md documentation)
+.claude/

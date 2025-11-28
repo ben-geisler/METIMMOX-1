@@ -88,16 +88,16 @@ if (!exists("models")) {
   # Set USE_BOTH_MODELS again AFTER loading global variables to override it
   USE_BOTH_MODELS <- 1
 
-  if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+  if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
   }
 } else {
   # If models already exists, check if we need to refit
   if (is.null(models$no_age_sex)) {
     cat("Models without age/sex not found. Refitting with USE_BOTH_MODELS = 1...\n")
     USE_BOTH_MODELS <- 1
-    if (file.exists(here("scripts/R/analysis/06_parametric_survival analysis.R"))) {
-      suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival analysis.R"))))
+    if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+      suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
     }
   }
 }
