@@ -1,9 +1,21 @@
 # ===============================================================================
 # MAIN MODEL FUNCTION - Partitioned Survival Model with PSA Support
 # ===============================================================================
-# This function runs the cost-effectiveness model for all strategies
-# Supports both deterministic and probabilistic sensitivity analysis (PSA)
-# In PSA mode, uses correlated resampled models for PFS and OS
+# This function runs the cost-effectiveness model for all strategies.
+#
+# Supports both deterministic and probabilistic sensitivity analysis (PSA):
+#   - Deterministic: Uses base case survival curves and parameters
+#   - PSA: Uses resampled survival models with subgroup population averaging
+#
+# PSA Methodology (Issues #73, #74, #87):
+#   - Parameter uncertainty: Captured by resampled survival models (varies
+#     BETWEEN PSA iterations)
+#   - Patient heterogeneity: Integrated out via population averaging (averaged
+#     WITHIN each iteration)
+#   - Prevalence: Kept at true population values, NOT set to 0/1
+#
+# This separation ensures EVPI correctly measures the value of reducing
+# parameter uncertainty, not patient heterogeneity.
 # ===============================================================================
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
@@ -12,49 +24,38 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   strat_names <- strategies  # This should be defined in section 2
 
   # =========================================================================
-  # PSA MODE: Second-order Monte Carlo simulation
+  # PSA MODE: Subgroup Population Averaging
   # =========================================================================
-  # Each PSA iteration samples ONE individual patient from the dataset
-  # That patient is evaluated across all strategies with treatment assigned
-  # based on their biomarker status. This approach captures:
-  #   1. Parameter uncertainty (from resampled survival models)
-  #   2. Patient heterogeneity (from sampling individuals with varying covariates)
-  # Over many iterations, biomarker prevalence is naturally reflected in the
-  # proportion of iterations where sampled patients are biomarker-positive.
-  # See GitHub Issue #70 for detailed methodology discussion.
+  # Each PSA iteration:
+  #   1. Uses resampled survival model i (captures parameter uncertainty)
+  #   2. Predicts for ALL patients in each subgroup, then averages
+  #   3. Keeps prevalence at true population value
+  #
+  # This properly separates:
+  #   - Parameter uncertainty (varies BETWEEN iterations via resampled models)
+  #   - Patient heterogeneity (averaged WITHIN each iteration)
+  #
+  # See GitHub Issues #73, #74, #87 for methodology discussion.
   # =========================================================================
   if(determpsa == "psa" && !is.null(sim_idx)) {
 
     if (sim_idx %% 100 == 0) {
-      cat("PSA iteration", sim_idx, "- second-order Monte Carlo simulation\n")
+      cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
     }
 
     # -----------------------------------------------------------------------
-    # STEP 1: Sample ONE patient from the dataset
+    # CONTROL STRATEGY: Population-averaged predictions
     # -----------------------------------------------------------------------
-    # Use modulo to cycle through patients if n_samples > n_patients
-    patient_idx <- ((sim_idx - 1) %% nrow(data)) + 1
-    sampled_patient <- data[patient_idx, ]
-
-    # Extract treatment level references
-    exp_rx <- levels(data$Rx)[2]  # Experimental treatment
-    ctrl_rx <- levels(data$Rx)[1]  # Control treatment
-
-    # -----------------------------------------------------------------------
-    # STEP 2: CONTROL STRATEGY - Sampled patient receives control treatment
-    # -----------------------------------------------------------------------
+    # Predict for ALL patients in control arm, then average
 
     tryCatch({
-      # Create patient data with control treatment assigned
-      patient_ctrl <- sampled_patient
-      patient_ctrl$Rx <- factor(ctrl_rx, levels = levels(data$Rx))
-
-      # Predict for this patient using resampled model #sim_idx
+      # Use generate_sampling_predictions with newdata = NULL
+      # This predicts for all patients and returns the average
       os_control <- generate_sampling_predictions(
         sampling_model_list = sampling_models$control,
         outcome = "os",
         sample_idx = sim_idx,
-        newdata = patient_ctrl,
+        newdata = NULL,  # NULL triggers population averaging
         time_points = seq(0, time_horizon)
       )
 
@@ -62,7 +63,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         sampling_model_list = sampling_models$control,
         outcome = "pfs",
         sample_idx = sim_idx,
-        newdata = patient_ctrl,
+        newdata = NULL,
         time_points = seq(0, time_horizon)
       )
 
@@ -70,10 +71,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       if (any(is.na(os_control)) || any(is.na(pfs_control))) {
         warning("NA values in control survival curves for sim ", sim_idx,
                 " - using base case curves")
-        os_control <- params$p_os$control_OS
-        pfs_control <- params$p_pfs$control_PFS
       } else {
-        # Update params with this patient's predictions
+        # Update params with population-averaged predictions
         params$p_os$control_OS <- os_control
         params$p_pfs$control_PFS <- pfs_control
       }
@@ -85,59 +84,51 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     })
 
     # -----------------------------------------------------------------------
-    # STEP 3: BIOMARKER STRATEGIES - Treatment assigned by patient's biomarker
+    # BIOMARKER STRATEGIES: Subgroup population averaging
     # -----------------------------------------------------------------------
-    # For each biomarker strategy, the sampled patient's biomarker status
-    # determines their treatment: biomarker+ → experimental, biomarker- → control
+    # For each biomarker:
+    #   - Biomarker+ subgroup: ALL biomarker+ patients with experimental Rx
+    #   - Biomarker- subgroup: ALL biomarker- patients with control Rx
+    # Weighted combination uses TRUE prevalence (not 0/1)
 
     for(biomarker in biomarkers) {
       tryCatch({
-        # Check this patient's biomarker status
-        biomarker_status <- as.character(sampled_patient[[biomarker]])
-
-        # Determine treatment based on biomarker status
-        treatment_for_patient <- if(biomarker_status == "1") exp_rx else ctrl_rx
-
-        # Create patient data with assigned treatment
-        patient_biomarker <- sampled_patient
-        patient_biomarker$Rx <- factor(treatment_for_patient, levels = levels(data$Rx))
-
-        # Predict for this patient using resampled model #sim_idx
-        os_pred <- generate_sampling_predictions(
+        # Get population-averaged predictions for BOTH subgroups
+        preds_os <- generate_psa_population_averaged_predictions(
           sampling_model_list = sampling_models[[biomarker]],
+          biomarker_name = biomarker,
           outcome = "os",
           sample_idx = sim_idx,
-          newdata = patient_biomarker,
+          data_original = data,
           time_points = seq(0, time_horizon)
         )
 
-        pfs_pred <- generate_sampling_predictions(
+        preds_pfs <- generate_psa_population_averaged_predictions(
           sampling_model_list = sampling_models[[biomarker]],
+          biomarker_name = biomarker,
           outcome = "pfs",
           sample_idx = sim_idx,
-          newdata = patient_biomarker,
+          data_original = data,
           time_points = seq(0, time_horizon)
         )
 
-        # Check for NA values
-        if (any(is.na(os_pred)) || any(is.na(pfs_pred))) {
-          warning("NA values in ", biomarker, " survival curves for sim ", sim_idx,
+        # Check for NULL or NA values
+        if (is.null(preds_os) || is.null(preds_pfs) ||
+            any(is.na(preds_os$positive)) || any(is.na(preds_os$negative)) ||
+            any(is.na(preds_pfs$positive)) || any(is.na(preds_pfs$negative))) {
+          warning("NA/NULL values in ", biomarker, " survival curves for sim ", sim_idx,
                   " - using base case curves")
-          # Keep base case curves
+          # Keep base case curves in params
         } else {
-          # For second-order Monte Carlo, we have ONE patient per iteration
-          # Store their predictions in both pos/neg curves (same values)
-          # and adjust prevalence to reflect this patient's status
-          params$p_os[[paste0(biomarker, "_pos_OS")]] <- os_pred
-          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- pfs_pred
-          params$p_os[[paste0(biomarker, "_neg_OS")]] <- os_pred
-          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- pfs_pred
+          # Store subgroup-specific curves
+          params$p_os[[paste0(biomarker, "_pos_OS")]] <- preds_os$positive
+          params$p_os[[paste0(biomarker, "_neg_OS")]] <- preds_os$negative
+          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- preds_pfs$positive
+          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- preds_pfs$negative
 
-          # Update prevalence for this iteration:
-          # If patient is biomarker+: prevalence = 1.0
-          # If patient is biomarker-: prevalence = 0.0
-          # This ensures the weighted calculation gives the patient's outcome
-          params[[paste0("p_", biomarker)]] <- as.numeric(biomarker_status == "1")
+          # DO NOT modify prevalence - keep true value from l_params_base
+          # Weighted combination happens downstream using:
+          #   prevalence * biomarker+ + (1-prevalence) * biomarker-
         }
 
       }, error = function(e) {

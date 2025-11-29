@@ -729,4 +729,4 @@ The comparison for issue #`r issue_num` shows:
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report version:** 1.2

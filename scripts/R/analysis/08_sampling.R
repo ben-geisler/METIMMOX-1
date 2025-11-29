@@ -459,8 +459,15 @@ param_distributions <- list(
 # ===============================================================================
 # POPULATION AVERAGING FUNCTION FOR PSA (BIOMARKER STRATEGIES)
 # ===============================================================================
-# This function implements population averaging for biomarker strategies in PSA
-# Uses the resampled dataset to maintain consistency with correlated sampling
+# This function implements population averaging for biomarker strategies in PSA.
+# Uses the ORIGINAL population (not resampled cohort) for predictions.
+# This ensures:
+#   1. Consistent population across all PSA iterations
+#   2. True biomarker prevalence is maintained
+#   3. External validity - predicting for actual patient population
+# The resampled model captures parameter uncertainty; population averaging
+# integrates out patient heterogeneity.
+# See GitHub Issues #73, #74, #87 for methodology discussion.
 # ===============================================================================
 
 generate_psa_population_averaged_predictions <- function(sampling_model_list,
@@ -470,80 +477,89 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
                                                          data_original,
                                                          time_points) {
 
-  # Extract the resampled model and resample indices
+  # Extract the resampled model
   sampled_model <- sampling_model_list$samples[[sample_idx]]
 
-  if (is.null(sampled_model) || is.null(sampled_model$resample_idx)) {
-    warning("Cannot access resampled data for sim ", sample_idx, " - falling back to reference patient")
+  if (is.null(sampled_model)) {
+    warning("Sampled model ", sample_idx, " is NULL - returning NULL")
     return(NULL)
   }
 
-  # Recreate the resampled dataset using stored indices
-  resample_idx <- sampled_model$resample_idx
-  resampled_data <- data_original[resample_idx, ]
+  # Get the model object for this outcome
+  model_obj <- sampled_model[[outcome]]$model
+
+  if (is.null(model_obj)) {
+    warning("Model object for ", outcome, " is NULL in sample ", sample_idx)
+    return(NULL)
+  }
 
   # Get treatment levels
   exp_rx <- levels(data_original$Rx)[2]
   ctrl_rx <- levels(data_original$Rx)[1]
 
-  # Get the model object for this outcome
-  model_obj <- sampled_model[[outcome]]$model
+  # Initialize outputs
+  survival_pos <- NULL
+  survival_neg <- NULL
 
   # -----------------------------------------------------------------------
-  # BIOMARKER-POSITIVE SUBGROUP: Predict with experimental treatment
+  # BIOMARKER-POSITIVE SUBGROUP: All biomarker+ patients with experimental Rx
   # -----------------------------------------------------------------------
+  # Use ORIGINAL population, not resampled cohort
 
-  biomarker_pos_data <- resampled_data[resampled_data[[biomarker_name]] == 1, ]
+  biomarker_pos_data <- data_original[data_original[[biomarker_name]] == 1, ]
 
   if (nrow(biomarker_pos_data) > 0) {
-    # Assign experimental treatment
+    # Assign experimental treatment to all biomarker+ patients
     biomarker_pos_data$Rx <- factor(exp_rx, levels = levels(data_original$Rx))
 
-    # Predict for all biomarker+ patients
+    # Predict for ALL biomarker+ patients in original population
     tryCatch({
       pred_pos <- predict(model_obj, newdata = biomarker_pos_data,
                          type = "survival", times = time_points)
 
-      # Extract and average survival probabilities
+      # Extract and average survival probabilities across all patients
       all_surv_probs_pos <- lapply(pred_pos$.pred, function(x) x$.pred_survival)
       surv_matrix_pos <- do.call(cbind, all_surv_probs_pos)
       survival_pos <- rowMeans(surv_matrix_pos, na.rm = TRUE)
 
     }, error = function(e) {
-      warning("Prediction failed for ", biomarker_name, "+ in sim ", sample_idx)
+      warning("Prediction failed for ", biomarker_name, "+ in sim ", sample_idx,
+              ": ", conditionMessage(e))
       survival_pos <<- rep(NA, length(time_points))
     })
   } else {
-    # No biomarker+ patients in this resample
+    warning("No biomarker+ patients in original data for ", biomarker_name)
     survival_pos <- rep(NA, length(time_points))
   }
 
   # -----------------------------------------------------------------------
-  # BIOMARKER-NEGATIVE SUBGROUP: Predict with control treatment
+  # BIOMARKER-NEGATIVE SUBGROUP: All biomarker- patients with control Rx
   # -----------------------------------------------------------------------
+  # Use ORIGINAL population, not resampled cohort
 
-  biomarker_neg_data <- resampled_data[resampled_data[[biomarker_name]] == 0, ]
+  biomarker_neg_data <- data_original[data_original[[biomarker_name]] == 0, ]
 
   if (nrow(biomarker_neg_data) > 0) {
-    # Assign control treatment
+    # Assign control treatment to all biomarker- patients
     biomarker_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_original$Rx))
 
-    # Predict for all biomarker- patients
+    # Predict for ALL biomarker- patients in original population
     tryCatch({
       pred_neg <- predict(model_obj, newdata = biomarker_neg_data,
                          type = "survival", times = time_points)
 
-      # Extract and average survival probabilities
+      # Extract and average survival probabilities across all patients
       all_surv_probs_neg <- lapply(pred_neg$.pred, function(x) x$.pred_survival)
       surv_matrix_neg <- do.call(cbind, all_surv_probs_neg)
       survival_neg <- rowMeans(surv_matrix_neg, na.rm = TRUE)
 
     }, error = function(e) {
-      warning("Prediction failed for ", biomarker_name, "- in sim ", sample_idx)
+      warning("Prediction failed for ", biomarker_name, "- in sim ", sample_idx,
+              ": ", conditionMessage(e))
       survival_neg <<- rep(NA, length(time_points))
     })
   } else {
-    # No biomarker- patients in this resample
+    warning("No biomarker- patients in original data for ", biomarker_name)
     survival_neg <- rep(NA, length(time_points))
   }
 
