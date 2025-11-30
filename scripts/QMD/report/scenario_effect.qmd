@@ -137,13 +137,8 @@ l_params_basecase <- l_params_base
 ```{r sampling-setup, include=FALSE}
 # 08 - Sampling Setup (needed for PSA)
 if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
-  sampling_func_path <- here("scripts/R/functions/bootstrap_survival_model.R")
-  if (file.exists(sampling_func_path)) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
-    cat("Sampling setup completed successfully\n")
-  } else {
-    message("Sampling function file not found - PSA may be affected")
-  }
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
+  cat("Sampling setup completed successfully\n")
 }
 
 # Store base case parameter distributions for reference
