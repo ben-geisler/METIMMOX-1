@@ -16,6 +16,10 @@
 #
 # This separation ensures EVPI correctly measures the value of reducing
 # parameter uncertainty, not patient heterogeneity.
+#
+# Biological Constraint (Issue #76):
+#   - PFS is capped at OS to prevent invalid state occupancy (PFS > OS can
+#     occur with resampled models). Without this, states can sum to >1.
 # ===============================================================================
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
@@ -168,7 +172,17 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # Get control survival curves (either base case or from resampling)
   os_control <- params$p_os[["control_OS"]]
   pfs_control <- params$p_pfs[["control_PFS"]]
-  
+
+  # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
+  # Without this, state occupancy can sum to >1 when curves cross
+  if (any(pfs_control > os_control)) {
+    n_violations <- sum(pfs_control > os_control)
+    warning("PFS > OS constraint enforced at ", n_violations,
+            " time points (control)",
+            if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
+  }
+  pfs_control <- pmin(pfs_control, os_control)
+
   # Calculate state occupancy for partitioned survival model
   # Progression-free: PFS curve
   # Progressed: OS - PFS (ensures non-negative)
@@ -227,7 +241,16 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker positive survival curves
     os_pos <- params$p_os[[paste0(biomarker, "_pos_OS")]]
     pfs_pos <- params$p_pfs[[paste0(biomarker, "_pos_PFS")]]
-    
+
+    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
+    if (any(pfs_pos > os_pos)) {
+      n_violations <- sum(pfs_pos > os_pos)
+      warning("PFS > OS constraint enforced at ", n_violations,
+              " time points (", biomarker, "+)",
+              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
+    }
+    pfs_pos <- pmin(pfs_pos, os_pos)
+
     # Calculate positive state occupancy
     p_pf_pos <- pfs_pos
     p_p_pos <- pmax(os_pos - pfs_pos, 0)
@@ -245,7 +268,16 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker negative survival curves
     os_neg <- params$p_os[[paste0(biomarker, "_neg_OS")]]
     pfs_neg <- params$p_pfs[[paste0(biomarker, "_neg_PFS")]]
-    
+
+    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
+    if (any(pfs_neg > os_neg)) {
+      n_violations <- sum(pfs_neg > os_neg)
+      warning("PFS > OS constraint enforced at ", n_violations,
+              " time points (", biomarker, "-)",
+              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
+    }
+    pfs_neg <- pmin(pfs_neg, os_neg)
+
     # Calculate negative state occupancy
     p_pf_neg <- pfs_neg
     p_p_neg <- pmax(os_neg - pfs_neg, 0)

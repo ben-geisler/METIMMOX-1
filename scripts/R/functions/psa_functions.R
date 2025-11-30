@@ -44,14 +44,26 @@ generate_psa_samples <- function(param_distributions, n_sim) {
 #' @param cl Cycle length (1/52 weeks)
 #' @param n_sim Number of simulations
 #' @return List with cost and effect matrices
-run_psa_analysis <- function(psa_params, l_params_base, param_distributions, 
+run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                              strategies, time_horizon, cl, n_sim) {
   # Create empty matrices to store results
   cost_matrix <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                         dimnames = list(NULL, strategies))
   effect_matrix <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                           dimnames = list(NULL, strategies))
-  
+
+  # Track PFS > OS constraint violations (Issue #76)
+  # Instead of printing thousands of warnings, we aggregate and summarize
+  pfs_os_violations <- list(
+    control = integer(0),
+    crp_pos = integer(0),
+    crp_neg = integer(0),
+    tlr_pos = integer(0),
+    tlr_neg = integer(0),
+    tmb_braf_pos = integer(0),
+    tmb_braf_neg = integer(0)
+  )
+
   # Progress reporting
   cat("Running PSA with", n_sim, "simulations...\n")
   start_time <- Sys.time()
@@ -66,17 +78,44 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
     
-    # Use tryCatch to handle any errors in individual simulations
+    # Use withCallingHandlers to capture warnings, tryCatch for errors
+    # This allows us to aggregate PFS > OS warnings instead of printing thousands
     tryCatch({
-      sim_results <- model_fun(
-        params = sim_params,
-        time_horizon = time_horizon,
-        cl = cl,
-        determpsa = "psa",
-        return_traces = FALSE,
-        sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
-      )
-      
+      withCallingHandlers({
+        sim_results <- model_fun(
+          params = sim_params,
+          time_horizon = time_horizon,
+          cl = cl,
+          determpsa = "psa",
+          return_traces = FALSE,
+          sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
+        )
+      }, warning = function(w) {
+        # Parse PFS > OS constraint warnings and track them (Issue #76)
+        msg <- conditionMessage(w)
+        if (grepl("PFS > OS constraint enforced", msg)) {
+          # Extract which subgroup triggered the warning
+          if (grepl("\\(control\\)", msg)) {
+            pfs_os_violations$control <<- c(pfs_os_violations$control, i)
+          } else if (grepl("\\(crp\\+\\)", msg)) {
+            pfs_os_violations$crp_pos <<- c(pfs_os_violations$crp_pos, i)
+          } else if (grepl("\\(crp-\\)", msg)) {
+            pfs_os_violations$crp_neg <<- c(pfs_os_violations$crp_neg, i)
+          } else if (grepl("\\(tlr\\+\\)", msg)) {
+            pfs_os_violations$tlr_pos <<- c(pfs_os_violations$tlr_pos, i)
+          } else if (grepl("\\(tlr-\\)", msg)) {
+            pfs_os_violations$tlr_neg <<- c(pfs_os_violations$tlr_neg, i)
+          } else if (grepl("\\(tmb_braf\\+\\)", msg)) {
+            pfs_os_violations$tmb_braf_pos <<- c(pfs_os_violations$tmb_braf_pos, i)
+          } else if (grepl("\\(tmb_braf-\\)", msg)) {
+            pfs_os_violations$tmb_braf_neg <<- c(pfs_os_violations$tmb_braf_neg, i)
+          }
+          # Suppress the warning (don't print it)
+          invokeRestart("muffleWarning")
+        }
+        # Let other warnings through
+      })
+
       # Store results
       for (strat in strategies) {
         strat_row <- which(sim_results$Strategy == strat)
@@ -140,7 +179,41 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cost_matrix[is.na(cost_matrix[, strat]), strat] <- mean(cost_matrix[, strat], na.rm = TRUE)
     effect_matrix[is.na(effect_matrix[, strat]), strat] <- mean(effect_matrix[, strat], na.rm = TRUE)
   }
-  
+
+  # Print summary of PFS > OS constraint violations (Issue #76)
+  total_violations <- sum(sapply(pfs_os_violations, length))
+  if (total_violations > 0) {
+    # Count unique iterations with any violation
+    all_violation_iters <- unique(unlist(pfs_os_violations))
+    n_iters_with_violations <- length(all_violation_iters)
+
+    cat("\n--- PFS > OS Constraint Summary (Issue #76) ---\n")
+    cat(sprintf("Violations occurred in %d of %d iterations (%.1f%%)\n",
+                n_iters_with_violations, n_sim, 100 * n_iters_with_violations / n_sim))
+    cat("Breakdown by subgroup:\n")
+
+    # Only print subgroups that had violations
+    subgroup_names <- c(
+      control = "  Control",
+      crp_pos = "  CRP+",
+      crp_neg = "  CRP-",
+      tlr_pos = "  TLR+",
+      tlr_neg = "  TLR-",
+      tmb_braf_pos = "  TMB/BRAF+",
+      tmb_braf_neg = "  TMB/BRAF-"
+    )
+
+    for (subgroup in names(pfs_os_violations)) {
+      n_violations <- length(pfs_os_violations[[subgroup]])
+      if (n_violations > 0) {
+        cat(sprintf("%s: %d iterations (%.1f%%)\n",
+                    subgroup_names[subgroup], n_violations, 100 * n_violations / n_sim))
+      }
+    }
+    cat("Constraint enforced: PFS capped at OS to ensure valid state occupancy.\n")
+    cat("------------------------------------------------\n\n")
+  }
+
   # Return the cost and effect matrices separately
   return(list(
     cost = cost_matrix,

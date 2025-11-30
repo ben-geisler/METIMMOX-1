@@ -341,13 +341,28 @@ kable(param_comp,
 # Base Case Results Comparison
 
 ```{r base-case-incremental-table}
+# Calculate incremental values relative to control for ALL strategies
+# (dampack's Inc_Cost/Inc_Effect are NA for reference and dominated strategies)
+control_cost_before <- base_comp$Cost_before[base_comp$Strategy == "control"]
+control_cost_after <- base_comp$Cost_after[base_comp$Strategy == "control"]
+control_effect_before <- base_comp$Effect_before[base_comp$Strategy == "control"]
+control_effect_after <- base_comp$Effect_after[base_comp$Strategy == "control"]
+
 base_incremental_display <- base_comp %>%
-  select(Strategy, Inc_Cost_before, Inc_Cost_after, Inc_Effect_before, Inc_Effect_after, ICER_before, ICER_after) %>%
   mutate(
-    Inc_Cost_before = format(round(Inc_Cost_before, 2), big.mark = ",", nsmall = 2),
-    Inc_Cost_after = format(round(Inc_Cost_after, 2), big.mark = ",", nsmall = 2),
-    Inc_Effect_before = format(round(Inc_Effect_before, 4), nsmall = 4),
-    Inc_Effect_after = format(round(Inc_Effect_after, 4), nsmall = 4),
+    # Calculate incremental values vs control for all strategies
+    Calc_Inc_Cost_before = Cost_before - control_cost_before,
+    Calc_Inc_Cost_after = Cost_after - control_cost_after,
+    Calc_Inc_Effect_before = Effect_before - control_effect_before,
+    Calc_Inc_Effect_after = Effect_after - control_effect_after
+  ) %>%
+  select(Strategy, Calc_Inc_Cost_before, Calc_Inc_Cost_after,
+         Calc_Inc_Effect_before, Calc_Inc_Effect_after, ICER_before, ICER_after) %>%
+  mutate(
+    Calc_Inc_Cost_before = format(round(Calc_Inc_Cost_before, 2), big.mark = ",", nsmall = 2),
+    Calc_Inc_Cost_after = format(round(Calc_Inc_Cost_after, 2), big.mark = ",", nsmall = 2),
+    Calc_Inc_Effect_before = format(round(Calc_Inc_Effect_before, 4), nsmall = 4),
+    Calc_Inc_Effect_after = format(round(Calc_Inc_Effect_after, 4), nsmall = 4),
     ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
     ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ","))
   )
@@ -729,4 +744,4 @@ The comparison for issue #`r issue_num` shows:
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.2
+**Report version:** 1.3
