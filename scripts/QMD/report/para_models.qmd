@@ -1025,8 +1025,634 @@ if (exists("predictions") && exists("time_points")) {
 }
 ```
 
+## Unadjusted Life-Years by Strategy
+
+The following table shows unadjusted life-years (area under the survival curve) for each treatment strategy. Population-weighted values reflect the expected outcomes accounting for biomarker prevalence.
+
+```{r strategy-life-years-table}
+#| tbl-cap: "Unadjusted Life-Years by Treatment Strategy (Population-Weighted)"
+
+if (exists("predictions") && exists("time_points")) {
+
+  # Function to calculate life-years
+  calc_ly <- function(survival_probs, time_points) {
+    time_years <- time_points / 52
+    n <- length(time_years)
+    sum((survival_probs[-n] + survival_probs[-1]) / 2 * diff(time_years))
+  }
+
+  # Build strategy life-years table
+  strategy_ly <- data.frame(
+    Strategy = character(),
+    `OS Life-Years` = numeric(),
+    `PFS Life-Years` = numeric(),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+
+  for (strategy in c("control", "crp", "tlr", "tmb_braf")) {
+    if (!is.null(predictions[[strategy]])) {
+      os_ly <- calc_ly(predictions[[strategy]]$os, time_points)
+      pfs_ly <- calc_ly(predictions[[strategy]]$pfs, time_points)
+
+      strategy_ly <- rbind(strategy_ly, data.frame(
+        Strategy = toupper(strategy),
+        `OS Life-Years` = round(os_ly, 2),
+        `PFS Life-Years` = round(pfs_ly, 2),
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+      ))
+    }
+  }
+
+  # Add difference from control
+  control_os <- strategy_ly$`OS Life-Years`[strategy_ly$Strategy == "CONTROL"]
+  control_pfs <- strategy_ly$`PFS Life-Years`[strategy_ly$Strategy == "CONTROL"]
+
+  strategy_ly <- strategy_ly %>%
+    mutate(
+      `OS Gain vs Control` = round(`OS Life-Years` - control_os, 2),
+      `PFS Gain vs Control` = round(`PFS Life-Years` - control_pfs, 2)
+    )
+
+  if (knitr::is_latex_output()) {
+    kable(strategy_ly, format = "latex", booktabs = TRUE) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
+  } else {
+    kable(strategy_ly, format = "html") %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+
+} else {
+  cat("Strategy life-years data not available.\n")
+}
+```
+
+*Note: Life-years are calculated as the area under the survival curve (restricted mean survival time) over the model time horizon. These are unadjusted values without utility weighting. Population-weighted values account for biomarker prevalence in each strategy.*
+
 ```{r pagebreak-8, results='asis'}
 cat("\\newpage\n")
+```
+
+# Sensitivity Analysis: Separate Biomarker Models
+
+## Rationale
+
+The **all-in-one model** includes all biomarkers and their treatment interaction terms simultaneously:
+
+> Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx + tlr:Rx + tmb_braf:Rx
+
+When predicting survival for a biomarker-positive patient (e.g., CRP+), the model also activates OTHER biomarker main effects and interaction terms if that patient happens to be positive for those biomarkers. Since biomarkers are correlated (e.g., approximately 65% of patients are TLR-positive), this can attenuate or amplify the estimated treatment effect for a specific biomarker strategy.
+
+This sensitivity analysis fits **separate biomarker-specific models** where each model only includes the biomarker of interest and its treatment interaction:
+
+- CRP model: `~ Age + sex + Rx + crp + crp:Rx`
+- TLR model: `~ Age + sex + Rx + tlr + tlr:Rx`
+- TMB_BRAF model: `~ Age + sex + Rx + tmb_braf + tmb_braf:Rx`
+
+All models use the **gamma distribution**, selected by AIC in the primary analysis.
+
+```{r load-separate-models, include=FALSE}
+# Source the separate biomarker models script
+if (!exists("separate_models") || !exists("separate_predictions")) {
+  cat("Fitting separate biomarker models...\n")
+  suppressMessages(suppressWarnings(
+    source(here("scripts/R/tests/fit_independent_biomarker_models.R"))
+  ))
+}
+```
+
+## Hazard Ratio Comparison
+
+The following table compares the treatment × biomarker interaction hazard ratios between the all-in-one model and separate models.
+
+**Interpretation**: HR < 1 indicates reduced hazard (improved survival) with experimental treatment in biomarker-positive patients. HR = 1.0 is the reference (no interaction effect), meaning biomarker-positive patients have the same treatment effect as biomarker-negative patients receiving control treatment.
+
+```{r hr-comparison-table}
+#| tbl-cap: "Treatment × Biomarker Interaction Hazard Ratios: All-in-One vs Separate Models"
+
+if (exists("coef_comparison")) {
+
+  # Reshape for better display
+  hr_table <- coef_comparison %>%
+    mutate(
+      HR_CI = sprintf("%.3f (%.3f-%.3f)", HR, HR_Lower, HR_Upper)
+    ) %>%
+    select(Biomarker, Outcome, Model_Type, HR_CI) %>%
+    pivot_wider(
+      names_from = Model_Type,
+      values_from = HR_CI
+    )
+
+  if (knitr::is_latex_output()) {
+    kable(hr_table, format = "latex", booktabs = TRUE,
+          col.names = c("Biomarker", "Outcome", "All-in-One", "Separate")) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
+  } else {
+    kable(hr_table, format = "html",
+          col.names = c("Biomarker", "Outcome", "All-in-One", "Separate")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+
+} else {
+  cat("Coefficient comparison not available.\n")
+}
+```
+
+```{r pagebreak-9, results='asis'}
+cat("\\newpage\n")
+```
+
+## Biomarker-Positive vs. Biomarker-Negative Subgroups
+
+The following figures compare survival predictions between biomarker-positive and biomarker-negative subgroups for each biomarker strategy, using both the all-in-one model and separate models. Control strategy and Kaplan-Meier estimates are shown for reference.
+
+```{r survival-comparison-os, fig.height=10, fig.width=10}
+#| fig-cap: "Overall survival: Biomarker-positive vs. biomarker-negative vs. control. Solid lines: All-in-One model. Dashed lines: Separate model. Red: Biomarker-positive. Blue: Biomarker-negative. Gray dotted: Control. Black step lines: Kaplan-Meier estimates."
+
+if (exists("predictions") && exists("separate_predictions") && exists("time_points")) {
+
+  # Create a list to store plots for each biomarker
+  plot_list <- list()
+
+  for (biomarker in c("crp", "tlr", "tmb_braf")) {
+
+    # Prepare parametric model data
+    model_data <- data.frame(
+      time = rep(time_points, 4),
+      survival = c(
+        predictions[[biomarker]]$biomarker_positive$os,
+        predictions[[biomarker]]$biomarker_negative$os,
+        separate_predictions[[biomarker]]$biomarker_positive$os,
+        separate_predictions[[biomarker]]$biomarker_negative$os
+      ),
+      model = rep(c("All-in-One", "All-in-One", "Separate", "Separate"), each = length(time_points)),
+      subgroup = rep(c("Biomarker+", "Biomarker-", "Biomarker+", "Biomarker-"), each = length(time_points))
+    )
+
+    # Add control strategy
+    control_data <- data.frame(
+      time = time_points,
+      survival = control_os,
+      model = "Control",
+      subgroup = "Control (All)"
+    )
+    model_data <- rbind(model_data, control_data)
+
+    # Get Kaplan-Meier data
+    km_data <- add_biomarker_km(data_complete, biomarker, "OS")
+
+    # Create plot
+    p <- ggplot() +
+      # Parametric curves
+      geom_line(data = model_data[model_data$subgroup != "Control (All)", ],
+                aes(x = time, y = survival, color = subgroup, linetype = model),
+                linewidth = 1.0) +
+      # Control strategy (include in legend via aes)
+      geom_line(data = model_data[model_data$subgroup == "Control (All)", ],
+                aes(x = time, y = survival, color = "Control"),
+                linewidth = 1.0, linetype = "dotted") +
+      scale_color_manual(values = c("Biomarker+" = "#E31A1C", "Biomarker-" = "#1F78B4", "Control" = "gray50"),
+                         name = "Subgroup") +
+      scale_linetype_manual(values = c("All-in-One" = "solid", "Separate" = "dashed"),
+                            name = "Model") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(title = toupper(biomarker),
+           x = "Time (weeks)",
+           y = "Overall Survival") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            plot.title = element_text(size = 12, face = "bold")) +
+      guides(color = guide_legend(order = 1), linetype = guide_legend(order = 2))
+
+    # Add KM estimates if available
+    if (!is.null(km_data) && nrow(km_data) > 0) {
+      p <- p +
+        geom_step(data = km_data, aes(x = time, y = survival, group = group),
+                  color = "black", linewidth = 0.6, alpha = 0.7)
+    }
+
+    plot_list[[biomarker]] <- p
+  }
+
+  # Combine plots
+  gridExtra::grid.arrange(grobs = plot_list, ncol = 1)
+
+} else {
+  cat("Survival comparison data not available.\n")
+}
+```
+
+```{r survival-comparison-pfs, fig.height=10, fig.width=10}
+#| fig-cap: "Progression-free survival: Biomarker-positive vs. biomarker-negative vs. control. Solid lines: All-in-One model. Dashed lines: Separate model. Red: Biomarker-positive. Blue: Biomarker-negative. Gray dotted: Control. Black step lines: Kaplan-Meier estimates."
+
+if (exists("predictions") && exists("separate_predictions") && exists("time_points")) {
+
+  # Create a list to store plots for each biomarker
+  plot_list <- list()
+
+  for (biomarker in c("crp", "tlr", "tmb_braf")) {
+
+    # Prepare parametric model data
+    model_data <- data.frame(
+      time = rep(time_points, 4),
+      survival = c(
+        predictions[[biomarker]]$biomarker_positive$pfs,
+        predictions[[biomarker]]$biomarker_negative$pfs,
+        separate_predictions[[biomarker]]$biomarker_positive$pfs,
+        separate_predictions[[biomarker]]$biomarker_negative$pfs
+      ),
+      model = rep(c("All-in-One", "All-in-One", "Separate", "Separate"), each = length(time_points)),
+      subgroup = rep(c("Biomarker+", "Biomarker-", "Biomarker+", "Biomarker-"), each = length(time_points))
+    )
+
+    # Add control strategy
+    control_data <- data.frame(
+      time = time_points,
+      survival = control_pfs,
+      model = "Control",
+      subgroup = "Control (All)"
+    )
+    model_data <- rbind(model_data, control_data)
+
+    # Get Kaplan-Meier data
+    km_data <- add_biomarker_km(data_complete, biomarker, "PFS")
+
+    # Create plot
+    p <- ggplot() +
+      # Parametric curves
+      geom_line(data = model_data[model_data$subgroup != "Control (All)", ],
+                aes(x = time, y = survival, color = subgroup, linetype = model),
+                linewidth = 1.0) +
+      # Control strategy (include in legend via aes)
+      geom_line(data = model_data[model_data$subgroup == "Control (All)", ],
+                aes(x = time, y = survival, color = "Control"),
+                linewidth = 1.0, linetype = "dotted") +
+      scale_color_manual(values = c("Biomarker+" = "#E31A1C", "Biomarker-" = "#1F78B4", "Control" = "gray50"),
+                         name = "Subgroup") +
+      scale_linetype_manual(values = c("All-in-One" = "solid", "Separate" = "dashed"),
+                            name = "Model") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(title = toupper(biomarker),
+           x = "Time (weeks)",
+           y = "Progression-Free Survival") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            plot.title = element_text(size = 12, face = "bold")) +
+      guides(color = guide_legend(order = 1), linetype = guide_legend(order = 2))
+
+    # Add KM estimates if available
+    if (!is.null(km_data) && nrow(km_data) > 0) {
+      p <- p +
+        geom_step(data = km_data, aes(x = time, y = survival, group = group),
+                  color = "black", linewidth = 0.6, alpha = 0.7)
+    }
+
+    plot_list[[biomarker]] <- p
+  }
+
+  # Combine plots
+  gridExtra::grid.arrange(grobs = plot_list, ncol = 1)
+
+} else {
+  cat("Survival comparison data not available.\n")
+}
+```
+
+```{r pagebreak-9a, results='asis'}
+cat("\\newpage\n")
+```
+
+## Strategy-Level Comparison: All-in-One vs Separate Models
+
+The following figures compare population-weighted survival predictions between the all-in-one model and separate models for each biomarker strategy, with the control strategy as reference.
+
+```{r strategy-model-comparison, fig.height=12, fig.width=10}
+#| fig-cap: "Population-weighted overall survival by biomarker strategy comparing All-in-One model, Separate model, and Control strategy. Each panel shows one biomarker strategy with population-weighted predictions that account for biomarker prevalence."
+
+if (exists("predictions") && exists("separate_predictions") && exists("time_points")) {
+
+  plot_list <- list()
+
+  for (biomarker in c("crp", "tlr", "tmb_braf")) {
+
+    # All-in-One model: population-weighted prediction
+    allinone_os <- predictions[[biomarker]]$os
+
+    # Separate model: population-weighted prediction
+    prevalence <- separate_predictions[[biomarker]]$prevalence
+    separate_os <- prevalence * separate_predictions[[biomarker]]$biomarker_positive$os +
+                   (1 - prevalence) * separate_predictions[[biomarker]]$biomarker_negative$os
+
+    # Control strategy
+    control_os_curve <- predictions$control$os
+
+    # Build plot data
+    plot_data <- data.frame(
+      time = rep(time_points, 3),
+      survival = c(allinone_os, separate_os, control_os_curve),
+      model = rep(c("All-in-One", "Separate", "Control"), each = length(time_points))
+    )
+
+    # Create plot
+    p <- ggplot(plot_data, aes(x = time, y = survival, color = model, linetype = model)) +
+      geom_line(linewidth = 1.2) +
+      scale_color_manual(values = c("All-in-One" = "#E69F00", "Separate" = "#56B4E9", "Control" = "black"),
+                         name = "Model") +
+      scale_linetype_manual(values = c("All-in-One" = "solid", "Separate" = "dashed", "Control" = "dotted"),
+                            name = "Model") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(title = paste0(toupper(biomarker), " Strategy (Population-Weighted OS)"),
+           x = "Time (weeks)",
+           y = "Overall Survival") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            plot.title = element_text(size = 12, face = "bold"))
+
+    plot_list[[biomarker]] <- p
+  }
+
+  # Combine plots
+  gridExtra::grid.arrange(grobs = plot_list, ncol = 1)
+
+} else {
+  cat("Strategy comparison data not available.\n")
+}
+```
+
+```{r strategy-model-comparison-pfs, fig.height=12, fig.width=10}
+#| fig-cap: "Population-weighted progression-free survival by biomarker strategy comparing All-in-One model, Separate model, and Control strategy. Each panel shows one biomarker strategy with population-weighted predictions that account for biomarker prevalence."
+
+if (exists("predictions") && exists("separate_predictions") && exists("time_points")) {
+
+  plot_list <- list()
+
+  for (biomarker in c("crp", "tlr", "tmb_braf")) {
+
+    # All-in-One model: population-weighted prediction
+    allinone_pfs <- predictions[[biomarker]]$pfs
+
+    # Separate model: population-weighted prediction
+    prevalence <- separate_predictions[[biomarker]]$prevalence
+    separate_pfs <- prevalence * separate_predictions[[biomarker]]$biomarker_positive$pfs +
+                   (1 - prevalence) * separate_predictions[[biomarker]]$biomarker_negative$pfs
+
+    # Control strategy
+    control_pfs_curve <- predictions$control$pfs
+
+    # Build plot data
+    plot_data <- data.frame(
+      time = rep(time_points, 3),
+      survival = c(allinone_pfs, separate_pfs, control_pfs_curve),
+      model = rep(c("All-in-One", "Separate", "Control"), each = length(time_points))
+    )
+
+    # Create plot
+    p <- ggplot(plot_data, aes(x = time, y = survival, color = model, linetype = model)) +
+      geom_line(linewidth = 1.2) +
+      scale_color_manual(values = c("All-in-One" = "#E69F00", "Separate" = "#56B4E9", "Control" = "black"),
+                         name = "Model") +
+      scale_linetype_manual(values = c("All-in-One" = "solid", "Separate" = "dashed", "Control" = "dotted"),
+                            name = "Model") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(title = paste0(toupper(biomarker), " Strategy (Population-Weighted PFS)"),
+           x = "Time (weeks)",
+           y = "Progression-Free Survival") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            plot.title = element_text(size = 12, face = "bold"))
+
+    plot_list[[biomarker]] <- p
+  }
+
+  # Combine plots
+  gridExtra::grid.arrange(grobs = plot_list, ncol = 1)
+
+} else {
+  cat("Strategy comparison data not available.\n")
+}
+```
+
+```{r pagebreak-9b, results='asis'}
+cat("\\newpage\n")
+```
+
+## Mean Survival Comparison
+
+The following tables show mean survival (restricted mean survival time, i.e., area under the survival curve) comparing the all-in-one model versus separate models for each biomarker strategy. These are unadjusted life-years without utility weighting.
+
+### Biomarker Subgroups: Overall Survival
+
+```{r life-years-table-os}
+#| tbl-cap: "Mean Overall Survival (Unadjusted Life-Years) by Subgroup"
+
+if (exists("ly_biomarker_positive") && exists("ly_biomarker_negative") && exists("control_life_years")) {
+
+  # Filter to OS only from both positive and negative datasets
+  ly_pos_os <- ly_biomarker_positive %>%
+    filter(Outcome == "OS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    mutate(Subgroup = paste0(Biomarker, "+")) %>%
+    select(Subgroup, `All-in-One`, Separate)
+
+  ly_neg_os <- ly_biomarker_negative %>%
+    filter(Outcome == "OS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    mutate(Subgroup = paste0(Biomarker, "-")) %>%
+    select(Subgroup, `All-in-One`, Separate)
+
+  # Create control row (same for both models, no difference)
+  control_row <- data.frame(
+    Subgroup = "Control",
+    `All-in-One` = round(control_life_years$os, 3),
+    Separate = round(control_life_years$os, 3),
+    check.names = FALSE
+  )
+
+  # Combine all rows: Control first, then alternating +/- for each biomarker
+  os_table <- rbind(control_row, ly_pos_os[1,], ly_neg_os[1,],
+                    ly_pos_os[2,], ly_neg_os[2,],
+                    ly_pos_os[3,], ly_neg_os[3,])
+
+  # Add difference and % change
+  os_table <- os_table %>%
+    mutate(
+      Difference = round(Separate - `All-in-One`, 3),
+      `% Change` = round((Separate - `All-in-One`) / `All-in-One` * 100, 1)
+    )
+
+  # Set Control row to have no difference/change (since it's model-independent)
+  os_table$Difference[os_table$Subgroup == "Control"] <- NA
+  os_table$`% Change`[os_table$Subgroup == "Control"] <- NA
+
+  if (knitr::is_latex_output()) {
+    kable(os_table, format = "latex", booktabs = TRUE, digits = 3,
+          col.names = c("Subgroup", "All-in-One", "Separate", "Difference", "% Change")) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
+  } else {
+    kable(os_table, format = "html", digits = 3,
+          col.names = c("Subgroup", "All-in-One", "Separate", "Difference", "% Change")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+
+} else {
+  cat("Life-years comparison not available.\n")
+}
+```
+
+### Biomarker Subgroups: Progression-Free Survival
+
+```{r life-years-table-pfs}
+#| tbl-cap: "Mean Progression-Free Survival by Subgroup"
+
+if (exists("ly_biomarker_positive") && exists("ly_biomarker_negative") && exists("control_life_years")) {
+
+  # Filter to PFS only from both positive and negative datasets
+  ly_pos_pfs <- ly_biomarker_positive %>%
+    filter(Outcome == "PFS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    mutate(Subgroup = paste0(Biomarker, "+")) %>%
+    select(Subgroup, `All-in-One`, Separate)
+
+  ly_neg_pfs <- ly_biomarker_negative %>%
+    filter(Outcome == "PFS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    mutate(Subgroup = paste0(Biomarker, "-")) %>%
+    select(Subgroup, `All-in-One`, Separate)
+
+  # Create control row (same for both models, no difference)
+  control_row <- data.frame(
+    Subgroup = "Control",
+    `All-in-One` = round(control_life_years$pfs, 3),
+    Separate = round(control_life_years$pfs, 3),
+    check.names = FALSE
+  )
+
+  # Combine all rows: Control first, then alternating +/- for each biomarker
+  pfs_table <- rbind(control_row, ly_pos_pfs[1,], ly_neg_pfs[1,],
+                     ly_pos_pfs[2,], ly_neg_pfs[2,],
+                     ly_pos_pfs[3,], ly_neg_pfs[3,])
+
+  # Add difference and % change
+  pfs_table <- pfs_table %>%
+    mutate(
+      Difference = round(Separate - `All-in-One`, 3),
+      `% Change` = round((Separate - `All-in-One`) / `All-in-One` * 100, 1)
+    )
+
+  # Set Control row to have no difference/change (since it's model-independent)
+  pfs_table$Difference[pfs_table$Subgroup == "Control"] <- NA
+  pfs_table$`% Change`[pfs_table$Subgroup == "Control"] <- NA
+
+  if (knitr::is_latex_output()) {
+    kable(pfs_table, format = "latex", booktabs = TRUE, digits = 3,
+          col.names = c("Subgroup", "All-in-One", "Separate", "Difference", "% Change")) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
+  } else {
+    kable(pfs_table, format = "html", digits = 3,
+          col.names = c("Subgroup", "All-in-One", "Separate", "Difference", "% Change")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+  }
+
+} else {
+  cat("Life-years comparison not available.\n")
+}
+```
+
+### Overall Strategy Comparison
+
+The following tables compare population-weighted outcomes across all strategies, sorted by incremental gain vs control. Population-weighted values account for biomarker prevalence in each strategy. The control strategy is model-independent (interaction terms do not activate when all patients receive control treatment).
+
+```{r life-years-table-overall-os}
+#| tbl-cap: "Overall Survival (Population-Weighted)"
+
+if (exists("ly_overall_strategy") && exists("control_life_years")) {
+
+  # Filter to OS only and reshape
+  os_table <- ly_overall_strategy %>%
+    filter(Outcome == "OS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    select(-Outcome) %>%
+    mutate(
+      `Incr. (All-in-One)` = round(`All-in-One` - control_life_years$os, 3),
+      `Incr. (Separate)` = round(Separate - control_life_years$os, 3)
+    ) %>%
+    arrange(`Incr. (All-in-One)`)
+
+  # Add control strategy row at top (reference)
+  control_row <- data.frame(
+    Biomarker = "Control",
+    `All-in-One` = round(control_life_years$os, 3),
+    Separate = NA_real_,
+    `Incr. (All-in-One)` = 0,
+    `Incr. (Separate)` = NA_real_,
+    check.names = FALSE
+  )
+  os_table <- rbind(control_row, os_table)
+
+  if (knitr::is_latex_output()) {
+    kable(os_table, format = "latex", booktabs = TRUE, digits = 3,
+          col.names = c("Strategy", "Life-Years", "—", "Incr. (A-i-O)", "Incr. (Sep)")) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position")) %>%
+      kableExtra::add_header_above(c(" " = 1, "All-in-One" = 1, "Separate" = 1, "vs Control" = 2))
+  } else {
+    kable(os_table, format = "html", digits = 3,
+          col.names = c("Strategy", "Life-Years", "—", "Incr. (A-i-O)", "Incr. (Sep)")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover")) %>%
+      kableExtra::add_header_above(c(" " = 1, "All-in-One" = 1, "Separate" = 1, "vs Control" = 2))
+  }
+
+} else {
+  cat("Life-years comparison not available.\n")
+}
+```
+
+```{r life-years-table-overall-pfs}
+#| tbl-cap: "Progression-Free Survival (Population-Weighted)"
+
+if (exists("ly_overall_strategy") && exists("control_life_years")) {
+
+  # Filter to PFS only and reshape
+  pfs_table <- ly_overall_strategy %>%
+    filter(Outcome == "PFS") %>%
+    pivot_wider(names_from = Model_Type, values_from = Life_Years) %>%
+    select(-Outcome) %>%
+    mutate(
+      `Incr. (All-in-One)` = round(`All-in-One` - control_life_years$pfs, 3),
+      `Incr. (Separate)` = round(Separate - control_life_years$pfs, 3)
+    ) %>%
+    arrange(`Incr. (All-in-One)`)
+
+  # Add control strategy row at top (reference)
+  control_row <- data.frame(
+    Biomarker = "Control",
+    `All-in-One` = round(control_life_years$pfs, 3),
+    Separate = NA_real_,
+    `Incr. (All-in-One)` = 0,
+    `Incr. (Separate)` = NA_real_,
+    check.names = FALSE
+  )
+  pfs_table <- rbind(control_row, pfs_table)
+
+  if (knitr::is_latex_output()) {
+    kable(pfs_table, format = "latex", booktabs = TRUE, digits = 3,
+          col.names = c("Strategy", "PFS Years", "—", "Incr. (A-i-O)", "Incr. (Sep)")) %>%
+      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position")) %>%
+      kableExtra::add_header_above(c(" " = 1, "All-in-One" = 1, "Separate" = 1, "vs Control" = 2))
+  } else {
+    kable(pfs_table, format = "html", digits = 3,
+          col.names = c("Strategy", "PFS Years", "—", "Incr. (A-i-O)", "Incr. (Sep)")) %>%
+      kableExtra::kable_styling(bootstrap_options = c("striped", "hover")) %>%
+      kableExtra::add_header_above(c(" " = 1, "All-in-One" = 1, "Separate" = 1, "vs Control" = 2))
+  }
+
+} else {
+  cat("Life-years comparison not available.\n")
+}
 ```
 
 # Summary
@@ -1038,9 +1664,10 @@ cat("\\newpage\n")
 - Visual validation against Kaplan-Meier estimates confirms good model fit across all tested distributions
 - Population-level predictions account for biomarker prevalence to reflect expected outcomes in clinical practice
 - Strategy comparison shows relative performance of biomarker-guided treatment allocation approaches
+- Sensitivity analysis comparing all-in-one vs separate biomarker models assesses robustness to biomarker correlation effects
 
 ---
 
-**Completed on:** `r Sys.Date()`
-**Repository:** ben-geisler/METIMMOX-1
-**Version:** 1.1
+**Report completed on:** `r Sys.Date()`
+**Repository:** METIMMOX-1
+**Report version:** 1.41
