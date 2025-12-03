@@ -1,6 +1,6 @@
 ---
 title: "METIMMOX-1 Clinical Effectiveness Analysis Report"
-subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
+subtitle: "Biomarker-Guided Strategies - Firth-Corrected Cox Regression"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -19,6 +19,15 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
+    include-in-header:
+      text: |
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhead{}
+        \renewcommand{\headrulewidth}{0pt}
+        \fancyfoot[L]{\rule{\textwidth}{0.4pt}\\ Report Version 2.0 | Completed: \today | METIMMOX-1}
+        \fancyfoot[C]{}
+        \fancyfoot[R]{\thepage}
 execute:
   echo: false
   warning: false
@@ -47,16 +56,15 @@ knitr::opts_knit$set(root.dir = here::here())
 # Load required libraries
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
-  here, knitr, kableExtra, ggplot2, dplyr, 
-  flextable, officer, scales, gridExtra,
-  devtools, readxl, tableone, flexsurv, 
-  survival, survminer, gems, mstate, 
-  tidyverse, xtable, darthtools, dampack, 
-  mvtnorm, Matrix, reshape2
+  here, knitr, kableExtra, ggplot2, dplyr, tidyverse,
+  survival,   # Surv object, cox.zph for Schoenfeld, ridge()
+  coxphf,     # Firth-corrected Cox regression + coxphftest
+  glmnet,     # Ridge regression fallback (alpha=0)
+  vcd         # Cramér's V calculation
 )
 
 # Set ggplot theme
-theme_set(theme_minimal() + 
+theme_set(theme_minimal() +
   theme(
     plot.title = element_text(size = 14, face = "bold"),
     plot.subtitle = element_text(size = 12),
@@ -66,553 +74,1306 @@ theme_set(theme_minimal() +
     legend.text = element_text(size = 10),
     strip.text = element_text(size = 11, face = "bold")
   ))
-
-
-
 ```
 
-```{r load-analysis-scripts, include=FALSE}
-# 02 - Setup and Global Variables
+```{r load-data, include=FALSE}
+# Source analysis scripts for data loading
 if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
 }
 
-# 03 - Biomarker Strategies
 if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
 }
+```
 
-# 06 - Parametric Survival Analysis
-if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
+```{r helper-functions, include=FALSE}
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+#' Fit Firth-corrected Cox model with profile likelihood CIs
+fit_firth_cox <- function(formula, data, label = "model") {
+  tryCatch({
+    coxphf(
+      formula = formula,
+      data = data,
+      firth = TRUE,
+      pl = TRUE,        # Profile likelihood CIs
+      maxit = 100,
+      maxstep = 0.1
+    )
+  }, error = function(e) {
+    warning(paste("coxphf failed for", label, ":", e$message))
+    NULL
+  })
 }
 
-# 07 - Base Case Input Parameters
-if (file.exists(here("scripts/R/analysis/07_basecase_input_parameters.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/07_basecase_input_parameters.R"))))
+#' Extract results from coxphf (full table, interactions grouped at top)
+#' Note: coxphf ci.lower and ci.upper are ALREADY exponentiated (HR scale)
+extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
+  if (is.null(model)) return(NULL)
+
+  results <- data.frame(
+    Term = names(model$coefficients),
+    HR = exp(model$coefficients),
+    CI_Lower = model$ci.lower,  # Already on HR scale, do NOT exp()
+    CI_Upper = model$ci.upper,  # Already on HR scale, do NOT exp()
+    P_Value = model$prob,
+    stringsAsFactors = FALSE
+  )
+
+  if (reorder_interactions) {
+    # Put interaction terms at top
+    is_interaction <- grepl(":", results$Term)
+    results <- rbind(results[is_interaction, ], results[!is_interaction, ])
+  }
+
+  rownames(results) <- NULL
+  results
 }
 
-# Set discount rates to 0 for undiscounted analysis
-d_c <- 0  # Discount rate for costs
-d_e <- 0  # Discount rate for effects
+#' Penalized Likelihood Ratio Test for specific interaction term
+test_interaction_plrt <- function(formula_full, data, interaction_term) {
+  test_formula <- as.formula(paste("~", interaction_term))
 
-# Update parameters with zero discount rates
-if (exists("l_params_base")) {
-  l_params_base$d_c <- 0
-  l_params_base$d_e <- 0
+  tryCatch({
+    result <- coxphftest(
+      formula = formula_full,
+      data = data,
+      test = test_formula,
+      firth = TRUE
+    )
+    list(
+      term = interaction_term,
+      loglik_full = result$loglik[2],
+      loglik_restricted = result$loglik[1],
+      df = result$df,
+      p_value = result$prob
+    )
+  }, error = function(e) {
+    list(term = interaction_term, p_value = NA)
+  })
 }
 
-# Load model function
-if (file.exists(here("scripts/R/functions/model_fun.R"))) {
-  source(here("scripts/R/functions/model_fun.R"))
+#' Apply Benjamini-Hochberg FDR correction
+apply_bh_correction <- function(p_values) {
+  p.adjust(p_values, method = "BH")
 }
 
-# Load calculate_outcomes function
-if (file.exists(here("scripts/R/functions/calculate_outcomes.R"))) {
-  source(here("scripts/R/functions/calculate_outcomes.R"))
+#' Format HR with CI for display (vectorized)
+format_hr_ci <- function(hr, ci_lower, ci_upper, digits = 2) {
+  mapply(function(h, l, u) {
+    if (is.na(h)) return("--")
+    sprintf(paste0("%.", digits, "f (%.", digits, "f-%.", digits, "f)"), h, l, u)
+  }, hr, ci_lower, ci_upper, USE.NAMES = FALSE)
 }
 
-# 10 - Base Case Analysis with traces to get subgroup QALYs
-if (file.exists(here("scripts/R/analysis/10_basecase_analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/10_basecase_analysis.R"))))
+#' Format p-value for display (vectorized)
+format_pvalue <- function(p, digits = 3) {
+  sapply(p, function(pval) {
+    if (is.na(pval)) return("--")
+    if (pval < 0.001) return("<0.001")
+    sprintf(paste0("%.", digits, "f"), pval)
+  }, USE.NAMES = FALSE)
 }
 
-# Run model with traces to extract subgroup outcomes
-model_with_traces <- model_fun(l_params_base, return_traces = TRUE)
-base_results <- model_with_traces$results
-traces <- model_with_traces$traces
+#' Create forest plot for interaction HRs
+create_interaction_forest_plot <- function(results_df, outcome = "OS") {
+  ggplot(results_df,
+         aes(x = HR, y = Biomarker, color = Model, shape = Model)) +
+    geom_point(position = position_dodge(width = 0.5), size = 3) +
+    geom_errorbarh(aes(xmin = CI_Lower, xmax = CI_Upper),
+                   position = position_dodge(width = 0.5), height = 0.2) +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
+    scale_x_log10(breaks = c(0.1, 0.25, 0.5, 1, 2, 4, 10),
+                  labels = c("0.1", "0.25", "0.5", "1", "2", "4", "10")) +
+    scale_color_manual(
+      values = c("A: All-in-One" = "#E69F00",
+                 "B: Focused" = "#56B4E9",
+                 "C: Single" = "#009E73"),
+      name = "Model Type"
+    ) +
+    labs(
+      x = "Hazard Ratio (log scale)",
+      y = "",
+      title = paste("Treatment × Biomarker Interaction:", outcome),
+      subtitle = "Profile Likelihood 95% Confidence Intervals"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+}
+
+#' Create log-log survival plot for PH diagnostics
+create_loglog_plot <- function(data, time_var, event_var, strata_var, title) {
+  formula <- as.formula(paste0("Surv(", time_var, ", ", event_var, ") ~ ", strata_var))
+  km_fit <- survfit(formula, data = data)
+
+  # Extract survival data
+  surv_summary <- summary(km_fit)
+
+  plot_data <- data.frame(
+    time = surv_summary$time,
+    surv = surv_summary$surv,
+    strata = surv_summary$strata
+  ) %>%
+    filter(surv > 0 & surv < 1) %>%
+    mutate(
+      log_time = log(time),
+      log_log_surv = log(-log(surv))
+    )
+
+  ggplot(plot_data, aes(x = log_time, y = log_log_surv, color = strata)) +
+    geom_step(linewidth = 1) +
+    labs(
+      x = "log(Time in weeks)",
+      y = "-log(-log(S(t)))",
+      title = title,
+      subtitle = "Parallel lines support PH assumption",
+      color = "Group"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+```
+
+```{r data-preparation, include=FALSE}
+# =============================================================================
+# DATA PREPARATION
+# =============================================================================
+
+# Prepare data for Cox models
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+                                               "tmb_braf", "OSwk", "Death",
+                                               "PFSwk", "Progression")]), ]
+
+# Ensure proper factor coding
+data_complete$sex <- as.factor(data_complete$sex)
+data_complete$Rx <- as.factor(data_complete$Rx)
+
+# Biomarkers as numeric 0/1 for coxphf (interactions work better with numeric)
+data_complete$crp_num <- as.numeric(as.character(data_complete$crp))
+data_complete$tlr_num <- as.numeric(as.character(data_complete$tlr))
+data_complete$tmb_braf_num <- as.numeric(as.character(data_complete$tmb_braf))
+
+# Create numeric Rx for ridge regression
+data_complete$Rx_num <- as.numeric(data_complete$Rx) - 1  # 0 = Control, 1 = Experimental
+
+# Sample characteristics
+n_total <- nrow(data_complete)
+n_control <- sum(data_complete$Rx_num == 0)
+n_experimental <- sum(data_complete$Rx_num == 1)
+
+# Biomarker prevalence
+prev_crp <- mean(data_complete$crp_num)
+prev_tlr <- mean(data_complete$tlr_num)
+prev_tmb_braf <- mean(data_complete$tmb_braf_num)
+
+# Event counts
+n_deaths <- sum(data_complete$Death)
+n_progressions <- sum(data_complete$Progression)
+```
+
+```{r biomarker-correlation, include=FALSE}
+# =============================================================================
+# BIOMARKER CORRELATION ANALYSIS (Cramér's V)
+# =============================================================================
+
+# CRP vs TLR
+crp_tlr_table <- table(data_complete$crp_num, data_complete$tlr_num)
+crp_tlr_assoc <- assocstats(crp_tlr_table)
+cramers_v_crp_tlr <- crp_tlr_assoc$cramer
+
+# CRP vs TMB/BRAF
+crp_tmb_table <- table(data_complete$crp_num, data_complete$tmb_braf_num)
+crp_tmb_assoc <- assocstats(crp_tmb_table)
+cramers_v_crp_tmb <- crp_tmb_assoc$cramer
+
+# TLR vs TMB/BRAF
+tlr_tmb_table <- table(data_complete$tlr_num, data_complete$tmb_braf_num)
+tlr_tmb_assoc <- assocstats(tlr_tmb_table)
+cramers_v_tlr_tmb <- tlr_tmb_assoc$cramer
+
+# Build correlation summary
+correlation_df <- data.frame(
+  Comparison = c("CRP vs TLR", "CRP vs TMB/BRAF", "TLR vs TMB/BRAF"),
+  Cramers_V = round(c(cramers_v_crp_tlr, cramers_v_crp_tmb, cramers_v_tlr_tmb), 3),
+  Interpretation = sapply(c(cramers_v_crp_tlr, cramers_v_crp_tmb, cramers_v_tlr_tmb), function(v) {
+    if (v > 0.3) "Moderate/Strong"
+    else if (v > 0.1) "Weak"
+    else "Negligible"
+  })
+)
 ```
 
 # Overview
 
-This report presents clinical effectiveness results for the METIMMOX-1 trial, comparing biomarker-guided treatment strategies for selecting immunotherapy candidates in metastatic MSS/pMMR colorectal cancer.
+This report presents clinical effectiveness results from the METIMMOX-1 trial, evaluating biomarker-guided treatment strategies for selecting immunotherapy candidates in metastatic MSS/pMMR colorectal cancer.
 
-# Results
+The analysis uses **Firth-corrected Cox proportional hazards regression** with profile likelihood confidence intervals to assess treatment effect heterogeneity across three candidate biomarkers:
 
-## Cox Proportional Hazards Models
+- **CRP** (C-reactive protein): Low CRP (<5 mg/L) at baseline
+- **TLR** (Tumor Lesion Reduction): Early response (≥10% reduction at first CT scan)
+- **TMB/BRAF**: High tumor mutational burden (≥9 mut/MB) or BRAF mutation
 
-```{r cox-models, include=FALSE}
-# Cox Proportional Hazards Functions for METIMMOX-1 Analysis
+We compare three model structures to assess the robustness of treatment-biomarker interactions:
 
-# Function to calculate median from survival probabilities
-calculate_median_survival <- function(surv_probs, time_points) {
-  # Find first time point where survival drops below 0.5
-  median_idx <- which(surv_probs < 0.5)[1]
-  if (is.na(median_idx)) {
-    # If survival never drops below 0.5, return the last time point
-    return(time_points[length(time_points)])
-  } else {
-    return(time_points[median_idx])
-  }
-}
+- **Model A**: All-in-one model with all biomarkers and interactions
+- **Model B**: Focused models with all biomarkers but only one interaction per model
+- **Model C**: Single-biomarker models with one biomarker and its interaction
 
-# Convert weeks to months (divide by 4.345)
-weeks_to_months <- function(weeks) {
-  return(weeks / 4.345)
-}
+# Methodological Notes
 
-# Function to calculate RMST (area under curve) using trapezoidal rule
-calculate_auc <- function(surv_probs, time_points) {
-  # Ensure surv_probs is a vector
-  if (is.matrix(surv_probs) || is.data.frame(surv_probs)) {
-    surv_probs <- as.vector(surv_probs)
-  }
-  
-  # Ensure time_points is a vector
-  if (is.matrix(time_points) || is.data.frame(time_points)) {
-    time_points <- as.vector(time_points)
-  }
-  
-  # Remove any NA values
-  valid_idx <- !is.na(surv_probs) & !is.na(time_points)
-  surv_probs <- surv_probs[valid_idx]
-  time_points <- time_points[valid_idx]
-  
-  # If empty, return NA
-  if (length(surv_probs) == 0 || length(time_points) == 0) {
-    return(NA)
-  }
-  
-  # Add initial point if not present
-  if (time_points[1] != 0) {
-    time_points <- c(0, time_points)
-    surv_probs <- c(1, surv_probs)
-  }
-  
-  # Calculate AUC using trapezoidal rule
-  auc <- 0
-  for (i in 1:(length(time_points)-1)) {
-    auc <- auc + (time_points[i+1] - time_points[i]) * (surv_probs[i] + surv_probs[i+1]) / 2
-  }
-  
-  return(auc)
-}
+## Firth-Corrected Cox Regression
 
-# Function to format HR with CI for display
-format_hr_ci <- function(hr_object) {
-  if (is.na(hr_object$hr)) {
-    return("NA")
-  } else {
-    return(sprintf("%.2f (%.2f-%.2f)", hr_object$hr, hr_object$ci_lower, hr_object$ci_upper))
-  }
-}
+We use Firth's penalized maximum likelihood method for Cox regression, which addresses:
 
-# Prepare data for Cox regression
-data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", "tmb_braf", "OSwk", "Death", "PFSwk", "Progression")]), ]
+1. **Monotone likelihood**: When a covariate perfectly separates events from non-events
+2. **Small sample bias**: Reduces bias in coefficient estimates with sparse data
+3. **Unstable confidence intervals**: Profile likelihood CIs are more reliable than Wald-based CIs in small samples
 
-# Ensure proper coding
-data_complete$sex <- as.factor(data_complete$sex)
-data_complete$Rx <- as.factor(data_complete$Rx)
+Statistical inference is based on **penalized likelihood ratio tests** (PLRT), which are more appropriate than Wald tests for testing treatment-biomarker interactions in this setting.
 
-# Convert biomarkers to numeric (0/1)
-data_complete$crp <- as.numeric(as.character(data_complete$crp))
-data_complete$tlr <- as.numeric(as.character(data_complete$tlr))
-data_complete$tmb_braf <- as.numeric(as.character(data_complete$tmb_braf))
+## Why Not LASSO or Elastic Net
 
-# Create combined treatment/biomarker groups for each biomarker
-# Reference group = all patients on Rx=0 (standard of care), regardless of biomarker
+We considered LASSO and elastic net penalized regression but determined they are **not appropriate** for this analysis:
 
-# For CRP strategy
-data_complete$crp_group <- factor(
-  case_when(
-    data_complete$Rx == levels(data_complete$Rx)[1] ~ "SoC (all)",  # All Rx=0 pooled
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$crp == 1 ~ "CRP+ on Rx",
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$crp == 0 ~ "CRP- on Rx"
-  ),
-  levels = c("SoC (all)", "CRP+ on Rx", "CRP- on Rx")
+1. **Correlated biomarkers**: Our biomarkers show significant correlation (Cramér's V reported below). LASSO arbitrarily selects one of correlated predictors while setting others to zero, which does not reflect the clinical question of comparing ALL biomarker strategies.
+
+2. **Hierarchy principle violation**: LASSO may select interaction terms (e.g., `crp:Rx`) while setting the main effect (`crp`) to zero, producing models that are difficult to interpret clinically.
+
+3. **Clinical objective**: Our goal is to estimate treatment effect heterogeneity across ALL biomarkers simultaneously, not to select a "winning" biomarker.
+
+**Elastic net** (α = 0.1-0.3) represents a compromise but does not fully address these concerns. Instead, we use **Ridge regression** (α = 0) as a sensitivity analysis, which shrinks but does not eliminate coefficients.
+
+## Multiple Testing Correction
+
+We apply the **Benjamini-Hochberg procedure** to control the false discovery rate (FDR) on the primary Firth analysis:
+
+- 6 interaction tests: 3 biomarkers × 2 outcomes (OS, PFS)
+- Both raw PLRT p-values and BH-adjusted q-values are reported
+- The Ridge sensitivity analysis does not require separate multiplicity correction
+
+# Data Preparation
+
+## Sample Characteristics
+
+```{r table-sample}
+sample_df <- data.frame(
+  Characteristic = c("Total patients (complete cases)",
+                     "Control arm (FLOX alone)",
+                     "Experimental arm (alternating FLOX/nivolumab)",
+                     "",
+                     "Deaths (OS events)",
+                     "Progressions (PFS events)",
+                     "",
+                     "CRP-positive (low CRP)",
+                     "TLR-positive (early response)",
+                     "TMB/BRAF-positive"),
+  Value = c(n_total,
+            paste0(n_control, " (", round(100*n_control/n_total, 1), "%)"),
+            paste0(n_experimental, " (", round(100*n_experimental/n_total, 1), "%)"),
+            "",
+            paste0(n_deaths, " (", round(100*n_deaths/n_total, 1), "%)"),
+            paste0(n_progressions, " (", round(100*n_progressions/n_total, 1), "%)"),
+            "",
+            paste0(sum(data_complete$crp_num), " (", round(100*prev_crp, 1), "%)"),
+            paste0(sum(data_complete$tlr_num), " (", round(100*prev_tlr, 1), "%)"),
+            paste0(sum(data_complete$tmb_braf_num), " (", round(100*prev_tmb_braf, 1), "%)"))
 )
 
-# For TLR strategy
-data_complete$tlr_group <- factor(
-  case_when(
-    data_complete$Rx == levels(data_complete$Rx)[1] ~ "SoC (all)",
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$tlr == 1 ~ "TLR+ on Rx",
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$tlr == 0 ~ "TLR- on Rx"
-  ),
-  levels = c("SoC (all)", "TLR+ on Rx", "TLR- on Rx")
-)
-
-# For TMB/BRAF strategy
-data_complete$tmb_group <- factor(
-  case_when(
-    data_complete$Rx == levels(data_complete$Rx)[1] ~ "SoC (all)",
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$tmb_braf == 1 ~ "TMB/BRAF+ on Rx",
-    data_complete$Rx == levels(data_complete$Rx)[2] & data_complete$tmb_braf == 0 ~ "TMB/BRAF- on Rx"
-  ),
-  levels = c("SoC (all)", "TMB/BRAF+ on Rx", "TMB/BRAF- on Rx")
-)
-
-# Fit Cox models comparing each subgroup to pooled SoC
-# CRP models
-cox_os_crp <- coxph(Surv(OSwk, Death) ~ Age + sex + crp_group, data = data_complete)
-cox_pfs_crp <- coxph(Surv(PFSwk, Progression) ~ Age + sex + crp_group, data = data_complete)
-
-# TLR models
-cox_os_tlr <- coxph(Surv(OSwk, Death) ~ Age + sex + tlr_group, data = data_complete)
-cox_pfs_tlr <- coxph(Surv(PFSwk, Progression) ~ Age + sex + tlr_group, data = data_complete)
-
-# TMB/BRAF models
-cox_os_tmb <- coxph(Surv(OSwk, Death) ~ Age + sex + tmb_group, data = data_complete)
-cox_pfs_tmb <- coxph(Surv(PFSwk, Progression) ~ Age + sex + tmb_group, data = data_complete)
-
-# Extract HRs with confidence intervals
-# Function to extract HR from grouped Cox model
-extract_grouped_hr <- function(cox_model, positive_level, negative_level) {
-  summ <- summary(cox_model)
-  coef_table <- summ$coefficients
-  conf_int <- summ$conf.int
-  
-  # Find rows for positive and negative groups
-  pos_idx <- grep(positive_level, rownames(coef_table), fixed = TRUE)
-  neg_idx <- grep(negative_level, rownames(coef_table), fixed = TRUE)
-  
-  if (length(pos_idx) > 0) {
-    hr_pos <- conf_int[pos_idx, "exp(coef)"]
-    ci_pos_lower <- conf_int[pos_idx, "lower .95"]
-    ci_pos_upper <- conf_int[pos_idx, "upper .95"]
-  } else {
-    hr_pos <- ci_pos_lower <- ci_pos_upper <- NA
-  }
-  
-  if (length(neg_idx) > 0) {
-    hr_neg <- conf_int[neg_idx, "exp(coef)"]
-    ci_neg_lower <- conf_int[neg_idx, "lower .95"]
-    ci_neg_upper <- conf_int[neg_idx, "upper .95"]
-  } else {
-    hr_neg <- ci_neg_lower <- ci_neg_upper <- NA
-  }
-  
-  return(list(
-    positive = list(hr = hr_pos, ci_lower = ci_pos_lower, ci_upper = ci_pos_upper),
-    negative = list(hr = hr_neg, ci_lower = ci_neg_lower, ci_upper = ci_neg_upper)
-  ))
-}
-
-# Extract HRs for each biomarker strategy
-hr_os_crp <- extract_grouped_hr(cox_os_crp, "CRP+ on Rx", "CRP- on Rx")
-hr_pfs_crp <- extract_grouped_hr(cox_pfs_crp, "CRP+ on Rx", "CRP- on Rx")
-
-hr_os_tlr <- extract_grouped_hr(cox_os_tlr, "TLR+ on Rx", "TLR- on Rx")
-hr_pfs_tlr <- extract_grouped_hr(cox_pfs_tlr, "TLR+ on Rx", "TLR- on Rx")
-
-hr_os_tmb <- extract_grouped_hr(cox_os_tmb, "TMB/BRAF+ on Rx", "TMB/BRAF- on Rx")
-hr_pfs_tmb <- extract_grouped_hr(cox_pfs_tmb, "TMB/BRAF+ on Rx", "TMB/BRAF- on Rx")
+sample_df %>%
+  kable(col.names = c("Characteristic", "N (%)"),
+        caption = "Sample Characteristics",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  row_spec(c(4, 7), bold = FALSE, extra_css = "border-bottom: none;")
 ```
 
-Cox proportional hazards regression models were fitted comparing each biomarker-defined treatment subgroup to a common reference of all patients receiving standard of care (Rx=0), adjusting for age and sex. This approach pools all control patients regardless of biomarker status as the reference group.
+## Biomarker Correlations
 
-## Median Survival Times and Overall Outcomes
+```{r table-correlation}
+correlation_df %>%
+  kable(col.names = c("Biomarker Pair", "Cramér's V", "Interpretation"),
+        caption = "Biomarker Correlations (Cramér's V)",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10)
+```
 
-```{r median-survival, include=FALSE}
-# Extract median survival times from parametric models
-if (exists("predictions") && length(predictions) > 0) {
-  # Overall strategies
-  median_pfs_control <- calculate_median_survival(predictions$control$pfs, time_points)
-  median_os_control <- calculate_median_survival(predictions$control$os, time_points)
-  
-  median_pfs_crp <- calculate_median_survival(predictions$crp$pfs, time_points)
-  median_os_crp <- calculate_median_survival(predictions$crp$os, time_points)
-  
-  median_pfs_tlr <- calculate_median_survival(predictions$tlr$pfs, time_points)
-  median_os_tlr <- calculate_median_survival(predictions$tlr$os, time_points)
-  
-  median_pfs_tmb_braf <- calculate_median_survival(predictions$tmb_braf$pfs, time_points)
-  median_os_tmb_braf <- calculate_median_survival(predictions$tmb_braf$os, time_points)
-  
-  # Subgroups - CRP
-  median_pfs_crp_pos <- calculate_median_survival(predictions$crp$biomarker_positive$pfs, time_points)
-  median_os_crp_pos <- calculate_median_survival(predictions$crp$biomarker_positive$os, time_points)
-  median_pfs_crp_neg <- calculate_median_survival(predictions$crp$biomarker_negative$pfs, time_points)
-  median_os_crp_neg <- calculate_median_survival(predictions$crp$biomarker_negative$os, time_points)
-  
-  # Subgroups - TLR
-  median_pfs_tlr_pos <- calculate_median_survival(predictions$tlr$biomarker_positive$pfs, time_points)
-  median_os_tlr_pos <- calculate_median_survival(predictions$tlr$biomarker_positive$os, time_points)
-  median_pfs_tlr_neg <- calculate_median_survival(predictions$tlr$biomarker_negative$pfs, time_points)
-  median_os_tlr_neg <- calculate_median_survival(predictions$tlr$biomarker_negative$os, time_points)
-  
-  # Subgroups - TMB/BRAF
-  median_pfs_tmb_pos <- calculate_median_survival(predictions$tmb_braf$biomarker_positive$pfs, time_points)
-  median_os_tmb_pos <- calculate_median_survival(predictions$tmb_braf$biomarker_positive$os, time_points)
-  median_pfs_tmb_neg <- calculate_median_survival(predictions$tmb_braf$biomarker_negative$pfs, time_points)
-  median_os_tmb_neg <- calculate_median_survival(predictions$tmb_braf$biomarker_negative$os, time_points)
-  
-  # Convert all to months
-  median_pfs_control_mo <- weeks_to_months(median_pfs_control)
-  median_os_control_mo <- weeks_to_months(median_os_control)
-  median_pfs_crp_mo <- weeks_to_months(median_pfs_crp)
-  median_os_crp_mo <- weeks_to_months(median_os_crp)
-  median_pfs_tlr_mo <- weeks_to_months(median_pfs_tlr)
-  median_os_tlr_mo <- weeks_to_months(median_os_tlr)
-  median_pfs_tmb_braf_mo <- weeks_to_months(median_pfs_tmb_braf)
-  median_os_tmb_braf_mo <- weeks_to_months(median_os_tmb_braf)
-  
-  median_pfs_crp_pos_mo <- weeks_to_months(median_pfs_crp_pos)
-  median_os_crp_pos_mo <- weeks_to_months(median_os_crp_pos)
-  median_pfs_crp_neg_mo <- weeks_to_months(median_pfs_crp_neg)
-  median_os_crp_neg_mo <- weeks_to_months(median_os_crp_neg)
-  
-  median_pfs_tlr_pos_mo <- weeks_to_months(median_pfs_tlr_pos)
-  median_os_tlr_pos_mo <- weeks_to_months(median_os_tlr_pos)
-  median_pfs_tlr_neg_mo <- weeks_to_months(median_pfs_tlr_neg)
-  median_os_tlr_neg_mo <- weeks_to_months(median_os_tlr_neg)
-  
-  median_pfs_tmb_pos_mo <- weeks_to_months(median_pfs_tmb_pos)
-  median_os_tmb_pos_mo <- weeks_to_months(median_os_tmb_pos)
-  median_pfs_tmb_neg_mo <- weeks_to_months(median_pfs_tmb_neg)
-  median_os_tmb_neg_mo <- weeks_to_months(median_os_tmb_neg)
-  
-} else {
-  median_pfs_control_mo <- median_os_control_mo <- NA
-  median_pfs_crp_mo <- median_os_crp_mo <- NA
-  median_pfs_tlr_mo <- median_os_tlr_mo <- NA
-  median_pfs_tmb_braf_mo <- median_os_tmb_braf_mo <- NA
-  median_pfs_crp_pos_mo <- median_os_crp_pos_mo <- NA
-  median_pfs_crp_neg_mo <- median_os_crp_neg_mo <- NA
-  median_pfs_tlr_pos_mo <- median_os_tlr_pos_mo <- NA
-  median_pfs_tlr_neg_mo <- median_os_tlr_neg_mo <- NA
-  median_pfs_tmb_pos_mo <- median_os_tmb_pos_mo <- NA
-  median_pfs_tmb_neg_mo <- median_os_tmb_neg_mo <- NA
-}
+**Note:** Cramér's V interpretation: <0.1 = Negligible, 0.1-0.3 = Weak, >0.3 = Moderate/Strong. These correlations support our decision not to use LASSO, which would arbitrarily select among correlated biomarkers.
 
-# Calculate life years from survival predictions
-if (exists("predictions") && length(predictions) > 0) {
-  # Overall strategies
-  ly_control <- calculate_auc(predictions$control$os, time_points) / 52
-  ly_crp <- calculate_auc(predictions$crp$os, time_points) / 52
-  ly_tlr <- calculate_auc(predictions$tlr$os, time_points) / 52
-  ly_tmb_braf <- calculate_auc(predictions$tmb_braf$os, time_points) / 52
-  
-  # Subgroups
-  ly_crp_pos <- calculate_auc(predictions$crp$biomarker_positive$os, time_points) / 52
-  ly_crp_neg <- calculate_auc(predictions$crp$biomarker_negative$os, time_points) / 52
-  ly_tlr_pos <- calculate_auc(predictions$tlr$biomarker_positive$os, time_points) / 52
-  ly_tlr_neg <- calculate_auc(predictions$tlr$biomarker_negative$os, time_points) / 52
-  ly_tmb_pos <- calculate_auc(predictions$tmb_braf$biomarker_positive$os, time_points) / 52
-  ly_tmb_neg <- calculate_auc(predictions$tmb_braf$biomarker_negative$os, time_points) / 52
-  
-} else {
-  ly_control <- ly_crp <- ly_tlr <- ly_tmb_braf <- NA
-  ly_crp_pos <- ly_crp_neg <- ly_tlr_pos <- ly_tlr_neg <- ly_tmb_pos <- ly_tmb_neg <- NA
-}
+\newpage
 
-# Get QALYs from base_results and traces
-if (exists("base_results") && exists("traces")) {
-  # Overall strategies
-  qaly_control <- base_results$Effect[base_results$Strategy == "control"]
-  qaly_crp <- base_results$Effect[base_results$Strategy == "crp"]
-  qaly_tlr <- base_results$Effect[base_results$Strategy == "tlr"]
-  qaly_tmb_braf <- base_results$Effect[base_results$Strategy == "tmb_braf"]
-  
-  # Subgroup QALYs from traces
-  qaly_crp_pos <- traces$crp$positive$qalys_total
-  qaly_crp_neg <- traces$crp$negative$qalys_total
-  qaly_tlr_pos <- traces$tlr$positive$qalys_total
-  qaly_tlr_neg <- traces$tlr$negative$qalys_total
-  qaly_tmb_pos <- traces$tmb_braf$positive$qalys_total
-  qaly_tmb_neg <- traces$tmb_braf$negative$qalys_total
-  
-} else {
-  qaly_control <- qaly_crp <- qaly_tlr <- qaly_tmb_braf <- NA
-  qaly_crp_pos <- qaly_crp_neg <- qaly_tlr_pos <- qaly_tlr_neg <- qaly_tmb_pos <- qaly_tmb_neg <- NA
+# Proportional Hazards Assumption
+
+```{r ph-diagnostics, include=FALSE}
+# =============================================================================
+# PROPORTIONAL HAZARDS DIAGNOSTICS
+# =============================================================================
+
+# Fit standard coxph for Schoenfeld tests (not available in coxphf)
+# Use Model A formula structure
+formula_diag_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num +
+                                       crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx
+formula_diag_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num +
+                                               crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx
+
+coxph_diag_os <- coxph(formula_diag_os, data = data_complete)
+coxph_diag_pfs <- coxph(formula_diag_pfs, data = data_complete)
+
+# Schoenfeld residual tests
+zph_os <- cox.zph(coxph_diag_os)
+zph_pfs <- cox.zph(coxph_diag_pfs)
+
+# Extract results
+zph_os_df <- as.data.frame(zph_os$table)
+zph_pfs_df <- as.data.frame(zph_pfs$table)
+```
+
+## Schoenfeld Residual Tests
+
+The proportional hazards assumption was tested using scaled Schoenfeld residuals. A significant p-value indicates potential violation of the PH assumption for that covariate.
+
+```{r table-schoenfeld}
+# Combine OS and PFS results
+schoenfeld_df <- data.frame(
+  Covariate = rownames(zph_os_df),
+  Chi_sq_OS = round(zph_os_df$chisq, 2),
+  P_OS = format_pvalue(zph_os_df$p),
+  Chi_sq_PFS = round(zph_pfs_df$chisq, 2),
+  P_PFS = format_pvalue(zph_pfs_df$p)
+)
+
+schoenfeld_df %>%
+  kable(col.names = c("Covariate", "χ² (OS)", "p-value", "χ² (PFS)", "p-value"),
+        caption = "Schoenfeld Residual Test for Proportional Hazards Assumption",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  row_spec(nrow(schoenfeld_df), bold = TRUE)
+```
+
+**Note:** GLOBAL is the omnibus test for all covariates. Individual covariate tests help identify specific PH violations.
+
+## Log-Log Survival Plots
+
+```{r loglog-plots, fig.height=8, fig.width=10}
+# Create log-log plots by treatment arm
+p1 <- create_loglog_plot(data_complete, "OSwk", "Death", "Rx",
+                         "Overall Survival by Treatment")
+p2 <- create_loglog_plot(data_complete, "PFSwk", "Progression", "Rx",
+                         "Progression-Free Survival by Treatment")
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+```
+
+**Interpretation:** Approximately parallel lines on the log-log plot support the proportional hazards assumption. Crossing or converging lines suggest time-varying effects.
+
+\newpage
+
+# Primary Analysis: Firth-Corrected Cox Models
+
+```{r fit-all-models, include=FALSE}
+# =============================================================================
+# FIT ALL FIRTH-CORRECTED COX MODELS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Type A: All-in-One (all biomarkers, all interactions)
+# -----------------------------------------------------------------------------
+formula_A_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num +
+                                    crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx
+formula_A_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num +
+                                            crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx
+
+model_A_os <- fit_firth_cox(formula_A_os, data_complete, "Model A OS")
+model_A_pfs <- fit_firth_cox(formula_A_pfs, data_complete, "Model A PFS")
+
+# -----------------------------------------------------------------------------
+# Model Type B: Focused Models (all biomarkers, one interaction each)
+# -----------------------------------------------------------------------------
+
+# CRP focus
+formula_B_crp_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + crp_num:Rx
+formula_B_crp_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + crp_num:Rx
+
+model_B_crp_os <- fit_firth_cox(formula_B_crp_os, data_complete, "Model B CRP OS")
+model_B_crp_pfs <- fit_firth_cox(formula_B_crp_pfs, data_complete, "Model B CRP PFS")
+
+# TLR focus
+formula_B_tlr_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tlr_num:Rx
+formula_B_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tlr_num:Rx
+
+model_B_tlr_os <- fit_firth_cox(formula_B_tlr_os, data_complete, "Model B TLR OS")
+model_B_tlr_pfs <- fit_firth_cox(formula_B_tlr_pfs, data_complete, "Model B TLR PFS")
+
+# TMB/BRAF focus
+formula_B_tmb_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tmb_braf_num:Rx
+formula_B_tmb_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tmb_braf_num:Rx
+
+model_B_tmb_os <- fit_firth_cox(formula_B_tmb_os, data_complete, "Model B TMB OS")
+model_B_tmb_pfs <- fit_firth_cox(formula_B_tmb_pfs, data_complete, "Model B TMB PFS")
+
+# -----------------------------------------------------------------------------
+# Model Type C: Single-Biomarker Models (one biomarker + interaction)
+# -----------------------------------------------------------------------------
+
+# CRP only
+formula_C_crp_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + crp_num:Rx
+formula_C_crp_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + crp_num:Rx
+
+model_C_crp_os <- fit_firth_cox(formula_C_crp_os, data_complete, "Model C CRP OS")
+model_C_crp_pfs <- fit_firth_cox(formula_C_crp_pfs, data_complete, "Model C CRP PFS")
+
+# TLR only
+formula_C_tlr_os <- Surv(OSwk, Death) ~ Age + sex + Rx + tlr_num + tlr_num:Rx
+formula_C_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr_num + tlr_num:Rx
+
+model_C_tlr_os <- fit_firth_cox(formula_C_tlr_os, data_complete, "Model C TLR OS")
+model_C_tlr_pfs <- fit_firth_cox(formula_C_tlr_pfs, data_complete, "Model C TLR PFS")
+
+# TMB/BRAF only
+formula_C_tmb_os <- Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf_num + tmb_braf_num:Rx
+formula_C_tmb_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf_num + tmb_braf_num:Rx
+
+model_C_tmb_os <- fit_firth_cox(formula_C_tmb_os, data_complete, "Model C TMB OS")
+model_C_tmb_pfs <- fit_firth_cox(formula_C_tmb_pfs, data_complete, "Model C TMB PFS")
+```
+
+```{r plrt-tests, include=FALSE}
+# =============================================================================
+# PENALIZED LIKELIHOOD RATIO TESTS FOR INTERACTIONS
+# =============================================================================
+
+# Model A interaction tests
+plrt_A_crp_os <- test_interaction_plrt(formula_A_os, data_complete, "crp_num:Rx")
+plrt_A_tlr_os <- test_interaction_plrt(formula_A_os, data_complete, "tlr_num:Rx")
+plrt_A_tmb_os <- test_interaction_plrt(formula_A_os, data_complete, "tmb_braf_num:Rx")
+
+plrt_A_crp_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "crp_num:Rx")
+plrt_A_tlr_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "tlr_num:Rx")
+plrt_A_tmb_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "tmb_braf_num:Rx")
+
+# Model B interaction tests (one per model)
+plrt_B_crp_os <- test_interaction_plrt(formula_B_crp_os, data_complete, "crp_num:Rx")
+plrt_B_tlr_os <- test_interaction_plrt(formula_B_tlr_os, data_complete, "tlr_num:Rx")
+plrt_B_tmb_os <- test_interaction_plrt(formula_B_tmb_os, data_complete, "tmb_braf_num:Rx")
+
+plrt_B_crp_pfs <- test_interaction_plrt(formula_B_crp_pfs, data_complete, "crp_num:Rx")
+plrt_B_tlr_pfs <- test_interaction_plrt(formula_B_tlr_pfs, data_complete, "tlr_num:Rx")
+plrt_B_tmb_pfs <- test_interaction_plrt(formula_B_tmb_pfs, data_complete, "tmb_braf_num:Rx")
+
+# Model C interaction tests
+plrt_C_crp_os <- test_interaction_plrt(formula_C_crp_os, data_complete, "crp_num:Rx")
+plrt_C_tlr_os <- test_interaction_plrt(formula_C_tlr_os, data_complete, "tlr_num:Rx")
+plrt_C_tmb_os <- test_interaction_plrt(formula_C_tmb_os, data_complete, "tmb_braf_num:Rx")
+
+plrt_C_crp_pfs <- test_interaction_plrt(formula_C_crp_pfs, data_complete, "crp_num:Rx")
+plrt_C_tlr_pfs <- test_interaction_plrt(formula_C_tlr_pfs, data_complete, "tlr_num:Rx")
+plrt_C_tmb_pfs <- test_interaction_plrt(formula_C_tmb_pfs, data_complete, "tmb_braf_num:Rx")
+
+# Collect all p-values for BH correction (using Model A as primary)
+all_pvalues <- c(
+  plrt_A_crp_os$p_value, plrt_A_tlr_os$p_value, plrt_A_tmb_os$p_value,
+  plrt_A_crp_pfs$p_value, plrt_A_tlr_pfs$p_value, plrt_A_tmb_pfs$p_value
+)
+
+# Apply BH correction
+bh_adjusted <- apply_bh_correction(all_pvalues)
+names(bh_adjusted) <- c("CRP_OS", "TLR_OS", "TMB_OS", "CRP_PFS", "TLR_PFS", "TMB_PFS")
+```
+
+```{r extract-results, include=FALSE}
+# =============================================================================
+# EXTRACT RESULTS FROM ALL MODELS
+# =============================================================================
+
+results_A_os <- extract_coxphf_results(model_A_os)
+results_A_pfs <- extract_coxphf_results(model_A_pfs)
+
+results_B_crp_os <- extract_coxphf_results(model_B_crp_os)
+results_B_crp_pfs <- extract_coxphf_results(model_B_crp_pfs)
+results_B_tlr_os <- extract_coxphf_results(model_B_tlr_os)
+results_B_tlr_pfs <- extract_coxphf_results(model_B_tlr_pfs)
+results_B_tmb_os <- extract_coxphf_results(model_B_tmb_os)
+results_B_tmb_pfs <- extract_coxphf_results(model_B_tmb_pfs)
+
+results_C_crp_os <- extract_coxphf_results(model_C_crp_os)
+results_C_crp_pfs <- extract_coxphf_results(model_C_crp_pfs)
+results_C_tlr_os <- extract_coxphf_results(model_C_tlr_os)
+results_C_tlr_pfs <- extract_coxphf_results(model_C_tlr_pfs)
+results_C_tmb_os <- extract_coxphf_results(model_C_tmb_os)
+results_C_tmb_pfs <- extract_coxphf_results(model_C_tmb_pfs)
+```
+
+## Model Type A: All-in-One Model
+
+This model includes all three biomarkers as main effects and all three treatment-biomarker interactions simultaneously.
+
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx + tlr:Rx + tmb_braf:Rx`
+
+### Overall Survival (Model A)
+
+```{r table-A-os}
+if (!is.null(results_A_os)) {
+  # Add PLRT p-values for interaction terms
+  results_A_os$PLRT_p <- NA
+  results_A_os$BH_adj_p <- NA
+
+  # Match interaction terms
+  crp_idx <- grep("crp_num.*Rx|Rx.*crp_num", results_A_os$Term)
+  tlr_idx <- grep("tlr_num.*Rx|Rx.*tlr_num", results_A_os$Term)
+  tmb_idx <- grep("tmb_braf_num.*Rx|Rx.*tmb_braf_num", results_A_os$Term)
+
+  if (length(crp_idx) > 0) {
+    results_A_os$PLRT_p[crp_idx] <- plrt_A_crp_os$p_value
+    results_A_os$BH_adj_p[crp_idx] <- bh_adjusted["CRP_OS"]
+  }
+  if (length(tlr_idx) > 0) {
+    results_A_os$PLRT_p[tlr_idx] <- plrt_A_tlr_os$p_value
+    results_A_os$BH_adj_p[tlr_idx] <- bh_adjusted["TLR_OS"]
+  }
+  if (length(tmb_idx) > 0) {
+    results_A_os$PLRT_p[tmb_idx] <- plrt_A_tmb_os$p_value
+    results_A_os$BH_adj_p[tmb_idx] <- bh_adjusted["TMB_OS"]
+  }
+
+  # Format for display
+  display_A_os <- results_A_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      PLRT_p = format_pvalue(PLRT_p),
+      BH_adj_p = format_pvalue(BH_adj_p)
+    ) %>%
+    select(Term, HR_CI, PLRT_p, BH_adj_p)
+
+  display_A_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value", "BH-adjusted p"),
+          caption = "Model A Overall Survival - Full Coefficient Table",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
+    pack_rows("Treatment × Biomarker Interactions", 1, 3, bold = TRUE) %>%
+    pack_rows("Main Effects and Covariates", 4, nrow(display_A_os), bold = TRUE)
 }
 ```
 
-```{r create-tables, include=FALSE}
-# Create data frame for Table 1: Overall outcomes with subgroups
-overall_outcomes <- data.frame(
-  Strategy = c(
-    "Control (FLOX alone)", 
-    "CRP-guided (overall)", 
-    "  CRP-positive (Rx=1)",
-    "  CRP-negative (Rx=0)",
-    "TLR-guided (overall)",
-    "  TLR-positive (Rx=1)",
-    "  TLR-negative (Rx=0)",
-    "TMB/BRAF-guided (overall)",
-    "  TMB/BRAF-positive (Rx=1)",
-    "  TMB/BRAF-negative (Rx=0)"
+### Progression-Free Survival (Model A)
+
+```{r table-A-pfs}
+if (!is.null(results_A_pfs)) {
+  # Add PLRT p-values for interaction terms
+  results_A_pfs$PLRT_p <- NA
+  results_A_pfs$BH_adj_p <- NA
+
+  crp_idx <- grep("crp_num.*Rx|Rx.*crp_num", results_A_pfs$Term)
+  tlr_idx <- grep("tlr_num.*Rx|Rx.*tlr_num", results_A_pfs$Term)
+  tmb_idx <- grep("tmb_braf_num.*Rx|Rx.*tmb_braf_num", results_A_pfs$Term)
+
+  if (length(crp_idx) > 0) {
+    results_A_pfs$PLRT_p[crp_idx] <- plrt_A_crp_pfs$p_value
+    results_A_pfs$BH_adj_p[crp_idx] <- bh_adjusted["CRP_PFS"]
+  }
+  if (length(tlr_idx) > 0) {
+    results_A_pfs$PLRT_p[tlr_idx] <- plrt_A_tlr_pfs$p_value
+    results_A_pfs$BH_adj_p[tlr_idx] <- bh_adjusted["TLR_PFS"]
+  }
+  if (length(tmb_idx) > 0) {
+    results_A_pfs$PLRT_p[tmb_idx] <- plrt_A_tmb_pfs$p_value
+    results_A_pfs$BH_adj_p[tmb_idx] <- bh_adjusted["TMB_PFS"]
+  }
+
+  display_A_pfs <- results_A_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      PLRT_p = format_pvalue(PLRT_p),
+      BH_adj_p = format_pvalue(BH_adj_p)
+    ) %>%
+    select(Term, HR_CI, PLRT_p, BH_adj_p)
+
+  display_A_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value", "BH-adjusted p"),
+          caption = "Model A Progression-Free Survival - Full Coefficient Table",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
+    pack_rows("Treatment × Biomarker Interactions", 1, 3, bold = TRUE) %>%
+    pack_rows("Main Effects and Covariates", 4, nrow(display_A_pfs), bold = TRUE)
+}
+```
+
+\newpage
+
+## Model B: Focused Models
+
+These models include all three biomarkers as main effects but only ONE treatment-biomarker interaction per model. This approach tests each interaction while controlling for all biomarkers.
+
+```{r table-B-summary}
+# Extract interaction HRs from Model B
+get_interaction_hr <- function(results_df, pattern) {
+  if (is.null(results_df)) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
+  idx <- grep(pattern, results_df$Term)
+  if (length(idx) == 0) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
+  list(HR = results_df$HR[idx[1]],
+       CI_Lower = results_df$CI_Lower[idx[1]],
+       CI_Upper = results_df$CI_Upper[idx[1]])
+}
+
+# OS results
+hr_B_crp_os <- get_interaction_hr(results_B_crp_os, "crp_num.*Rx|Rx.*crp_num")
+hr_B_tlr_os <- get_interaction_hr(results_B_tlr_os, "tlr_num.*Rx|Rx.*tlr_num")
+hr_B_tmb_os <- get_interaction_hr(results_B_tmb_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+# PFS results
+hr_B_crp_pfs <- get_interaction_hr(results_B_crp_pfs, "crp_num.*Rx|Rx.*crp_num")
+hr_B_tlr_pfs <- get_interaction_hr(results_B_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
+hr_B_tmb_pfs <- get_interaction_hr(results_B_tmb_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+model_B_summary <- data.frame(
+  Biomarker = c("CRP × Treatment", "TLR × Treatment", "TMB/BRAF × Treatment"),
+  HR_OS = c(
+    format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
+    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
+    format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
   ),
-  Median_PFS = c(
-    median_pfs_control_mo, 
-    median_pfs_crp_mo, 
-    median_pfs_crp_pos_mo,
-    median_pfs_crp_neg_mo,
-    median_pfs_tlr_mo,
-    median_pfs_tlr_pos_mo,
-    median_pfs_tlr_neg_mo,
-    median_pfs_tmb_braf_mo,
-    median_pfs_tmb_pos_mo,
-    median_pfs_tmb_neg_mo
+  P_OS = c(
+    format_pvalue(plrt_B_crp_os$p_value),
+    format_pvalue(plrt_B_tlr_os$p_value),
+    format_pvalue(plrt_B_tmb_os$p_value)
   ),
-  Median_OS = c(
-    median_os_control_mo, 
-    median_os_crp_mo, 
-    median_os_crp_pos_mo,
-    median_os_crp_neg_mo,
-    median_os_tlr_mo,
-    median_os_tlr_pos_mo,
-    median_os_tlr_neg_mo,
-    median_os_tmb_braf_mo,
-    median_os_tmb_pos_mo,
-    median_os_tmb_neg_mo
+  HR_PFS = c(
+    format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
+    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
   ),
-  Mean_LY = c(
-    ly_control, 
-    ly_crp, 
-    ly_crp_pos,
-    ly_crp_neg,
-    ly_tlr,
-    ly_tlr_pos,
-    ly_tlr_neg,
-    ly_tmb_braf,
-    ly_tmb_pos,
-    ly_tmb_neg
-  ),
-  Mean_QALY = c(
-    qaly_control, 
-    qaly_crp, 
-    qaly_crp_pos,
-    qaly_crp_neg,
-    qaly_tlr,
-    qaly_tlr_pos,
-    qaly_tlr_neg,
-    qaly_tmb_braf,
-    qaly_tmb_pos,
-    qaly_tmb_neg
+  P_PFS = c(
+    format_pvalue(plrt_B_crp_pfs$p_value),
+    format_pvalue(plrt_B_tlr_pfs$p_value),
+    format_pvalue(plrt_B_tmb_pfs$p_value)
   )
 )
 
-# Create data frame for Table 2: PFS hazard ratios
-pfs_hr_table <- data.frame(
-  Strategy = c("Control (FLOX alone)", 
-               "CRP-guided: Biomarker-positive (Rx=1)", 
-               "CRP-guided: Biomarker-negative (Rx=0)",
-               "TLR-guided: Biomarker-positive (Rx=1)",
-               "TLR-guided: Biomarker-negative (Rx=0)",
-               "TMB/BRAF-guided: Biomarker-positive (Rx=1)",
-               "TMB/BRAF-guided: Biomarker-negative (Rx=0)"),
-  HR_PFS = c("Reference",
-             format_hr_ci(hr_pfs_crp$positive),
-             format_hr_ci(hr_pfs_crp$negative),
-             format_hr_ci(hr_pfs_tlr$positive),
-             format_hr_ci(hr_pfs_tlr$negative),
-             format_hr_ci(hr_pfs_tmb$positive),
-             format_hr_ci(hr_pfs_tmb$negative))
-)
-
-# Create data frame for Table 3: OS hazard ratios
-os_hr_table <- data.frame(
-  Strategy = c("Control (FLOX alone)", 
-               "CRP-guided: Biomarker-positive (Rx=1)", 
-               "CRP-guided: Biomarker-negative (Rx=0)",
-               "TLR-guided: Biomarker-positive (Rx=1)",
-               "TLR-guided: Biomarker-negative (Rx=0)",
-               "TMB/BRAF-guided: Biomarker-positive (Rx=1)",
-               "TMB/BRAF-guided: Biomarker-negative (Rx=0)"),
-  HR_OS = c("Reference",
-            format_hr_ci(hr_os_crp$positive),
-            format_hr_ci(hr_os_crp$negative),
-            format_hr_ci(hr_os_tlr$positive),
-            format_hr_ci(hr_os_tlr$negative),
-            format_hr_ci(hr_os_tmb$positive),
-            format_hr_ci(hr_os_tmb$negative))
-)
+model_B_summary %>%
+  kable(col.names = c("Interaction Term", "HR (95% CI)", "PLRT p", "HR (95% CI)", "PLRT p"),
+        caption = "Model B: Focused Models - Treatment × Biomarker Interaction Summary",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  add_header_above(c(" " = 1, "Overall Survival" = 2, "Progression-Free Survival" = 2))
 ```
 
-## Clinical Effectiveness Summary
+**Note:** Each row represents a separate model with all biomarkers as main effects but only the specified interaction.
 
-### Table 1: Overall Survival and Quality-Adjusted Outcomes by Strategy and Biomarker Subgroup
+### Full Coefficient Tables
 
-```{r table1-overall}
-overall_outcomes %>%
-  kable(
-    col.names = c(
-      "Strategy and Subgroup",
-      "Median PFS (months)",
-      "Median OS (months)",
-      "Mean Life Years",
-      "Mean QALYs"
-    ),
-    digits = 2,
-    caption = "Clinical Effectiveness Results (Undiscounted)",
-    booktabs = TRUE,
-    format = "latex"
-  ) %>%
-  kable_styling(
-    latex_options = c("hold_position", "scale_down"),
-    font_size = 9
-  ) %>%
-  column_spec(1, width = "5cm") %>%
-  column_spec(2:5, width = "2.2cm") %>%
-  pack_rows("Standard of Care", 1, 1, bold = TRUE) %>%
-  pack_rows("CRP-guided Strategy", 2, 4, bold = TRUE) %>%
-  pack_rows("TLR-guided Strategy", 5, 7, bold = TRUE) %>%
-  pack_rows("TMB/BRAF-guided Strategy", 8, 10, bold = TRUE)
+```{r table-B-crp-os}
+if (!is.null(results_B_crp_os)) {
+  display_B_crp_os <- results_B_crp_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_crp_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B CRP-Focused: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
 ```
 
-**Note:** All outcomes are undiscounted (discount rate = 0%). All results are derived from parametric survival models. Overall strategy outcomes are weighted by biomarker prevalence. Subgroup QALYs are calculated from the health economic model accounting for time in progression-free and progressed health states with different utility weights. Rx=1 indicates treatment with alternating FLOX/nivolumab; Rx=0 indicates FLOX alone (standard of care).
+```{r table-B-crp-pfs}
+if (!is.null(results_B_crp_pfs)) {
+  display_B_crp_pfs <- results_B_crp_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_crp_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B CRP-Focused: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-B-tlr-os}
+if (!is.null(results_B_tlr_os)) {
+  display_B_tlr_os <- results_B_tlr_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_tlr_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B TLR-Focused: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-B-tlr-pfs}
+if (!is.null(results_B_tlr_pfs)) {
+  display_B_tlr_pfs <- results_B_tlr_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_tlr_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B TLR-Focused: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-B-tmb-os}
+if (!is.null(results_B_tmb_os)) {
+  display_B_tmb_os <- results_B_tmb_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_tmb_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B TMB/BRAF-Focused: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-B-tmb-pfs}
+if (!is.null(results_B_tmb_pfs)) {
+  display_B_tmb_pfs <- results_B_tmb_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_B_tmb_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model B TMB/BRAF-Focused: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
 
 \newpage
 
-### Table 2: Hazard Ratios for Progression-Free Survival by Biomarker Status
+## Model C: Single-Biomarker Models
 
-```{r table2-pfs-hr}
-pfs_hr_table %>%
-  kable(
-    col.names = c(
-      "Strategy and Biomarker Subgroup",
-      "HR for PFS (95% CI)"
-    ),
-    caption = "Hazard Ratios for Progression-Free Survival by Biomarker Status",
-    booktabs = TRUE,
-    format = "latex"
-  ) %>%
-  kable_styling(
-    latex_options = c("hold_position"),
-    font_size = 10
-  ) %>%
-  column_spec(1, width = "8cm") %>%
-  column_spec(2, width = "4cm") %>%
-  pack_rows("Standard of Care", 1, 1) %>%
-  pack_rows("CRP-guided Strategy", 2, 3) %>%
-  pack_rows("TLR-guided Strategy", 4, 5) %>%
-  pack_rows("TMB/BRAF-guided Strategy", 6, 7)
+These models include only ONE biomarker and its treatment interaction. This is the simplest specification but does not control for other biomarkers.
+
+```{r table-C-summary}
+# Extract interaction HRs from Model C
+hr_C_crp_os <- get_interaction_hr(results_C_crp_os, "crp_num.*Rx|Rx.*crp_num")
+hr_C_tlr_os <- get_interaction_hr(results_C_tlr_os, "tlr_num.*Rx|Rx.*tlr_num")
+hr_C_tmb_os <- get_interaction_hr(results_C_tmb_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+hr_C_crp_pfs <- get_interaction_hr(results_C_crp_pfs, "crp_num.*Rx|Rx.*crp_num")
+hr_C_tlr_pfs <- get_interaction_hr(results_C_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
+hr_C_tmb_pfs <- get_interaction_hr(results_C_tmb_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+model_C_summary <- data.frame(
+  Biomarker = c("CRP × Treatment", "TLR × Treatment", "TMB/BRAF × Treatment"),
+  HR_OS = c(
+    format_hr_ci(hr_C_crp_os$HR, hr_C_crp_os$CI_Lower, hr_C_crp_os$CI_Upper),
+    format_hr_ci(hr_C_tlr_os$HR, hr_C_tlr_os$CI_Lower, hr_C_tlr_os$CI_Upper),
+    format_hr_ci(hr_C_tmb_os$HR, hr_C_tmb_os$CI_Lower, hr_C_tmb_os$CI_Upper)
+  ),
+  P_OS = c(
+    format_pvalue(plrt_C_crp_os$p_value),
+    format_pvalue(plrt_C_tlr_os$p_value),
+    format_pvalue(plrt_C_tmb_os$p_value)
+  ),
+  HR_PFS = c(
+    format_hr_ci(hr_C_crp_pfs$HR, hr_C_crp_pfs$CI_Lower, hr_C_crp_pfs$CI_Upper),
+    format_hr_ci(hr_C_tlr_pfs$HR, hr_C_tlr_pfs$CI_Lower, hr_C_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_C_tmb_pfs$HR, hr_C_tmb_pfs$CI_Lower, hr_C_tmb_pfs$CI_Upper)
+  ),
+  P_PFS = c(
+    format_pvalue(plrt_C_crp_pfs$p_value),
+    format_pvalue(plrt_C_tlr_pfs$p_value),
+    format_pvalue(plrt_C_tmb_pfs$p_value)
+  )
+)
+
+model_C_summary %>%
+  kable(col.names = c("Interaction Term", "HR (95% CI)", "PLRT p", "HR (95% CI)", "PLRT p"),
+        caption = "Model C: Single-Biomarker Models - Treatment × Biomarker Interaction Summary",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  add_header_above(c(" " = 1, "Overall Survival" = 2, "Progression-Free Survival" = 2))
 ```
 
-**Note:** Hazard ratios compare each biomarker-defined treatment subgroup to all patients receiving standard of care (Rx=0), pooled regardless of biomarker status, adjusted for age and sex. HR < 1 indicates better survival than pooled control group.
+**Note:** Each row represents a separate model with only that biomarker and its interaction (no other biomarkers included).
+
+### Full Coefficient Tables
+
+```{r table-C-crp-os}
+if (!is.null(results_C_crp_os)) {
+  display_C_crp_os <- results_C_crp_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_crp_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C CRP-Only: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-C-crp-pfs}
+if (!is.null(results_C_crp_pfs)) {
+  display_C_crp_pfs <- results_C_crp_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_crp_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C CRP-Only: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-C-tlr-os}
+if (!is.null(results_C_tlr_os)) {
+  display_C_tlr_os <- results_C_tlr_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_tlr_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C TLR-Only: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-C-tlr-pfs}
+if (!is.null(results_C_tlr_pfs)) {
+  display_C_tlr_pfs <- results_C_tlr_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_tlr_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C TLR-Only: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-C-tmb-os}
+if (!is.null(results_C_tmb_os)) {
+  display_C_tmb_os <- results_C_tmb_os %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_tmb_os %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C TMB/BRAF-Only: Overall Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+```{r table-C-tmb-pfs}
+if (!is.null(results_C_tmb_pfs)) {
+  display_C_tmb_pfs <- results_C_tmb_pfs %>%
+    mutate(
+      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
+      P = format_pvalue(P_Value)
+    ) %>%
+    select(Term, HR_CI, P)
+
+  display_C_tmb_pfs %>%
+    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
+          caption = "Model C TMB/BRAF-Only: Progression-Free Survival - Full Coefficients",
+          booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
 
 \newpage
 
-### Table 3: Hazard Ratios for Overall Survival by Biomarker Status
+# Model Comparison
 
-```{r table3-os-hr}
-os_hr_table %>%
-  kable(
-    col.names = c(
-      "Strategy and Biomarker Subgroup",
-      "HR for OS (95% CI)"
-    ),
-    caption = "Hazard Ratios for Overall Survival by Biomarker Status",
-    booktabs = TRUE,
-    format = "latex"
-  ) %>%
-  kable_styling(
-    latex_options = c("hold_position"),
-    font_size = 10
-  ) %>%
-  column_spec(1, width = "8cm") %>%
-  column_spec(2, width = "4cm") %>%
-  pack_rows("Standard of Care", 1, 1) %>%
-  pack_rows("CRP-guided Strategy", 2, 3) %>%
-  pack_rows("TLR-guided Strategy", 4, 5) %>%
-  pack_rows("TMB/BRAF-guided Strategy", 6, 7)
+## Summary: Interaction HRs Across Model Types
+
+```{r comparison-table-os}
+# Get Model A interaction HRs
+hr_A_crp_os <- get_interaction_hr(results_A_os, "crp_num.*Rx|Rx.*crp_num")
+hr_A_tlr_os <- get_interaction_hr(results_A_os, "tlr_num.*Rx|Rx.*tlr_num")
+hr_A_tmb_os <- get_interaction_hr(results_A_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+comparison_os <- data.frame(
+  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
+  Model_A = c(
+    format_hr_ci(hr_A_crp_os$HR, hr_A_crp_os$CI_Lower, hr_A_crp_os$CI_Upper),
+    format_hr_ci(hr_A_tlr_os$HR, hr_A_tlr_os$CI_Lower, hr_A_tlr_os$CI_Upper),
+    format_hr_ci(hr_A_tmb_os$HR, hr_A_tmb_os$CI_Lower, hr_A_tmb_os$CI_Upper)
+  ),
+  Model_B = c(
+    format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
+    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
+    format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
+  ),
+  Model_C = c(
+    format_hr_ci(hr_C_crp_os$HR, hr_C_crp_os$CI_Lower, hr_C_crp_os$CI_Upper),
+    format_hr_ci(hr_C_tlr_os$HR, hr_C_tlr_os$CI_Lower, hr_C_tlr_os$CI_Upper),
+    format_hr_ci(hr_C_tmb_os$HR, hr_C_tmb_os$CI_Lower, hr_C_tmb_os$CI_Upper)
+  )
+)
+
+comparison_os %>%
+  kable(col.names = c("Interaction", "Model A", "Model B", "Model C"),
+        caption = "Overall Survival: Treatment × Biomarker Interactions Across Model Types",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  footnote(general = "Model A: All-in-one; Model B: Focused; Model C: Single biomarker.",
+           footnote_as_chunk = TRUE)
 ```
 
-**Note:** Hazard ratios compare each biomarker-defined treatment subgroup to all patients receiving standard of care (Rx=0), pooled regardless of biomarker status, adjusted for age and sex. HR < 1 indicates better survival than pooled control group.
+```{r comparison-table-pfs}
+hr_A_crp_pfs <- get_interaction_hr(results_A_pfs, "crp_num.*Rx|Rx.*crp_num")
+hr_A_tlr_pfs <- get_interaction_hr(results_A_pfs, "tlr_num.*Rx|Rx.*tlr_num")
+hr_A_tmb_pfs <- get_interaction_hr(results_A_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+comparison_pfs <- data.frame(
+  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
+  Model_A = c(
+    format_hr_ci(hr_A_crp_pfs$HR, hr_A_crp_pfs$CI_Lower, hr_A_crp_pfs$CI_Upper),
+    format_hr_ci(hr_A_tlr_pfs$HR, hr_A_tlr_pfs$CI_Lower, hr_A_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_A_tmb_pfs$HR, hr_A_tmb_pfs$CI_Lower, hr_A_tmb_pfs$CI_Upper)
+  ),
+  Model_B = c(
+    format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
+    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
+  ),
+  Model_C = c(
+    format_hr_ci(hr_C_crp_pfs$HR, hr_C_crp_pfs$CI_Lower, hr_C_crp_pfs$CI_Upper),
+    format_hr_ci(hr_C_tlr_pfs$HR, hr_C_tlr_pfs$CI_Lower, hr_C_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_C_tmb_pfs$HR, hr_C_tmb_pfs$CI_Lower, hr_C_tmb_pfs$CI_Upper)
+  )
+)
+
+comparison_pfs %>%
+  kable(col.names = c("Interaction", "Model A", "Model B", "Model C"),
+        caption = "Progression-Free Survival: Treatment × Biomarker Interactions Across Model Types",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  footnote(general = "Model A: All-in-one; Model B: Focused; Model C: Single biomarker.",
+           footnote_as_chunk = TRUE)
+```
+
+\newpage
+
+## Forest Plots
+
+```{r forest-plot-os, fig.height=5, fig.width=9}
+# Prepare data for forest plot - OS
+forest_data_os <- data.frame(
+  Biomarker = rep(c("CRP", "TLR", "TMB/BRAF"), 3),
+  Model = rep(c("A: All-in-One", "B: Focused", "C: Single"), each = 3),
+  HR = c(
+    hr_A_crp_os$HR, hr_A_tlr_os$HR, hr_A_tmb_os$HR,
+    hr_B_crp_os$HR, hr_B_tlr_os$HR, hr_B_tmb_os$HR,
+    hr_C_crp_os$HR, hr_C_tlr_os$HR, hr_C_tmb_os$HR
+  ),
+  CI_Lower = c(
+    hr_A_crp_os$CI_Lower, hr_A_tlr_os$CI_Lower, hr_A_tmb_os$CI_Lower,
+    hr_B_crp_os$CI_Lower, hr_B_tlr_os$CI_Lower, hr_B_tmb_os$CI_Lower,
+    hr_C_crp_os$CI_Lower, hr_C_tlr_os$CI_Lower, hr_C_tmb_os$CI_Lower
+  ),
+  CI_Upper = c(
+    hr_A_crp_os$CI_Upper, hr_A_tlr_os$CI_Upper, hr_A_tmb_os$CI_Upper,
+    hr_B_crp_os$CI_Upper, hr_B_tlr_os$CI_Upper, hr_B_tmb_os$CI_Upper,
+    hr_C_crp_os$CI_Upper, hr_C_tlr_os$CI_Upper, hr_C_tmb_os$CI_Upper
+  )
+)
+
+# Remove NA values
+forest_data_os <- forest_data_os[complete.cases(forest_data_os), ]
+
+if (nrow(forest_data_os) > 0) {
+  create_interaction_forest_plot(forest_data_os, "Overall Survival")
+}
+```
+
+```{r forest-plot-pfs, fig.height=5, fig.width=9}
+# Prepare data for forest plot - PFS
+forest_data_pfs <- data.frame(
+  Biomarker = rep(c("CRP", "TLR", "TMB/BRAF"), 3),
+  Model = rep(c("A: All-in-One", "B: Focused", "C: Single"), each = 3),
+  HR = c(
+    hr_A_crp_pfs$HR, hr_A_tlr_pfs$HR, hr_A_tmb_pfs$HR,
+    hr_B_crp_pfs$HR, hr_B_tlr_pfs$HR, hr_B_tmb_pfs$HR,
+    hr_C_crp_pfs$HR, hr_C_tlr_pfs$HR, hr_C_tmb_pfs$HR
+  ),
+  CI_Lower = c(
+    hr_A_crp_pfs$CI_Lower, hr_A_tlr_pfs$CI_Lower, hr_A_tmb_pfs$CI_Lower,
+    hr_B_crp_pfs$CI_Lower, hr_B_tlr_pfs$CI_Lower, hr_B_tmb_pfs$CI_Lower,
+    hr_C_crp_pfs$CI_Lower, hr_C_tlr_pfs$CI_Lower, hr_C_tmb_pfs$CI_Lower
+  ),
+  CI_Upper = c(
+    hr_A_crp_pfs$CI_Upper, hr_A_tlr_pfs$CI_Upper, hr_A_tmb_pfs$CI_Upper,
+    hr_B_crp_pfs$CI_Upper, hr_B_tlr_pfs$CI_Upper, hr_B_tmb_pfs$CI_Upper,
+    hr_C_crp_pfs$CI_Upper, hr_C_tlr_pfs$CI_Upper, hr_C_tmb_pfs$CI_Upper
+  )
+)
+
+forest_data_pfs <- forest_data_pfs[complete.cases(forest_data_pfs), ]
+
+if (nrow(forest_data_pfs) > 0) {
+  create_interaction_forest_plot(forest_data_pfs, "Progression-Free Survival")
+}
+```
+
+**Interpretation:** HR < 1 indicates that biomarker-positive patients derive greater benefit from experimental treatment (reduced hazard of death/progression). The dashed vertical line at HR = 1 represents no differential treatment effect by biomarker status.
+
+\newpage
+
+# Sensitivity Analysis: Ridge Regression
+
+Ridge regression (α = 0) shrinks coefficients toward zero but does not eliminate any, providing a sensitivity analysis for the stability of our interaction estimates.
+
+```{r ridge-regression, include=FALSE}
+# =============================================================================
+# RIDGE REGRESSION SENSITIVITY ANALYSIS
+# =============================================================================
+
+# Try survival::ridge() first, then fall back to glmnet
+
+# Approach 1: survival::ridge() within coxph
+# Note: ridge() in survival package applies ridge penalty to specified terms
+
+tryCatch({
+  # OS with ridge penalty on biomarker terms and interactions
+  ridge_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_os_success <- TRUE
+}, error = function(e) {
+  ridge_os_success <<- FALSE
+  ridge_os <<- NULL
+})
+
+tryCatch({
+  ridge_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_pfs_success <<- FALSE
+  ridge_pfs <<- NULL
+})
+
+# If ridge() fails, use glmnet
+if (!exists("ridge_os_success") || !ridge_os_success) {
+  # Fallback to glmnet
+  tryCatch({
+    # Create design matrix
+    X_os <- model.matrix(~ Age + sex + Rx_num + crp_num + tlr_num + tmb_braf_num +
+                           crp_num:Rx_num + tlr_num:Rx_num + tmb_braf_num:Rx_num - 1,
+                         data = data_complete)
+    y_os <- Surv(data_complete$OSwk, data_complete$Death)
+
+    cv_ridge_os <- cv.glmnet(X_os, y_os, family = "cox", alpha = 0, nfolds = 10)
+    ridge_coef_os <- coef(cv_ridge_os, s = "lambda.min")
+    ridge_os_glmnet <- TRUE
+  }, error = function(e) {
+    ridge_os_glmnet <<- FALSE
+  })
+} else {
+  ridge_os_glmnet <- FALSE
+}
+
+if (!exists("ridge_pfs_success") || !ridge_pfs_success) {
+  tryCatch({
+    X_pfs <- model.matrix(~ Age + sex + Rx_num + crp_num + tlr_num + tmb_braf_num +
+                            crp_num:Rx_num + tlr_num:Rx_num + tmb_braf_num:Rx_num - 1,
+                          data = data_complete)
+    y_pfs <- Surv(data_complete$PFSwk, data_complete$Progression)
+
+    cv_ridge_pfs <- cv.glmnet(X_pfs, y_pfs, family = "cox", alpha = 0, nfolds = 10)
+    ridge_coef_pfs <- coef(cv_ridge_pfs, s = "lambda.min")
+    ridge_pfs_glmnet <- TRUE
+  }, error = function(e) {
+    ridge_pfs_glmnet <<- FALSE
+  })
+} else {
+  ridge_pfs_glmnet <- FALSE
+}
+
+# Extract ridge results
+extract_ridge_interaction <- function(model_or_coef, term_pattern, is_glmnet = FALSE) {
+  if (is_glmnet) {
+    if (is.null(model_or_coef)) return(list(HR = NA, SE = NA))
+    coef_vec <- as.vector(model_or_coef)
+    names(coef_vec) <- rownames(model_or_coef)
+    idx <- grep(term_pattern, names(coef_vec))
+    if (length(idx) == 0) return(list(HR = NA, SE = NA))
+    return(list(HR = exp(coef_vec[idx[1]]), SE = NA))  # No SE from glmnet
+  } else {
+    if (is.null(model_or_coef)) return(list(HR = NA, SE = NA))
+    summ <- summary(model_or_coef)
+    coef_table <- summ$coefficients
+    idx <- grep(term_pattern, rownames(coef_table))
+    if (length(idx) == 0) return(list(HR = NA, SE = NA))
+    return(list(HR = exp(coef_table[idx[1], "coef"]),
+                SE = coef_table[idx[1], "se(coef)"]))
+  }
+}
+
+# Get ridge interaction estimates
+if (exists("ridge_os") && !is.null(ridge_os)) {
+  ridge_crp_os <- extract_ridge_interaction(ridge_os, "crp_num.*Rx|Rx.*crp_num")
+  ridge_tlr_os <- extract_ridge_interaction(ridge_os, "tlr_num.*Rx|Rx.*tlr_num")
+  ridge_tmb_os <- extract_ridge_interaction(ridge_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+} else if (exists("ridge_coef_os")) {
+  ridge_crp_os <- extract_ridge_interaction(ridge_coef_os, "crp_num.*Rx_num|Rx_num.*crp_num", TRUE)
+  ridge_tlr_os <- extract_ridge_interaction(ridge_coef_os, "tlr_num.*Rx_num|Rx_num.*tlr_num", TRUE)
+  ridge_tmb_os <- extract_ridge_interaction(ridge_coef_os, "tmb_braf_num.*Rx_num|Rx_num.*tmb_braf_num", TRUE)
+} else {
+  ridge_crp_os <- ridge_tlr_os <- ridge_tmb_os <- list(HR = NA, SE = NA)
+}
+
+if (exists("ridge_pfs") && !is.null(ridge_pfs)) {
+  ridge_crp_pfs <- extract_ridge_interaction(ridge_pfs, "crp_num.*Rx|Rx.*crp_num")
+  ridge_tlr_pfs <- extract_ridge_interaction(ridge_pfs, "tlr_num.*Rx|Rx.*tlr_num")
+  ridge_tmb_pfs <- extract_ridge_interaction(ridge_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+} else if (exists("ridge_coef_pfs")) {
+  ridge_crp_pfs <- extract_ridge_interaction(ridge_coef_pfs, "crp_num.*Rx_num|Rx_num.*crp_num", TRUE)
+  ridge_tlr_pfs <- extract_ridge_interaction(ridge_coef_pfs, "tlr_num.*Rx_num|Rx_num.*tlr_num", TRUE)
+  ridge_tmb_pfs <- extract_ridge_interaction(ridge_coef_pfs, "tmb_braf_num.*Rx_num|Rx_num.*tmb_braf_num", TRUE)
+} else {
+  ridge_crp_pfs <- ridge_tlr_pfs <- ridge_tmb_pfs <- list(HR = NA, SE = NA)
+}
+```
+
+```{r table-ridge-os}
+# Format ridge HR (with SE if available)
+format_ridge_hr <- function(hr, se) {
+  if (is.na(hr)) return("--")
+  if (is.na(se)) {
+    sprintf("%.2f*", hr)  # Asterisk indicates no SE available
+  } else {
+    sprintf("%.2f (SE: %.2f)", hr, se)
+  }
+}
+
+# Overall Survival comparison
+ridge_comparison_os <- data.frame(
+  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
+  Firth_HR = c(
+    format_hr_ci(hr_A_crp_os$HR, hr_A_crp_os$CI_Lower, hr_A_crp_os$CI_Upper),
+    format_hr_ci(hr_A_tlr_os$HR, hr_A_tlr_os$CI_Lower, hr_A_tlr_os$CI_Upper),
+    format_hr_ci(hr_A_tmb_os$HR, hr_A_tmb_os$CI_Lower, hr_A_tmb_os$CI_Upper)
+  ),
+  Ridge_HR = c(
+    format_ridge_hr(ridge_crp_os$HR, ridge_crp_os$SE),
+    format_ridge_hr(ridge_tlr_os$HR, ridge_tlr_os$SE),
+    format_ridge_hr(ridge_tmb_os$HR, ridge_tmb_os$SE)
+  )
+)
+
+ridge_comparison_os %>%
+  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
+        caption = "Overall Survival: Firth-Corrected vs Ridge Regression",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  footnote(general = "* Point estimate only (SE not available from glmnet).",
+           footnote_as_chunk = TRUE)
+```
+
+```{r table-ridge-pfs}
+# Progression-Free Survival comparison
+ridge_comparison_pfs <- data.frame(
+  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
+  Firth_HR = c(
+    format_hr_ci(hr_A_crp_pfs$HR, hr_A_crp_pfs$CI_Lower, hr_A_crp_pfs$CI_Upper),
+    format_hr_ci(hr_A_tlr_pfs$HR, hr_A_tlr_pfs$CI_Lower, hr_A_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_A_tmb_pfs$HR, hr_A_tmb_pfs$CI_Lower, hr_A_tmb_pfs$CI_Upper)
+  ),
+  Ridge_HR = c(
+    format_ridge_hr(ridge_crp_pfs$HR, ridge_crp_pfs$SE),
+    format_ridge_hr(ridge_tlr_pfs$HR, ridge_tlr_pfs$SE),
+    format_ridge_hr(ridge_tmb_pfs$HR, ridge_tmb_pfs$SE)
+  )
+)
+
+ridge_comparison_pfs %>%
+  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
+        caption = "Progression-Free Survival: Firth-Corrected vs Ridge Regression",
+        booktabs = TRUE, format = "latex") %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
+  footnote(general = "* Point estimate only (SE not available from glmnet).",
+           footnote_as_chunk = TRUE)
+```
+
+**Interpretation:** Ridge regression applies an L2 penalty that shrinks all coefficients toward zero (HR toward 1.0). Large differences between Firth and Ridge estimates (as may be observed for TLR × Rx) indicate that the interaction effect is sensitive to regularization, potentially reflecting limited data or collinearity with other predictors. When Firth estimates suggest strong effects (HR >> 1 or HR << 1) but Ridge shrinks toward 1.0, this indicates the estimate may be unstable. Similar estimates across methods would support robustness, but substantial shrinkage warrants caution in interpreting the magnitude of interaction effects.
+
+\newpage
+
+# Summary
+
+This analysis evaluated treatment effect heterogeneity across three candidate predictive biomarkers (CRP, TLR, TMB/BRAF) using Firth-corrected Cox regression with profile likelihood confidence intervals and penalized likelihood ratio tests.
+
+**Key findings:**
+
+1. **Model Robustness:** Treatment-biomarker interaction estimates were compared across three model specifications (all-in-one, focused, single-biomarker) to assess sensitivity to model structure.
+
+2. **Multiple Testing:** Benjamini-Hochberg correction was applied to control the false discovery rate across the 6 primary interaction tests (3 biomarkers × 2 outcomes).
+
+3. **Proportional Hazards:** The PH assumption was assessed using Schoenfeld residual tests and log-log survival plots.
+
+4. **Sensitivity Analysis:** Ridge regression provided an alternative estimate of interaction effects with coefficient shrinkage.
+
+**Methodological Note:** The use of Firth-corrected Cox regression addresses potential monotone likelihood issues and small sample bias. Profile likelihood-based confidence intervals and penalized likelihood ratio tests are more appropriate than Wald-based methods in this setting.
 
 ---
 
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report completed on:** `r Sys.Date()`
+**Repository:** ben-geisler/METIMMOX-1
+**Report version:** 2.0
+
+**Analysis packages:**
+
+- `coxphf` version `r packageVersion("coxphf")` (Firth-corrected Cox regression)
+- `survival` version `r packageVersion("survival")` (Cox regression, PH diagnostics)
+- `glmnet` version `r packageVersion("glmnet")` (Ridge regression fallback)
+- `vcd` version `r packageVersion("vcd")` (Biomarker correlation analysis)
