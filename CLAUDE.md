@@ -546,35 +546,63 @@ if (!exists("cea_results")) {
 
 ### Report Formatting Standards
 
-All Quarto reports must follow these YAML header and formatting conventions:
+All Quarto reports must follow these formatting conventions for consistency.
 
-**YAML Header Requirements**:
+**YAML Header Template** (complete example):
 ```yaml
-title: "Concise Description of Report Content"
+---
+title: "Clinical Effectiveness"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
-```
-
-**Footer Format**: All reports should include a standardized footer with:
-- Horizontal line separator
-- Completion date (uses system date)
-- Repository name: METIMMOX-1
-- Version identifier (when applicable)
-- All elements left-justified
-
-To implement in LaTeX-based PDF output, add to YAML header:
-```yaml
 format:
   pdf:
-    include-in-header:
-      text: |
-        \usepackage{fancyhdr}
-        \pagestyle{fancy}
-        \fancyfoot[L]{\rule{\textwidth}{0.4pt}\\ Completed: \today \\ METIMMOX-1}
-        \fancyfoot[C]{}
-        \fancyfoot[R]{}
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
 ```
+
+**Title conventions**:
+- **Title**: Simple, descriptive name matching the report content (e.g., "Clinical Effectiveness", "Cost-Effectiveness Analysis", "Input Parameters")
+- **Subtitle**: Always "METIMMOX-1 Economic Evaluation"
+- **No fancy LaTeX headers**: Do not use `include-in-header` with fancyhdr or custom footers
+
+**Report signature** (at the very end of the document):
+```markdown
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** X.X
+```
+
+Key points for the signature:
+- Horizontal rule (`---`) as separator before the signature
+- Three lines: completion date, repository, version
+- Use backslash (`\`) at end of each line for proper line breaks in PDF
+- Left-justified (default markdown alignment)
+- No trailing content after the signature
+
+**Special characters**: Avoid Unicode Greek letters (e.g., α, β, λ) in text that will render to PDF. Instead, spell out the word (e.g., "alpha = 0" instead of "α = 0") or use LaTeX math mode (`$\alpha$`) if mathematical formatting is needed.
 
 ### Key Quarto Report Features
 
