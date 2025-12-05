@@ -1,6 +1,6 @@
 ---
-title: "METIMMOX-1 Clinical Effectiveness Analysis Report"
-subtitle: "Biomarker-Guided Strategies - Firth-Corrected Cox Regression"
+title: "Clinical Effectiveness"
+subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -19,15 +19,6 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
-    include-in-header:
-      text: |
-        \usepackage{fancyhdr}
-        \pagestyle{fancy}
-        \fancyhead{}
-        \renewcommand{\headrulewidth}{0pt}
-        \fancyfoot[L]{\rule{\textwidth}{0.4pt}\\ Report Version 2.0 | Completed: \today | METIMMOX-1}
-        \fancyfoot[C]{}
-        \fancyfoot[R]{\thepage}
 execute:
   echo: false
   warning: false
@@ -327,6 +318,15 @@ We compare three model structures to assess the robustness of treatment-biomarke
 
 # Methodological Notes
 
+## Software Packages
+
+This analysis uses the following R packages:
+
+- `coxphf` version `r packageVersion("coxphf")`: Firth-corrected Cox regression with profile likelihood CIs
+- `survival` version `r packageVersion("survival")`: Cox regression and Schoenfeld residual diagnostics
+- `glmnet` version `r packageVersion("glmnet")`: Ridge regression sensitivity analysis
+- `vcd` version `r packageVersion("vcd")`: Cramér's V for biomarker correlation assessment
+
 ## Firth-Corrected Cox Regression
 
 We use Firth's penalized maximum likelihood method for Cox regression, which addresses:
@@ -335,23 +335,37 @@ We use Firth's penalized maximum likelihood method for Cox regression, which add
 2. **Small sample bias**: Reduces bias in coefficient estimates with sparse data
 3. **Unstable confidence intervals**: Profile likelihood CIs are more reliable than Wald-based CIs in small samples
 
-Statistical inference is based on **penalized likelihood ratio tests** (PLRT), which are more appropriate than Wald tests for testing treatment-biomarker interactions in this setting.
+Statistical inference is based on **penalized likelihood ratio tests (PLRT)**, which are more appropriate than Wald tests for testing treatment-biomarker interactions in this setting.
 
-## Why Not LASSO or Elastic Net
+## Ridge Regression Sensitivity Analysis
 
-We considered LASSO and elastic net penalized regression but determined they are **not appropriate** for this analysis:
+We use Ridge regression as a sensitivity analysis to assess the stability of our interaction estimates. Ridge regression (also called L2-penalized regression or Tikhonov regularization) belongs to the family of regularized or penalized regression methods. In survival analysis, this is implemented as a penalized Cox model.
 
-1. **Correlated biomarkers**: Our biomarkers show significant correlation (Cramér's V reported below). LASSO arbitrarily selects one of correlated predictors while setting others to zero, which does not reflect the clinical question of comparing ALL biomarker strategies.
+**How Ridge regression works:**
+
+- Ridge adds a penalty term that discourages large coefficients. The bigger a coefficient tries to get, the more the model resists, pulling estimates toward zero (HR toward 1.0).
+- Unlike LASSO (alpha = 1), which sets some coefficients exactly to zero and performs variable selection, Ridge (alpha = 0) shrinks all coefficients but retains all predictors.
+- The degree of shrinkage is controlled by the tuning parameter lambda, which is selected via **cross-validation (CV)**: the data are repeatedly split into training and validation sets, and the lambda that produces the best predictive performance is chosen.
+
+**Why not LASSO or Elastic Net?**
+
+We determined that LASSO and elastic net are **not appropriate** for this analysis:
+
+1. **Correlated biomarkers**: LASSO arbitrarily selects one of correlated predictors while setting others to zero, which does not reflect the clinical question of comparing ALL biomarker strategies.
 
 2. **Hierarchy principle violation**: LASSO may select interaction terms (e.g., `crp:Rx`) while setting the main effect (`crp`) to zero, producing models that are difficult to interpret clinically.
 
 3. **Clinical objective**: Our goal is to estimate treatment effect heterogeneity across ALL biomarkers simultaneously, not to select a "winning" biomarker.
 
-**Elastic net** (α = 0.1-0.3) represents a compromise but does not fully address these concerns. Instead, we use **Ridge regression** (α = 0) as a sensitivity analysis, which shrinks but does not eliminate coefficients.
+Elastic net (alpha = 0.1–0.3) represents a compromise but does not fully address these concerns.
+
+**Interpreting Ridge results:**
+
+Ridge regression is not replacing the Firth estimates—it provides a reality check. When Ridge substantially shrinks an interaction coefficient toward zero while Firth estimates a large effect, this indicates the effect is too unstable to trust for practical use. The CV-selected lambda reflects how much regularization is needed for reasonable out-of-sample prediction given the sample size and collinearity structure.
 
 ## Multiple Testing Correction
 
-We apply the **Benjamini-Hochberg procedure** to control the false discovery rate (FDR) on the primary Firth analysis:
+We apply the **Benjamini-Hochberg (BH) procedure** to control the false discovery rate (FDR) on the primary Firth analysis:
 
 - 6 interaction tests: 3 biomarkers × 2 outcomes (OS, PFS)
 - Both raw PLRT p-values and BH-adjusted q-values are reported
@@ -403,7 +417,7 @@ correlation_df %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10)
 ```
 
-**Note:** Cramér's V interpretation: <0.1 = Negligible, 0.1-0.3 = Weak, >0.3 = Moderate/Strong. These correlations support our decision not to use LASSO, which would arbitrarily select among correlated biomarkers.
+**Note:** Cramér's V interpretation: <0.1 = Negligible, 0.1–0.3 = Weak, >0.3 = Moderate/Strong. The observed correlations are weak to negligible. While modest, any correlation among candidate biomarkers supports our decision not to use LASSO, which would arbitrarily select among correlated predictors.
 
 \newpage
 
@@ -763,6 +777,8 @@ model_B_summary %>%
 
 **Note:** Each row represents a separate model with all biomarkers as main effects but only the specified interaction.
 
+\newpage
+
 ### Full Coefficient Tables
 
 ```{r table-B-crp-os}
@@ -916,6 +932,8 @@ model_C_summary %>%
 ```
 
 **Note:** Each row represents a separate model with only that biomarker and its interaction (no other biomarkers included).
+
+\newpage
 
 ### Full Coefficient Tables
 
@@ -1163,7 +1181,7 @@ if (nrow(forest_data_pfs) > 0) {
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (α = 0) shrinks coefficients toward zero but does not eliminate any, providing a sensitivity analysis for the stability of our interaction estimates.
+Ridge regression (alpha = 0) shrinks coefficients toward zero but does not eliminate any, providing a sensitivity analysis for the stability of our interaction estimates.
 
 ```{r ridge-regression, include=FALSE}
 # =============================================================================
@@ -1353,27 +1371,25 @@ ridge_comparison_pfs %>%
 
 This analysis evaluated treatment effect heterogeneity across three candidate predictive biomarkers (CRP, TLR, TMB/BRAF) using Firth-corrected Cox regression with profile likelihood confidence intervals and penalized likelihood ratio tests.
 
-**Key findings:**
+**Key Findings:**
 
 1. **Model Robustness:** Treatment-biomarker interaction estimates were compared across three model specifications (all-in-one, focused, single-biomarker) to assess sensitivity to model structure.
 
 2. **Multiple Testing:** Benjamini-Hochberg correction was applied to control the false discovery rate across the 6 primary interaction tests (3 biomarkers × 2 outcomes).
 
-3. **Proportional Hazards:** The PH assumption was assessed using Schoenfeld residual tests and log-log survival plots.
+3. **Proportional Hazards:** The PH assumption was assessed using Schoenfeld residual tests and log-log survival plots. For overall survival, no significant PH violations were detected. For progression-free survival, significant violations were observed for TMB/BRAF main effect (p = 0.004) and TMB/BRAF × Rx interaction (p = 0.009), with the global test also significant (p = 0.004). These findings suggest time-varying effects for TMB/BRAF-related terms in PFS models, warranting caution in interpretation. The log-log plots show some crossing of survival curves for the treatment comparison, consistent with potential non-proportional hazards.
 
-4. **Sensitivity Analysis:** Ridge regression provided an alternative estimate of interaction effects with coefficient shrinkage.
+4. **Sensitivity Analysis (Ridge Regression):** Ridge regression provided an alternative estimate of interaction effects with coefficient shrinkage. The TLR × Rx interaction exhibited notable sensitivity to regularization: Firth estimated HR = 2.63 while Ridge (with CV-selected λ) shrunk this to HR ≈ 0.95. This discrepancy arises because:
+   - All TLR-negative patients (n = 24) experienced 100% mortality regardless of treatment, creating a reference group where treatment effects cannot be reliably estimated
+   - The wide Firth confidence interval (0.75–8.74) reflects substantial uncertainty
+   - Ridge's cross-validation selected high regularization (λ = 0.73) given the small sample size and multicollinearity, effectively concluding that this interaction effect cannot be reliably estimated for prediction purposes
+
+   Both methods are valid but answer different questions: Firth provides the best point estimate given the data structure, while Ridge prioritizes predictive stability. The substantial shrinkage for TLR × Rx indicates this estimate should be interpreted with caution.
 
 **Methodological Note:** The use of Firth-corrected Cox regression addresses potential monotone likelihood issues and small sample bias. Profile likelihood-based confidence intervals and penalized likelihood ratio tests are more appropriate than Wald-based methods in this setting.
 
 ---
 
-**Report completed on:** `r Sys.Date()`
-**Repository:** ben-geisler/METIMMOX-1
-**Report version:** 2.0
-
-**Analysis packages:**
-
-- `coxphf` version `r packageVersion("coxphf")` (Firth-corrected Cox regression)
-- `survival` version `r packageVersion("survival")` (Cox regression, PH diagnostics)
-- `glmnet` version `r packageVersion("glmnet")` (Ridge regression fallback)
-- `vcd` version `r packageVersion("vcd")` (Biomarker correlation analysis)
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 2.1
