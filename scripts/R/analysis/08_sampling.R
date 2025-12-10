@@ -437,6 +437,12 @@ cv_utilities <- 0.15  # 15% CV for utilities
 dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utilities))
 dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
 
+# Prevalence parameters - beta distributions (bounded between 0 and 1)
+cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
+dist_p_crp <- c(list(dist = "beta"), get_beta_params(l_params_base$p_crp, cv_prevalence))
+dist_p_tlr <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tlr, cv_prevalence))
+dist_p_tmb_braf <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tmb_braf, cv_prevalence))
+
 # Create comprehensive parameter distributions list
 # Note: Survival curves are NOT in this list - they come from bootstrap samples
 param_distributions <- list(
@@ -453,7 +459,12 @@ param_distributions <- list(
   
   # Utility parameters
   u_np = dist_u_np,
-  u_p = dist_u_p
+  u_p = dist_u_p,
+
+  # Prevalence parameters
+  p_crp = dist_p_crp,
+  p_tlr = dist_p_tlr,
+  p_tmb_braf = dist_p_tmb_braf
 )
 
 # ===============================================================================
