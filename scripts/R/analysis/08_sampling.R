@@ -467,6 +467,19 @@ param_distributions <- list(
   p_tmb_braf = dist_p_tmb_braf
 )
 
+# Parameter groups for sensitivity analysis (EVPPI)
+param_groups <- list(
+  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
+  test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
+  other_costs = c("c_other_visit", "c_other_baseline",
+                  "c_other_follow", "c_other_last"),
+  all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+                "c_test_NGS", "c_other_visit", "c_other_baseline",
+                "c_other_follow", "c_other_last"),
+  utilities = c("u_np", "u_p"),
+  prevalence = c("p_crp", "p_tlr", "p_tmb_braf")
+)
+
 # ===============================================================================
 # POPULATION AVERAGING FUNCTION FOR PSA (BIOMARKER STRATEGIES)
 # ===============================================================================

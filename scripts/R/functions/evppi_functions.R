@@ -164,13 +164,15 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
 }
 
 #' Run complete EVPPI analysis for all parameters
-#' 
+#'
 #' @param psa_obj PSA object from dampack
 #' @param psa_params Data frame with PSA parameter samples
 #' @param wtp Willingness-to-pay threshold
 #' @param evppi_params Vector of parameter names to analyze
-#' @return Data frame with EVPPI results for all parameters
-run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params) {
+#' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @return Data frame with EVPPI results for all parameters and groups
+run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
+                               param_groups = NULL) {
   
   # Calculate NMB and EVPI for diagnostics
   cost_matrix <- as.matrix(psa_obj$cost)
@@ -246,6 +248,45 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params) {
     # Sort results by EVPPI value (descending)
     evppi_results <- evppi_results[order(-evppi_results$evppi), ]
   }
-  
+
+  # Calculate EVPPI for parameter groups (if provided)
+  if (!is.null(param_groups) && length(param_groups) > 0) {
+    cat("\n=== Grouped Parameter EVPPI ===\n")
+
+    for (group_name in names(param_groups)) {
+      group_params <- param_groups[[group_name]]
+      # Filter to params with variation
+      group_params <- intersect(group_params, params_with_variation)
+
+      if (length(group_params) >= 2) {
+        cat("\nCalculating EVPPI for group:", group_name,
+            "(", paste(group_params, collapse = ", "), ")\n")
+
+        result <- calculate_evppi_improved(psa_obj, psa_params, group_params,
+                                           wtp = wtp, n_inner = 1000, n_grid = 100)
+
+        evppi_percent <- if (result$evpi > 0) {
+          (result$evppi / result$evpi) * 100
+        } else {
+          0
+        }
+
+        evppi_results <- rbind(evppi_results, data.frame(
+          parameter = paste0("[GROUP] ", group_name),
+          evppi = result$evppi,
+          evpi = result$evpi,
+          evppi_percent_of_evpi = evppi_percent,
+          n_combinations = if (is.null(result$n_combinations)) 0
+                           else result$n_combinations,
+          error = if (is.null(result$error)) "" else result$error,
+          stringsAsFactors = FALSE
+        ))
+
+        cat("EVPPI for group", group_name, ":", round(result$evppi, 4),
+            "(", round(evppi_percent, 1), "% of EVPI)\n")
+      }
+    }
+  }
+
   return(evppi_results)
 }

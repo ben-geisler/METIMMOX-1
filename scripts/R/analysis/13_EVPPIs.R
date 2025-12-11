@@ -69,12 +69,13 @@ evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
                   "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow",
                   "p_crp", "p_tlr", "p_tmb_braf")
 
-# Run EVPPI analysis
+# Run EVPPI analysis (param_groups defined in 08_sampling.R)
 evppi_results <- run_evppi_analysis(
   psa_obj = psa_obj,
   psa_params = psa_params,
   wtp = WTP,
-  evppi_params = evppi_params
+  evppi_params = evppi_params,
+  param_groups = param_groups
 )
 
 # ===============================================================================
