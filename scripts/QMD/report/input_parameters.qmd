@@ -1,6 +1,6 @@
 ---
 title: "Input Parameters"
-subtitle: "METIMMOX-1 Economic Evaluation"
+subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -182,17 +182,21 @@ utility_data <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Biomarker Prevalence Parameters
+# Biomarker Prevalence Parameters (varied in DSA and PSA per issue #75)
 biomarker_data <- data.frame(
   Parameter_Type = rep("Prevalence", 3),
   Parameter = c("CRP biomarker positive",
-               "TLR biomarker positive", 
+               "TLR biomarker positive",
                "TMB/BRAF biomarker positive"),
   Base_Case = c("30%",
                "25%",
                "20%"),
-  DSA_Range = rep("Not varied", 3),
-  PSA_Distribution = rep("Fixed", 3),
+  DSA_Range = c("24% - 36%",
+               "20% - 30%",
+               "16% - 24%"),
+  PSA_Distribution = c("Beta (CV=15%)",
+                      "Beta (CV=15%)",
+                      "Beta (CV=15%)"),
   stringsAsFactors = FALSE
 )
 
@@ -293,4 +297,4 @@ if (!is.null(psa_params) && is.data.frame(psa_params)) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 2.0

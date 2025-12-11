@@ -100,6 +100,20 @@ time_points_length <- length(time_points)
 strategies <- c("control", "crp", "tlr", "tmb_braf")
 biomarkers <- c("crp", "tlr", "tmb_braf")
 
+# Parameter groups for sensitivity analysis (from 08_sampling.R)
+# Define here for availability in fallback/mock data scenarios
+param_groups <- list(
+  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
+  test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
+  other_costs = c("c_other_visit", "c_other_baseline",
+                  "c_other_follow", "c_other_last"),
+  all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+                "c_test_NGS", "c_other_visit", "c_other_baseline",
+                "c_other_follow", "c_other_last"),
+  utilities = c("u_np", "u_p"),
+  prevalence = c("p_crp", "p_tlr", "p_tmb_braf")
+)
+
 # Create placeholder survival curves (exponential decay)
 # These would normally come from the survival analysis pipeline
 create_survival_curve <- function(median_survival, time_points) {
@@ -331,45 +345,90 @@ if (exists("calculate_outcomes")) {
 ```
 
 ```{r dsa-analysis, include=FALSE}
-# Check if DSA results already exist from a previous run
-if (file.exists(here("scripts/R/analysis/11_DSA.R"))) {
-  # Try to run the DSA analysis with better error handling
+# Check if DSA results already exist in the environment
+dsa_results_available <- exists("dsa_results") && is.data.frame(dsa_results) && nrow(dsa_results) > 0
+
+if (!dsa_results_available) {
+  # DSA results not in environment - try to run the prerequisite scripts
+  cat("DSA results not found, attempting to run analysis scripts...\n")
+
   tryCatch({
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/11_DSA.R"))))
+    # Source prerequisite scripts in order
+    prereq_scripts <- c(
+      "scripts/R/analysis/02_setup_and_global_variables.R",
+      "scripts/R/analysis/03_biomarker_strategies.R",
+      "scripts/R/analysis/06_parametric_survival_analysis.R",
+      "scripts/R/analysis/07_basecase_input_parameters.R",
+      "scripts/R/analysis/08_sampling.R",
+      "scripts/R/analysis/11_DSA.R"
+    )
+
+    for (script in prereq_scripts) {
+      script_path <- here(script)
+      if (file.exists(script_path)) {
+        cat("Sourcing:", script, "\n")
+        suppressMessages(suppressWarnings(source(script_path)))
+      } else {
+        stop(paste("Required script not found:", script))
+      }
+    }
+
+    # Verify DSA results are now available
+    if (!exists("dsa_results") || !is.data.frame(dsa_results)) {
+      stop("DSA analysis completed but dsa_results not created")
+    }
+
+    cat("DSA analysis completed successfully\n")
+
   }, error = function(e) {
-    cat("DSA script failed with error:", e$message, "\n")
+    cat("Analysis scripts failed with error:", e$message, "\n")
     cat("Creating mock results for demonstration\n")
-    
-    # Define DSA parameters
-    dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
-                  "c_test_CT", "u_np", "u_p", "c_other_last")
-    
+
+    # Define DSA parameters (matches 11_DSA.R)
+    dsa_pars <<- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                   "c_test_blood", "c_other_visit", "c_other_baseline",
+                   "c_other_follow", "c_other_last", "u_np", "u_p",
+                   "p_crp", "p_tlr", "p_tmb_braf")
+
     # Create mock results structure
-    base_optimal <- "control"
-    changes_found <- FALSE
-    
+    base_optimal <<- "control"
+    changes_found <<- FALSE
+
     # Create more realistic mock data
     n_strategies <- length(strategies)
     n_params <- length(dsa_pars)
-    n_total <- n_strategies * (1 + 2 * n_params)  # base + min/max for each param
-    
-    dsa_results <- data.frame(
-      Strategy = rep(strategies, 1 + 2 * n_params),
-      Parameter = rep(c("base_case", rep(dsa_pars, each = 2)), each = n_strategies),
+
+    # Create parameter vector for mock data
+    param_vec <- c("base_case", rep(dsa_pars, each = 2))
+
+    dsa_results <<- data.frame(
+      Strategy = rep(strategies, length(param_vec)),
+      Parameter = rep(param_vec, each = n_strategies),
       Value = rep(c("base", rep(c("min", "max"), n_params)), each = n_strategies),
-      Cost = runif(n_total, 50000, 100000),
-      Effect = runif(n_total, 2, 4),
-      NMB = runif(n_total, 100000, 200000),
-      NMB_diff = c(rep(0, n_strategies), runif(n_total - n_strategies, -10000, 10000))
+      Cost = runif(n_strategies * length(param_vec), 50000, 100000),
+      Effect = runif(n_strategies * length(param_vec), 2, 4),
+      NMB = runif(n_strategies * length(param_vec), 100000, 200000),
+      NMB_diff = c(rep(0, n_strategies),
+                   runif(n_strategies * length(param_vec) - n_strategies, -10000, 10000)),
+      stringsAsFactors = FALSE
     )
-    
-    dsa_ranges <- data.frame(
+
+    # Add group column using param_groups
+    dsa_results$group <<- sapply(dsa_results$Parameter, function(p) {
+      if (p == "base_case") return("base_case")
+      for (g in names(param_groups)) {
+        if (p %in% param_groups[[g]] && g != "all_costs") return(g)
+      }
+      return("other")
+    })
+
+    dsa_ranges <<- data.frame(
       pars = dsa_pars,
       min = sapply(dsa_pars, function(x) l_params_base[[x]] * 0.8),
       max = sapply(dsa_pars, function(x) l_params_base[[x]] * 1.2)
     )
-    
-    impact_summary <- data.frame(
+
+    impact_summary <<- data.frame(
       Strategy = rep(strategies, each = 3),
       Rank = rep(1:3, n_strategies),
       Parameter = rep(c("c_drug_nivo", "u_np", "c_test_NGS"), n_strategies),
@@ -377,68 +436,57 @@ if (file.exists(here("scripts/R/analysis/11_DSA.R"))) {
     )
   })
 } else {
-  # Create mock results as fallback
-  dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
-                "c_test_CT", "u_np", "u_p", "c_other_last")
-  
-  base_optimal <- "control"
-  changes_found <- FALSE
-  
-  n_strategies <- length(strategies)
-  n_params <- length(dsa_pars)
-  n_total <- n_strategies * (1 + 2 * n_params)
-  
-  dsa_results <- data.frame(
-    Strategy = rep(strategies, 1 + 2 * n_params),
-    Parameter = rep(c("base_case", rep(dsa_pars, each = 2)), each = n_strategies),
-    Value = rep(c("base", rep(c("min", "max"), n_params)), each = n_strategies),
-    Cost = runif(n_total, 50000, 100000),
-    Effect = runif(n_total, 2, 4),
-    NMB = runif(n_total, 100000, 200000),
-    NMB_diff = c(rep(0, n_strategies), runif(n_total - n_strategies, -10000, 10000))
-  )
-  
-  dsa_ranges <- data.frame(
-    pars = dsa_pars,
-    min = sapply(dsa_pars, function(x) l_params_base[[x]] * 0.8),
-    max = sapply(dsa_pars, function(x) l_params_base[[x]] * 1.2)
-  )
-  
-  impact_summary <- data.frame(
-    Strategy = rep(strategies, each = 3),
-    Rank = rep(1:3, n_strategies),
-    Parameter = rep(c("c_drug_nivo", "u_np", "c_test_NGS"), n_strategies),
-    Impact = runif(3 * n_strategies, 5000, 20000)
-  )
+  cat("DSA results already available in environment\n")
 }
 ```
 
 ```{r plot-functions, include=FALSE}
-# Function to create tornado data for a specific strategy (exactly from CEA.qmd)
+# Color palette for parameter groups
+group_colors <- c(
+  "drug_costs" = "#E41A1C",
+  "test_costs" = "#377EB8",
+  "other_costs" = "#4DAF4A",
+  "utilities" = "#984EA3",
+  "prevalence" = "#FF7F00"
+)
+
+# Function to create tornado data for a specific strategy
 create_tornado_data <- function(strategy_name, dsa_results) {
-  strat_results <- dsa_results[dsa_results$Strategy == strategy_name & 
+  strat_results <- dsa_results[dsa_results$Strategy == strategy_name &
                                dsa_results$Parameter != "base_case", ]
-  
+
   tornado_data <- data.frame()
   for (param in unique(strat_results$Parameter)) {
-    min_row <- strat_results[strat_results$Parameter == param & 
+    min_row <- strat_results[strat_results$Parameter == param &
                              strat_results$Value == "min", ]
-    max_row <- strat_results[strat_results$Parameter == param & 
+    max_row <- strat_results[strat_results$Parameter == param &
                              strat_results$Value == "max", ]
-    
+
     if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+      # Get group from dsa_results if available (with fallback)
+      param_group <- "other"
+      if ("group" %in% names(strat_results)) {
+        grp <- unique(strat_results$group[strat_results$Parameter == param])
+        if (length(grp) > 0 && !is.na(grp[1])) {
+          param_group <- as.character(grp[1])
+        }
+      }
+
       tornado_data <- rbind(tornado_data, data.frame(
         Parameter = param,
-        Min_diff = min_row$NMB_diff,
-        Max_diff = max_row$NMB_diff,
-        Range = abs(max_row$NMB_diff - min_row$NMB_diff)
+        Min_diff = min_row$NMB_diff[1],
+        Max_diff = max_row$NMB_diff[1],
+        Range = abs(max_row$NMB_diff[1] - min_row$NMB_diff[1]),
+        group = param_group,
+        stringsAsFactors = FALSE
       ))
     }
   }
-  
+
   if (nrow(tornado_data) > 0) {
     tornado_data <- tornado_data[order(tornado_data$Range), ]
-    tornado_data$Parameter <- factor(tornado_data$Parameter, levels = tornado_data$Parameter)
+    tornado_data$Parameter <- factor(tornado_data$Parameter,
+                                     levels = tornado_data$Parameter)
     return(tornado_data)
   }
   return(NULL)
@@ -489,21 +537,24 @@ create_line_plot_data_real <- function(dsa_results, outcome_var = "NMB") {
   return(line_data)
 }
 
-# Function to calculate nice y-axis limits
-get_nice_ylimits <- function(data_values) {
+# Function to calculate nice y-axis limits (centered on data range, not starting at 0)
+get_nice_ylimits <- function(data_values, expand_pct = 0.1) {
   min_val <- min(data_values, na.rm = TRUE)
   max_val <- max(data_values, na.rm = TRUE)
-  
-  # Round up max to next nice number
-  if (max_val <= 10000) {
-    nice_max <- ceiling(max_val / 1000) * 1000
-  } else if (max_val <= 100000) {
-    nice_max <- ceiling(max_val / 10000) * 10000
-  } else {
-    nice_max <- ceiling(max_val / 100000) * 100000
+  range_val <- max_val - min_val
+
+  # If all values are essentially the same, expand around the mean
+  if (range_val < 1) {
+    mean_val <- mean(data_values, na.rm = TRUE)
+    return(c(mean_val * 0.9, mean_val * 1.1))
   }
-  
-  return(c(0, nice_max))
+
+  # Add padding to show full range
+  padding <- range_val * expand_pct
+  nice_min <- min_val - padding
+  nice_max <- max_val + padding
+
+  return(c(nice_min, nice_max))
 }
 ```
 
@@ -559,10 +610,10 @@ cat("\\newpage\n")
 
 ## Computational Environment
 
-**Analysis completed on:** `r format(Sys.Date(), "%B %d, %Y")`  
-**R version:** `r R.version.string`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Analysis completed on:** `r format(Sys.Date(), "%B %d, %Y")`
+**R version:** `r R.version.string`
+**Repository:** ben-geisler/METIMMOX-1
+**Report version:** 2.0
 
 ```{r pagebreak-2, results='asis'}
 cat("\\newpage\n")
@@ -574,37 +625,71 @@ cat("\\newpage\n")
 
 ```{r parameter-table}
 if (exists("dsa_ranges") && nrow(dsa_ranges) > 0) {
-  # Create parameter description table
-  param_descriptions <- data.frame(
-    Parameter = c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
-                  "c_test_CT", "u_np", "u_p", "c_other_last"),
-    Description = c("Cost of Nivolumab treatment per cycle", 
-                    "Cost of FLOX chemotherapy per cycle",
-                    "Cost of next-generation sequencing testing",
-                    "Cost of computed tomography imaging",
-                    "Utility value - Non-progressive disease state",
-                    "Utility value - Progressive disease state", 
-                    "Other medical costs in final cycle"),
-    Base_Value = sapply(dsa_pars, function(x) l_params_base[[x]]),
-    Min_Value = dsa_ranges$min,
-    Max_Value = dsa_ranges$max,
-    Variation = paste0("±", DSA_mult * 100, "%")
+  # Define all 14 parameters with descriptions and groups
+  param_info <- data.frame(
+    Parameter = c("c_drug_nivo", "c_drug_FLOX",
+                  "c_test_NGS", "c_test_CT", "c_test_blood",
+                  "c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last",
+                  "u_np", "u_p",
+                  "p_crp", "p_tlr", "p_tmb_braf"),
+    Description = c("Nivolumab cost per administration",
+                    "FLOX chemotherapy cost per administration",
+                    "Next-generation sequencing (TMB/BRAF testing)",
+                    "Computed tomography imaging",
+                    "Blood test cost",
+                    "Standard outpatient visit",
+                    "Comprehensive baseline visit",
+                    "Follow-up visit cost",
+                    "End-of-life care costs",
+                    "Utility - progression-free state",
+                    "Utility - progressed disease state",
+                    "CRP biomarker positive prevalence",
+                    "TLR biomarker positive prevalence",
+                    "TMB/BRAF biomarker positive prevalence"),
+    Group = c("Drug costs", "Drug costs",
+              "Test costs", "Test costs", "Test costs",
+              "Other costs", "Other costs", "Other costs", "Other costs",
+              "Utilities", "Utilities",
+              "Prevalence", "Prevalence", "Prevalence"),
+    stringsAsFactors = FALSE
   )
-  
-  # Format numeric columns
-  param_descriptions$Base_Value <- sprintf("%.2f", param_descriptions$Base_Value)
-  param_descriptions$Min_Value <- sprintf("%.2f", param_descriptions$Min_Value)
-  param_descriptions$Max_Value <- sprintf("%.2f", param_descriptions$Max_Value)
-  
-  knitr::kable(param_descriptions, 
+
+  # Merge with actual values from dsa_ranges
+  param_descriptions <- merge(param_info, dsa_ranges, by.x = "Parameter", by.y = "pars", all.x = TRUE)
+
+  # Add base values
+  param_descriptions$Base <- sapply(param_descriptions$Parameter, function(x) {
+    if (x %in% names(l_params_base)) l_params_base[[x]] else NA
+  })
+
+  # Reorder to match original order
+  param_descriptions <- param_descriptions[match(param_info$Parameter, param_descriptions$Parameter), ]
+
+  # Format numeric columns - handle different scales
+  param_descriptions$Base_fmt <- ifelse(param_descriptions$Base >= 100,
+                                         sprintf("%.0f", param_descriptions$Base),
+                                         sprintf("%.2f", param_descriptions$Base))
+  param_descriptions$Min_fmt <- ifelse(param_descriptions$min >= 100,
+                                        sprintf("%.0f", param_descriptions$min),
+                                        sprintf("%.2f", param_descriptions$min))
+  param_descriptions$Max_fmt <- ifelse(param_descriptions$max >= 100,
+                                        sprintf("%.0f", param_descriptions$max),
+                                        sprintf("%.2f", param_descriptions$max))
+
+  # Create display table
+  display_table <- param_descriptions[, c("Group", "Description", "Base_fmt", "Min_fmt", "Max_fmt")]
+
+  knitr::kable(display_table,
                booktabs = TRUE,
-               align = c("l", "l", "r", "r", "r", "c"),
-               col.names = c("Parameter", "Description", "Base Value", "Min Value", "Max Value", "Range")) %>%
-    kableExtra::column_spec(1, width = "2cm") %>%
-    kableExtra::column_spec(2, width = "6cm") %>%
-    kableExtra::column_spec(c(3,4,5,6), width = "1.5cm") %>%
-    kableExtra::kable_styling(font_size = 9, latex_options = c("scale_down", "HOLD_position"))
-  
+               align = c("l", "l", "r", "r", "r"),
+               col.names = c("Group", "Parameter Description", "Base", "Min (-20%)", "Max (+20%)"),
+               row.names = FALSE) %>%
+    kableExtra::column_spec(1, width = "2.2cm") %>%
+    kableExtra::column_spec(2, width = "7cm") %>%
+    kableExtra::column_spec(c(3,4,5), width = "1.8cm") %>%
+    kableExtra::collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>%
+    kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position"))
+
 } else {
   cat("**Parameter information not available. Check DSA analysis completion.**\n")
 }
@@ -625,31 +710,38 @@ cat("\\newpage\n")
 
 if (exists("dsa_results") && exists("strategies")) {
   library(ggplot2)
-  
-  # Create tornado plot for control strategy (exactly from CEA.qmd)
+
+  # Create tornado plot for control strategy
   tornado_data <- create_tornado_data("control", dsa_results)
-  
+
   if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    # Color y-axis labels by group
+    label_colors <- group_colors[as.character(tornado_data$group)]
+    label_colors[is.na(label_colors)] <- "black"
+
     p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff), 
+      geom_col(aes(x = Parameter, y = Min_diff),
                fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff), 
+      geom_col(aes(x = Parameter, y = Max_diff),
                fill = "darkred", alpha = 0.8, width = 0.7) +
       coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
+                 linewidth = 0.8) +
       labs(x = "Model Parameters",
-           y = "Change in NMB (€)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+           y = "Change in NMB (EUR)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
+                                                        suffix = "K",
+                                                        prefix = "")) +
       theme_minimal() +
       theme(
-        axis.text.y = element_text(size = 11),
+        axis.text.y = element_text(size = 10, color = label_colors),
         axis.text.x = element_text(size = 10),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 12),
         axis.title = element_text(size = 12),
         panel.grid.minor = element_blank()
       )
-    
+
     print(p)
   }
 } else {
@@ -665,30 +757,36 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for CRP strategy (exactly from CEA.qmd)
+  # Create tornado plot for CRP strategy
   tornado_data <- create_tornado_data("crp", dsa_results)
-  
+
   if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    label_colors <- group_colors[as.character(tornado_data$group)]
+    label_colors[is.na(label_colors)] <- "black"
+
     p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff), 
+      geom_col(aes(x = Parameter, y = Min_diff),
                fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff), 
+      geom_col(aes(x = Parameter, y = Max_diff),
                fill = "darkred", alpha = 0.8, width = 0.7) +
       coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
+                 linewidth = 0.8) +
       labs(x = "Model Parameters",
-           y = "Change in NMB (€)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+           y = "Change in NMB (EUR)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
+                                                        suffix = "K",
+                                                        prefix = "")) +
       theme_minimal() +
       theme(
-        axis.text.y = element_text(size = 11),
+        axis.text.y = element_text(size = 10, color = label_colors),
         axis.text.x = element_text(size = 10),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 12),
         axis.title = element_text(size = 12),
         panel.grid.minor = element_blank()
       )
-    
+
     print(p)
   }
 } else {
@@ -704,30 +802,36 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for TLR strategy (exactly from CEA.qmd)
+  # Create tornado plot for TLR strategy
   tornado_data <- create_tornado_data("tlr", dsa_results)
-  
+
   if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    label_colors <- group_colors[as.character(tornado_data$group)]
+    label_colors[is.na(label_colors)] <- "black"
+
     p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff), 
+      geom_col(aes(x = Parameter, y = Min_diff),
                fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff), 
+      geom_col(aes(x = Parameter, y = Max_diff),
                fill = "darkred", alpha = 0.8, width = 0.7) +
       coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
+                 linewidth = 0.8) +
       labs(x = "Model Parameters",
-           y = "Change in NMB (€)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+           y = "Change in NMB (EUR)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
+                                                        suffix = "K",
+                                                        prefix = "")) +
       theme_minimal() +
       theme(
-        axis.text.y = element_text(size = 11),
+        axis.text.y = element_text(size = 10, color = label_colors),
         axis.text.x = element_text(size = 10),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 12),
         axis.title = element_text(size = 12),
         panel.grid.minor = element_blank()
       )
-    
+
     print(p)
   }
 } else {
@@ -743,30 +847,36 @@ if (exists("dsa_results") && exists("strategies")) {
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for TMB/BRAF strategy (exactly from CEA.qmd)
+  # Create tornado plot for TMB/BRAF strategy
   tornado_data <- create_tornado_data("tmb_braf", dsa_results)
-  
+
   if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
+    label_colors <- group_colors[as.character(tornado_data$group)]
+    label_colors[is.na(label_colors)] <- "black"
+
     p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff), 
+      geom_col(aes(x = Parameter, y = Min_diff),
                fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff), 
+      geom_col(aes(x = Parameter, y = Max_diff),
                fill = "darkred", alpha = 0.8, width = 0.7) +
       coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
+                 linewidth = 0.8) +
       labs(x = "Model Parameters",
-           y = "Change in NMB (€)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
+           y = "Change in NMB (EUR)") +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
+                                                        suffix = "K",
+                                                        prefix = "")) +
       theme_minimal() +
       theme(
-        axis.text.y = element_text(size = 11),
+        axis.text.y = element_text(size = 10, color = label_colors),
         axis.text.x = element_text(size = 10),
         plot.title = element_text(size = 14, face = "bold"),
         plot.subtitle = element_text(size = 12),
         axis.title = element_text(size = 12),
         panel.grid.minor = element_blank()
       )
-    
+
     print(p)
   }
 } else {
@@ -783,38 +893,35 @@ cat("\\newpage\n")
 ## Net Monetary Benefit
 
 ```{r line-plot-nmb}
-#| fig-cap: "Parameter Sensitivity - Net Monetary Benefit"
-#| fig-height: 12
+#| fig-cap: "Parameter Sensitivity - Net Monetary Benefit by Parameter"
+#| fig-height: 14
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
   # Create line plot data for NMB
   nmb_line_data <- create_line_plot_data_real(dsa_results, "NMB")
-  
+
   if (nrow(nmb_line_data) > 0) {
-    # Calculate nice y-limits for all data
-    y_limits <- get_nice_ylimits(nmb_line_data$Outcome)
-    
-    # Create faceted line plot with 1 column
+    # Create faceted line plot - use free scales so each parameter shows its range
     p <- ggplot(nmb_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(size = 1.2, alpha = 0.8) +
+      geom_line(linewidth = 1.0, alpha = 0.8) +
       geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free_x", ncol = 1) +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K"),
-                         limits = y_limits) +
-      scale_color_viridis_d(name = "Strategy") +
+      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", prefix = "")) +
+      scale_color_brewer(palette = "Set1", name = "Strategy") +
       labs(
         x = "Parameter Value",
-        y = "Net Monetary Benefit (€)",
-        title = "One-Way Sensitivity Analysis - Net Monetary Benefit"
+        y = "Net Monetary Benefit (EUR, thousands)"
       ) +
       theme_minimal() +
       theme(
-        strip.text = element_text(size = 10, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"),
         legend.position = "bottom",
-        panel.grid.minor = element_blank()
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 7)
       )
-    
+
     print(p)
   } else {
     cat("**No NMB line plot data available**\n")
@@ -827,38 +934,35 @@ if (exists("dsa_results") && exists("strategies")) {
 ## Total Costs
 
 ```{r line-plot-cost}
-#| fig-cap: "Parameter Sensitivity - Total Costs"
-#| fig-height: 12
+#| fig-cap: "Parameter Sensitivity - Total Costs by Parameter"
+#| fig-height: 14
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
   # Create line plot data for Cost
   cost_line_data <- create_line_plot_data_real(dsa_results, "Cost")
-  
+
   if (nrow(cost_line_data) > 0) {
-    # Calculate nice y-limits for all data
-    y_limits <- get_nice_ylimits(cost_line_data$Outcome)
-    
-    # Create faceted line plot with 1 column
+    # Create faceted line plot - use free scales so each parameter shows its range
     p <- ggplot(cost_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(size = 1.2, alpha = 0.8) +
+      geom_line(linewidth = 1.0, alpha = 0.8) +
       geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free_x", ncol = 1) +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K"),
-                         limits = y_limits) +
-      scale_color_viridis_d(name = "Strategy") +
+      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
+      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", prefix = "")) +
+      scale_color_brewer(palette = "Set1", name = "Strategy") +
       labs(
         x = "Parameter Value",
-        y = "Total Cost (€)",
-        title = "One-Way Sensitivity Analysis - Total Costs"
+        y = "Total Cost (EUR, thousands)"
       ) +
       theme_minimal() +
       theme(
-        strip.text = element_text(size = 10, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"),
         legend.position = "bottom",
-        panel.grid.minor = element_blank()
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 7)
       )
-    
+
     print(p)
   } else {
     cat("**No cost line plot data available**\n")
@@ -871,34 +975,34 @@ if (exists("dsa_results") && exists("strategies")) {
 ## Total Effectiveness
 
 ```{r line-plot-effect}
-#| fig-cap: "Parameter Sensitivity - Total Effectiveness"
-#| fig-height: 12
+#| fig-cap: "Parameter Sensitivity - Total Effectiveness (QALYs) by Parameter"
+#| fig-height: 14
 #| fig-width: 10
 
 if (exists("dsa_results") && exists("strategies")) {
   # Create line plot data for Effect
   effect_line_data <- create_line_plot_data_real(dsa_results, "Effect")
-  
+
   if (nrow(effect_line_data) > 0) {
-    # Create faceted line plot with 1 column
+    # Create faceted line plot - use free scales so each parameter shows its range
     p <- ggplot(effect_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(size = 1.2, alpha = 0.8) +
+      geom_line(linewidth = 1.0, alpha = 0.8) +
       geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free_x", ncol = 1) +
-      scale_y_continuous(limits = c(0, max(effect_line_data$Outcome, na.rm = TRUE) * 1.1)) +
-      scale_color_viridis_d(name = "Strategy") +
+      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
+      scale_color_brewer(palette = "Set1", name = "Strategy") +
       labs(
         x = "Parameter Value",
-        y = "Total Effectiveness (QALYs)",
-        title = "One-Way Sensitivity Analysis - Total Effectiveness"
+        y = "Total Effectiveness (QALYs)"
       ) +
       theme_minimal() +
       theme(
-        strip.text = element_text(size = 10, face = "bold"),
+        strip.text = element_text(size = 8, face = "bold"),
         legend.position = "bottom",
-        panel.grid.minor = element_blank()
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 7)
       )
-    
+
     print(p)
   } else {
     cat("**No effectiveness line plot data available**\n")
@@ -925,32 +1029,95 @@ This indicates robust decision-making within the ±`r DSA_mult * 100`% parameter
 **Table 2: Top 3 Most Influential Parameters by Strategy**
 
 ```{r impact-rankings-table}
+# If impact_summary doesn't exist but dsa_results does, compute it
+if (!exists("impact_summary") && exists("dsa_results")) {
+  impact_summary <- data.frame()
+
+  for (strat in strategies) {
+    strat_results <- dsa_results[dsa_results$Strategy == strat &
+                                   dsa_results$Parameter != "base_case", ]
+
+    param_impact <- data.frame()
+    for (param in unique(strat_results$Parameter)) {
+      min_row <- strat_results[strat_results$Parameter == param &
+                                 strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Parameter == param &
+                                 strat_results$Value == "max", ]
+
+      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+        min_diff <- min_row$NMB_diff[1]
+        max_diff <- max_row$NMB_diff[1]
+        range_val <- abs(max_diff - min_diff)
+
+        param_impact <- rbind(param_impact, data.frame(
+          Parameter = param,
+          Range = range_val
+        ))
+      }
+    }
+
+    if (nrow(param_impact) > 0) {
+      param_impact <- param_impact[order(-param_impact$Range), ]
+      top_n <- min(3, nrow(param_impact))
+      top_params <- param_impact[1:top_n, ]
+
+      for (i in 1:top_n) {
+        impact_summary <- rbind(impact_summary, data.frame(
+          Strategy = strat,
+          Rank = i,
+          Parameter = top_params$Parameter[i],
+          Impact = top_params$Range[i]
+        ))
+      }
+    }
+  }
+}
+
 if (exists("impact_summary") && nrow(impact_summary) > 0) {
-  # Create impact rankings table
+  # Parameter descriptions for readability
+  param_desc <- c(
+    "c_drug_nivo" = "Nivolumab cost",
+    "c_drug_FLOX" = "FLOX cost",
+    "c_test_NGS" = "NGS testing",
+    "c_test_CT" = "CT imaging",
+    "c_test_blood" = "Blood tests",
+    "c_other_visit" = "Visit cost",
+    "c_other_baseline" = "Baseline visit",
+    "c_other_follow" = "Follow-up",
+    "c_other_last" = "End-of-life",
+    "u_np" = "Utility (PF)",
+    "u_p" = "Utility (P)",
+    "p_crp" = "CRP prevalence",
+    "p_tlr" = "TLR prevalence",
+    "p_tmb_braf" = "TMB/BRAF prevalence"
+  )
+
+  # Create impact rankings table with descriptions
   impact_table <- impact_summary %>%
     mutate(
       Strategy = case_when(
         Strategy == "control" ~ "Standard of Care",
         Strategy == "crp" ~ "CRP-guided",
-        Strategy == "tlr" ~ "TLR-guided", 
+        Strategy == "tlr" ~ "TLR-guided",
         Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
         TRUE ~ Strategy
       ),
-      Impact = scales::dollar(Impact, accuracy = 100, scale = 0.001, suffix = "K")
+      Description = param_desc[Parameter],
+      Impact_fmt = sprintf("%.1f", Impact / 1000)  # Convert to thousands with 1 decimal
     ) %>%
-    select(Strategy, Rank, Parameter, Impact)
-  
+    select(Strategy, Rank, Description, Impact_fmt)
+
   knitr::kable(impact_table,
                booktabs = TRUE,
                align = c("l", "c", "l", "r"),
-               col.names = c("Strategy", "Rank", "Parameter", "NMB Impact (€K)")) %>%
+               col.names = c("Strategy", "Rank", "Parameter", "NMB Range (EUR K)")) %>%
     kableExtra::column_spec(1, width = "3cm") %>%
     kableExtra::column_spec(2, width = "1cm") %>%
-    kableExtra::column_spec(3, width = "2.5cm") %>%
-    kableExtra::column_spec(4, width = "2cm") %>%
+    kableExtra::column_spec(3, width = "4cm") %>%
+    kableExtra::column_spec(4, width = "2.5cm") %>%
     kableExtra::collapse_rows(columns = 1, valign = "top") %>%
     kableExtra::kable_styling(latex_options = c("HOLD_position"))
-  
+
 } else {
   cat("Parameter impact rankings not available.\n")
 }
@@ -962,4 +1129,4 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report version:** 2.0
