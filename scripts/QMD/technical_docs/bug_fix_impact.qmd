@@ -340,7 +340,7 @@ kable(param_comp,
 
 # Base Case Results Comparison
 
-```{r base-case-incremental-table}
+```{r base-case-incremental-setup}
 # Calculate incremental values relative to control for ALL strategies
 # (dampack's Inc_Cost/Inc_Effect are NA for reference and dominated strategies)
 control_cost_before <- base_comp$Cost_before[base_comp$Strategy == "control"]
@@ -348,41 +348,87 @@ control_cost_after <- base_comp$Cost_after[base_comp$Strategy == "control"]
 control_effect_before <- base_comp$Effect_before[base_comp$Strategy == "control"]
 control_effect_after <- base_comp$Effect_after[base_comp$Strategy == "control"]
 
-base_incremental_display <- base_comp %>%
+base_incremental <- base_comp %>%
   mutate(
     # Calculate incremental values vs control for all strategies
     Calc_Inc_Cost_before = Cost_before - control_cost_before,
     Calc_Inc_Cost_after = Cost_after - control_cost_after,
     Calc_Inc_Effect_before = Effect_before - control_effect_before,
     Calc_Inc_Effect_after = Effect_after - control_effect_after
+  )
+```
+
+```{r base-case-incremental-cost-table}
+# Table 3a: Incremental Cost Comparison
+cost_display <- base_incremental %>%
+  mutate(
+    Cost_diff = Calc_Inc_Cost_after - Calc_Inc_Cost_before
   ) %>%
-  select(Strategy, Calc_Inc_Cost_before, Calc_Inc_Cost_after,
-         Calc_Inc_Effect_before, Calc_Inc_Effect_after, ICER_before, ICER_after) %>%
+  select(Strategy, Calc_Inc_Cost_before, Calc_Inc_Cost_after, Cost_diff) %>%
   mutate(
     Calc_Inc_Cost_before = format(round(Calc_Inc_Cost_before, 2), big.mark = ",", nsmall = 2),
     Calc_Inc_Cost_after = format(round(Calc_Inc_Cost_after, 2), big.mark = ",", nsmall = 2),
-    Calc_Inc_Effect_before = format(round(Calc_Inc_Effect_before, 4), nsmall = 4),
-    Calc_Inc_Effect_after = format(round(Calc_Inc_Effect_after, 4), nsmall = 4),
-    ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
-    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ","))
+    Cost_diff = format(round(Cost_diff, 2), big.mark = ",", nsmall = 2)
   )
 
-kable(base_incremental_display,
-      caption = "Base Case Incremental Cost-Effectiveness Comparison",
-      col.names = c("Strategy",
-                    "BL ΔCost (€)", "Fix ΔCost (€)",
-                    "BL ΔEffect (QALYs)", "Fix ΔEffect (QALYs)",
-                    "BL ICER (€/QALY)", "Fix ICER (€/QALY)"),
+kable(cost_display,
+      caption = "Base Case Incremental Cost Comparison",
+      col.names = c("Strategy", "Baseline (€)", "Fixed (€)", "Difference (€)"),
       booktabs = TRUE,
       format = "latex",
-      align = c("l", rep("r", 6))) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9) %>%
-  add_header_above(c(" " = 1, "Incremental Cost" = 2, "Incremental Effect" = 2, "ICER" = 2))
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+\vspace{0.5em}
+
+```{r base-case-incremental-effect-table}
+# Table 3b: Incremental Effect Comparison
+effect_display <- base_incremental %>%
+  mutate(
+    Effect_diff = Calc_Inc_Effect_after - Calc_Inc_Effect_before
+  ) %>%
+  select(Strategy, Calc_Inc_Effect_before, Calc_Inc_Effect_after, Effect_diff) %>%
+  mutate(
+    Calc_Inc_Effect_before = format(round(Calc_Inc_Effect_before, 4), nsmall = 4),
+    Calc_Inc_Effect_after = format(round(Calc_Inc_Effect_after, 4), nsmall = 4),
+    Effect_diff = format(round(Effect_diff, 4), nsmall = 4)
+  )
+
+kable(effect_display,
+      caption = "Base Case Incremental Effect Comparison",
+      col.names = c("Strategy", "Baseline (QALYs)", "Fixed (QALYs)", "Difference (QALYs)"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+\vspace{0.5em}
+
+```{r base-case-icer-table}
+# Table 3c: ICER Comparison
+icer_display <- base_incremental %>%
+  select(Strategy, ICER_before, ICER_after) %>%
+  mutate(
+    ICER_diff = ICER_after - ICER_before,
+    ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
+    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ",")),
+    ICER_diff = ifelse(is.na(ICER_diff), "—", format(round(ICER_diff, 0), big.mark = ","))
+  )
+
+kable(icer_display,
+      caption = "Base Case ICER Comparison",
+      col.names = c("Strategy", "Baseline (€/QALY)", "Fixed (€/QALY)", "Difference (€/QALY)"),
+      booktabs = TRUE,
+      format = "latex",
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
 ```
 
 ## Efficiency Frontier Comparison
 
-```{r efficiency-frontier, fig.cap="Cost-effectiveness efficiency frontier comparison using dampack. Baseline (left) and fixed (right) strategies are shown with the efficiency frontier connecting non-dominated strategies. Dominated strategies appear off the frontier line.", out.width="100%", fig.height=5}
+```{r efficiency-frontier, fig.cap="Cost-effectiveness efficiency frontier comparison using dampack. Baseline (top) and fixed (bottom) strategies are shown with the efficiency frontier connecting non-dominated strategies. Dominated strategies appear off the frontier line.", out.width="100%", fig.height=9}
 # Create ICER objects for baseline and fixed using dampack
 baseline_icer <- dampack::calculate_icers(
   cost = base_before$Cost,
@@ -413,8 +459,8 @@ plot_fixed_frontier <- plot(fixed_icer,
   labs(title = "Fixed") +
   theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
 
-# Arrange side-by-side
-gridExtra::grid.arrange(plot_baseline_frontier, plot_fixed_frontier, ncol = 2)
+# Arrange vertically (one below the other)
+gridExtra::grid.arrange(plot_baseline_frontier, plot_fixed_frontier, nrow = 2)
 ```
 
 ## Net Monetary Benefit Comparison
@@ -614,22 +660,23 @@ if (nrow(complete_pairs) > 0) {
   pairs_display <- complete_pairs %>%
     select(Issue, Issue_Title, Baseline_Commit, Fixed_Commit) %>%
     mutate(
-      Issue = paste0("#", Issue),
-      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title),
-      Status = ifelse(Issue == paste0("#", issue_num), "Current", "")
+      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title)
     )
+
+  # Find which row is the current issue (before any formatting)
+  current_row <- which(pairs_display$Issue == issue_num)
 
   kable(pairs_display,
         caption = "All Available Snapshot Pairs",
-        col.names = c("Issue", "Title", "Baseline Commit", "Fixed Commit", "Status"),
+        col.names = c("Issue", "Title", "Baseline Commit", "Fixed Commit"),
         booktabs = TRUE,
         format = "latex",
-        align = c("l", "l", "l", "l", "c")) %>%
-    kable_styling(latex_options = c("striped", "hold_position"), font_size = 10) %>%
+        align = c("l", "l", "l", "l")) %>%
+    kable_styling(latex_options = c("striped", "HOLD_position"), font_size = 10) %>%
+    column_spec(1, width = "1cm") %>%
     column_spec(2, width = "6cm") %>%
-    column_spec(c(1, 5), width = "1.5cm") %>%
-    column_spec(c(3, 4), width = "2cm") %>%
-    row_spec(which(pairs_display$Status == "Current"), bold = TRUE, background = "#E8F4F8")
+    column_spec(c(3, 4), width = "2.5cm") %>%
+    row_spec(current_row, bold = TRUE, background = "#E8F4F8")
 } else {
   cat("No snapshot pairs available.\n")
 }
@@ -690,7 +737,7 @@ if (n_issues_available >= 2) {
     opt_fixed <- nmb_fixed$Strategy[which.max(nmb_fixed$NMB)]
 
     multi_comp <- rbind(multi_comp, data.frame(
-      Issue = paste0("#", issue_row$Issue),
+      Issue = issue_row$Issue,
       Issue_Title = ifelse(issue_row$Issue_Title == "", "—", issue_row$Issue_Title),
       Optimal_Baseline = opt_base,
       Optimal_Fixed = opt_fixed,
@@ -701,6 +748,9 @@ if (n_issues_available >= 2) {
       stringsAsFactors = FALSE
     ))
   }
+
+  # Find which row is the current issue
+  current_row <- which(multi_comp$Issue == issue_num)
 
   # Format for display
   multi_comp_display <- multi_comp %>%
@@ -717,16 +767,16 @@ if (n_issues_available >= 2) {
         booktabs = TRUE,
         format = "latex",
         align = c("l", "l", "l", "l", "c", "r", "r", "r")) %>%
-    kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 8) %>%
+    kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"), font_size = 8) %>%
     column_spec(2, width = "4cm") %>%
     column_spec(c(1, 5), width = "0.8cm") %>%
     column_spec(c(3, 4), width = "2cm") %>%
     column_spec(c(6, 7, 8), width = "1.8cm") %>%
-    row_spec(which(multi_comp$Issue == paste0("#", issue_num)), bold = TRUE, background = "#E8F4F8"))
-
-  cat("\n\n\\newpage\n\n")
+    row_spec(current_row, bold = TRUE, background = "#E8F4F8"))
 }
 ```
+
+\newpage
 
 # Summary
 
@@ -744,4 +794,4 @@ The comparison for issue #`r issue_num` shows:
 
 **Report completed on:** `r Sys.Date()`  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.3
+**Report version:** 2.0
