@@ -17,9 +17,11 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
-# Define parameters to vary in sensitivity analysis
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
-              "c_test_CT",  "u_np", "u_p", "c_other_last")
+# Define parameters to vary in sensitivity analysis (matches EVPPI parameters)
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+              "c_test_blood", "c_other_visit", "c_other_baseline",
+              "c_other_follow", "c_other_last", "u_np", "u_p",
+              "p_crp", "p_tlr", "p_tmb_braf")
 
 # Use base case values as starting point
 dsa_basecase <- l_params_base
@@ -38,6 +40,16 @@ utility_params <- c("u_np", "u_p")
 for (param in utility_params) {
   idx <- which(dsa_ranges$pars == param)
   if (length(idx) > 0) {
+    dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
+  }
+}
+
+# Cap prevalence values between 0 and 1
+prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+for (param in prevalence_params) {
+  idx <- which(dsa_ranges$pars == param)
+  if (length(idx) > 0) {
+    dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
     dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
   }
 }
@@ -103,6 +115,15 @@ for (i in 1:nrow(dsa_ranges)) {
 # Combine all results into a single data frame
 cat("Combining results...\n")
 dsa_results <- do.call(rbind, all_results)
+
+# Add parameter group information (param_groups from 08_sampling.R)
+dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
+  if (p == "base_case") return("base_case")
+  for (g in names(param_groups)) {
+    if (p %in% param_groups[[g]] && g != "all_costs") return(g)
+  }
+  return("other")
+})
 
 # Calculate NMB differences from base case
 cat("Calculating NMB differences...\n")
