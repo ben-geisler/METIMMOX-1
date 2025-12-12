@@ -5,19 +5,14 @@
 # failures, model convergence issues, etc.) and outputs error counts with
 # percentages.
 #
-# USAGE: Adjust n_test_sim below, then run the entire script.
+# USAGE: Adjust n_test_sim below (after dependencies), then run the entire script.
 # ==============================================================================
 
 # =============================================================================
-# CONFIGURABLE PARAMETER - Adjust this value as needed
-# =============================================================================
-n_test_sim <- 100  # Number of PSA iterations to test
-
-# =============================================================================
-# SETUP
+# SETUP - Load dependencies first (these clear the environment)
 # =============================================================================
 cat("=== PSA Error Rate Analysis ===\n")
-cat("Testing", n_test_sim, "PSA iterations for errors\n\n")
+cat("Loading dependencies...\n\n")
 
 # Set working directory
 setwd("c:/Users/benjampg/git/METIMMOX-1")
@@ -27,15 +22,11 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr)
 
-# Source required analysis scripts
-cat("Loading dependencies...\n")
+# Source required analysis scripts (NOTE: 02_setup clears the environment!)
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
 source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-
-# Override n_samples for testing (to ensure sampling cache is available)
-# We need the cache but will only test n_test_sim iterations
 source(here::here("scripts/R/analysis/08_sampling.R"))
 
 # Source model functions
@@ -44,6 +35,13 @@ source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/prediction_functions.R"))
 
 cat("Dependencies loaded successfully.\n\n")
+
+# =============================================================================
+# CONFIGURABLE PARAMETER - Set AFTER dependencies (which clear environment)
+# =============================================================================
+n_test_sim <- 100  # Number of PSA iterations to test
+
+cat("Testing", n_test_sim, "PSA iterations for errors\n\n")
 
 # =============================================================================
 # ERROR TRACKING INITIALIZATION
