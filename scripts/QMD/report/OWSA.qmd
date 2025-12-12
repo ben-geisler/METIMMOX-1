@@ -1,5 +1,5 @@
 ---
-title: "METIMMOX-1 One-Way Sensitivity Analysis Report"
+title: "One-Way Sensitivity Analysis Report"
 subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
