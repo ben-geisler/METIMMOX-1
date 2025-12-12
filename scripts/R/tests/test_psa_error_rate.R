@@ -73,8 +73,26 @@ error_tracking <- list(
 # =============================================================================
 # PSA ERROR TESTING LOOP
 # =============================================================================
+
+# Safeguard: define defaults if not set (for interactive use)
+if (!exists("n_test_sim")) n_test_sim <- 100
+if (!exists("error_tracking")) {
+  error_tracking <- list(
+    control_failures = integer(0),
+    crp_failures = integer(0),
+    tlr_failures = integer(0),
+    tmb_braf_failures = integer(0),
+    complete_failures = integer(0),
+    pfs_os_violations = list(
+      control = integer(0), crp_pos = integer(0), crp_neg = integer(0),
+      tlr_pos = integer(0), tlr_neg = integer(0),
+      tmb_braf_pos = integer(0), tmb_braf_neg = integer(0)
+    )
+  )
+}
+if (!exists("start_time")) start_time <- Sys.time()
+
 cat("Running PSA iterations with error tracking...\n")
-start_time <- Sys.time()
 
 for (i in 1:n_test_sim) {
   # Create parameter set for this simulation (use base params)
@@ -253,21 +271,9 @@ cat("\n=========================================================================
 cat("                               ANALYSIS COMPLETE                               \n")
 cat("===============================================================================\n")
 
-# Return results object for programmatic use
-psa_error_results <- list(
-  n_sim = n_test_sim,
-  runtime_seconds = total_time,
-  prediction_failures = list(
-    control = control_failures,
-    crp = crp_failures,
-    tlr = tlr_failures,
-    tmb_braf = tmb_braf_failures,
-    any = all_prediction_failures
-  ),
-  complete_failures = complete_failures,
-  all_failures = all_failures,
-  pfs_os_violations = error_tracking$pfs_os_violations,
-  error_rate = 100 * length(all_failures) / n_test_sim
-)
-
-cat("\nResults object 'psa_error_results' available for further analysis.\n")
+# Clean up temporary variables created by this script
+rm(list = c("error_tracking", "control_failures", "crp_failures", "tlr_failures",
+            "tmb_braf_failures", "complete_failures", "all_prediction_failures",
+            "all_failures", "all_violations", "subgroup_names", "sim_params",
+            "sim_results", "start_time", "total_time", "i", "n_test_sim"),
+   envir = .GlobalEnv)
