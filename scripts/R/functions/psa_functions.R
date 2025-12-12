@@ -64,6 +64,10 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     tmb_braf_neg = integer(0)
   )
 
+  # Track iterations that used fallback to base case (Issue #79)
+  # These will be replaced with additional successful simulations
+  fallback_iterations <- integer(0)
+
   # Progress reporting
   cat("Running PSA with", n_sim, "simulations...\n")
   start_time <- Sys.time()
@@ -116,6 +120,11 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         # Let other warnings through
       })
 
+      # Check if fallback was used (Issue #79)
+      if (isTRUE(attr(sim_results, "fallback_used"))) {
+        fallback_iterations <<- c(fallback_iterations, i)
+      }
+
       # Store results
       for (strat in strategies) {
         strat_row <- which(sim_results$Strategy == strat)
@@ -136,28 +145,12 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       }
     }, error = function(e) {
       cat("Error in simulation", i, ":", conditionMessage(e), "\n")
-      # Use mean values for failed simulations
+      # Track this as a fallback iteration (Issue #79) - will be replaced
+      fallback_iterations <<- c(fallback_iterations, i)
+      # Temporarily store NAs - will be replaced in replacement phase
       for (strat in strategies) {
-        if (i > 1) {
-          cost_matrix[i, strat] <<- mean(cost_matrix[1:(i-1), strat], na.rm = TRUE)
-          effect_matrix[i, strat] <<- mean(effect_matrix[1:(i-1), strat], na.rm = TRUE)
-        } else {
-          # For first simulation, use base case
-          base_results <- model_fun(
-            params = l_params_base,
-            time_horizon = time_horizon,
-            cl = cl,
-            determpsa = "det"
-          )
-          strat_row <- which(base_results$Strategy == strat)
-          if (length(strat_row) > 0) {
-            cost_matrix[i, strat] <<- base_results$Cost[strat_row]
-            effect_matrix[i, strat] <<- base_results$Effect[strat_row]
-          } else {
-            cost_matrix[i, strat] <<- NA
-            effect_matrix[i, strat] <<- NA
-          }
-        }
+        cost_matrix[i, strat] <<- NA
+        effect_matrix[i, strat] <<- NA
       }
     })
     
@@ -172,12 +165,93 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   }
   
   total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
-  cat(sprintf("PSA complete: %d simulations in %.1f minutes\n", n_sim, total_time))
-  
-  # Replace any remaining NAs with column means
-  for (strat in strategies) {
-    cost_matrix[is.na(cost_matrix[, strat]), strat] <- mean(cost_matrix[, strat], na.rm = TRUE)
-    effect_matrix[is.na(effect_matrix[, strat]), strat] <- mean(effect_matrix[, strat], na.rm = TRUE)
+  cat(sprintf("PSA initial pass complete: %d simulations in %.1f minutes\n", n_sim, total_time))
+
+  # =========================================================================
+  # REPLACE FALLBACK ITERATIONS (Issue #79)
+  # =========================================================================
+  # Instead of mixing base case fallbacks with resampled model results,
+  # run additional simulations to replace failed iterations
+
+  if (length(fallback_iterations) > 0) {
+    cat(sprintf("\n--- Replacing %d fallback iterations (Issue #79) ---\n",
+                length(fallback_iterations)))
+
+    replacement_idx <- n_sim + 1  # Start with models beyond initial set
+    replaced_count <- 0
+    max_attempts <- length(fallback_iterations) * 10  # Safety limit
+    attempt <- 0
+
+    for (failed_i in fallback_iterations) {
+      success <- FALSE
+
+      while (!success && attempt < max_attempts) {
+        attempt <- attempt + 1
+
+        # Use modulo to wrap around if we exceed available models
+        # This ensures we always have a valid model index
+        actual_sim_idx <- ((replacement_idx - 1) %% n_sim) + 1
+
+        # Create parameter set (use same PSA samples as original iteration)
+        sim_params <- l_params_base
+        for (param_name in names(param_distributions)) {
+          sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
+        }
+
+        # Try to run with a different resampled model
+        tryCatch({
+          suppressWarnings({
+            sim_results <- model_fun(
+              params = sim_params,
+              time_horizon = time_horizon,
+              cl = cl,
+              determpsa = "psa",
+              return_traces = FALSE,
+              sim_idx = actual_sim_idx
+            )
+          })
+
+          # Check if this one succeeded (no fallback)
+          if (!isTRUE(attr(sim_results, "fallback_used"))) {
+            # Replace the failed iteration's results
+            for (strat in strategies) {
+              strat_row <- which(sim_results$Strategy == strat)
+              if (length(strat_row) > 0) {
+                cost_matrix[failed_i, strat] <- sim_results$Cost[strat_row]
+                effect_matrix[failed_i, strat] <- sim_results$Effect[strat_row]
+              }
+            }
+            success <- TRUE
+            replaced_count <- replaced_count + 1
+          }
+        }, error = function(e) {
+          # This model also failed, try next
+        })
+
+        replacement_idx <- replacement_idx + 1
+      }
+
+      if (!success) {
+        warning("Could not find valid replacement for iteration ", failed_i,
+                " after ", max_attempts, " attempts")
+      }
+    }
+
+    cat(sprintf("Successfully replaced %d of %d fallback iterations\n",
+                replaced_count, length(fallback_iterations)))
+    cat(sprintf("Models tried: %d (wrapped around %d times)\n",
+                replacement_idx - n_sim - 1,
+                (replacement_idx - n_sim - 1) %/% n_sim))
+  }
+
+  # Replace any remaining NAs with column means (safety fallback)
+  na_count <- sum(is.na(cost_matrix))
+  if (na_count > 0) {
+    warning("Still have ", na_count, " NA values after replacement - using column means")
+    for (strat in strategies) {
+      cost_matrix[is.na(cost_matrix[, strat]), strat] <- mean(cost_matrix[, strat], na.rm = TRUE)
+      effect_matrix[is.na(effect_matrix[, strat]), strat] <- mean(effect_matrix[, strat], na.rm = TRUE)
+    }
   }
 
   # Print summary of PFS > OS constraint violations (Issue #76)

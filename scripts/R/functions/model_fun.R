@@ -20,12 +20,21 @@
 # Biological Constraint (Issue #76):
 #   - PFS is capped at OS to prevent invalid state occupancy (PFS > OS can
 #     occur with resampled models). Without this, states can sum to >1.
+#
+# Fallback Tracking (Issue #79):
+#   - When PSA survival curve generation fails, the function falls back to
+#     base case curves. This is now tracked via a "fallback_used" attribute
+#     on the returned results, allowing the PSA loop to detect and replace
+#     failed iterations instead of mixing different estimation methods.
 # ===============================================================================
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # Get the strategies from our global variables
   strat_names <- strategies  # This should be defined in section 2
+
+ # Track if fallback to base case was used (Issue #79)
+  fallback_used <- FALSE
 
   # =========================================================================
   # PSA MODE: Subgroup Population Averaging
@@ -75,6 +84,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       if (any(is.na(os_control)) || any(is.na(pfs_control))) {
         warning("NA values in control survival curves for sim ", sim_idx,
                 " - using base case curves")
+        fallback_used <- TRUE  # Issue #79: Track fallback
       } else {
         # Update params with population-averaged predictions
         params$p_os$control_OS <- os_control
@@ -84,7 +94,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }, error = function(e) {
       warning("Failed to generate control curves for sim ", sim_idx, ": ",
               conditionMessage(e), " - using base case")
-      # Keep base case curves in params
+      fallback_used <<- TRUE  # Issue #79: Track fallback (<<- for enclosing scope)
     })
 
     # -----------------------------------------------------------------------
@@ -122,7 +132,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
             any(is.na(preds_pfs$positive)) || any(is.na(preds_pfs$negative))) {
           warning("NA/NULL values in ", biomarker, " survival curves for sim ", sim_idx,
                   " - using base case curves")
-          # Keep base case curves in params
+          fallback_used <- TRUE  # Issue #79: Track fallback
         } else {
           # Store subgroup-specific curves
           params$p_os[[paste0(biomarker, "_pos_OS")]] <- preds_os$positive
@@ -138,7 +148,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       }, error = function(e) {
         warning("Failed to generate ", biomarker, " curves for sim ", sim_idx, ": ",
                 conditionMessage(e), " - using base case")
-        # Keep base case curves in params
+        fallback_used <<- TRUE  # Issue #79: Track fallback (<<- for enclosing scope)
       })
     }
   }
@@ -364,14 +374,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # =========================================================================
   # RETURN RESULTS
   # =========================================================================
-  
+
   # Return results with or without traces
+  # Attach fallback_used attribute for PSA loop to detect failures (Issue #79)
   if(return_traces) {
-    return(list(
+    result <- list(
       results = results,
       traces = traces
-    ))
+    )
   } else {
-    return(results)
+    result <- results
   }
+
+  # Add fallback_used attribute so PSA loop can detect and replace failed iterations
+  attr(result, "fallback_used") <- fallback_used
+  return(result)
 }

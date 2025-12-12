@@ -8,17 +8,11 @@
 #   1. Inspect existing cache - Check stored failure counts (fast)
 #   2. Fresh sampling test - Re-run sampling with configurable n (slower)
 #
-# USAGE: Adjust settings below, then run the entire script.
+# USAGE: Adjust settings below (after dependencies), then run the entire script.
 # ==============================================================================
 
 # =============================================================================
-# CONFIGURABLE PARAMETERS - RUN THIS SECTION FIRST
-# =============================================================================
-n_test_samples <- 100   # Number of fresh bootstrap samples to test
-run_fresh_test <- FALSE # Set to TRUE to run fresh sampling test (slower)
-
-# =============================================================================
-# SETUP
+# SETUP - Load dependencies first (these clear the environment)
 # =============================================================================
 cat("=== Sampling Convergence Rate Analysis ===\n\n")
 
@@ -30,13 +24,19 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr)
 
-# Source required setup scripts (for global variables and data)
+# Source required setup scripts (NOTE: 02_setup clears the environment!)
 cat("Loading dependencies...\n")
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
 
 cat("Dependencies loaded.\n\n")
+
+# =============================================================================
+# CONFIGURABLE PARAMETERS - Set AFTER dependencies (which clear environment)
+# =============================================================================
+n_test_samples <- 100   # Number of fresh bootstrap samples to test
+run_fresh_test <- FALSE # Set to TRUE to run fresh sampling test (slower)
 
 # =============================================================================
 # PART 1: INSPECT EXISTING CACHE
