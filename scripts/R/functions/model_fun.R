@@ -28,12 +28,81 @@
 #     failed iterations instead of mixing different estimation methods.
 # ===============================================================================
 
+# ===============================================================================
+# INPUT PARAMETER VALIDATION (Issue #47)
+# ===============================================================================
+# Validates that all required parameters exist and have valid values.
+# Provides clear error messages when parameters are misconfigured.
+# ===============================================================================
+
+validate_model_params <- function(params, time_horizon) {
+  # Required scalar parameters
+  required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
+                        "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
+                        "c_test_blood", "c_test_NGS", "c_other_visit",
+                        "c_other_baseline", "c_other_follow", "c_other_last",
+                        "p_crp", "p_tlr", "p_tmb_braf")
+
+  # Required list parameters
+  required_lists <- c("p_os", "p_pfs")
+
+  # Required schedule vectors
+  required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
+                        "l_CT", "l_blood", "l_visit")
+
+  # Check all required params exist
+  all_required <- c(required_scalars, required_lists, required_vectors)
+  missing <- setdiff(all_required, names(params))
+  if (length(missing) > 0) {
+    stop("Missing required parameters: ", paste(missing, collapse = ", "))
+  }
+
+  # Validate cost parameters are non-negative
+  cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+                   "c_test_NGS", "c_other_visit", "c_other_baseline",
+                   "c_other_follow", "c_other_last")
+  for (p in cost_params) {
+    if (params[[p]] < 0) {
+      stop("Cost parameter '", p, "' cannot be negative. Got: ", params[[p]])
+    }
+  }
+
+  # Validate utilities are in [0, 1]
+  if (params$u_np < 0 || params$u_np > 1) {
+    stop("Utility u_np must be in [0,1]. Got: ", params$u_np)
+  }
+  if (params$u_p < 0 || params$u_p > 1) {
+    stop("Utility u_p must be in [0,1]. Got: ", params$u_p)
+  }
+
+  # Validate prevalence parameters are in [0, 1]
+  prev_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+  for (p in prev_params) {
+    if (params[[p]] < 0 || params[[p]] > 1) {
+      stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
+    }
+  }
+
+  # Validate discount rates are non-negative
+  if (params$dr_costs < 0) {
+    stop("Discount rate dr_costs cannot be negative. Got: ", params$dr_costs)
+  }
+  if (params$dr_effects < 0) {
+    stop("Discount rate dr_effects cannot be negative. Got: ", params$dr_effects)
+  }
+
+  invisible(TRUE)
+}
+
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # Get the strategies from our global variables
   strat_names <- strategies  # This should be defined in section 2
 
- # Track if fallback to base case was used (Issue #79)
+  # Validate input parameters (Issue #47)
+  validate_model_params(params, time_horizon)
+
+  # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
 
   # =========================================================================
