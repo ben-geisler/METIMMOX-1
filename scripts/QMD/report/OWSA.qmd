@@ -447,7 +447,8 @@ group_colors <- c(
   "test_costs" = "#377EB8",
   "other_costs" = "#4DAF4A",
   "utilities" = "#984EA3",
-  "prevalence" = "#FF7F00"
+  "prevalence" = "#FF7F00",
+  "survival_model" = "#A65628"  # Brown for survival model structural sensitivity
 )
 
 # Function to create tornado data for a specific strategy
@@ -625,13 +626,14 @@ cat("\\newpage\n")
 
 ```{r parameter-table}
 if (exists("dsa_ranges") && nrow(dsa_ranges) > 0) {
-  # Define all 14 parameters with descriptions and groups
+  # Define all 15 parameters with descriptions and groups
   param_info <- data.frame(
     Parameter = c("c_drug_nivo", "c_drug_FLOX",
                   "c_test_NGS", "c_test_CT", "c_test_blood",
                   "c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last",
                   "u_np", "u_p",
-                  "p_crp", "p_tlr", "p_tmb_braf"),
+                  "p_crp", "p_tlr", "p_tmb_braf",
+                  "Survival_Model"),
     Description = c("Nivolumab cost per administration",
                     "FLOX chemotherapy cost per administration",
                     "Next-generation sequencing (TMB/BRAF testing)",
@@ -645,12 +647,14 @@ if (exists("dsa_ranges") && nrow(dsa_ranges) > 0) {
                     "Utility - progressed disease state",
                     "CRP biomarker positive prevalence",
                     "TLR biomarker positive prevalence",
-                    "TMB/BRAF biomarker positive prevalence"),
+                    "TMB/BRAF biomarker positive prevalence",
+                    "Parametric survival distribution (OS & PFS)"),
     Group = c("Drug costs", "Drug costs",
               "Test costs", "Test costs", "Test costs",
               "Other costs", "Other costs", "Other costs", "Other costs",
               "Utilities", "Utilities",
-              "Prevalence", "Prevalence", "Prevalence"),
+              "Prevalence", "Prevalence", "Prevalence",
+              "Survival model"),
     stringsAsFactors = FALSE
   )
 
@@ -665,16 +669,47 @@ if (exists("dsa_ranges") && nrow(dsa_ranges) > 0) {
   # Reorder to match original order
   param_descriptions <- param_descriptions[match(param_info$Parameter, param_descriptions$Parameter), ]
 
-  # Format numeric columns - handle different scales
-  param_descriptions$Base_fmt <- ifelse(param_descriptions$Base >= 100,
-                                         sprintf("%.0f", param_descriptions$Base),
-                                         sprintf("%.2f", param_descriptions$Base))
-  param_descriptions$Min_fmt <- ifelse(param_descriptions$min >= 100,
-                                        sprintf("%.0f", param_descriptions$min),
-                                        sprintf("%.2f", param_descriptions$min))
-  param_descriptions$Max_fmt <- ifelse(param_descriptions$max >= 100,
-                                        sprintf("%.0f", param_descriptions$max),
-                                        sprintf("%.2f", param_descriptions$max))
+  # Format numeric columns - handle different scales and NA values
+  param_descriptions$Base_fmt <- sapply(1:nrow(param_descriptions), function(i) {
+    if (param_descriptions$Parameter[i] == "Survival_Model") {
+      # For survival model, show base distribution name if available
+      if (exists("models") && !is.null(models$best_fit$os_distribution)) {
+        return(models$best_fit$os_distribution)
+      } else {
+        return("gamma")
+      }
+    } else if (is.na(param_descriptions$Base[i])) {
+      return("--")
+    } else if (param_descriptions$Base[i] >= 100) {
+      return(sprintf("%.0f", param_descriptions$Base[i]))
+    } else {
+      return(sprintf("%.2f", param_descriptions$Base[i]))
+    }
+  })
+
+  param_descriptions$Min_fmt <- sapply(1:nrow(param_descriptions), function(i) {
+    if (param_descriptions$Parameter[i] == "Survival_Model") {
+      return("See section 7")
+    } else if (is.na(param_descriptions$min[i])) {
+      return("--")
+    } else if (param_descriptions$min[i] >= 100) {
+      return(sprintf("%.0f", param_descriptions$min[i]))
+    } else {
+      return(sprintf("%.2f", param_descriptions$min[i]))
+    }
+  })
+
+  param_descriptions$Max_fmt <- sapply(1:nrow(param_descriptions), function(i) {
+    if (param_descriptions$Parameter[i] == "Survival_Model") {
+      return("See section 7")
+    } else if (is.na(param_descriptions$max[i])) {
+      return("--")
+    } else if (param_descriptions$max[i] >= 100) {
+      return(sprintf("%.0f", param_descriptions$max[i]))
+    } else {
+      return(sprintf("%.2f", param_descriptions$max[i]))
+    }
+  })
 
   # Create display table
   display_table <- param_descriptions[, c("Group", "Description", "Base_fmt", "Min_fmt", "Max_fmt")]
@@ -1125,8 +1160,111 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
 
 **Note:** Impact represents the absolute difference in Net Monetary Benefit between the minimum and maximum parameter values for each strategy.
 
+```{r pagebreak-6, results='asis'}
+cat("\\newpage\n")
+```
+
+# Survival Model Structural Sensitivity
+
+## Overview
+
+This section examines how the choice of parametric survival distribution affects cost-effectiveness results. The base case uses the best-fitting distribution selected by AIC. All 9 fitted distributions are tested with the constraint that OS and PFS use the same distribution to ensure methodological consistency.
+
+**Distributions tested:**
+
+1. Exponential
+2. Weibull
+3. Weibull PH (proportional hazards)
+4. Log-logistic
+5. Log-normal
+6. Gamma (base case)
+7. Gompertz
+8. Generalized Gamma
+9. Generalized F
+
+## NMB by Parametric Distribution
+
+**Table 3: Net Monetary Benefit by Parametric Distribution and Strategy**
+
+```{r model-sensitivity-table}
+if (exists("model_sensitivity_df") && !is.null(model_sensitivity_df) && nrow(model_sensitivity_df) > 0) {
+
+  # Reshape to wide format: rows = distributions, cols = strategies
+  model_table <- model_sensitivity_df %>%
+    select(Distribution, Strategy, NMB) %>%
+    tidyr::pivot_wider(names_from = Strategy, values_from = NMB)
+
+  # Round values
+  numeric_cols <- sapply(model_table, is.numeric)
+  model_table[numeric_cols] <- round(model_table[numeric_cols], 0)
+
+  # Add ranking column for each strategy
+  for (strat in strategies) {
+    if (strat %in% names(model_table)) {
+      model_table[[paste0(strat, "_rank")]] <- rank(-model_table[[strat]], na.last = "keep")
+    }
+  }
+
+  # Display table
+  knitr::kable(model_table,
+               booktabs = TRUE,
+               align = c("l", rep("r", ncol(model_table) - 1)),
+               col.names = gsub("_rank", " Rank", names(model_table))) %>%
+    kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position", "scale_down")) %>%
+    kableExtra::row_spec(0, bold = TRUE)
+
+} else {
+  cat("**Model sensitivity results not available.** Run the prerequisite analysis scripts first.\n")
+}
+```
+
+## Impact Summary
+
+**Table 4: Survival Model Impact on NMB by Strategy**
+
+```{r model-impact-table}
+if (exists("model_impact_summary") && !is.null(model_impact_summary) && nrow(model_impact_summary) > 0) {
+
+  # Format the impact summary table
+  impact_display <- model_impact_summary %>%
+    mutate(
+      Strategy = case_when(
+        Strategy == "control" ~ "Standard of Care",
+        Strategy == "crp" ~ "CRP-guided",
+        Strategy == "tlr" ~ "TLR-guided",
+        Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+        TRUE ~ Strategy
+      ),
+      `Base NMB` = sprintf("%.0f", Base_NMB),
+      `Min NMB` = sprintf("%.0f (%s)", Min_NMB, Min_Dist),
+      `Max NMB` = sprintf("%.0f (%s)", Max_NMB, Max_Dist),
+      `Range` = sprintf("%.0f", Range)
+    ) %>%
+    select(Strategy, `Base NMB`, `Min NMB`, `Max NMB`, Range)
+
+  knitr::kable(impact_display,
+               booktabs = TRUE,
+               align = c("l", "r", "r", "r", "r")) %>%
+    kableExtra::kable_styling(font_size = 10, latex_options = c("HOLD_position"))
+
+} else {
+  cat("**Model impact summary not available.**\n")
+}
+```
+
+## Interpretation
+
+The survival model choice represents **structural uncertainty** in the cost-effectiveness analysis. Different parametric distributions make different assumptions about how hazard rates change over time:
+
+- **Exponential**: Constant hazard (no change over time)
+- **Weibull/Gompertz**: Monotonically increasing or decreasing hazard
+- **Log-logistic/Log-normal**: Non-monotonic hazard (can increase then decrease)
+- **Gamma/Generalized Gamma**: Flexible hazard shapes
+
+The range of NMB across distributions indicates sensitivity to these extrapolation assumptions. A large range suggests that long-term survival projections are particularly influential and that the choice of parametric form matters for decision-making.
+
 ---
 
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 2.0
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 3.0
