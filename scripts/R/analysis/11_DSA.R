@@ -7,6 +7,7 @@ p_load(here, dampack)
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/create_tornado_plot.R"))
+source(here::here("scripts/R/functions/prediction_functions.R"))
 
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {
@@ -129,13 +130,189 @@ dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
 cat("Calculating NMB differences...\n")
 for (strat in strategies) {
   # Find base case NMB for this strategy
-  base_nmb <- dsa_results$NMB[dsa_results$Parameter == "base_case" & 
+  base_nmb <- dsa_results$NMB[dsa_results$Parameter == "base_case" &
                                 dsa_results$Strategy == strat]
-  
+
   # Calculate differences
-  dsa_results$NMB_diff[dsa_results$Strategy == strat] <- 
+  dsa_results$NMB_diff[dsa_results$Strategy == strat] <-
     dsa_results$NMB[dsa_results$Strategy == strat] - base_nmb
 }
+
+# ===============================================================================
+# SURVIVAL MODEL STRUCTURAL SENSITIVITY ANALYSIS
+# ===============================================================================
+# Tests all fitted parametric distributions (same distribution for OS and PFS)
+# This addresses the gap in DSA where survival model choice was not varied
+# See GitHub Issue #81
+# ===============================================================================
+
+cat("\nRunning survival model structural sensitivity analysis...\n")
+
+# Check if models object exists (from 06_parametric_survival_analysis.R)
+if (exists("models") && !is.null(models$full$os)) {
+
+  # Get list of successfully fitted distributions
+  distributions_tested <- names(models$full$os)
+  distributions_tested <- distributions_tested[!sapply(models$full$os[distributions_tested], is.null)]
+
+  cat("Distributions to test:", paste(distributions_tested, collapse = ", "), "\n")
+
+  # Store results for each distribution
+  model_sensitivity_results <- list()
+
+  for (dist in distributions_tested) {
+    cat("  Testing distribution:", dist, "\n")
+
+    # Create models object with this distribution (same for OS and PFS)
+    test_models <- list(
+      os = models$full$os[[dist]],
+      pfs = models$full$pfs[[dist]]
+    )
+
+    # Skip if either model is NULL
+    if (is.null(test_models$os) || is.null(test_models$pfs)) {
+      cat("    Skipping - model not available for both OS and PFS\n")
+      next
+    }
+
+    tryCatch({
+      # Generate predictions using population averaging
+      test_predictions <- generate_population_averaged_predictions(
+        models = test_models,
+        strategies_df = strategies_df,
+        data_complete = data_complete,
+        time_points = time_points
+      )
+
+      # Build parameter list with new predictions
+      test_params <- l_params_base
+
+      # Update control survival curves
+      test_params$p_os$control_OS <- test_predictions$control$os
+      test_params$p_pfs$control_PFS <- test_predictions$control$pfs
+
+      # Update biomarker strategy survival curves
+      for (biomarker in biomarkers) {
+        test_params$p_os[[paste0(biomarker, "_pos_OS")]] <- test_predictions[[biomarker]]$biomarker_positive$os
+        test_params$p_os[[paste0(biomarker, "_neg_OS")]] <- test_predictions[[biomarker]]$biomarker_negative$os
+        test_params$p_os[[paste0(biomarker, "_weighted_OS")]] <- test_predictions[[biomarker]]$os
+        test_params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- test_predictions[[biomarker]]$biomarker_positive$pfs
+        test_params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- test_predictions[[biomarker]]$biomarker_negative$pfs
+        test_params$p_pfs[[paste0(biomarker, "_weighted_PFS")]] <- test_predictions[[biomarker]]$pfs
+      }
+
+      # Run model with this distribution's predictions
+      dist_result <- model_fun(test_params, determpsa = "det")
+      dist_result$NMB <- dist_result$Effect * WTP - dist_result$Cost
+      dist_result$Distribution <- dist
+
+      model_sensitivity_results[[dist]] <- dist_result
+
+    }, error = function(e) {
+      cat("    Error:", conditionMessage(e), "\n")
+    })
+  }
+
+  # Combine results into data frame
+  if (length(model_sensitivity_results) > 0) {
+    model_sensitivity_df <- do.call(rbind, model_sensitivity_results)
+    rownames(model_sensitivity_df) <- NULL
+
+    # Identify best-fit distribution (used in base case)
+    best_dist <- models$best_fit$os_distribution
+    cat("\nBase case distribution:", best_dist, "\n")
+
+    # For each strategy, find min and max NMB across distributions
+    model_impact_summary <- data.frame()
+    for (strat in strategies) {
+      strat_results <- model_sensitivity_df[model_sensitivity_df$Strategy == strat, ]
+
+      if (nrow(strat_results) > 0) {
+        base_nmb_strat <- strat_results$NMB[strat_results$Distribution == best_dist]
+
+        # Handle case where base distribution might not be in results
+        if (length(base_nmb_strat) == 0) {
+          base_nmb_strat <- dsa_results$NMB[dsa_results$Parameter == "base_case" &
+                                              dsa_results$Strategy == strat]
+        }
+
+        min_nmb <- min(strat_results$NMB)
+        max_nmb <- max(strat_results$NMB)
+        min_dist <- strat_results$Distribution[which.min(strat_results$NMB)]
+        max_dist <- strat_results$Distribution[which.max(strat_results$NMB)]
+
+        model_impact_summary <- rbind(model_impact_summary, data.frame(
+          Strategy = strat,
+          Parameter = "Survival_Model",
+          Base_NMB = base_nmb_strat,
+          Min_NMB = min_nmb,
+          Max_NMB = max_nmb,
+          Min_diff = min_nmb - base_nmb_strat,
+          Max_diff = max_nmb - base_nmb_strat,
+          Range = max_nmb - min_nmb,
+          Min_Dist = min_dist,
+          Max_Dist = max_dist,
+          group = "survival_model",
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+
+    cat("\nSurvival model sensitivity analysis complete.\n")
+    cat("NMB range by strategy:\n")
+    print(model_impact_summary[, c("Strategy", "Min_Dist", "Min_NMB", "Max_Dist", "Max_NMB", "Range")])
+
+    # Add survival model results to dsa_results for tornado diagram
+    for (strat in strategies) {
+      strat_summary <- model_impact_summary[model_impact_summary$Strategy == strat, ]
+
+      if (nrow(strat_summary) > 0) {
+        # Add "min" entry
+        dsa_results <- rbind(dsa_results, data.frame(
+          Strategy = strat,
+          Cost = NA,  # Not used for tornado
+          Effect = NA,
+          NMB = strat_summary$Min_NMB,
+          Parameter = "Survival_Model",
+          Value = "min",
+          ParamValue = NA,
+          group = "survival_model",
+          NMB_diff = strat_summary$Min_diff,
+          stringsAsFactors = FALSE
+        ))
+
+        # Add "max" entry
+        dsa_results <- rbind(dsa_results, data.frame(
+          Strategy = strat,
+          Cost = NA,
+          Effect = NA,
+          NMB = strat_summary$Max_NMB,
+          Parameter = "Survival_Model",
+          Value = "max",
+          ParamValue = NA,
+          group = "survival_model",
+          NMB_diff = strat_summary$Max_diff,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+
+  } else {
+    cat("Warning: No survival model sensitivity results generated.\n")
+    model_sensitivity_df <- NULL
+    model_impact_summary <- NULL
+  }
+
+} else {
+  cat("Warning: models object not found. Run 06_parametric_survival_analysis.R first.\n")
+  cat("Skipping survival model structural sensitivity analysis.\n")
+  model_sensitivity_df <- NULL
+  model_impact_summary <- NULL
+}
+
+# ===============================================================================
+# END SURVIVAL MODEL STRUCTURAL SENSITIVITY ANALYSIS
+# ===============================================================================
 
 # Create tornado plots for each strategy
 # First for the optimal strategy
