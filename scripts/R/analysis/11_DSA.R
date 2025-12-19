@@ -55,6 +55,24 @@ for (param in prevalence_params) {
   }
 }
 
+# Ensure cost parameters are non-negative (Issue #48)
+cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                 "c_test_blood", "c_other_visit", "c_other_baseline",
+                 "c_other_follow", "c_other_last")
+for (param in cost_params) {
+  idx <- which(dsa_ranges$pars == param)
+  if (length(idx) > 0) {
+    dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0)
+  }
+}
+
+# Validate all ranges have min < max (Issue #48)
+# Note: min = max is allowed for zero-valued parameters (e.g., c_test_blood = 0)
+if (any(dsa_ranges$min > dsa_ranges$max)) {
+  invalid <- dsa_ranges$pars[dsa_ranges$min > dsa_ranges$max]
+  stop("Invalid DSA ranges (min > max) for: ", paste(invalid, collapse = ", "))
+}
+
 # Print the ranges for verification
 cat("Parameter ranges for DSA:\n")
 print(dsa_ranges)
