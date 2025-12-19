@@ -52,6 +52,15 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # =========================================================================
   if(determpsa == "psa" && !is.null(sim_idx)) {
 
+    # Validate sim_idx (Issue #46)
+    if (!is.numeric(sim_idx) || length(sim_idx) != 1 || sim_idx < 1 ||
+        sim_idx != floor(sim_idx)) {
+      stop("sim_idx must be a positive integer. Got: ", sim_idx)
+    }
+    if (sim_idx > n_samples) {
+      stop("sim_idx (", sim_idx, ") exceeds n_samples (", n_samples, ")")
+    }
+
     if (sim_idx %% 100 == 0) {
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
     }
