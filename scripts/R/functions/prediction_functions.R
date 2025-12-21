@@ -92,7 +92,8 @@ generate_population_averaged_predictions <- function(models, strategies_df,
     # -----------------------------------------------------------------------
 
     # Subset to biomarker-positive patients
-    biomarker_pos_data <- data_complete[data_complete[[biomarker_name]] == "1", ]
+    # Use explicit type conversion for robustness (works with factor, character, or numeric)
+    biomarker_pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker_name]])) == 1, ]
 
     if (nrow(biomarker_pos_data) > 0) {
       # Assign experimental treatment
@@ -122,7 +123,8 @@ generate_population_averaged_predictions <- function(models, strategies_df,
     # -----------------------------------------------------------------------
 
     # Subset to biomarker-negative patients
-    biomarker_neg_data <- data_complete[data_complete[[biomarker_name]] == "0", ]
+    # Use explicit type conversion for robustness (works with factor, character, or numeric)
+    biomarker_neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker_name]])) == 0, ]
 
     if (nrow(biomarker_neg_data) > 0) {
       # Assign control treatment

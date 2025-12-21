@@ -119,11 +119,15 @@ for (biomarker in names(separate_models)) {
   cat("Generating predictions for", toupper(biomarker), "strategy...\n")
 
   # Get biomarker-positive patients
-  biomarker_pos_data <- data_complete[data_complete[[biomarker]] == "1", ]
+  # Use explicit type conversion for robustness (works with factor, character, or numeric)
+  biomarker_pos_data <- data_complete[
+    as.numeric(as.character(data_complete[[biomarker]])) == 1, ]
   biomarker_pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
 
   # Get biomarker-negative patients
-  biomarker_neg_data <- data_complete[data_complete[[biomarker]] == "0", ]
+  # Use explicit type conversion for robustness (works with factor, character, or numeric)
+  biomarker_neg_data <- data_complete[
+    as.numeric(as.character(data_complete[[biomarker]])) == 0, ]
   biomarker_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
 
   # Predict OS for biomarker-positive (experimental treatment)

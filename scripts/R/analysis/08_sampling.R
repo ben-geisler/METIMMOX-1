@@ -529,8 +529,9 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   # BIOMARKER-POSITIVE SUBGROUP: All biomarker+ patients with experimental Rx
   # -----------------------------------------------------------------------
   # Use ORIGINAL population, not resampled cohort
-
-  biomarker_pos_data <- data_original[data_original[[biomarker_name]] == 1, ]
+  # Use explicit type conversion for robustness (works with factor, character, or numeric)
+  biomarker_pos_data <- data_original[
+    as.numeric(as.character(data_original[[biomarker_name]])) == 1, ]
 
   if (nrow(biomarker_pos_data) > 0) {
     # Assign experimental treatment to all biomarker+ patients
@@ -560,8 +561,9 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   # BIOMARKER-NEGATIVE SUBGROUP: All biomarker- patients with control Rx
   # -----------------------------------------------------------------------
   # Use ORIGINAL population, not resampled cohort
-
-  biomarker_neg_data <- data_original[data_original[[biomarker_name]] == 0, ]
+  # Use explicit type conversion for robustness (works with factor, character, or numeric)
+  biomarker_neg_data <- data_original[
+    as.numeric(as.character(data_original[[biomarker_name]])) == 0, ]
 
   if (nrow(biomarker_neg_data) > 0) {
     # Assign control treatment to all biomarker- patients
