@@ -87,6 +87,8 @@ rm(list = setdiff(ls(), c(
   "strategies", "biomarkers", "strategies_df",
   # Biomarker prevalence
   "p_crp", "p_tlr", "p_tmb_braf",
-  # Other essential variables
-  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr"
+  # Other essential variables from 02_setup_and_global_variables.R
+  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr",
+  # Model configuration switches
+  "USE_BOTH_MODELS", "MODEL_STRUCTURE"
 )))

@@ -19,8 +19,11 @@ if (!dir.exists(cache_dir)) {
 }
 
 # Create cache file path based on n_samples and model configuration
+# Include MODEL_STRUCTURE in filename to ensure separate caches per structure
+model_structure_label <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
 cache_file <- here(cache_dir, paste0("sampling_models_n", n_samples, "_",
-                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"),
+                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
+                                     model_structure_label,
                                      ".rds"))
 
 # Check for old cache files in deprecated location
@@ -36,24 +39,71 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 }
 
 # ===============================================================================
-# MODEL FORMULA SELECTION BASED ON PARAMETRIC SURVIVAL ANALYSIS SWITCH
+# MODEL FORMULA SELECTION BASED ON GLOBAL MODEL_STRUCTURE SWITCH
+# ===============================================================================
+# Matches clinical_effectiveness.qmd Model A/B/C structure
+# This ensures PSA uses the SAME model structure as base case
+#
+# MODEL_STRUCTURE options:
+#   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
+#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
+#   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
 # ===============================================================================
 
-# Use the same switch value from 06_parametric_survival_analysis.R
-# USE_BOTH_MODELS: 0 = full model only, 1 = both models
-# Note: We assume the value is already set in the environment
+if (MODEL_STRUCTURE == 0) {
+  # =========================================================================
+  # JOINT (Model A): All biomarkers + all treatment interactions
+  # =========================================================================
+  model_type <- "joint"
+  cat("Resampling: Using JOINT model (Model A - all biomarkers + all interactions)\n")
 
-# Define model formulas based on the switch (matching 06_parametric_survival_analysis.R)
-if (USE_BOTH_MODELS == 0) {
-  # Only use full model (age- and sex-adjusted) - matching the parametric analysis
-  model_type <- "full"
-  cat("Resampling: Using full model (age- and sex-adjusted) to match parametric analysis\n")
-  
-  # Control model formula (age and sex adjusted)
+  # Control model - full model with all terms, fitted to ALL patients
+  # Note: For control strategy, we still use simpler model since control patients
+  # don't have treatment variation
   control_os_formula <- Surv(OSwk, Death) ~ Age + sex
   control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
-  
-  # Function to create biomarker model formulas (age and sex adjusted)
+
+  # Biomarker formulas - JOINT model with ALL biomarker interactions
+  create_biomarker_formula <- function(outcome, biomarker) {
+    if (outcome == "os") {
+      return(Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx)
+    } else {
+      return(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx)
+    }
+  }
+
+} else if (MODEL_STRUCTURE == 1) {
+  # =========================================================================
+  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
+  # =========================================================================
+  model_type <- "focused"
+  cat("Resampling: Using FOCUSED models (Model B - all biomarkers + one interaction)\n")
+
+  # Control model - all biomarkers as main effects, no interactions
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex + crp + tlr + tmb_braf
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex + crp + tlr + tmb_braf
+
+  # Biomarker formulas - all biomarkers + only THIS biomarker's interaction
+  create_biomarker_formula <- function(outcome, biomarker) {
+    if (outcome == "os") {
+      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
+    } else {
+      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
+    }
+  }
+
+} else if (MODEL_STRUCTURE == 2) {
+  # =========================================================================
+  # SEPARATE (Model C): Only ONE biomarker + its interaction per model
+  # =========================================================================
+  model_type <- "separate"
+  cat("Resampling: Using SEPARATE models (Model C - one biomarker only)\n")
+
+  # Control model - simple age + sex (fitted to control patients only)
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
+
+  # Biomarker formulas - only THIS biomarker + its interaction
   create_biomarker_formula <- function(outcome, biomarker) {
     if (outcome == "os") {
       return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
@@ -61,43 +111,10 @@ if (USE_BOTH_MODELS == 0) {
       return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
     }
   }
-  
-} else if (USE_BOTH_MODELS == 1) {
-  # For compatibility, we'll use the full model structure when both are available
-  # This ensures consistency with whichever model was selected as best in parametric analysis
-  model_type <- "full"  # Default to full for resampling
-  cat("Resampling: Using full model structure (age- and sex-adjusted) for consistency\n")
-  
-  # Control model formula (age and sex adjusted)
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
-  
-  # Function to create biomarker model formulas (age and sex adjusted)
-  create_biomarker_formula <- function(outcome, biomarker) {
-    if (outcome == "os") {
-      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    } else {
-      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    }
-  }
-  
+
 } else {
-  # Default to full model if invalid switch value
-  model_type <- "full"
-  cat("Warning: Invalid USE_BOTH_MODELS value in resampling. Defaulting to full model\n")
-  
-  # Control model formula (age and sex adjusted)
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
-  
-  # Function to create biomarker model formulas (age and sex adjusted)
-  create_biomarker_formula <- function(outcome, biomarker) {
-    if (outcome == "os") {
-      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    } else {
-      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    }
-  }
+  stop("Invalid MODEL_STRUCTURE value: ", MODEL_STRUCTURE,
+       ". Must be 0 (joint), 1 (focused), or 2 (separate)")
 }
 
 # ===============================================================================
@@ -288,9 +305,17 @@ if (is.null(sampling_models)) {
 
 # Print confirmation of model structures
 cat("\n=== Sampling model structures ready ===\n")
-cat("- Control models: Age + sex adjusted\n")
-cat("- Biomarker models: Age + sex + biomarker + treatment + interaction\n")
-cat("- Model type used:", model_type, "\n")
+cat("- MODEL_STRUCTURE:", MODEL_STRUCTURE, "(", model_type, ")\n")
+if (MODEL_STRUCTURE == 0) {
+  cat("- Control models: Age + sex adjusted\n")
+  cat("- Biomarker models: Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx (JOINT)\n")
+} else if (MODEL_STRUCTURE == 1) {
+  cat("- Control models: Age + sex + crp + tlr + tmb_braf\n")
+  cat("- Biomarker models: Age + sex + Rx + all biomarkers + [biomarker]:Rx (FOCUSED)\n")
+} else if (MODEL_STRUCTURE == 2) {
+  cat("- Control models: Age + sex adjusted\n")
+  cat("- Biomarker models: Age + sex + Rx + [biomarker]:Rx (SEPARATE)\n")
+}
 cat("- Number of resampled models:", sampling_models$control$n_samples, "\n")
 cat("- PFS and OS are CORRELATED within each resampled model\n")
 
