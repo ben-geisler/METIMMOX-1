@@ -101,6 +101,10 @@ if (!exists("models")) {
     }
   }
 }
+
+# Display model structure configuration
+model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
 ```
 
 ```{r pagebreak-1, results='asis'}

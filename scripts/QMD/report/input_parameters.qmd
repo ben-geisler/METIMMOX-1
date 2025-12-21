@@ -69,34 +69,38 @@ These parameters define the overall model structure and are held constant across
 #| echo: false
 
 global_params <- data.frame(
-  Parameter = c("Time Horizon", 
-               "Cycle Length", 
-               "Discount Rate", 
+  Parameter = c("Time Horizon",
+               "Cycle Length",
+               "Discount Rate",
                "WTP Threshold",
                "PSA Sample Size",
                "Sampling Models",
-               "DSA Variation Range"),
+               "DSA Variation Range",
+               "Model Structure"),
   Value = c("520 weeks (10 years)",
            "1 week",
            "4% per annum",
            "€51,000 per QALY",
            "5,000 iterations",
            "5,000 models",
-           "±20%"),
+           "±20%",
+           "0 (joint)"),
   Description = c("Model time horizon",
                  "Cycle length for discrete-time model",
                  "Annual discount rate for costs and effects",
                  "Willingness-to-pay threshold",
                  "Number of Monte Carlo iterations for PSA",
                  "Resampled models for survival uncertainty",
-                 "Parameter variation range for DSA"),
-  Source = c("Clinical follow-up period", 
-            "Model assumption", 
-            "Model specification", 
+                 "Parameter variation range for DSA",
+                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (all biomarkers + one interaction), 2=separate (one biomarker only)"),
+  Source = c("Clinical follow-up period",
+            "Model assumption",
+            "Model specification",
             "Norwegian threshold based on severity (14.5 QALYs lost for diagnosis, based on a health 65-year old)",
             "Computational adequacy",
             "Statistical adequacy",
-            "Standard practice")
+            "Standard practice",
+            "Methodological choice")
 )
 
 kable(global_params, caption = "Global Model Parameters", booktabs = TRUE) %>%

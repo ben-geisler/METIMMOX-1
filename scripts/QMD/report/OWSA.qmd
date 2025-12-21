@@ -91,6 +91,11 @@ time_horizon <- 520 # 10 years in weeks
 WTP <- 51000       # CE threshold (in Euros)
 DSA_mult <- 0.2    # +/- 20% variations
 dr <- 0.04         # discount rate
+MODEL_STRUCTURE <- 0  # 0 = joint, 1 = focused, 2 = separate
+
+# Display model structure configuration
+model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
 
 # Time points (from script 07)
 time_points <- seq(0, time_horizon, by = 1)

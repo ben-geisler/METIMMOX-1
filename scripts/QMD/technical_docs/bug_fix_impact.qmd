@@ -284,18 +284,20 @@ icer_significant <- max_icer_change > 1000
 
 ```{r metadata-table}
 metadata_comp <- data.frame(
-  Item = c("Git Commit", "Timestamp", "R Version", "Issue Number"),
+  Item = c("Git Commit", "Timestamp", "R Version", "Issue Number", "Model Structure"),
   Baseline = c(
     before_meta$git_commit,
     before_meta$timestamp,
     before_meta$r_version,
-    before_meta$issue_number
+    before_meta$issue_number,
+    if(!is.null(before_meta$model_structure)) paste0(before_meta$model_structure, " (", c("joint", "focused", "separate")[before_meta$model_structure + 1], ")") else "0 (joint)"
   ),
   Fixed = c(
     after_meta$git_commit,
     after_meta$timestamp,
     after_meta$r_version,
-    after_meta$issue_number
+    after_meta$issue_number,
+    if(!is.null(after_meta$model_structure)) paste0(after_meta$model_structure, " (", c("joint", "focused", "separate")[after_meta$model_structure + 1], ")") else "0 (joint)"
   )
 )
 

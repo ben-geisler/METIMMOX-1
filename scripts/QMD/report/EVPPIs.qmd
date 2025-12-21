@@ -73,6 +73,11 @@ if (!file.exists(results_file)) {
 # Load results
 load(results_file)
 
+# Model structure configuration (from script 02)
+MODEL_STRUCTURE <- 0  # 0 = joint, 1 = focused, 2 = separate
+model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
+
 # Function to create incremental CE plot relative to control with WTP threshold
 create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "") {
   # Extract cost and effect matrices
