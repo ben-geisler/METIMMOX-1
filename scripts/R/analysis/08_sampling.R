@@ -596,6 +596,53 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   ))
 }
 
+# ===============================================================================
+# CONTROL STRATEGY PSA PREDICTION FUNCTION
+# ===============================================================================
+# This function generates population-averaged predictions for the CONTROL strategy
+# using the ORIGINAL control population (not the resampled cohort).
+# This matches the methodology used for biomarker strategies (Issue #97).
+# ===============================================================================
+
+generate_psa_control_predictions <- function(sampling_model_list,
+                                              outcome = "os",
+                                              sample_idx = 1,
+                                              data_control_original,
+                                              time_points) {
+  # Extract the resampled model
+  sampled_model <- sampling_model_list$samples[[sample_idx]]
+
+  if (is.null(sampled_model)) {
+    warning("Sampled model ", sample_idx, " is NULL - returning NULL")
+    return(NULL)
+  }
+
+  model_obj <- sampled_model[[outcome]]$model
+
+  if (is.null(model_obj)) {
+    warning("Model object for ", outcome, " is NULL in sample ", sample_idx)
+    return(NULL)
+  }
+
+  # Predict for ALL patients in original control population
+  tryCatch({
+    pred <- predict(model_obj, newdata = data_control_original,
+                    type = "survival", times = time_points)
+
+    # Extract and average survival probabilities across all patients
+    all_surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+    surv_matrix <- do.call(cbind, all_surv_probs)
+    survival_avg <- rowMeans(surv_matrix, na.rm = TRUE)
+
+    return(survival_avg)
+
+  }, error = function(e) {
+    warning("Prediction failed for control in sim ", sample_idx,
+            ": ", conditionMessage(e))
+    return(rep(NA, length(time_points)))
+  })
+}
+
 cat("\n=== Parameter distributions configured ===\n")
 cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
 cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")

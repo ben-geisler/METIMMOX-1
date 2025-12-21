@@ -135,31 +135,34 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
 
     # -----------------------------------------------------------------------
-    # CONTROL STRATEGY: Population-averaged predictions
+    # CONTROL STRATEGY: Population-averaged predictions over ORIGINAL population
     # -----------------------------------------------------------------------
-    # Predict for ALL patients in control arm, then average
+    # Uses generate_psa_control_predictions() to predict for ALL patients in
+    # the original control arm, then averages. This matches the methodology
+    # used for biomarker strategies (Issue #97).
 
     tryCatch({
-      # Use generate_sampling_predictions with newdata = NULL
-      # This predicts for all patients and returns the average
-      os_control <- generate_sampling_predictions(
+      # Use population averaging over ORIGINAL control population
+      # This matches the approach used for biomarker strategies
+      os_control <- generate_psa_control_predictions(
         sampling_model_list = sampling_models$control,
         outcome = "os",
         sample_idx = sim_idx,
-        newdata = NULL,  # NULL triggers population averaging
+        data_control_original = data_control,
         time_points = seq(0, time_horizon)
       )
 
-      pfs_control <- generate_sampling_predictions(
+      pfs_control <- generate_psa_control_predictions(
         sampling_model_list = sampling_models$control,
         outcome = "pfs",
         sample_idx = sim_idx,
-        newdata = NULL,
+        data_control_original = data_control,
         time_points = seq(0, time_horizon)
       )
 
       # Check for NA values and handle
-      if (any(is.na(os_control)) || any(is.na(pfs_control))) {
+      if (is.null(os_control) || is.null(pfs_control) ||
+          any(is.na(os_control)) || any(is.na(pfs_control))) {
         warning("NA values in control survival curves for sim ", sim_idx,
                 " - using base case curves")
         fallback_used <- TRUE  # Issue #79: Track fallback
