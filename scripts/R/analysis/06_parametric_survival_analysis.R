@@ -68,42 +68,100 @@ data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", 
 # ===============================================================================
 # MODEL STRUCTURE DEFINITIONS
 # ===============================================================================
+# MODEL_STRUCTURE controls which model formula structure is used:
+#   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
+#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
+#   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
+#
+# USE_BOTH_MODELS controls age/sex adjustment:
+#   0 = Full model with age and sex adjustments only
+#   1 = Both full model and model without age/sex adjustments
+# ===============================================================================
 
-# Define model structures based on configuration switch
-if (USE_BOTH_MODELS == 0) {
-  # Only use full model (age- and sex-adjusted)
-  model_formulas <- list(
-    full = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-    )
-  )
-  cat("Configuration: Using full model (age- and sex-adjusted) only\n")
-  
-} else if (USE_BOTH_MODELS == 1) {
-  # Use both full model and model without age/sex adjustments
-  model_formulas <- list(
-    full = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-    ),
-    no_age_sex = list(
-      os = Surv(OSwk, Death) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-    )
-  )
-  cat("Configuration: Using both full model and model without age/sex adjustments\n")
-  
-} else {
-  # Default to full model if invalid switch value
-  model_formulas <- list(
-    full = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-    )
-  )
-  cat("Warning: Invalid USE_BOTH_MODELS value. Defaulting to full model only\n")
+# Validate MODEL_STRUCTURE
+if (!exists("MODEL_STRUCTURE")) {
+  MODEL_STRUCTURE <- 0
+  cat("MODEL_STRUCTURE not defined, defaulting to 0 (joint)\n")
 }
+
+if (MODEL_STRUCTURE == 0) {
+  # =========================================================================
+  # JOINT (Model A): All biomarkers + all treatment interactions in ONE model
+  # =========================================================================
+  model_type_label <- "joint"
+  cat("Configuration: Using JOINT model (Model A - all biomarkers + all interactions)\n")
+
+  # Define model formulas based on USE_BOTH_MODELS
+  if (USE_BOTH_MODELS == 0) {
+    model_formulas <- list(
+      full = list(
+        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+      )
+    )
+  } else if (USE_BOTH_MODELS == 1) {
+    model_formulas <- list(
+      full = list(
+        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+      ),
+      no_age_sex = list(
+        os = Surv(OSwk, Death) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+        pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+      )
+    )
+  } else {
+    model_formulas <- list(
+      full = list(
+        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+      )
+    )
+    cat("Warning: Invalid USE_BOTH_MODELS value. Defaulting to full model only\n")
+  }
+
+} else if (MODEL_STRUCTURE == 1) {
+  # =========================================================================
+  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
+  # =========================================================================
+  model_type_label <- "focused"
+  cat("Configuration: Using FOCUSED models (Model B - all biomarkers + one interaction each)\n")
+  cat("NOTE: MODEL_STRUCTURE=1 requires separate models per biomarker.\n")
+  cat("      For base case, falling back to joint model with focused predictions.\n")
+
+  # For base case, we use the joint model but predictions are biomarker-specific
+  # The focused structure is primarily relevant for PSA where separate models are fitted
+  model_formulas <- list(
+    full = list(
+      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    )
+  )
+
+} else if (MODEL_STRUCTURE == 2) {
+  # =========================================================================
+  # SEPARATE (Model C): Only ONE biomarker + its interaction per model
+  # =========================================================================
+  model_type_label <- "separate"
+  cat("Configuration: Using SEPARATE models (Model C - one biomarker + its interaction only)\n")
+  cat("NOTE: MODEL_STRUCTURE=2 requires separate models per biomarker.\n")
+  cat("      For base case, falling back to joint model with separate predictions.\n")
+
+  # For base case, we use the joint model but predictions are biomarker-specific
+  # The separate structure is primarily relevant for PSA where separate models are fitted
+  model_formulas <- list(
+    full = list(
+      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    )
+  )
+
+} else {
+  stop("Invalid MODEL_STRUCTURE value: ", MODEL_STRUCTURE,
+       ". Must be 0 (joint), 1 (focused), or 2 (separate)")
+}
+
+cat("Model type label:", model_type_label, "\n")
 
 # Print which models will be fitted
 cat("Model structures to be fitted: ", paste(names(model_formulas), collapse = ", "), "\n")

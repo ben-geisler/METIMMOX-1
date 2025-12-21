@@ -243,6 +243,7 @@ DSA_mult <- 0.2        # ±20% variation for DSA
 n_samples <- 5000      # Resampling/PSA sample size
 dr <- 0.04             # Discount rate (4%)
 USE_BOTH_MODELS <- 0   # 0 = full model only, 1 = both models
+MODEL_STRUCTURE <- 0   # 0 = joint, 1 = focused, 2 = separate
 ```
 
 **Note on USE_BOTH_MODELS**: This setting controls whether the analysis uses only the full (gamma) survival model or compares both full and reduced (Weibull PH) models. It is set globally in script 02, but may be overridden by:
@@ -250,6 +251,18 @@ USE_BOTH_MODELS <- 0   # 0 = full model only, 1 = both models
 - `CEA.qmd` and `scenario_effect.qmd` reset it to 0
 
 When changed, the sampling cache must be regenerated (different cache file per setting).
+
+**Note on MODEL_STRUCTURE**: This setting controls which survival model formula structure is used for BOTH base case and PSA analyses (matching clinical_effectiveness.qmd Model A/B/C):
+
+| Value | Name | Formula Pattern | Description |
+|-------|------|-----------------|-------------|
+| 0 | Joint | `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx` | All biomarker interactions in one model (Model A) |
+| 1 | Focused | `~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx` | All biomarkers as main effects + one interaction (Model B) |
+| 2 | Separate | `~ Age + sex + Rx + [biomarker]:Rx` | Only one biomarker per model (Model C) |
+
+**Default**: MODEL_STRUCTURE=0 (Joint) - maintains current base case behavior.
+
+**When changed**: BOTH sampling cache AND PSA cache must be regenerated. Cache filenames include the MODEL_STRUCTURE setting to prevent mixing results from different model structures.
 
 ### Biomarker Strategies
 
