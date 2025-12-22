@@ -155,6 +155,10 @@ if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
 } else {
   message("Survival analysis script not found")
 }
+
+# Display model structure configuration
+model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
 ```
 
 ```{r input-parameters, include=FALSE}

@@ -122,6 +122,10 @@ if (!exists("USE_BOTH_MODELS")) {
 if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
   suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
 }
+
+# Display model structure configuration
+model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
 ```
 
 ```{r input-parameters, include=FALSE}
