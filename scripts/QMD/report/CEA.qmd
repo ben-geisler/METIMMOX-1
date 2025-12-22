@@ -169,17 +169,10 @@ if (file.exists(here("scripts/R/analysis/07_basecase_input_parameters.R"))) {
 ```
 
 ```{r sampling-setup, include=FALSE}
-# 08 - Sampling Setup with path safety
+# 08 - Sampling Setup
 if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
-  # Check if required function file exists before sourcing
-  sampling_func_path <- here("scripts/R/functions/bootstrap_survival_model.R")
-  if (file.exists(sampling_func_path)) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
-    cat("Sampling setup completed successfully\n")
-  } else {
-    message("Sampling function file not found at: ", sampling_func_path)
-    message("Skipping sampling setup - this will affect PSA analysis")
-  }
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/08_sampling.R"))))
+  cat("Sampling setup completed successfully\n")
 } else {
   message("Sampling script not found")
 }
