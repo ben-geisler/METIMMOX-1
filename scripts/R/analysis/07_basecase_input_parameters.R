@@ -72,7 +72,8 @@ l_params_base <- list(
   
   # Test costs
   c_test_CT = 386,      # cost of CT scan
-  c_test_blood = 0,    # cost of blood tests
+  c_test_blood = 16,    # assuming CRP, CBC, and chem-7; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter; 
+  # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
   c_test_NGS = 2518,    # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
   
   # Other costs
