@@ -73,7 +73,7 @@ l_params_base <- list(
   # Test costs
   c_test_CT = 386,      # cost of CT scan
   c_test_blood = 0,    # cost of blood tests
-  c_test_NGS = 1439,    # cost of next-generation sequencing (for TMB/BRAF)
+  c_test_NGS = 2518,    # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
   
   # Other costs
   c_other_visit = 33,     # cost of standard outpatient visit
