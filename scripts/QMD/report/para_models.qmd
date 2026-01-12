@@ -355,6 +355,40 @@ model_biomarker_map <- list(
   C_tmb = c("tmb_braf")
 )
 
+# -------------------------------------------------------------------------------
+# Helper function for population-averaged predictions (inline version)
+# -------------------------------------------------------------------------------
+predict_population_avg <- function(model, newdata, time_points) {
+  # Generate predictions for each patient, then average across population
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
+    # Extract survival probabilities - handle different flexsurv output formats
+    if (".pred" %in% names(pred)) {
+      # New format: tibble with .pred column
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      # Old format: list of data frames
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      } else {
+        return(surv_probs)
+      }
+    } else {
+      return(NULL)
+    }
+  }, error = function(e) {
+    cat("    Prediction error:", e$message, "\n")
+    return(NULL)
+  })
+}
+
+# Get treatment level references
+exp_rx <- levels(data_complete$Rx)[2]  # Experimental treatment
+ctrl_rx <- levels(data_complete$Rx)[1]  # Control treatment
+
 # Loop through distributions and model types
 for (dist in distributions) {
   cat("\n--- Generating predictions for", toupper(dist), "---\n")
@@ -363,8 +397,10 @@ for (dist in distributions) {
     cat("  Model:", model_type, "\n")
 
     # Check if models exist
-    if (is.null(multi_models[[dist]][[model_type]]$os) ||
-        is.null(multi_models[[dist]][[model_type]]$pfs)) {
+    os_model <- multi_models[[dist]][[model_type]]$os
+    pfs_model <- multi_models[[dist]][[model_type]]$pfs
+
+    if (is.null(os_model) || is.null(pfs_model)) {
       cat("    Skipping (models not fitted)\n")
       next
     }
@@ -372,78 +408,75 @@ for (dist in distributions) {
     # Initialize prediction storage for this model type
     multi_predictions[[dist]][[model_type]] <- list()
 
-    # Generate control predictions (same for all model types)
+    # -------------------------------------------------------------------------
+    # Control predictions: All patients receive control treatment
+    # -------------------------------------------------------------------------
     cat("    Generating control predictions...\n")
-    multi_predictions[[dist]][[model_type]]$control <- tryCatch({
-      generate_population_averaged_predictions(
-        models = list(
-          os = multi_models[[dist]][[model_type]]$os,
-          pfs = multi_models[[dist]][[model_type]]$pfs
-        ),
-        data = data_complete,
-        treatment = "control",
-        time_horizon = time_horizon
-      )
-    }, error = function(e) {
-      warning(paste("Failed to generate control predictions for", model_type, dist, ":", e$message))
-      return(NULL)
-    })
+    control_data <- data_complete
+    control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
 
-    # Generate biomarker-specific predictions based on model type
+    control_os <- predict_population_avg(os_model, control_data, time_points)
+    control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
+
+    if (!is.null(control_os) && !is.null(control_pfs)) {
+      multi_predictions[[dist]][[model_type]]$control <- list(
+        os = control_os,
+        pfs = control_pfs
+      )
+      cat("    Control predictions generated successfully\n")
+    } else {
+      cat("    WARNING: Control predictions failed\n")
+    }
+
+    # -------------------------------------------------------------------------
+    # Biomarker-specific predictions based on model type
+    # -------------------------------------------------------------------------
     biomarkers_to_predict <- model_biomarker_map[[model_type]]
 
     for (biomarker in biomarkers_to_predict) {
       cat("    Generating", biomarker, "predictions...\n")
 
-      # Biomarker-positive predictions
-      multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]] <- tryCatch({
-        generate_population_averaged_predictions(
-          models = list(
-            os = multi_models[[dist]][[model_type]]$os,
-            pfs = multi_models[[dist]][[model_type]]$pfs
-          ),
-          data = data_complete,
-          treatment = "experimental",
-          biomarker = biomarker,
-          biomarker_status = "positive",
-          time_horizon = time_horizon
-        )
-      }, error = function(e) {
-        warning(paste("Failed to generate", biomarker, "positive predictions:", e$message))
-        return(NULL)
-      })
+      # Biomarker-positive: experimental treatment
+      pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 1, ]
+      if (nrow(pos_data) > 0) {
+        pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
+        pos_os <- predict_population_avg(os_model, pos_data, time_points)
+        pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
 
-      # Biomarker-negative predictions
-      multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]] <- tryCatch({
-        generate_population_averaged_predictions(
-          models = list(
-            os = multi_models[[dist]][[model_type]]$os,
-            pfs = multi_models[[dist]][[model_type]]$pfs
-          ),
-          data = data_complete,
-          treatment = "control",
-          biomarker = biomarker,
-          biomarker_status = "negative",
-          time_horizon = time_horizon
-        )
-      }, error = function(e) {
-        warning(paste("Failed to generate", biomarker, "negative predictions:", e$message))
-        return(NULL)
-      })
+        if (!is.null(pos_os) && !is.null(pos_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]] <- list(
+            os = pos_os,
+            pfs = pos_pfs
+          )
+        }
+      }
+
+      # Biomarker-negative: control treatment
+      neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 0, ]
+      if (nrow(neg_data) > 0) {
+        neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+        neg_os <- predict_population_avg(os_model, neg_data, time_points)
+        neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
+
+        if (!is.null(neg_os) && !is.null(neg_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]] <- list(
+            os = neg_os,
+            pfs = neg_pfs
+          )
+        }
+      }
 
       # Population-weighted prediction
       biomarker_prev <- strategies_df$prevalence[strategies_df$id == biomarker]
+      pos_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]
+      neg_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]]
 
-      if (length(biomarker_prev) > 0 && !is.null(multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]) &&
-          !is.null(multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]])) {
-
-        pos_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]
-        neg_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]]
-
+      if (length(biomarker_prev) > 0 && !is.null(pos_pred) && !is.null(neg_pred)) {
         multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_weighted")]] <- list(
           os = biomarker_prev * pos_pred$os + (1 - biomarker_prev) * neg_pred$os,
           pfs = biomarker_prev * pos_pred$pfs + (1 - biomarker_prev) * neg_pred$pfs
         )
+        cat("    ", biomarker, "predictions generated successfully\n")
       }
     }
   }
@@ -452,6 +485,17 @@ for (dist in distributions) {
 cat("\n===============================================\n")
 cat("Phase 3 complete: Predictions generated.\n")
 cat("===============================================\n")
+
+# Diagnostic: Check what was actually generated
+cat("\nDiagnostic: Checking multi_predictions structure:\n")
+for (dist in distributions) {
+  for (model_type in model_types) {
+    pred <- multi_predictions[[dist]][[model_type]]
+    if (!is.null(pred)) {
+      cat("  ", dist, "-", model_type, ": ", paste(names(pred), collapse=", "), "\n")
+    }
+  }
+}
 
 # Clean up memory
 gc(verbose = FALSE)
@@ -769,270 +813,277 @@ if (exists("multi_models") && !is.null(multi_models$gamma)) {
 cat("\\newpage\n")
 ```
 
-# Treatment × Biomarker Interaction Effects
+# Model Coefficients
 
-This section presents the key treatment-biomarker interaction hazard ratios across all model structure types. These interactions quantify whether treatment effects differ by biomarker status.
+The following tables present model coefficients for each model type, organized by outcome and distribution. Coefficients are presented as estimates with 95% confidence intervals. For treatment-biomarker interaction hazard ratios, see the Clinical Effectiveness report.
 
-**Interpretation:** HR < 1 indicates improved survival with experimental treatment in biomarker-positive patients relative to control. Values are presented as: HR (95% CI) for Gamma / Weibull PH.
-
-```{r extract-interaction-hr-function, include=FALSE}
-# Helper function to extract interaction HR from flexsurvreg model
-extract_interaction_hr <- function(model, biomarker_name, dist_name) {
+```{r coef-helper-function, include=FALSE}
+# Helper function to extract coefficients from a flexsurvreg model
+extract_coef_table <- function(model, dist_label) {
   if (is.null(model)) {
-    return(data.frame(HR = NA, CI_lower = NA, CI_upper = NA, text = "—"))
+    return(NULL)
   }
 
-  # Get coefficient table
-  coef_table <- tryCatch({
-    as.data.frame(model$res.t)
+  tryCatch({
+    coef_table <- as.data.frame(model$res.t)
+    if (is.null(coef_table) || nrow(coef_table) == 0) {
+      return(NULL)
+    }
+
+    coef_df <- data.frame(
+      Parameter = rownames(coef_table),
+      Estimate = round(coef_table$est, 4),
+      SE = round(coef_table$se, 4),
+      `L95%` = round(coef_table$`L95%`, 4),
+      `U95%` = round(coef_table$`U95%`, 4),
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    )
+    return(coef_df)
   }, error = function(e) {
     return(NULL)
   })
-
-  if (is.null(coef_table)) {
-    return(data.frame(HR = NA, CI_lower = NA, CI_upper = NA, text = "—"))
-  }
-
-  # Search for interaction term
-  param_names <- rownames(coef_table)
-  interaction_patterns <- c(
-    paste0(biomarker_name, ":Rx"),
-    paste0("Rx:", biomarker_name),
-    paste0(biomarker_name, ":Rxexperimental"),
-    paste0("Rxexperimental:", biomarker_name)
-  )
-
-  interaction_idx <- NULL
-  for (pattern in interaction_patterns) {
-    idx <- grep(pattern, param_names, fixed = TRUE)
-    if (length(idx) > 0) {
-      interaction_idx <- idx[1]
-      break
-    }
-  }
-
-  if (is.null(interaction_idx) || length(interaction_idx) == 0) {
-    return(data.frame(HR = NA, CI_lower = NA, CI_upper = NA, text = "—"))
-  }
-
-  # Extract HR and CI
-  est <- coef_table$est[interaction_idx]
-  se <- coef_table$se[interaction_idx]
-
-  hr <- exp(est)
-  ci_lower <- exp(est - 1.96 * se)
-  ci_upper <- exp(est + 1.96 * se)
-
-  # Format as text
-  hr_text <- sprintf("%.2f (%.2f-%.2f)", hr, ci_lower, ci_upper)
-
-  return(data.frame(
-    HR = hr,
-    CI_lower = ci_lower,
-    CI_upper = ci_upper,
-    text = hr_text
-  ))
 }
-```
 
-## Overall Survival (OS) Interaction Hazard Ratios
-
-```{r os-interaction-hrs}
-#| tbl-cap: "Treatment × Biomarker Interaction Hazard Ratios for Overall Survival"
-
-if (exists("multi_models") && !is.null(multi_models$gamma)) {
-
-  # Create table structure
-  interaction_table_os <- data.frame(
-    `Model Type` = character(),
-    `CRP Interaction` = character(),
-    `TLR Interaction` = character(),
-    `TMB Interaction` = character(),
-    check.names = FALSE
-  )
-
-  # Loop through model types
-  for (model_type in model_types) {
-    gamma_model_os <- multi_models$gamma[[model_type]]$os
-    weibull_model_os <- multi_models$weibullph[[model_type]]$os
-
-    # Determine which biomarkers this model includes
-    biomarkers_in_model <- model_biomarker_map[[model_type]]
-
-    # Extract CRP interaction
-    crp_hr_gamma <- if ("crp" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_os, "crp", "gamma")$text
-    } else {
-      "—"
-    }
-    crp_hr_weibull <- if ("crp" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_os, "crp", "weibullph")$text
-    } else {
-      "—"
-    }
-    crp_combined <- paste(crp_hr_gamma, "/", crp_hr_weibull)
-    if (crp_hr_gamma == "—") crp_combined <- "—"
-
-    # Extract TLR interaction
-    tlr_hr_gamma <- if ("tlr" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_os, "tlr", "gamma")$text
-    } else {
-      "—"
-    }
-    tlr_hr_weibull <- if ("tlr" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_os, "tlr", "weibullph")$text
-    } else {
-      "—"
-    }
-    tlr_combined <- paste(tlr_hr_gamma, "/", tlr_hr_weibull)
-    if (tlr_hr_gamma == "—") tlr_combined <- "—"
-
-    # Extract TMB interaction
-    tmb_hr_gamma <- if ("tmb_braf" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_os, "tmb_braf", "gamma")$text
-    } else {
-      "—"
-    }
-    tmb_hr_weibull <- if ("tmb_braf" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_os, "tmb_braf", "weibullph")$text
-    } else {
-      "—"
-    }
-    tmb_combined <- paste(tmb_hr_gamma, "/", tmb_hr_weibull)
-    if (tmb_hr_gamma == "—") tmb_combined <- "—"
-
-    # Add row to table
-    interaction_table_os <- rbind(
-      interaction_table_os,
-      data.frame(
-        `Model Type` = model_labels_short[model_type],
-        `CRP Interaction` = crp_combined,
-        `TLR Interaction` = tlr_combined,
-        `TMB Interaction` = tmb_combined,
-        check.names = FALSE
-      )
-    )
+# Function to display a single model's coefficients
+display_coef_table <- function(coef_df, caption_text) {
+  if (is.null(coef_df) || nrow(coef_df) == 0) {
+    cat("Coefficients not available.\n")
+    return(invisible(NULL))
   }
 
-  # Display table
   if (knitr::is_latex_output()) {
-    kable(interaction_table_os, format = "latex", booktabs = TRUE, escape = TRUE) %>%
-      kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
+    print(kable(coef_df, format = "latex", booktabs = TRUE, row.names = FALSE,
+                caption = caption_text) %>%
+      kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position")))
   } else {
-    kable(interaction_table_os, format = "html") %>%
-      kable_styling(bootstrap_options = c("striped", "hover"))
+    print(kable(coef_df, format = "html", row.names = FALSE, caption = caption_text) %>%
+      kable_styling(bootstrap_options = c("striped", "hover"), font_size = 10))
   }
-
-} else {
-  cat("Interaction HR table not available.\n")
 }
 ```
 
-**Interpretation:**
+## Model A (Joint) Coefficients
 
-- **Model A (Joint)** shows mutually adjusted interaction effects, accounting for all biomarkers simultaneously
-- **Model B variants** show interactions adjusted for biomarker main effects but not other interactions
-- **Model C variants** show unadjusted interactions (single-biomarker models)
-- Compare stability of HR estimates across model types to assess robustness
+Model A includes all three biomarker interactions: `Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
 
-## Progression-Free Survival (PFS) Interaction Hazard Ratios
+```{r model-a-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$A)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$A$os, "Gamma")
+  display_coef_table(coef_df, "Model A - OS - Gamma")
 
-```{r pfs-interaction-hrs}
-#| tbl-cap: "Treatment × Biomarker Interaction Hazard Ratios for Progression-Free Survival"
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$A$os, "Weibull PH")
+  display_coef_table(coef_df, "Model A - OS - Weibull PH")
 
-if (exists("multi_models") && !is.null(multi_models$gamma)) {
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$A$pfs, "Gamma")
+  display_coef_table(coef_df, "Model A - PFS - Gamma")
 
-  # Create table structure
-  interaction_table_pfs <- data.frame(
-    `Model Type` = character(),
-    `CRP Interaction` = character(),
-    `TLR Interaction` = character(),
-    `TMB Interaction` = character(),
-    check.names = FALSE
-  )
-
-  # Loop through model types
-  for (model_type in model_types) {
-    gamma_model_pfs <- multi_models$gamma[[model_type]]$pfs
-    weibull_model_pfs <- multi_models$weibullph[[model_type]]$pfs
-
-    # Determine which biomarkers this model includes
-    biomarkers_in_model <- model_biomarker_map[[model_type]]
-
-    # Extract CRP interaction
-    crp_hr_gamma <- if ("crp" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_pfs, "crp", "gamma")$text
-    } else {
-      "—"
-    }
-    crp_hr_weibull <- if ("crp" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_pfs, "crp", "weibullph")$text
-    } else {
-      "—"
-    }
-    crp_combined <- paste(crp_hr_gamma, "/", crp_hr_weibull)
-    if (crp_hr_gamma == "—") crp_combined <- "—"
-
-    # Extract TLR interaction
-    tlr_hr_gamma <- if ("tlr" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_pfs, "tlr", "gamma")$text
-    } else {
-      "—"
-    }
-    tlr_hr_weibull <- if ("tlr" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_pfs, "tlr", "weibullph")$text
-    } else {
-      "—"
-    }
-    tlr_combined <- paste(tlr_hr_gamma, "/", tlr_hr_weibull)
-    if (tlr_hr_gamma == "—") tlr_combined <- "—"
-
-    # Extract TMB interaction
-    tmb_hr_gamma <- if ("tmb_braf" %in% biomarkers_in_model) {
-      extract_interaction_hr(gamma_model_pfs, "tmb_braf", "gamma")$text
-    } else {
-      "—"
-    }
-    tmb_hr_weibull <- if ("tmb_braf" %in% biomarkers_in_model) {
-      extract_interaction_hr(weibull_model_pfs, "tmb_braf", "weibullph")$text
-    } else {
-      "—"
-    }
-    tmb_combined <- paste(tmb_hr_gamma, "/", tmb_hr_weibull)
-    if (tmb_hr_gamma == "—") tmb_combined <- "—"
-
-    # Add row to table
-    interaction_table_pfs <- rbind(
-      interaction_table_pfs,
-      data.frame(
-        `Model Type` = model_labels_short[model_type],
-        `CRP Interaction` = crp_combined,
-        `TLR Interaction` = tlr_combined,
-        `TMB Interaction` = tmb_combined,
-        check.names = FALSE
-      )
-    )
-  }
-
-  # Display table
-  if (knitr::is_latex_output()) {
-    kable(interaction_table_pfs, format = "latex", booktabs = TRUE, escape = TRUE) %>%
-      kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
-  } else {
-    kable(interaction_table_pfs, format = "html") %>%
-      kable_styling(bootstrap_options = c("striped", "hover"))
-  }
-
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$A$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model A - PFS - Weibull PH")
 } else {
-  cat("Interaction HR table not available.\n")
+  cat("Model A coefficients not available.\n")
 }
 ```
 
-**Interpretation:**
+```{r pagebreak-coef-a, results='asis'}
+cat("\\newpage\n")
+```
 
-- Compare PFS interaction estimates to OS estimates to assess consistency across outcomes
-- Divergence between Model C and Models A/B may indicate confounding from unmeasured biomarker correlations
-- Similarity across models suggests robust treatment-biomarker interaction effects
+## Model B-CRP (Focused) Coefficients
+
+Model B-CRP includes all biomarkers as covariates with CRP interaction only: `Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx`
+
+```{r model-b-crp-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$B_crp)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_crp$os, "Gamma")
+  display_coef_table(coef_df, "Model B-CRP - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_crp$os, "Weibull PH")
+  display_coef_table(coef_df, "Model B-CRP - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_crp$pfs, "Gamma")
+  display_coef_table(coef_df, "Model B-CRP - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_crp$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model B-CRP - PFS - Weibull PH")
+} else {
+  cat("Model B-CRP coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-b-crp, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model B-TLR (Focused) Coefficients
+
+Model B-TLR includes all biomarkers as covariates with TLR interaction only: `Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx`
+
+```{r model-b-tlr-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$B_tlr)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tlr$os, "Gamma")
+  display_coef_table(coef_df, "Model B-TLR - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tlr$os, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TLR - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tlr$pfs, "Gamma")
+  display_coef_table(coef_df, "Model B-TLR - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tlr$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TLR - PFS - Weibull PH")
+} else {
+  cat("Model B-TLR coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-b-tlr, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model B-TMB (Focused) Coefficients
+
+Model B-TMB includes all biomarkers as covariates with TMB interaction only: `Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx`
+
+```{r model-b-tmb-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$B_tmb)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tmb$os, "Gamma")
+  display_coef_table(coef_df, "Model B-TMB - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tmb$os, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TMB - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tmb$pfs, "Gamma")
+  display_coef_table(coef_df, "Model B-TMB - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tmb$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TMB - PFS - Weibull PH")
+} else {
+  cat("Model B-TMB coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-b-tmb, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model C-CRP (Single-biomarker) Coefficients
+
+Model C-CRP includes only CRP with its interaction: `Age + sex + Rx + crp:Rx`
+
+```{r model-c-crp-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$C_crp)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_crp$os, "Gamma")
+  display_coef_table(coef_df, "Model C-CRP - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_crp$os, "Weibull PH")
+  display_coef_table(coef_df, "Model C-CRP - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_crp$pfs, "Gamma")
+  display_coef_table(coef_df, "Model C-CRP - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_crp$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model C-CRP - PFS - Weibull PH")
+} else {
+  cat("Model C-CRP coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-c-crp, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model C-TLR (Single-biomarker) Coefficients
+
+Model C-TLR includes only TLR with its interaction: `Age + sex + Rx + tlr:Rx`
+
+```{r model-c-tlr-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$C_tlr)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_tlr$os, "Gamma")
+  display_coef_table(coef_df, "Model C-TLR - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_tlr$os, "Weibull PH")
+  display_coef_table(coef_df, "Model C-TLR - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_tlr$pfs, "Gamma")
+  display_coef_table(coef_df, "Model C-TLR - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_tlr$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model C-TLR - PFS - Weibull PH")
+} else {
+  cat("Model C-TLR coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-c-tlr, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model C-TMB (Single-biomarker) Coefficients
+
+Model C-TMB includes only TMB_BRAF with its interaction: `Age + sex + Rx + tmb_braf:Rx`
+
+```{r model-c-tmb-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$C_tmb)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_tmb$os, "Gamma")
+  display_coef_table(coef_df, "Model C-TMB - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_tmb$os, "Weibull PH")
+  display_coef_table(coef_df, "Model C-TMB - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$C_tmb$pfs, "Gamma")
+  display_coef_table(coef_df, "Model C-TMB - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$C_tmb$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model C-TMB - PFS - Weibull PH")
+} else {
+  cat("Model C-TMB coefficients not available.\n")
+}
+```
+
+**Note:** Parameters include distribution shape/scale parameters (e.g., `shape`, `rate` for Gamma; `shape`, `scale` for Weibull) as well as covariate effects. Coefficients are on the log scale; exponentiate to obtain hazard ratios for covariate effects.
 
 ```{r pagebreak-3, results='asis'}
 cat("\\newpage\n")
@@ -1621,13 +1672,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "CRP - Model C-CRP" = "#0072B2"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Overall Survival Probability",
            title = "CRP Strategy: Overall Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     # PFS plot
     p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
@@ -1640,13 +1693,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "CRP - Model C-CRP" = "#0072B2"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
            title = "CRP Strategy: Progression-Free Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
 
@@ -1711,13 +1766,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "TLR - Model C-TLR" = "#D55E00"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Overall Survival Probability",
            title = "TLR Strategy: Overall Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     # PFS plot
     p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
@@ -1730,13 +1787,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "TLR - Model C-TLR" = "#D55E00"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
            title = "TLR Strategy: Progression-Free Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
 
@@ -1801,13 +1860,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "TMB - Model C-TMB" = "#CC79A7"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Overall Survival Probability",
            title = "TMB_BRAF Strategy: Overall Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     # PFS plot
     p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
@@ -1820,13 +1881,15 @@ if (exists("multi_predictions") && exists("time_points")) {
         "TMB - Model C-TMB" = "#CC79A7"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                            labels = c("Gamma", "Weibull PH"),
+                            labels = c("Gamma (solid)", "Weibull PH (dashed)"),
                             name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
            title = "TMB_BRAF Strategy: Progression-Free Survival") +
-      theme(legend.position = "bottom")
+      theme(legend.position = "bottom", legend.box = "vertical") +
+      guides(color = guide_legend(order = 1, nrow = 1),
+             linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
 
     gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
 
@@ -1910,10 +1973,10 @@ if (exists("multi_predictions") && exists("time_points")) {
     }
 
     if (knitr::is_latex_output()) {
-      kable(ly_table, format = "latex", booktabs = TRUE) %>%
+      kable(ly_table, format = "latex", booktabs = TRUE, row.names = FALSE) %>%
         kableExtra::kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
     } else {
-      kable(ly_table, format = "html") %>%
+      kable(ly_table, format = "html", row.names = FALSE) %>%
         kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
     }
 
@@ -1957,6 +2020,6 @@ This report compared three model structure types for parametric survival analysi
 
 ---
 
-**Report completed on:** `r Sys.Date()`
-**Repository:** METIMMOX-1
-**Report version:** 2.0
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 2.2
