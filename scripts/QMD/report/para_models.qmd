@@ -549,7 +549,7 @@ formula_table <- data.frame(
 )
 
 if (knitr::is_latex_output()) {
-  kable(formula_table, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+  kable(formula_table, format = "latex", booktabs = TRUE, escape = TRUE) %>%
     kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down")) %>%
     column_spec(3, width = "8cm")
 } else {
@@ -635,7 +635,7 @@ if (exists("models") && !is.null(models$full)) {
   }
 
   if (knitr::is_latex_output()) {
-    kable(os_comparison, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+    kable(os_comparison, format = "latex", booktabs = TRUE, escape = TRUE) %>%
       kableExtra::kable_styling(font_size = 9, latex_options = c("striped", "HOLD_position"))
   } else {
     kable(os_comparison, format = "html") %>%
@@ -682,7 +682,7 @@ if (exists("models") && !is.null(models$full)) {
   }
 
   if (knitr::is_latex_output()) {
-    kable(pfs_comparison, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+    kable(pfs_comparison, format = "latex", booktabs = TRUE, escape = TRUE) %>%
       kableExtra::kable_styling(font_size = 9, latex_options = c("striped", "HOLD_position"))
   } else {
     kable(pfs_comparison, format = "html") %>%
@@ -745,7 +745,7 @@ if (exists("multi_models") && !is.null(multi_models$gamma)) {
   )]
 
   if (knitr::is_latex_output()) {
-    kable(structure_comparison, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+    kable(structure_comparison, format = "latex", booktabs = TRUE, escape = TRUE) %>%
       kable_styling(font_size = 9, latex_options = c("striped", "HOLD_position"))
   } else {
     kable(structure_comparison, format = "html") %>%
@@ -916,7 +916,7 @@ if (exists("multi_models") && !is.null(multi_models$gamma)) {
 
   # Display table
   if (knitr::is_latex_output()) {
-    kable(interaction_table_os, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+    kable(interaction_table_os, format = "latex", booktabs = TRUE, escape = TRUE) %>%
       kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
   } else {
     kable(interaction_table_os, format = "html") %>%
@@ -1016,7 +1016,7 @@ if (exists("multi_models") && !is.null(multi_models$gamma)) {
 
   # Display table
   if (knitr::is_latex_output()) {
-    kable(interaction_table_pfs, format = "latex", booktabs = TRUE, escape = FALSE) %>%
+    kable(interaction_table_pfs, format = "latex", booktabs = TRUE, escape = TRUE) %>%
       kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
   } else {
     kable(interaction_table_pfs, format = "html") %>%
@@ -1240,93 +1240,107 @@ The following figures compare survival outcomes between biomarker-positive and b
 
 ## CRP Biomarker Strategy
 
-```{r crp-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for CRP biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of CRP status for treatment benefit."
+```{r crp-plots, fig.height=12, fig.width=10}
+#| fig-cap: "CRP biomarker strategy: Model structure comparison across OS and PFS. Rows show Model A (Joint), Model B-CRP (Focused), and Model C-CRP (Single-biomarker). Colored lines: parametric predictions (red=CRP+, blue=CRP-; solid=Gamma, dashed=Weibull PH). Black step lines: Kaplan-Meier estimates (solid=biomarker+, dashed=biomarker-)."
 
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
+if (exists("multi_predictions") && exists("time_points")) {
 
   tryCatch({
-    # Create OS plot
-    biomarker_pred <- predictions[["crp"]]
+    # Define relevant model types for CRP
+    crp_model_types <- c("A", "B_crp", "C_crp")
 
-    if (!is.null(biomarker_pred)) {
-      # OS data - only biomarker+ and biomarker-
-      plot_data_os <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$os,
-          biomarker_pred$biomarker_negative$os
-        ),
-        group = rep(c("CRP+", "CRP-"), each = length(time_points))
-      )
+    # Build plot data from multi_predictions
+    plot_data <- data.frame()
 
-      # Get KM data
-      km_data_os <- add_biomarker_km(data_complete, "crp", "OS")
+    for (model_type in crp_model_types) {
+      for (dist in c("gamma", "weibullph")) {
+        crp_pos <- multi_predictions[[dist]][[model_type]][["crp_pos"]]
+        crp_neg <- multi_predictions[[dist]][[model_type]][["crp_neg"]]
 
-      # Create OS plot
-      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("CRP+" = "#E31A1C", "CRP-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_os)) {
-        p_os <- p_os +
-          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
+        if (!is.null(crp_pos) && !is.null(crp_neg)) {
+          # OS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(crp_pos$os, crp_neg$os),
+            subgroup = rep(c("CRP+", "CRP-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "OS"
+          ))
+          # PFS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(crp_pos$pfs, crp_neg$pfs),
+            subgroup = rep(c("CRP+", "CRP-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "PFS"
+          ))
+        }
       }
-
-      # PFS data - only biomarker+ and biomarker-
-      plot_data_pfs <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$pfs,
-          biomarker_pred$biomarker_negative$pfs
-        ),
-        group = rep(c("CRP+", "CRP-"), each = length(time_points))
-      )
-
-      # Get KM data
-      km_data_pfs <- add_biomarker_km(data_complete, "crp", "PFS")
-
-      # Create PFS plot
-      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("CRP+" = "#E31A1C", "CRP-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_pfs)) {
-        p_pfs <- p_pfs +
-          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
-      }
-
-      # Combine plots
-      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
     }
+
+    # Set factor levels for ordering
+    plot_data$model_type <- factor(plot_data$model_type,
+                                    levels = c("Model A", "Model B-CRP", "Model C-CRP"))
+    plot_data$outcome <- factor(plot_data$outcome, levels = c("OS", "PFS"))
+
+    # Get KM data and expand to all model types for faceting
+    km_os <- add_biomarker_km(data_complete, "crp", "OS")
+    km_pfs <- add_biomarker_km(data_complete, "crp", "PFS")
+
+    km_data <- data.frame()
+    for (mt in crp_model_types) {
+      if (!is.null(km_os)) {
+        km_data <- rbind(km_data, km_os %>%
+          mutate(model_type = model_labels_short[mt], outcome = "OS"))
+      }
+      if (!is.null(km_pfs)) {
+        km_data <- rbind(km_data, km_pfs %>%
+          mutate(model_type = model_labels_short[mt], outcome = "PFS"))
+      }
+    }
+    km_data$model_type <- factor(km_data$model_type,
+                                  levels = c("Model A", "Model B-CRP", "Model C-CRP"))
+    km_data$outcome <- factor(km_data$outcome, levels = c("OS", "PFS"))
+
+    # Split KM by group for separate linetypes
+    km_pos <- km_data[km_data$group == "Biomarker+ (Exp)", ]
+    km_neg <- km_data[km_data$group == "Biomarker- (Ctrl)", ]
+
+    # Create faceted plot
+    p <- ggplot(plot_data, aes(x = time, y = survival,
+                                color = subgroup, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      geom_step(data = km_pos, aes(x = time, y = survival),
+                color = "black", linetype = "solid", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      geom_step(data = km_neg, aes(x = time, y = survival),
+                color = "black", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      facet_grid(model_type ~ outcome) +
+      scale_color_manual(values = c("CRP+" = "#E31A1C", "CRP-" = "#1F78B4"),
+                         name = "Subgroup") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Survival Probability") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            strip.text = element_text(size = 10, face = "bold"),
+            panel.spacing = unit(1, "lines"))
+
+    print(p)
+
   }, error = function(e) {
-    cat("CRP plots not available\n")
-    print(e)
+    cat("CRP multi-model comparison not available:", e$message, "\n")
   })
 }
 ```
+
+**Interpretation:** Compare CRP+ (red) and CRP- (blue) survival across model types. Model A shows mutually adjusted effects, Model B-CRP shows effects adjusted for other biomarker main effects, and Model C-CRP shows unadjusted single-biomarker effects. Substantial divergence between Model C and Models A/B would suggest confounding from other biomarkers.
 
 ```{r pagebreak-5, results='asis'}
 cat("\\newpage\n")
@@ -1334,93 +1348,107 @@ cat("\\newpage\n")
 
 ## TLR Biomarker Strategy
 
-```{r tlr-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for TLR (target lesion reduction) biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of TLR status for treatment benefit."
+```{r tlr-plots, fig.height=12, fig.width=10}
+#| fig-cap: "TLR biomarker strategy: Model structure comparison across OS and PFS. Rows show Model A (Joint), Model B-TLR (Focused), and Model C-TLR (Single-biomarker). Colored lines: parametric predictions (red=TLR+, blue=TLR-; solid=Gamma, dashed=Weibull PH). Black step lines: Kaplan-Meier estimates (solid=biomarker+, dashed=biomarker-)."
 
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
+if (exists("multi_predictions") && exists("time_points")) {
 
   tryCatch({
-    # Create OS plot
-    biomarker_pred <- predictions[["tlr"]]
+    # Define relevant model types for TLR
+    tlr_model_types <- c("A", "B_tlr", "C_tlr")
 
-    if (!is.null(biomarker_pred)) {
-      # OS data - only biomarker+ and biomarker-
-      plot_data_os <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$os,
-          biomarker_pred$biomarker_negative$os
-        ),
-        group = rep(c("TLR+", "TLR-"), each = length(time_points))
-      )
+    # Build plot data from multi_predictions
+    plot_data <- data.frame()
 
-      # Get KM data
-      km_data_os <- add_biomarker_km(data_complete, "tlr", "OS")
+    for (model_type in tlr_model_types) {
+      for (dist in c("gamma", "weibullph")) {
+        tlr_pos <- multi_predictions[[dist]][[model_type]][["tlr_pos"]]
+        tlr_neg <- multi_predictions[[dist]][[model_type]][["tlr_neg"]]
 
-      # Create OS plot
-      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("TLR+" = "#E31A1C", "TLR-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_os)) {
-        p_os <- p_os +
-          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
+        if (!is.null(tlr_pos) && !is.null(tlr_neg)) {
+          # OS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(tlr_pos$os, tlr_neg$os),
+            subgroup = rep(c("TLR+", "TLR-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "OS"
+          ))
+          # PFS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(tlr_pos$pfs, tlr_neg$pfs),
+            subgroup = rep(c("TLR+", "TLR-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "PFS"
+          ))
+        }
       }
-
-      # PFS data - only biomarker+ and biomarker-
-      plot_data_pfs <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$pfs,
-          biomarker_pred$biomarker_negative$pfs
-        ),
-        group = rep(c("TLR+", "TLR-"), each = length(time_points))
-      )
-
-      # Get KM data
-      km_data_pfs <- add_biomarker_km(data_complete, "tlr", "PFS")
-
-      # Create PFS plot
-      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("TLR+" = "#E31A1C", "TLR-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_pfs)) {
-        p_pfs <- p_pfs +
-          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
-      }
-
-      # Combine plots
-      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
     }
+
+    # Set factor levels for ordering
+    plot_data$model_type <- factor(plot_data$model_type,
+                                    levels = c("Model A", "Model B-TLR", "Model C-TLR"))
+    plot_data$outcome <- factor(plot_data$outcome, levels = c("OS", "PFS"))
+
+    # Get KM data and expand to all model types for faceting
+    km_os <- add_biomarker_km(data_complete, "tlr", "OS")
+    km_pfs <- add_biomarker_km(data_complete, "tlr", "PFS")
+
+    km_data <- data.frame()
+    for (mt in tlr_model_types) {
+      if (!is.null(km_os)) {
+        km_data <- rbind(km_data, km_os %>%
+          mutate(model_type = model_labels_short[mt], outcome = "OS"))
+      }
+      if (!is.null(km_pfs)) {
+        km_data <- rbind(km_data, km_pfs %>%
+          mutate(model_type = model_labels_short[mt], outcome = "PFS"))
+      }
+    }
+    km_data$model_type <- factor(km_data$model_type,
+                                  levels = c("Model A", "Model B-TLR", "Model C-TLR"))
+    km_data$outcome <- factor(km_data$outcome, levels = c("OS", "PFS"))
+
+    # Split KM by group for separate linetypes
+    km_pos <- km_data[km_data$group == "Biomarker+ (Exp)", ]
+    km_neg <- km_data[km_data$group == "Biomarker- (Ctrl)", ]
+
+    # Create faceted plot
+    p <- ggplot(plot_data, aes(x = time, y = survival,
+                                color = subgroup, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      geom_step(data = km_pos, aes(x = time, y = survival),
+                color = "black", linetype = "solid", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      geom_step(data = km_neg, aes(x = time, y = survival),
+                color = "black", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      facet_grid(model_type ~ outcome) +
+      scale_color_manual(values = c("TLR+" = "#E31A1C", "TLR-" = "#1F78B4"),
+                         name = "Subgroup") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Survival Probability") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            strip.text = element_text(size = 10, face = "bold"),
+            panel.spacing = unit(1, "lines"))
+
+    print(p)
+
   }, error = function(e) {
-    cat("TLR plots not available\n")
-    print(e)
+    cat("TLR multi-model comparison not available:", e$message, "\n")
   })
 }
 ```
+
+**Interpretation:** Compare TLR+ (red) and TLR- (blue) survival across model types. TLR (target lesion reduction) is an early response biomarker. Model stability across A, B, and C structures indicates robust predictive value.
 
 ```{r pagebreak-6, results='asis'}
 cat("\\newpage\n")
@@ -1428,93 +1456,107 @@ cat("\\newpage\n")
 
 ## TMB_BRAF Biomarker Strategy
 
-```{r tmb-braf-plots, fig.height=10, fig.width=8}
-#| fig-cap: "Overall survival and progression-free survival for TMB_BRAF biomarker-positive versus biomarker-negative patients. Colored curves show predicted survival from the selected parametric model. Black curves show Kaplan-Meier estimates for the treated (biomarker-positive, experimental arm, solid line) and untreated (biomarker-negative, control arm, dashed line) subgroups. Differences between curves indicate the predictive value of TMB_BRAF status for treatment benefit."
+```{r tmb-braf-plots, fig.height=12, fig.width=10}
+#| fig-cap: "TMB_BRAF biomarker strategy: Model structure comparison across OS and PFS. Rows show Model A (Joint), Model B-TMB (Focused), and Model C-TMB (Single-biomarker). Colored lines: parametric predictions (red=TMB_BRAF+, blue=TMB_BRAF-; solid=Gamma, dashed=Weibull PH). Black step lines: Kaplan-Meier estimates (solid=biomarker+, dashed=biomarker-)."
 
-if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
+if (exists("multi_predictions") && exists("time_points")) {
 
   tryCatch({
-    # Create OS plot
-    biomarker_pred <- predictions[["tmb_braf"]]
+    # Define relevant model types for TMB_BRAF
+    tmb_model_types <- c("A", "B_tmb", "C_tmb")
 
-    if (!is.null(biomarker_pred)) {
-      # OS data - only biomarker+ and biomarker-
-      plot_data_os <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$os,
-          biomarker_pred$biomarker_negative$os
-        ),
-        group = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points))
-      )
+    # Build plot data from multi_predictions
+    plot_data <- data.frame()
 
-      # Get KM data
-      km_data_os <- add_biomarker_km(data_complete, "tmb_braf", "OS")
+    for (model_type in tmb_model_types) {
+      for (dist in c("gamma", "weibullph")) {
+        tmb_pos <- multi_predictions[[dist]][[model_type]][["tmb_braf_pos"]]
+        tmb_neg <- multi_predictions[[dist]][[model_type]][["tmb_braf_neg"]]
 
-      # Create OS plot
-      p_os <- ggplot(plot_data_os, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("TMB_BRAF+" = "#E31A1C", "TMB_BRAF-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Overall Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_os)) {
-        p_os <- p_os +
-          geom_step(data = km_data_os, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
+        if (!is.null(tmb_pos) && !is.null(tmb_neg)) {
+          # OS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(tmb_pos$os, tmb_neg$os),
+            subgroup = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "OS"
+          ))
+          # PFS data
+          plot_data <- rbind(plot_data, data.frame(
+            time = rep(time_points, 2),
+            survival = c(tmb_pos$pfs, tmb_neg$pfs),
+            subgroup = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points)),
+            distribution = dist,
+            model_type = model_labels_short[model_type],
+            outcome = "PFS"
+          ))
+        }
       }
-
-      # PFS data - only biomarker+ and biomarker-
-      plot_data_pfs <- data.frame(
-        time = rep(time_points, 2),
-        survival = c(
-          biomarker_pred$biomarker_positive$pfs,
-          biomarker_pred$biomarker_negative$pfs
-        ),
-        group = rep(c("TMB_BRAF+", "TMB_BRAF-"), each = length(time_points))
-      )
-
-      # Get KM data
-      km_data_pfs <- add_biomarker_km(data_complete, "tmb_braf", "PFS")
-
-      # Create PFS plot
-      p_pfs <- ggplot(plot_data_pfs, aes(x = time, y = survival, color = group)) +
-        geom_line(linewidth = 1.2) +
-        scale_color_manual(values = c("TMB_BRAF+" = "#E31A1C", "TMB_BRAF-" = "#1F78B4"),
-                          name = "Parametric Model") +
-        scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-        scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-        labs(x = "Time (weeks)", y = "Progression-Free Survival Probability") +
-        theme_minimal() +
-        theme(legend.position = "bottom")
-
-      # Add KM estimates if available
-      if (!is.null(km_data_pfs)) {
-        p_pfs <- p_pfs +
-          geom_step(data = km_data_pfs, aes(x = time, y = survival, linetype = group),
-                   color = "black", linewidth = 0.8, inherit.aes = FALSE) +
-          scale_linetype_manual(values = c("Biomarker+ (Exp)" = "solid",
-                                          "Biomarker- (Ctrl)" = "dashed"),
-                               name = "Kaplan-Meier")
-      }
-
-      # Combine plots
-      gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
     }
+
+    # Set factor levels for ordering
+    plot_data$model_type <- factor(plot_data$model_type,
+                                    levels = c("Model A", "Model B-TMB", "Model C-TMB"))
+    plot_data$outcome <- factor(plot_data$outcome, levels = c("OS", "PFS"))
+
+    # Get KM data and expand to all model types for faceting
+    km_os <- add_biomarker_km(data_complete, "tmb_braf", "OS")
+    km_pfs <- add_biomarker_km(data_complete, "tmb_braf", "PFS")
+
+    km_data <- data.frame()
+    for (mt in tmb_model_types) {
+      if (!is.null(km_os)) {
+        km_data <- rbind(km_data, km_os %>%
+          mutate(model_type = model_labels_short[mt], outcome = "OS"))
+      }
+      if (!is.null(km_pfs)) {
+        km_data <- rbind(km_data, km_pfs %>%
+          mutate(model_type = model_labels_short[mt], outcome = "PFS"))
+      }
+    }
+    km_data$model_type <- factor(km_data$model_type,
+                                  levels = c("Model A", "Model B-TMB", "Model C-TMB"))
+    km_data$outcome <- factor(km_data$outcome, levels = c("OS", "PFS"))
+
+    # Split KM by group for separate linetypes
+    km_pos <- km_data[km_data$group == "Biomarker+ (Exp)", ]
+    km_neg <- km_data[km_data$group == "Biomarker- (Ctrl)", ]
+
+    # Create faceted plot
+    p <- ggplot(plot_data, aes(x = time, y = survival,
+                                color = subgroup, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      geom_step(data = km_pos, aes(x = time, y = survival),
+                color = "black", linetype = "solid", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      geom_step(data = km_neg, aes(x = time, y = survival),
+                color = "black", linetype = "dashed", linewidth = 0.6,
+                inherit.aes = FALSE) +
+      facet_grid(model_type ~ outcome) +
+      scale_color_manual(values = c("TMB_BRAF+" = "#E31A1C", "TMB_BRAF-" = "#1F78B4"),
+                         name = "Subgroup") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Survival Probability") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            strip.text = element_text(size = 10, face = "bold"),
+            panel.spacing = unit(1, "lines"))
+
+    print(p)
+
   }, error = function(e) {
-    cat("TMB_BRAF plots not available\n")
-    print(e)
+    cat("TMB_BRAF multi-model comparison not available:", e$message, "\n")
   })
 }
 ```
+
+**Interpretation:** Compare TMB_BRAF+ (red) and TMB_BRAF- (blue) survival across model types. TMB_BRAF is a genomic biomarker combining high tumor mutational burden and BRAF mutation status. Divergence between model structures may indicate correlation with other biomarkers.
 
 ```{r pagebreak-7, results='asis'}
 cat("\\newpage\n")
@@ -1522,160 +1564,369 @@ cat("\\newpage\n")
 
 # Strategy Comparison
 
-The following figures compare all three biomarker-guided treatment strategies against the control (standard of care) strategy. These population-level predictions are weighted by biomarker prevalence to reflect expected outcomes in an unselected population.
+The following figures compare biomarker-guided treatment strategies against control, showing how population-weighted survival predictions vary across model structure types. Each biomarker strategy is shown separately to assess sensitivity to model specification.
 
-```{r strategy-comparison-os}
-#| fig-cap: "Overall survival comparison across all treatment strategies. Each curve represents the population-weighted expected OS for each strategy: Control (standard of care for all patients), CRP-guided treatment allocation, TLR-guided treatment allocation, and TMB_BRAF-guided treatment allocation. Differences between strategies reflect both the predictive accuracy of each biomarker and its prevalence in the population."
-#| fig-height: 6
-#| fig-width: 8
+## CRP Strategy: Model Structure Comparison
 
-if (exists("predictions") && exists("time_points")) {
+```{r crp-strategy-comparison, fig.height=10, fig.width=8}
+#| fig-cap: "CRP strategy comparison across model structure types. Each line shows population-weighted survival for CRP-guided treatment allocation using different model specifications. Solid lines = Gamma, dashed lines = Weibull PH."
 
-  # Prepare data for strategy comparison
-  strategy_data_os <- data.frame()
+if (exists("multi_predictions") && exists("time_points")) {
 
-  for (strategy in names(predictions)) {
-    if (!is.null(predictions[[strategy]]$os)) {
-      temp_df <- data.frame(
-        time = time_points,
-        survival = predictions[[strategy]]$os,
-        strategy = toupper(strategy),
-        stringsAsFactors = FALSE
-      )
-      strategy_data_os <- rbind(strategy_data_os, temp_df)
+  tryCatch({
+    # Build strategy data
+    strategy_data <- data.frame()
+
+    # Control (from Model A - same for all)
+    for (dist in c("gamma", "weibullph")) {
+      ctrl_pred <- multi_predictions[[dist]][["A"]]$control
+      if (!is.null(ctrl_pred)) {
+        strategy_data <- rbind(strategy_data, data.frame(
+          time = time_points,
+          os = ctrl_pred$os,
+          pfs = ctrl_pred$pfs,
+          strategy = "Control",
+          distribution = dist
+        ))
+      }
     }
-  }
 
-  if (nrow(strategy_data_os) > 0) {
-    # Create plot
-    p_strategy_os <- ggplot(strategy_data_os, aes(x = time, y = survival, color = strategy)) +
-      geom_line(linewidth = 1.2) +
+    # CRP strategy from each model type
+    for (model_type in c("A", "B_crp", "C_crp")) {
+      for (dist in c("gamma", "weibullph")) {
+        crp_pred <- multi_predictions[[dist]][[model_type]][["crp_weighted"]]
+        if (!is.null(crp_pred)) {
+          strategy_data <- rbind(strategy_data, data.frame(
+            time = time_points,
+            os = crp_pred$os,
+            pfs = crp_pred$pfs,
+            strategy = paste("CRP -", model_labels_short[model_type]),
+            distribution = dist
+          ))
+        }
+      }
+    }
+
+    strategy_data$strategy <- factor(strategy_data$strategy,
+      levels = c("Control", "CRP - Model A", "CRP - Model B-CRP", "CRP - Model C-CRP"))
+
+    # OS plot
+    p_os <- ggplot(strategy_data, aes(x = time, y = os,
+                                       color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "CRP - Model A" = "#E69F00",
+        "CRP - Model B-CRP" = "#56B4E9",
+        "CRP - Model C-CRP" = "#0072B2"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-      scale_color_manual(values = c("CONTROL" = "black",
-                                     "CRP" = "#E69F00",
-                                     "TLR" = "#56B4E9",
-                                     "TMB_BRAF" = "#009E73")) +
-      labs(x = "Time (weeks)",
-           y = "Overall Survival Probability",
-           color = "Strategy") +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Overall Survival Probability",
+           title = "CRP Strategy: Overall Survival") +
       theme(legend.position = "bottom")
 
-    print(p_strategy_os)
-  } else {
-    cat("Strategy comparison data not available for OS.\n")
-  }
+    # PFS plot
+    p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
+                                        color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "CRP - Model A" = "#E69F00",
+        "CRP - Model B-CRP" = "#56B4E9",
+        "CRP - Model C-CRP" = "#0072B2"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
+           title = "CRP Strategy: Progression-Free Survival") +
+      theme(legend.position = "bottom")
+
+    gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+
+  }, error = function(e) {
+    cat("CRP strategy comparison not available:", e$message, "\n")
+  })
 }
 ```
 
-```{r strategy-comparison-pfs}
-#| fig-cap: "Progression-free survival comparison across all treatment strategies. Each curve represents the population-weighted expected PFS for each strategy: Control (standard of care for all patients), CRP-guided treatment allocation, TLR-guided treatment allocation, and TMB_BRAF-guided treatment allocation. Differences between strategies reflect both the predictive accuracy of each biomarker and its prevalence in the population."
-#| fig-height: 6
-#| fig-width: 8
+## TLR Strategy: Model Structure Comparison
 
-if (exists("predictions") && exists("time_points")) {
+```{r tlr-strategy-comparison, fig.height=10, fig.width=8}
+#| fig-cap: "TLR strategy comparison across model structure types. Each line shows population-weighted survival for TLR-guided treatment allocation using different model specifications. Solid lines = Gamma, dashed lines = Weibull PH."
 
-  # Prepare data for strategy comparison
-  strategy_data_pfs <- data.frame()
+if (exists("multi_predictions") && exists("time_points")) {
 
-  for (strategy in names(predictions)) {
-    if (!is.null(predictions[[strategy]]$pfs)) {
-      temp_df <- data.frame(
-        time = time_points,
-        survival = predictions[[strategy]]$pfs,
-        strategy = toupper(strategy),
-        stringsAsFactors = FALSE
-      )
-      strategy_data_pfs <- rbind(strategy_data_pfs, temp_df)
+  tryCatch({
+    # Build strategy data
+    strategy_data <- data.frame()
+
+    # Control (from Model A - same for all)
+    for (dist in c("gamma", "weibullph")) {
+      ctrl_pred <- multi_predictions[[dist]][["A"]]$control
+      if (!is.null(ctrl_pred)) {
+        strategy_data <- rbind(strategy_data, data.frame(
+          time = time_points,
+          os = ctrl_pred$os,
+          pfs = ctrl_pred$pfs,
+          strategy = "Control",
+          distribution = dist
+        ))
+      }
     }
-  }
 
-  if (nrow(strategy_data_pfs) > 0) {
-    # Create plot
-    p_strategy_pfs <- ggplot(strategy_data_pfs, aes(x = time, y = survival, color = strategy)) +
-      geom_line(linewidth = 1.2) +
+    # TLR strategy from each model type
+    for (model_type in c("A", "B_tlr", "C_tlr")) {
+      for (dist in c("gamma", "weibullph")) {
+        tlr_pred <- multi_predictions[[dist]][[model_type]][["tlr_weighted"]]
+        if (!is.null(tlr_pred)) {
+          strategy_data <- rbind(strategy_data, data.frame(
+            time = time_points,
+            os = tlr_pred$os,
+            pfs = tlr_pred$pfs,
+            strategy = paste("TLR -", model_labels_short[model_type]),
+            distribution = dist
+          ))
+        }
+      }
+    }
+
+    strategy_data$strategy <- factor(strategy_data$strategy,
+      levels = c("Control", "TLR - Model A", "TLR - Model B-TLR", "TLR - Model C-TLR"))
+
+    # OS plot
+    p_os <- ggplot(strategy_data, aes(x = time, y = os,
+                                       color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "TLR - Model A" = "#E69F00",
+        "TLR - Model B-TLR" = "#009E73",
+        "TLR - Model C-TLR" = "#D55E00"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-      scale_x_continuous(breaks = seq(0, max(time_points), by = 26)) +
-      scale_color_manual(values = c("CONTROL" = "black",
-                                     "CRP" = "#E69F00",
-                                     "TLR" = "#56B4E9",
-                                     "TMB_BRAF" = "#009E73")) +
-      labs(x = "Time (weeks)",
-           y = "Progression-Free Survival Probability",
-           color = "Strategy") +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Overall Survival Probability",
+           title = "TLR Strategy: Overall Survival") +
       theme(legend.position = "bottom")
 
-    print(p_strategy_pfs)
-  } else {
-    cat("Strategy comparison data not available for PFS.\n")
-  }
+    # PFS plot
+    p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
+                                        color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "TLR - Model A" = "#E69F00",
+        "TLR - Model B-TLR" = "#009E73",
+        "TLR - Model C-TLR" = "#D55E00"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
+           title = "TLR Strategy: Progression-Free Survival") +
+      theme(legend.position = "bottom")
+
+    gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+
+  }, error = function(e) {
+    cat("TLR strategy comparison not available:", e$message, "\n")
+  })
 }
 ```
 
-## Unadjusted Life-Years by Strategy
+## TMB_BRAF Strategy: Model Structure Comparison
 
-The following table shows unadjusted life-years (area under the survival curve) for each treatment strategy. Population-weighted values reflect the expected outcomes accounting for biomarker prevalence.
+```{r tmb-strategy-comparison, fig.height=10, fig.width=8}
+#| fig-cap: "TMB_BRAF strategy comparison across model structure types. Each line shows population-weighted survival for TMB_BRAF-guided treatment allocation using different model specifications. Solid lines = Gamma, dashed lines = Weibull PH."
+
+if (exists("multi_predictions") && exists("time_points")) {
+
+  tryCatch({
+    # Build strategy data
+    strategy_data <- data.frame()
+
+    # Control (from Model A - same for all)
+    for (dist in c("gamma", "weibullph")) {
+      ctrl_pred <- multi_predictions[[dist]][["A"]]$control
+      if (!is.null(ctrl_pred)) {
+        strategy_data <- rbind(strategy_data, data.frame(
+          time = time_points,
+          os = ctrl_pred$os,
+          pfs = ctrl_pred$pfs,
+          strategy = "Control",
+          distribution = dist
+        ))
+      }
+    }
+
+    # TMB_BRAF strategy from each model type
+    for (model_type in c("A", "B_tmb", "C_tmb")) {
+      for (dist in c("gamma", "weibullph")) {
+        tmb_pred <- multi_predictions[[dist]][[model_type]][["tmb_braf_weighted"]]
+        if (!is.null(tmb_pred)) {
+          strategy_data <- rbind(strategy_data, data.frame(
+            time = time_points,
+            os = tmb_pred$os,
+            pfs = tmb_pred$pfs,
+            strategy = paste("TMB -", model_labels_short[model_type]),
+            distribution = dist
+          ))
+        }
+      }
+    }
+
+    strategy_data$strategy <- factor(strategy_data$strategy,
+      levels = c("Control", "TMB - Model A", "TMB - Model B-TMB", "TMB - Model C-TMB"))
+
+    # OS plot
+    p_os <- ggplot(strategy_data, aes(x = time, y = os,
+                                       color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "TMB - Model A" = "#E69F00",
+        "TMB - Model B-TMB" = "#F0E442",
+        "TMB - Model C-TMB" = "#CC79A7"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Overall Survival Probability",
+           title = "TMB_BRAF Strategy: Overall Survival") +
+      theme(legend.position = "bottom")
+
+    # PFS plot
+    p_pfs <- ggplot(strategy_data, aes(x = time, y = pfs,
+                                        color = strategy, linetype = distribution)) +
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = c(
+        "Control" = "gray50",
+        "TMB - Model A" = "#E69F00",
+        "TMB - Model B-TMB" = "#F0E442",
+        "TMB - Model C-TMB" = "#CC79A7"
+      ), name = "Strategy") +
+      scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                            labels = c("Gamma", "Weibull PH"),
+                            name = "Distribution") +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
+      labs(x = "Time (weeks)", y = "Progression-Free Survival Probability",
+           title = "TMB_BRAF Strategy: Progression-Free Survival") +
+      theme(legend.position = "bottom")
+
+    gridExtra::grid.arrange(p_os, p_pfs, ncol = 1)
+
+  }, error = function(e) {
+    cat("TMB_BRAF strategy comparison not available:", e$message, "\n")
+  })
+}
+```
+
+## Life-Years by Strategy and Model Structure
+
+The following table shows life-years (area under the survival curve) for each treatment strategy across all model structure types. This allows comparison of how model structure choice affects life-year estimates.
 
 ```{r strategy-life-years-table}
-#| tbl-cap: "Unadjusted Life-Years by Treatment Strategy (Population-Weighted)"
+#| tbl-cap: "Life-Years by Strategy and Model Structure Type (Gamma / Weibull PH)"
 
-if (exists("predictions") && exists("time_points")) {
+if (exists("multi_predictions") && exists("time_points")) {
 
-  # Function to calculate life-years
+  # Function to calculate life-years (restricted mean survival time)
   calc_ly <- function(survival_probs, time_points) {
     time_years <- time_points / 52
     n <- length(time_years)
     sum((survival_probs[-n] + survival_probs[-1]) / 2 * diff(time_years))
   }
 
-  # Build strategy life-years table
-  strategy_ly <- data.frame(
-    Strategy = character(),
-    `OS Life-Years` = numeric(),
-    `PFS Life-Years` = numeric(),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
+  tryCatch({
+    # Get control baseline from Model A (same for all model types)
+    ctrl_gamma <- multi_predictions$gamma$A$control
+    ctrl_weibull <- multi_predictions$weibullph$A$control
 
-  for (strategy in c("control", "crp", "tlr", "tmb_braf")) {
-    if (!is.null(predictions[[strategy]])) {
-      os_ly <- calc_ly(predictions[[strategy]]$os, time_points)
-      pfs_ly <- calc_ly(predictions[[strategy]]$pfs, time_points)
+    ctrl_os_g <- calc_ly(ctrl_gamma$os, time_points)
+    ctrl_os_w <- calc_ly(ctrl_weibull$os, time_points)
+    ctrl_pfs_g <- calc_ly(ctrl_gamma$pfs, time_points)
+    ctrl_pfs_w <- calc_ly(ctrl_weibull$pfs, time_points)
 
-      strategy_ly <- rbind(strategy_ly, data.frame(
-        Strategy = toupper(strategy),
-        `OS Life-Years` = round(os_ly, 2),
-        `PFS Life-Years` = round(pfs_ly, 2),
-        stringsAsFactors = FALSE,
-        check.names = FALSE
-      ))
-    }
-  }
-
-  # Add difference from control
-  control_os <- strategy_ly$`OS Life-Years`[strategy_ly$Strategy == "CONTROL"]
-  control_pfs <- strategy_ly$`PFS Life-Years`[strategy_ly$Strategy == "CONTROL"]
-
-  strategy_ly <- strategy_ly %>%
-    mutate(
-      `OS Gain vs Control` = round(`OS Life-Years` - control_os, 2),
-      `PFS Gain vs Control` = round(`PFS Life-Years` - control_pfs, 2)
+    # Build expanded table
+    ly_table <- data.frame(
+      Strategy = "Control",
+      `Model Type` = "—",
+      `OS LY (G/W)` = paste(round(ctrl_os_g, 2), "/", round(ctrl_os_w, 2)),
+      `PFS LY (G/W)` = paste(round(ctrl_pfs_g, 2), "/", round(ctrl_pfs_w, 2)),
+      `OS Gain` = "—",
+      `PFS Gain` = "—",
+      check.names = FALSE,
+      stringsAsFactors = FALSE
     )
 
-  if (knitr::is_latex_output()) {
-    kable(strategy_ly, format = "latex", booktabs = TRUE) %>%
-      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
-  } else {
-    kable(strategy_ly, format = "html") %>%
-      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-  }
+    # Biomarker-model mapping: which models are relevant for each biomarker
+    biomarker_model_map <- list(
+      crp = c("A", "B_crp", "C_crp"),
+      tlr = c("A", "B_tlr", "C_tlr"),
+      tmb_braf = c("A", "B_tmb", "C_tmb")
+    )
+
+    biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB_BRAF")
+
+    for (biomarker in names(biomarker_model_map)) {
+      for (model_type in biomarker_model_map[[biomarker]]) {
+
+        gamma_pred <- multi_predictions$gamma[[model_type]][[paste0(biomarker, "_weighted")]]
+        weibull_pred <- multi_predictions$weibullph[[model_type]][[paste0(biomarker, "_weighted")]]
+
+        if (!is.null(gamma_pred) && !is.null(weibull_pred)) {
+          os_g <- calc_ly(gamma_pred$os, time_points)
+          os_w <- calc_ly(weibull_pred$os, time_points)
+          pfs_g <- calc_ly(gamma_pred$pfs, time_points)
+          pfs_w <- calc_ly(weibull_pred$pfs, time_points)
+
+          ly_table <- rbind(ly_table, data.frame(
+            Strategy = biomarker_labels[biomarker],
+            `Model Type` = model_labels_short[model_type],
+            `OS LY (G/W)` = paste(round(os_g, 2), "/", round(os_w, 2)),
+            `PFS LY (G/W)` = paste(round(pfs_g, 2), "/", round(pfs_w, 2)),
+            `OS Gain` = sprintf("%+.2f / %+.2f", os_g - ctrl_os_g, os_w - ctrl_os_w),
+            `PFS Gain` = sprintf("%+.2f / %+.2f", pfs_g - ctrl_pfs_g, pfs_w - ctrl_pfs_w),
+            check.names = FALSE,
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    }
+
+    if (knitr::is_latex_output()) {
+      kable(ly_table, format = "latex", booktabs = TRUE) %>%
+        kableExtra::kable_styling(font_size = 8, latex_options = c("striped", "HOLD_position", "scale_down"))
+    } else {
+      kable(ly_table, format = "html") %>%
+        kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+    }
+
+  }, error = function(e) {
+    cat("Strategy life-years data not available:", e$message, "\n")
+  })
 
 } else {
-  cat("Strategy life-years data not available.\n")
+  cat("Multi-model predictions not available for life-years calculation.\n")
 }
 ```
 
-*Note: Life-years are calculated as the area under the survival curve (restricted mean survival time) over the model time horizon. These are unadjusted values without utility weighting. Population-weighted values account for biomarker prevalence in each strategy.*
+*Note: Life-years are calculated as the area under the survival curve (restricted mean survival time) over the model time horizon. G = Gamma distribution, W = Weibull PH distribution. Gains are relative to the Control strategy. Population-weighted values account for biomarker prevalence in each strategy.*
 
 ```{r pagebreak-8, results='asis'}
 cat("\\newpage\n")
@@ -1708,4 +1959,4 @@ This report compared three model structure types for parametric survival analysi
 
 **Report completed on:** `r Sys.Date()`
 **Repository:** METIMMOX-1
-**Report version:** 1.41
+**Report version:** 2.0
