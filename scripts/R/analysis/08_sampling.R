@@ -3,6 +3,47 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr, tidyr)
 
+# ===============================================================================
+# RUN_ALL_MODELS SWITCH
+# ===============================================================================
+# When RUN_ALL_MODELS = TRUE, this script will loop through all 3 MODEL_STRUCTURE
+# values (0, 1, 2) and generate caches for each. This is useful for pre-generating
+# all caches needed for multi-model CEA comparison.
+#
+# When RUN_ALL_MODELS = FALSE (default), the script uses the current MODEL_STRUCTURE
+# value and generates a single cache file.
+# ===============================================================================
+
+if (!exists("RUN_ALL_MODELS")) {
+  RUN_ALL_MODELS <- FALSE
+}
+
+if (RUN_ALL_MODELS) {
+  cat("\n=== RUN_ALL_MODELS mode: Generating caches for all model structures ===\n")
+  model_structures_to_run <- c(0, 1, 2)
+  original_model_structure <- MODEL_STRUCTURE
+} else {
+  model_structures_to_run <- MODEL_STRUCTURE
+}
+
+# Loop through model structures (single iteration if RUN_ALL_MODELS = FALSE)
+for (current_model_structure in model_structures_to_run) {
+
+  # Set MODEL_STRUCTURE for this iteration
+  MODEL_STRUCTURE <- current_model_structure
+
+  if (RUN_ALL_MODELS) {
+    cat("\n", paste(rep("=", 70), collapse = ""), "\n")
+    cat("Processing MODEL_STRUCTURE =", MODEL_STRUCTURE,
+        "(", c("joint", "focused", "separate")[MODEL_STRUCTURE + 1], ")\n")
+    cat(paste(rep("=", 70), collapse = ""), "\n")
+
+    # Re-source scripts 06 and 07 to update predictions for this MODEL_STRUCTURE
+    cat("Re-sourcing survival analysis scripts for new MODEL_STRUCTURE...\n")
+    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  }
+
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
@@ -674,3 +715,13 @@ cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
 cat("- Survival parameters: Correlated resampled models (n =", sampling_models$control$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")
 cat("\nReady for PSA analysis\n")
+
+} # End of RUN_ALL_MODELS loop
+
+# Restore original MODEL_STRUCTURE if we were in RUN_ALL_MODELS mode
+if (RUN_ALL_MODELS) {
+  MODEL_STRUCTURE <- original_model_structure
+  cat("\n=== RUN_ALL_MODELS complete ===\n")
+  cat("Generated caches for MODEL_STRUCTURE: 0 (joint), 1 (focused), 2 (separate)\n")
+  cat("Restored MODEL_STRUCTURE to:", MODEL_STRUCTURE, "\n")
+}
