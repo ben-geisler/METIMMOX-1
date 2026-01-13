@@ -320,10 +320,13 @@ create_multimodel_ceac_plot <- function(all_psa_results,
     if (is.null(ceac_obj)) next
 
     # Add to combined data
+    # Note: dampack ceac() returns a data frame with strategy names as columns
+    # (not nested under $ceac), plus WTP and On_Frontier columns
     for (i in seq_along(wtp_range)) {
       for (strategy in psa_obj$strategies) {
         prob <- tryCatch({
-          ceac_obj$ceac[[strategy]][i]
+          # Access strategy column directly from the ceac data frame
+          ceac_obj[[strategy]][i]
         }, error = function(e) {
           NA_real_
         })
