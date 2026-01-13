@@ -91,11 +91,58 @@ time_horizon <- 520 # 10 years in weeks
 WTP <- 51000       # CE threshold (in Euros)
 DSA_mult <- 0.2    # +/- 20% variations
 dr <- 0.04         # discount rate
-MODEL_STRUCTURE <- 0  # 0 = joint, 1 = focused, 2 = separate
+n_samples <- 5000  # Number of resampled models (for cache file naming)
 
-# Display model structure configuration
-model_structure_name <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
-cat("Model structure: MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_name, ")\n")
+# =============================================================================
+# MODEL STRUCTURE DEFINITIONS (matches clinical_effectiveness.qmd)
+# =============================================================================
+# This report analyzes all three model structures:
+# - Model A (joint): All biomarkers + all treatment interactions in one model
+# - Model B (focused): All biomarkers as main effects + one interaction per model
+# - Model C (separate): Only one biomarker + its interaction per model
+
+model_structures <- list(
+  A = list(
+    value = 0,
+    name = "Joint (All-in-One)",
+    label = "joint",
+    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    desc = "All biomarkers and all treatment interactions in a single model"
+  ),
+  B = list(
+    value = 1,
+    name = "Focused",
+    label = "focused",
+    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    desc = "All biomarkers as main effects, one treatment interaction per model"
+  ),
+  C = list(
+    value = 2,
+    name = "Separate",
+    label = "separate",
+    formula = "~ Age + sex + Rx + [biomarker]:Rx",
+    desc = "Only one biomarker and its treatment interaction per model"
+  )
+)
+
+# Check which sampling caches exist for each model structure
+cache_status <- sapply(c(0, 1, 2), function(ms) {
+  label <- c("joint", "focused", "separate")[ms + 1]
+  cache_file <- here("data", "tidy",
+                     paste0("sampling_models_n", n_samples, "_full_", label, ".rds"))
+  file.exists(cache_file)
+})
+names(cache_status) <- c("A", "B", "C")
+
+# Report cache status
+cat("Sampling cache status:\n")
+for (model_letter in c("A", "B", "C")) {
+  status <- if (cache_status[model_letter]) "FOUND" else "MISSING"
+  cat("  Model", model_letter, "(", model_structures[[model_letter]]$name, "):", status, "\n")
+}
+
+# Set default MODEL_STRUCTURE for fallback/mock data scenarios
+MODEL_STRUCTURE <- 0  # 0 = joint, 1 = focused, 2 = separate
 
 # Time points (from script 07)
 time_points <- seq(0, time_horizon, by = 1)
@@ -217,8 +264,8 @@ l_params_base <- list(
   
   # Test costs
   c_test_CT = 386,       # cost of CT scan
-  c_test_blood = 0,      # cost of blood tests
-  c_test_NGS = 1439,     # cost of next-generation sequencing
+  c_test_blood = 16,     # cost of blood tests (CRP, CBC, chem-7)
+  c_test_NGS = 2518,     # cost of next-generation sequencing (for TMB/BRAF)
   
   # Other costs
   c_other_visit = 33,    # cost of standard outpatient visit
@@ -349,99 +396,240 @@ if (exists("calculate_outcomes")) {
 }
 ```
 
-```{r dsa-analysis, include=FALSE}
-# Check if DSA results already exist in the environment
-dsa_results_available <- exists("dsa_results") && is.data.frame(dsa_results) && nrow(dsa_results) > 0
+```{r dsa-runner-function, include=FALSE}
+# =============================================================================
+# PARAMETERIZED DSA RUNNER FUNCTION
+# =============================================================================
+# This function runs DSA for a specific model structure by:
+# 1. Setting MODEL_STRUCTURE to the target value
+# 2. Re-sourcing the analysis scripts that depend on MODEL_STRUCTURE
+# 3. Capturing and returning the DSA results
 
-if (!dsa_results_available) {
-  # DSA results not in environment - try to run the prerequisite scripts
-  cat("DSA results not found, attempting to run analysis scripts...\n")
+run_dsa_for_model <- function(target_structure, verbose = TRUE) {
+  # Store original MODEL_STRUCTURE
+
+  original_structure <- if (exists("MODEL_STRUCTURE")) MODEL_STRUCTURE else 0
+
+  if (verbose) {
+    label <- c("joint", "focused", "separate")[target_structure + 1]
+    cat("Running DSA for MODEL_STRUCTURE =", target_structure, "(", label, ")...\n")
+  }
 
   tryCatch({
+    # Set target structure globally
+    MODEL_STRUCTURE <<- target_structure
+
     # Source prerequisite scripts in order
-    prereq_scripts <- c(
-      "scripts/R/analysis/02_setup_and_global_variables.R",
-      "scripts/R/analysis/03_biomarker_strategies.R",
-      "scripts/R/analysis/06_parametric_survival_analysis.R",
-      "scripts/R/analysis/07_basecase_input_parameters.R",
-      "scripts/R/analysis/08_sampling.R",
-      "scripts/R/analysis/11_DSA.R"
+    # These scripts respect the MODEL_STRUCTURE setting
+    suppressMessages(suppressWarnings({
+      source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+      source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+      source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+      source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+      source(here("scripts/R/analysis/08_sampling.R"))
+      source(here("scripts/R/analysis/11_DSA.R"))
+    }))
+
+    # Capture results
+    results <- list(
+      dsa_results = if (exists("dsa_results")) dsa_results else NULL,
+      dsa_ranges = if (exists("dsa_ranges")) dsa_ranges else NULL,
+      base_optimal = if (exists("base_optimal")) base_optimal else NULL,
+      impact_summary = if (exists("impact_summary")) impact_summary else NULL,
+      l_params_base = if (exists("l_params_base")) l_params_base else NULL,
+      model_sensitivity_df = if (exists("model_sensitivity_df")) model_sensitivity_df else NULL,
+      model_impact_summary = if (exists("model_impact_summary")) model_impact_summary else NULL
     )
 
-    for (script in prereq_scripts) {
-      script_path <- here(script)
-      if (file.exists(script_path)) {
-        cat("Sourcing:", script, "\n")
-        suppressMessages(suppressWarnings(source(script_path)))
-      } else {
-        stop(paste("Required script not found:", script))
+    if (verbose) {
+      cat("  DSA completed successfully.\n")
+      if (!is.null(results$dsa_results)) {
+        cat("  Results:", nrow(results$dsa_results), "rows\n")
       }
     }
 
-    # Verify DSA results are now available
-    if (!exists("dsa_results") || !is.data.frame(dsa_results)) {
-      stop("DSA analysis completed but dsa_results not created")
-    }
-
-    cat("DSA analysis completed successfully\n")
+    return(results)
 
   }, error = function(e) {
-    cat("Analysis scripts failed with error:", e$message, "\n")
-    cat("Creating mock results for demonstration\n")
-
-    # Define DSA parameters (matches 11_DSA.R)
-    dsa_pars <<- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
-                   "c_test_blood", "c_other_visit", "c_other_baseline",
-                   "c_other_follow", "c_other_last", "u_np", "u_p",
-                   "p_crp", "p_tlr", "p_tmb_braf")
-
-    # Create mock results structure
-    base_optimal <<- "control"
-    changes_found <<- FALSE
-
-    # Create more realistic mock data
-    n_strategies <- length(strategies)
-    n_params <- length(dsa_pars)
-
-    # Create parameter vector for mock data
-    param_vec <- c("base_case", rep(dsa_pars, each = 2))
-
-    dsa_results <<- data.frame(
-      Strategy = rep(strategies, length(param_vec)),
-      Parameter = rep(param_vec, each = n_strategies),
-      Value = rep(c("base", rep(c("min", "max"), n_params)), each = n_strategies),
-      Cost = runif(n_strategies * length(param_vec), 50000, 100000),
-      Effect = runif(n_strategies * length(param_vec), 2, 4),
-      NMB = runif(n_strategies * length(param_vec), 100000, 200000),
-      NMB_diff = c(rep(0, n_strategies),
-                   runif(n_strategies * length(param_vec) - n_strategies, -10000, 10000)),
-      stringsAsFactors = FALSE
-    )
-
-    # Add group column using param_groups
-    dsa_results$group <<- sapply(dsa_results$Parameter, function(p) {
-      if (p == "base_case") return("base_case")
-      for (g in names(param_groups)) {
-        if (p %in% param_groups[[g]] && g != "all_costs") return(g)
-      }
-      return("other")
-    })
-
-    dsa_ranges <<- data.frame(
-      pars = dsa_pars,
-      min = sapply(dsa_pars, function(x) l_params_base[[x]] * 0.8),
-      max = sapply(dsa_pars, function(x) l_params_base[[x]] * 1.2)
-    )
-
-    impact_summary <<- data.frame(
-      Strategy = rep(strategies, each = 3),
-      Rank = rep(1:3, n_strategies),
-      Parameter = rep(c("c_drug_nivo", "u_np", "c_test_NGS"), n_strategies),
-      Impact = runif(3 * n_strategies, 5000, 20000)
-    )
+    if (verbose) {
+      cat("  DSA FAILED:", e$message, "\n")
+    }
+    return(NULL)
+  }, finally = {
+    # Restore original MODEL_STRUCTURE
+    MODEL_STRUCTURE <<- original_structure
   })
-} else {
-  cat("DSA results already available in environment\n")
+}
+```
+
+```{r dsa-analysis, include=FALSE}
+# =============================================================================
+# RUN DSA FOR ALL THREE MODEL STRUCTURES
+# =============================================================================
+# This chunk runs DSA for each model structure where the sampling cache exists.
+# Results are stored in all_dsa_results list for use in subsequent sections.
+
+# IMPORTANT: Sourcing analysis scripts runs rm(list=ls()) which clears the global
+# environment. We use a protected environment to store key variables that must
+# persist across source() calls.
+.owsa_protected_env <- new.env(parent = emptyenv())
+
+# Define model_structures in the protected environment
+.owsa_protected_env$model_structures <- list(
+  A = list(
+    value = 0,
+    name = "Joint (All-in-One)",
+    label = "joint",
+    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    desc = "All biomarkers and all treatment interactions in a single model"
+  ),
+  B = list(
+    value = 1,
+    name = "Focused",
+    label = "focused",
+    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    desc = "All biomarkers as main effects, one treatment interaction per model"
+  ),
+  C = list(
+    value = 2,
+    name = "Separate",
+    label = "separate",
+    formula = "~ Age + sex + Rx + [biomarker]:Rx",
+    desc = "Only one biomarker and its treatment interaction per model"
+  )
+)
+
+# Store n_samples in protected environment
+.owsa_protected_env$n_samples <- 5000
+
+# Check cache status and store in protected environment
+.owsa_protected_env$cache_status <- sapply(c(0, 1, 2), function(ms) {
+  label <- c("joint", "focused", "separate")[ms + 1]
+  cache_file <- here("data", "tidy",
+                     paste0("sampling_models_n", .owsa_protected_env$n_samples, "_full_", label, ".rds"))
+  file.exists(cache_file)
+})
+names(.owsa_protected_env$cache_status) <- c("A", "B", "C")
+
+# Initialize storage for all model results in protected environment
+.owsa_protected_env$all_dsa_results <- list()
+
+# Create convenience aliases (will be restored after each source() call)
+model_structures <- .owsa_protected_env$model_structures
+cache_status <- .owsa_protected_env$cache_status
+n_samples <- .owsa_protected_env$n_samples
+all_dsa_results <- .owsa_protected_env$all_dsa_results
+
+# Define DSA parameters
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+              "c_test_blood", "c_other_visit", "c_other_baseline",
+              "c_other_follow", "c_other_last", "u_np", "u_p",
+              "p_crp", "p_tlr", "p_tmb_braf")
+
+# =============================================================================
+# AUTO-GENERATE MISSING SAMPLING CACHES
+# =============================================================================
+# If any sampling caches are missing, generate them now before running DSA.
+# This ensures the report always uses real data, never mock/fake data.
+# NOTE: We use .owsa_protected_env to store variables that must survive rm(list=ls())
+
+if (any(!.owsa_protected_env$cache_status)) {
+  missing_models <- names(.owsa_protected_env$cache_status)[!.owsa_protected_env$cache_status]
+  cat("\n=== Generating Missing Sampling Caches ===\n")
+  cat("Missing caches for:", paste(missing_models, collapse = ", "), "\n\n")
+
+  for (model_letter in missing_models) {
+    target_structure <- .owsa_protected_env$model_structures[[model_letter]]$value
+    label <- .owsa_protected_env$model_structures[[model_letter]]$label
+
+    cat("Generating cache for Model", model_letter, "(", label, ")...\n")
+    cat("  NOTE: This may take 20-60 minutes on first run.\n")
+
+    tryCatch({
+      # Set MODEL_STRUCTURE and source scripts to generate cache
+      MODEL_STRUCTURE <<- target_structure
+      suppressMessages(suppressWarnings({
+        source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+        source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+        source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+        source(here("scripts/R/analysis/08_sampling.R"))  # This generates/loads the cache
+      }))
+
+      # Verify cache was created
+      cache_file <- here("data", "tidy",
+                         paste0("sampling_models_n", .owsa_protected_env$n_samples, "_full_", label, ".rds"))
+      if (file.exists(cache_file)) {
+        .owsa_protected_env$cache_status[model_letter] <- TRUE
+        cat("  SUCCESS: Cache created at", cache_file, "\n\n")
+      } else {
+        cat("  WARNING: Cache file not found after generation attempt\n\n")
+      }
+    }, error = function(e) {
+      cat("  ERROR generating cache:", conditionMessage(e), "\n\n")
+    })
+  }
+
+  # Restore convenience aliases from protected environment
+  model_structures <- .owsa_protected_env$model_structures
+  cache_status <- .owsa_protected_env$cache_status
+  n_samples <- .owsa_protected_env$n_samples
+
+  cat("=== Cache Generation Complete ===\n\n")
+}
+
+cat("\n=== Running DSA for All Model Structures ===\n\n")
+
+# Run DSA for each model structure where cache exists (including newly generated)
+# NOTE: run_dsa_for_model sources scripts that clear environment via rm(list=ls()),
+# so we use .owsa_protected_env which is NOT cleared (objects starting with . are excluded from ls())
+
+for (model_letter in c("A", "B", "C")) {
+  cat("Model", model_letter, "(", .owsa_protected_env$model_structures[[model_letter]]$name, "):\n")
+
+  if (.owsa_protected_env$cache_status[model_letter]) {
+    # Cache exists - run DSA for this model structure
+    target_structure <- .owsa_protected_env$model_structures[[model_letter]]$value
+
+    result <- run_dsa_for_model(target_structure, verbose = TRUE)
+
+    # Store result in protected environment (survives rm(list=ls()) from next iteration)
+    if (!is.null(result) && !is.null(result$dsa_results)) {
+      .owsa_protected_env$all_dsa_results[[model_letter]] <- result
+      cat("  Stored", nrow(result$dsa_results), "DSA results\n\n")
+    } else {
+      cat("  WARNING: DSA returned no results\n\n")
+      .owsa_protected_env$all_dsa_results[[model_letter]] <- NULL
+    }
+  } else {
+    # Cache still missing after generation attempt
+    cat("  SKIPPED - cache unavailable\n\n")
+    .owsa_protected_env$all_dsa_results[[model_letter]] <- NULL
+  }
+}
+
+# Restore convenience aliases from protected environment for use in rest of document
+model_structures <- .owsa_protected_env$model_structures
+cache_status <- .owsa_protected_env$cache_status
+n_samples <- .owsa_protected_env$n_samples
+all_dsa_results <- .owsa_protected_env$all_dsa_results
+
+# Count how many models have results
+models_with_results <- sum(vapply(all_dsa_results, function(x) !is.null(x), logical(1)))
+cat("=== DSA Complete:", models_with_results, "of 3 models have results ===\n")
+
+# NO MOCK DATA - If no results available, the report sections will show appropriate messages
+# The auto-generation above should have created any missing caches
+
+# For backward compatibility with existing code that expects dsa_results
+# Use Model A results as the default (or first available model)
+for (model_letter in c("A", "B", "C")) {
+  if (!is.null(all_dsa_results[[model_letter]])) {
+    dsa_results <- all_dsa_results[[model_letter]]$dsa_results
+    dsa_ranges <- all_dsa_results[[model_letter]]$dsa_ranges
+    base_optimal <- all_dsa_results[[model_letter]]$base_optimal
+    impact_summary <- all_dsa_results[[model_letter]]$impact_summary
+    break
+  }
 }
 ```
 
@@ -478,11 +666,26 @@ create_tornado_data <- function(strategy_name, dsa_results) {
         }
       }
 
+      # Safely extract NMB_diff values with NA handling
+      min_diff <- if (!is.null(min_row$NMB_diff) && length(min_row$NMB_diff) > 0)
+                    min_row$NMB_diff[1] else 0
+      max_diff <- if (!is.null(max_row$NMB_diff) && length(max_row$NMB_diff) > 0)
+                    max_row$NMB_diff[1] else 0
+
+      # Handle NA values
+      if (is.na(min_diff)) min_diff <- 0
+      if (is.na(max_diff)) max_diff <- 0
+
+      # Calculate Range as the MAXIMUM ABSOLUTE DEVIATION from base case
+      # This is the standard tornado ordering metric - which parameter has the
+      # largest potential single-sided impact on results
+      max_abs_impact <- max(abs(min_diff), abs(max_diff))
+
       tornado_data <- rbind(tornado_data, data.frame(
         Parameter = param,
-        Min_diff = min_row$NMB_diff[1],
-        Max_diff = max_row$NMB_diff[1],
-        Range = abs(max_row$NMB_diff[1] - min_row$NMB_diff[1]),
+        Min_diff = min_diff,
+        Max_diff = max_diff,
+        Range = max_abs_impact,
         group = param_group,
         stringsAsFactors = FALSE
       ))
@@ -490,7 +693,10 @@ create_tornado_data <- function(strategy_name, dsa_results) {
   }
 
   if (nrow(tornado_data) > 0) {
-    tornado_data <- tornado_data[order(tornado_data$Range), ]
+    # Sort by Range in ascending order (smallest at bottom, largest at top after coord_flip)
+    # Handle NA in Range by treating as 0
+    tornado_data$Range[is.na(tornado_data$Range)] <- 0
+    tornado_data <- tornado_data[order(tornado_data$Range, na.last = FALSE), ]
     tornado_data$Parameter <- factor(tornado_data$Parameter,
                                      levels = tornado_data$Parameter)
     return(tornado_data)
@@ -500,46 +706,96 @@ create_tornado_data <- function(strategy_name, dsa_results) {
 
 # Function to create line plot data with real x-axis values
 create_line_plot_data_real <- function(dsa_results, outcome_var = "NMB") {
+  # Check required global variables exist
+  if (!exists("dsa_ranges") || !exists("l_params_base")) {
+    return(data.frame())
+  }
+
+  # Define parameter constraints for validation
+  cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                   "c_test_blood", "c_other_visit", "c_other_baseline",
+                   "c_other_follow", "c_other_last")
+  utility_params <- c("u_np", "u_p")
+  prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+
   # Get all data except base case
   strat_results <- dsa_results[dsa_results$Parameter != "base_case", ]
-  
+
   # Get base case data
   base_results <- dsa_results[dsa_results$Parameter == "base_case", ]
-  
+
   line_data <- data.frame()
-  
+
   for (strategy in strategies) {
     for (param in unique(strat_results$Parameter)) {
       # Get min and max rows for this strategy and parameter
-      min_row <- strat_results[strat_results$Strategy == strategy & 
-                               strat_results$Parameter == param & 
+      min_row <- strat_results[strat_results$Strategy == strategy &
+                               strat_results$Parameter == param &
                                strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Strategy == strategy & 
-                               strat_results$Parameter == param & 
+      max_row <- strat_results[strat_results$Strategy == strategy &
+                               strat_results$Parameter == param &
                                strat_results$Value == "max", ]
       base_row <- base_results[base_results$Strategy == strategy, ]
-      
+
       if (nrow(min_row) > 0 && nrow(max_row) > 0 && nrow(base_row) > 0) {
         # Get parameter values from dsa_ranges
         param_idx <- which(dsa_ranges$pars == param)
         if (length(param_idx) > 0) {
           min_val <- dsa_ranges$min[param_idx]
           max_val <- dsa_ranges$max[param_idx]
-          base_val <- l_params_base[[param]]
-          
-          # Add three points: min, base, max
-          param_data <- data.frame(
-            Parameter = param,
-            Strategy = strategy,
-            ParamValue = c(min_val, base_val, max_val),
-            Outcome = c(min_row[[outcome_var]], base_row[[outcome_var]], max_row[[outcome_var]])
-          )
-          line_data <- rbind(line_data, param_data)
+
+          # Safely get base value with fallback to midpoint
+          base_val <- NULL
+          if (!is.null(l_params_base) && param %in% names(l_params_base)) {
+            base_val <- l_params_base[[param]]
+          }
+          if (is.null(base_val) || length(base_val) == 0) {
+            base_val <- (min_val + max_val) / 2
+          }
+
+          # Apply parameter-specific bounds validation
+          if (param %in% cost_params) {
+            # Costs must be non-negative
+            min_val <- max(0, min_val)
+            max_val <- max(0, max_val)
+            base_val <- max(0, base_val)
+          } else if (param %in% utility_params) {
+            # Utilities must be between 0 and 1
+            min_val <- max(0, min(1, min_val))
+            max_val <- max(0, min(1, max_val))
+            base_val <- max(0, min(1, base_val))
+          } else if (param %in% prevalence_params) {
+            # Prevalence must be between 0 and 1
+            min_val <- max(0, min(1, min_val))
+            max_val <- max(0, min(1, max_val))
+            base_val <- max(0, min(1, base_val))
+          }
+
+          # Skip parameters with no variation (min == max)
+          if (abs(max_val - min_val) < 1e-10) {
+            next
+          }
+
+          # Safely extract outcome values
+          min_outcome <- if (outcome_var %in% names(min_row)) min_row[[outcome_var]][1] else NA
+          base_outcome <- if (outcome_var %in% names(base_row)) base_row[[outcome_var]][1] else NA
+          max_outcome <- if (outcome_var %in% names(max_row)) max_row[[outcome_var]][1] else NA
+
+          # Only add if we have valid outcome values
+          if (!is.na(min_outcome) && !is.na(base_outcome) && !is.na(max_outcome)) {
+            param_data <- data.frame(
+              Parameter = param,
+              Strategy = strategy,
+              ParamValue = c(min_val, base_val, max_val),
+              Outcome = c(min_outcome, base_outcome, max_outcome)
+            )
+            line_data <- rbind(line_data, param_data)
+          }
         }
       }
     }
   }
-  
+
   return(line_data)
 }
 
@@ -574,13 +830,21 @@ This one-way sensitivity analysis (OWSA) evaluates the robustness of the cost-ef
 
 The analysis examines how variations in individual model parameters affect the net monetary benefit (NMB) and optimal strategy selection, providing insights into which parameters have the greatest impact on decision uncertainty.
 
+**This report presents OWSA results for all three survival model structures:**
+
+- **Model A (Joint)**: All biomarkers and treatment interactions in a single model
+- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model C (Separate)**: Only one biomarker and its treatment interaction per model
+
 This report contains:
 
 - **Technical Details**: Analysis specifications and methodology
 - **Parameter Overview**: Description of the key parameters varied in the sensitivity analysis
-- **Tornado Diagrams**: Visual representation of parameter impact for each strategy
-- **Line Plot Analysis**: Parameter sensitivity across the full range for NMB, costs, and effectiveness
-- **Robustness Analysis**: Assessment of strategy switching and decision uncertainty
+- **Model A Results**: Tornado diagrams, line plots, and impact rankings for the Joint model
+- **Model B Results**: Tornado diagrams, line plots, and impact rankings for the Focused model
+- **Model C Results**: Tornado diagrams, line plots, and impact rankings for the Separate model
+- **Cross-Model Comparison**: Assessment of robustness across model structures
+- **Survival Model Structural Sensitivity**: Impact of parametric distribution choice
 
 ```{r pagebreak-1, results='asis'}
 cat("\\newpage\n")
@@ -590,15 +854,38 @@ cat("\\newpage\n")
 
 ## Analysis Specifications
 
-**Model Configuration:**
+**Model Structures Analyzed:**
 
-- Total model evaluations: `r if(exists("dsa_results")) nrow(dsa_results) else "N/A"`
+```{r model-structures-table, results='asis'}
+# Display model structure availability
+model_status_df <- data.frame(
+  Model = c("A", "B", "C"),
+  Name = c("Joint (All-in-One)", "Focused", "Separate"),
+  Formula = c(
+    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + [biomarker]:Rx"
+  ),
+  Status = sapply(c("A", "B", "C"), function(m) {
+    if (!is.null(all_dsa_results[[m]])) "Results available" else "Cache missing"
+  })
+)
+
+knitr::kable(model_status_df,
+             booktabs = TRUE,
+             align = c("c", "l", "l", "c"),
+             col.names = c("Model", "Name", "Formula Pattern", "Status")) %>%
+  kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position"))
+```
+
+**Model Configuration (per model structure):**
+
 - Strategies evaluated: `r if(exists("strategies")) paste(length(strategies), "(", paste(strategies, collapse = ", "), ")") else "N/A"`
 - Parameters tested: `r if(exists("dsa_pars")) length(dsa_pars) else "N/A"`
 - Time horizon: `r time_horizon` weeks (`r round(time_horizon/52, 1)` years)
 - Discount rate: `r paste0(dr * 100, "%")` per annum
-- Willingness-to-pay threshold: €`r scales::comma(WTP)`
-- Parameter variation range: ±`r paste0(DSA_mult * 100, "%")`
+- Willingness-to-pay threshold: `r scales::dollar(WTP, prefix = "\u20AC")`
+- Parameter variation range: `r paste0("\u00B1", DSA_mult * 100, "%")`
 
 **Parameter Constraints:**
 
@@ -609,7 +896,8 @@ cat("\\newpage\n")
 
 - One-way sensitivity analysis varies each parameter individually
 - All other parameters held at base case values during each test
-- Net Monetary Benefit calculated as: NMB = Effect × WTP - Cost
+- DSA is run separately for each model structure to capture structural differences
+- Net Monetary Benefit calculated as: NMB = Effect x WTP - Cost
 - Tornado diagrams ordered by magnitude of parameter impact
 - Line plots show outcome response across actual parameter values
 - Three outcome measures: Net Monetary Benefit, Total Costs, and Total Effectiveness
@@ -619,7 +907,7 @@ cat("\\newpage\n")
 **Analysis completed on:** `r format(Sys.Date(), "%B %d, %Y")`
 **R version:** `r R.version.string`
 **Repository:** ben-geisler/METIMMOX-1
-**Report version:** 2.0
+**Report version:** 3.0
 
 ```{r pagebreak-2, results='asis'}
 cat("\\newpage\n")
@@ -739,382 +1027,195 @@ if (exists("dsa_ranges") && nrow(dsa_ranges) > 0) {
 cat("\\newpage\n")
 ```
 
-# Tornado Diagrams
+```{r model-visualization-helpers, include=FALSE}
+# =============================================================================
+# HELPER FUNCTIONS FOR MODEL-SPECIFIC VISUALIZATIONS
+# =============================================================================
 
-## Standard of Care Strategy
-
-```{r tornado-control}
-#| fig-cap: "Tornado Diagram - Standard of Care One-Way Sensitivity Analysis"
-#| fig-height: 8
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  library(ggplot2)
-
-  # Create tornado plot for control strategy
-  tornado_data <- create_tornado_data("control", dsa_results)
-
-  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
-    # Color y-axis labels by group
-    label_colors <- group_colors[as.character(tornado_data$group)]
-    label_colors[is.na(label_colors)] <- "black"
-
-    p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff),
-               fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff),
-               fill = "darkred", alpha = 0.8, width = 0.7) +
-      coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
-                 linewidth = 0.8) +
-      labs(x = "Model Parameters",
-           y = "Change in NMB (EUR)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
-                                                        suffix = "K",
-                                                        prefix = "")) +
-      theme_minimal() +
-      theme(
-        axis.text.y = element_text(size = 10, color = label_colors),
-        axis.text.x = element_text(size = 10),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
-        axis.title = element_text(size = 12),
-        panel.grid.minor = element_blank()
-      )
-
-    print(p)
+# Create tornado plot for a specific model and strategy
+create_model_tornado <- function(model_letter, strategy_name) {
+  if (is.null(all_dsa_results[[model_letter]])) {
+    return(NULL)
   }
-} else {
-  cat("**DSA results not available**\n")
-}
-```
 
-## CRP-guided Strategy
+  model_dsa <- all_dsa_results[[model_letter]]$dsa_results
+  tornado_data <- create_tornado_data(strategy_name, model_dsa)
 
-```{r tornado-crp}
-#| fig-cap: "Tornado Diagram - CRP-guided Strategy One-Way Sensitivity Analysis"
-#| fig-height: 8
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for CRP strategy
-  tornado_data <- create_tornado_data("crp", dsa_results)
-
-  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
-    label_colors <- group_colors[as.character(tornado_data$group)]
-    label_colors[is.na(label_colors)] <- "black"
-
-    p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff),
-               fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff),
-               fill = "darkred", alpha = 0.8, width = 0.7) +
-      coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
-                 linewidth = 0.8) +
-      labs(x = "Model Parameters",
-           y = "Change in NMB (EUR)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
-                                                        suffix = "K",
-                                                        prefix = "")) +
-      theme_minimal() +
-      theme(
-        axis.text.y = element_text(size = 10, color = label_colors),
-        axis.text.x = element_text(size = 10),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
-        axis.title = element_text(size = 12),
-        panel.grid.minor = element_blank()
-      )
-
-    print(p)
+  if (is.null(tornado_data) || nrow(tornado_data) == 0) {
+    return(NULL)
   }
-} else {
-  cat("**DSA results not available**\n")
+
+  label_colors <- group_colors[as.character(tornado_data$group)]
+  label_colors[is.na(label_colors)] <- "black"
+
+  p <- ggplot(tornado_data) +
+    geom_col(aes(x = Parameter, y = Min_diff),
+             fill = "steelblue", alpha = 0.8, width = 0.7) +
+    geom_col(aes(x = Parameter, y = Max_diff),
+             fill = "darkred", alpha = 0.8, width = 0.7) +
+    coord_flip() +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "black",
+               linewidth = 0.8) +
+    labs(x = "Model Parameters",
+         y = "Change in NMB (EUR)") +
+    scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
+                                                      suffix = "K",
+                                                      prefix = "")) +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_text(size = 10, color = label_colors),
+      axis.text.x = element_text(size = 10),
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      panel.grid.minor = element_blank()
+    )
+
+  return(p)
 }
-```
 
-## TLR-guided Strategy
-
-```{r tornado-tlr}
-#| fig-cap: "Tornado Diagram - TLR-guided Strategy One-Way Sensitivity Analysis"
-#| fig-height: 8
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for TLR strategy
-  tornado_data <- create_tornado_data("tlr", dsa_results)
-
-  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
-    label_colors <- group_colors[as.character(tornado_data$group)]
-    label_colors[is.na(label_colors)] <- "black"
-
-    p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff),
-               fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff),
-               fill = "darkred", alpha = 0.8, width = 0.7) +
-      coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
-                 linewidth = 0.8) +
-      labs(x = "Model Parameters",
-           y = "Change in NMB (EUR)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
-                                                        suffix = "K",
-                                                        prefix = "")) +
-      theme_minimal() +
-      theme(
-        axis.text.y = element_text(size = 10, color = label_colors),
-        axis.text.x = element_text(size = 10),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
-        axis.title = element_text(size = 12),
-        panel.grid.minor = element_blank()
-      )
-
-    print(p)
+# Create line plot for a specific model
+create_model_line_plot <- function(model_letter, outcome_var = "NMB") {
+  if (is.null(all_dsa_results[[model_letter]])) {
+    return(NULL)
   }
-} else {
-  cat("**DSA results not available**\n")
-}
-```
 
-## TMB/BRAF-guided Strategy
+  model_dsa <- all_dsa_results[[model_letter]]$dsa_results
+  model_ranges <- all_dsa_results[[model_letter]]$dsa_ranges
+  model_params <- all_dsa_results[[model_letter]]$l_params_base
 
-```{r tornado-tmb-braf}
-#| fig-cap: "Tornado Diagram - TMB/BRAF-guided Strategy One-Way Sensitivity Analysis"
-#| fig-height: 8
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create tornado plot for TMB/BRAF strategy
-  tornado_data <- create_tornado_data("tmb_braf", dsa_results)
-
-  if (!is.null(tornado_data) && nrow(tornado_data) > 0) {
-    label_colors <- group_colors[as.character(tornado_data$group)]
-    label_colors[is.na(label_colors)] <- "black"
-
-    p <- ggplot(tornado_data) +
-      geom_col(aes(x = Parameter, y = Min_diff),
-               fill = "steelblue", alpha = 0.8, width = 0.7) +
-      geom_col(aes(x = Parameter, y = Max_diff),
-               fill = "darkred", alpha = 0.8, width = 0.7) +
-      coord_flip() +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "black",
-                 linewidth = 0.8) +
-      labs(x = "Model Parameters",
-           y = "Change in NMB (EUR)") +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001,
-                                                        suffix = "K",
-                                                        prefix = "")) +
-      theme_minimal() +
-      theme(
-        axis.text.y = element_text(size = 10, color = label_colors),
-        axis.text.x = element_text(size = 10),
-        plot.title = element_text(size = 14, face = "bold"),
-        plot.subtitle = element_text(size = 12),
-        axis.title = element_text(size = 12),
-        panel.grid.minor = element_blank()
-      )
-
-    print(p)
+  # Validate required data structures
+  if (is.null(model_dsa) || is.null(model_ranges)) {
+    return(NULL)
   }
-} else {
-  cat("**DSA results not available**\n")
-}
-```
 
-```{r pagebreak-4, results='asis'}
-cat("\\newpage\n")
-```
+  # Define parameter constraints for validation
+  cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                   "c_test_blood", "c_other_visit", "c_other_baseline",
+                   "c_other_follow", "c_other_last")
+  utility_params <- c("u_np", "u_p")
+  prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
 
-# Line Plot Sensitivity Analysis
+  # Custom line plot data function for this model
+  strat_results <- model_dsa[model_dsa$Parameter != "base_case", ]
+  base_results <- model_dsa[model_dsa$Parameter == "base_case", ]
 
-## Net Monetary Benefit
+  line_data <- data.frame()
 
-```{r line-plot-nmb}
-#| fig-cap: "Parameter Sensitivity - Net Monetary Benefit by Parameter"
-#| fig-height: 14
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create line plot data for NMB
-  nmb_line_data <- create_line_plot_data_real(dsa_results, "NMB")
-
-  if (nrow(nmb_line_data) > 0) {
-    # Create faceted line plot - use free scales so each parameter shows its range
-    p <- ggplot(nmb_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(linewidth = 1.0, alpha = 0.8) +
-      geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", prefix = "")) +
-      scale_color_brewer(palette = "Set1", name = "Strategy") +
-      labs(
-        x = "Parameter Value",
-        y = "Net Monetary Benefit (EUR, thousands)"
-      ) +
-      theme_minimal() +
-      theme(
-        strip.text = element_text(size = 8, face = "bold"),
-        legend.position = "bottom",
-        panel.grid.minor = element_blank(),
-        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
-        axis.text.y = element_text(size = 7)
-      )
-
-    print(p)
-  } else {
-    cat("**No NMB line plot data available**\n")
-  }
-} else {
-  cat("**Line plot data not available**\n")
-}
-```
-
-## Total Costs
-
-```{r line-plot-cost}
-#| fig-cap: "Parameter Sensitivity - Total Costs by Parameter"
-#| fig-height: 14
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create line plot data for Cost
-  cost_line_data <- create_line_plot_data_real(dsa_results, "Cost")
-
-  if (nrow(cost_line_data) > 0) {
-    # Create faceted line plot - use free scales so each parameter shows its range
-    p <- ggplot(cost_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(linewidth = 1.0, alpha = 0.8) +
-      geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
-      scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", prefix = "")) +
-      scale_color_brewer(palette = "Set1", name = "Strategy") +
-      labs(
-        x = "Parameter Value",
-        y = "Total Cost (EUR, thousands)"
-      ) +
-      theme_minimal() +
-      theme(
-        strip.text = element_text(size = 8, face = "bold"),
-        legend.position = "bottom",
-        panel.grid.minor = element_blank(),
-        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
-        axis.text.y = element_text(size = 7)
-      )
-
-    print(p)
-  } else {
-    cat("**No cost line plot data available**\n")
-  }
-} else {
-  cat("**Line plot data not available**\n")
-}
-```
-
-## Total Effectiveness
-
-```{r line-plot-effect}
-#| fig-cap: "Parameter Sensitivity - Total Effectiveness (QALYs) by Parameter"
-#| fig-height: 14
-#| fig-width: 10
-
-if (exists("dsa_results") && exists("strategies")) {
-  # Create line plot data for Effect
-  effect_line_data <- create_line_plot_data_real(dsa_results, "Effect")
-
-  if (nrow(effect_line_data) > 0) {
-    # Create faceted line plot - use free scales so each parameter shows its range
-    p <- ggplot(effect_line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
-      geom_line(linewidth = 1.0, alpha = 0.8) +
-      geom_point(size = 2) +
-      facet_wrap(~ Parameter, scales = "free", ncol = 3) +
-      scale_color_brewer(palette = "Set1", name = "Strategy") +
-      labs(
-        x = "Parameter Value",
-        y = "Total Effectiveness (QALYs)"
-      ) +
-      theme_minimal() +
-      theme(
-        strip.text = element_text(size = 8, face = "bold"),
-        legend.position = "bottom",
-        panel.grid.minor = element_blank(),
-        axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
-        axis.text.y = element_text(size = 7)
-      )
-
-    print(p)
-  } else {
-    cat("**No effectiveness line plot data available**\n")
-  }
-} else {
-  cat("**Line plot data not available**\n")
-}
-```
-
-```{r pagebreak-5, results='asis'}
-cat("\\newpage\n")
-```
-
-# Robustness Analysis
-
-## Strategy Switching Analysis
-
-The optimal strategy (`r if(exists("base_optimal")) base_optimal else "N/A"`) remains unchanged across all parameter variations tested.
-
-This indicates robust decision-making within the ±`r DSA_mult * 100`% parameter variation range.
-
-## Parameter Impact Rankings
-
-**Table 2: Top 3 Most Influential Parameters by Strategy**
-
-```{r impact-rankings-table}
-# If impact_summary doesn't exist but dsa_results does, compute it
-if (!exists("impact_summary") && exists("dsa_results")) {
-  impact_summary <- data.frame()
-
-  for (strat in strategies) {
-    strat_results <- dsa_results[dsa_results$Strategy == strat &
-                                   dsa_results$Parameter != "base_case", ]
-
-    param_impact <- data.frame()
+  for (strategy in strategies) {
     for (param in unique(strat_results$Parameter)) {
-      min_row <- strat_results[strat_results$Parameter == param &
-                                 strat_results$Value == "min", ]
-      max_row <- strat_results[strat_results$Parameter == param &
-                                 strat_results$Value == "max", ]
+      min_row <- strat_results[strat_results$Strategy == strategy &
+                               strat_results$Parameter == param &
+                               strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Strategy == strategy &
+                               strat_results$Parameter == param &
+                               strat_results$Value == "max", ]
+      base_row <- base_results[base_results$Strategy == strategy, ]
 
-      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
-        min_diff <- min_row$NMB_diff[1]
-        max_diff <- max_row$NMB_diff[1]
-        range_val <- abs(max_diff - min_diff)
+      if (nrow(min_row) > 0 && nrow(max_row) > 0 && nrow(base_row) > 0) {
+        param_idx <- which(model_ranges$pars == param)
+        if (length(param_idx) > 0) {
+          min_val <- model_ranges$min[param_idx]
+          max_val <- model_ranges$max[param_idx]
 
-        param_impact <- rbind(param_impact, data.frame(
-          Parameter = param,
-          Range = range_val
-        ))
-      }
-    }
+          # Safely get base value with fallback to midpoint
+          base_val <- NULL
+          if (!is.null(model_params) && param %in% names(model_params)) {
+            base_val <- model_params[[param]]
+          }
+          if (is.null(base_val) || length(base_val) == 0) {
+            # Fallback: use midpoint between min and max
+            base_val <- (min_val + max_val) / 2
+          }
 
-    if (nrow(param_impact) > 0) {
-      param_impact <- param_impact[order(-param_impact$Range), ]
-      top_n <- min(3, nrow(param_impact))
-      top_params <- param_impact[1:top_n, ]
+          # Apply parameter-specific bounds validation
+          if (param %in% cost_params) {
+            # Costs must be non-negative
+            min_val <- max(0, min_val)
+            max_val <- max(0, max_val)
+            base_val <- max(0, base_val)
+          } else if (param %in% utility_params) {
+            # Utilities must be between 0 and 1
+            min_val <- max(0, min(1, min_val))
+            max_val <- max(0, min(1, max_val))
+            base_val <- max(0, min(1, base_val))
+          } else if (param %in% prevalence_params) {
+            # Prevalence must be between 0 and 1
+            min_val <- max(0, min(1, min_val))
+            max_val <- max(0, min(1, max_val))
+            base_val <- max(0, min(1, base_val))
+          }
 
-      for (i in 1:top_n) {
-        impact_summary <- rbind(impact_summary, data.frame(
-          Strategy = strat,
-          Rank = i,
-          Parameter = top_params$Parameter[i],
-          Impact = top_params$Range[i]
-        ))
+          # Skip parameters with no variation (min == max)
+          if (abs(max_val - min_val) < 1e-10) {
+            next
+          }
+
+          # Safely extract outcome values
+          min_outcome <- if (outcome_var %in% names(min_row)) min_row[[outcome_var]][1] else NA
+          base_outcome <- if (outcome_var %in% names(base_row)) base_row[[outcome_var]][1] else NA
+          max_outcome <- if (outcome_var %in% names(max_row)) max_row[[outcome_var]][1] else NA
+
+          # Only add if we have valid outcome values
+          if (!is.na(min_outcome) && !is.na(base_outcome) && !is.na(max_outcome)) {
+            param_data <- data.frame(
+              Parameter = param,
+              Strategy = strategy,
+              ParamValue = c(min_val, base_val, max_val),
+              Outcome = c(min_outcome, base_outcome, max_outcome)
+            )
+            line_data <- rbind(line_data, param_data)
+          }
+        }
       }
     }
   }
+
+  if (nrow(line_data) == 0) {
+    return(NULL)
+  }
+
+  y_label <- switch(outcome_var,
+    "NMB" = "Net Monetary Benefit (EUR, thousands)",
+    "Cost" = "Total Cost (EUR, thousands)",
+    "Effect" = "Total Effectiveness (QALYs)"
+  )
+
+  p <- ggplot(line_data, aes(x = ParamValue, y = Outcome, color = Strategy)) +
+    geom_line(linewidth = 1.0, alpha = 0.8) +
+    geom_point(size = 2) +
+    facet_wrap(~ Parameter, scales = "free", ncol = 3) +
+    scale_color_brewer(palette = "Set1", name = "Strategy") +
+    labs(x = "Parameter Value", y = y_label) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 8, face = "bold"),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      axis.text.x = element_text(size = 7, angle = 45, hjust = 1),
+      axis.text.y = element_text(size = 7)
+    )
+
+  if (outcome_var %in% c("NMB", "Cost")) {
+    p <- p + scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K", prefix = ""))
+  }
+
+  return(p)
 }
 
-if (exists("impact_summary") && nrow(impact_summary) > 0) {
-  # Parameter descriptions for readability
+# Create impact rankings for a specific model
+# IMPORTANT: Calculate rankings directly from DSA results using the same metric
+# as tornado diagrams (max absolute deviation) for consistency
+create_model_impact_table <- function(model_letter, top_n = 3) {
+  if (is.null(all_dsa_results[[model_letter]])) {
+    return(NULL)
+  }
+
+  model_dsa <- all_dsa_results[[model_letter]]$dsa_results
+  if (is.null(model_dsa) || nrow(model_dsa) == 0) {
+    return(NULL)
+  }
+
   param_desc <- c(
     "c_drug_nivo" = "Nivolumab cost",
     "c_drug_FLOX" = "FLOX cost",
@@ -1132,8 +1233,52 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
     "p_tmb_braf" = "TMB/BRAF prevalence"
   )
 
-  # Create impact rankings table with descriptions
-  impact_table <- impact_summary %>%
+  # Calculate impact rankings using the same metric as tornado diagrams
+  impact_data <- data.frame()
+
+  for (strategy in strategies) {
+    strat_results <- model_dsa[model_dsa$Strategy == strategy &
+                               model_dsa$Parameter != "base_case", ]
+
+    for (param in unique(strat_results$Parameter)) {
+      min_row <- strat_results[strat_results$Parameter == param &
+                               strat_results$Value == "min", ]
+      max_row <- strat_results[strat_results$Parameter == param &
+                               strat_results$Value == "max", ]
+
+      if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+        min_diff <- if (!is.null(min_row$NMB_diff) && length(min_row$NMB_diff) > 0)
+                      min_row$NMB_diff[1] else 0
+        max_diff <- if (!is.null(max_row$NMB_diff) && length(max_row$NMB_diff) > 0)
+                      max_row$NMB_diff[1] else 0
+
+        if (is.na(min_diff)) min_diff <- 0
+        if (is.na(max_diff)) max_diff <- 0
+
+        # Use same metric as tornado: maximum absolute deviation
+        max_abs_impact <- max(abs(min_diff), abs(max_diff))
+
+        impact_data <- rbind(impact_data, data.frame(
+          Strategy = strategy,
+          Parameter = param,
+          Impact = max_abs_impact,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+
+  if (nrow(impact_data) == 0) {
+    return(NULL)
+  }
+
+  # Rank parameters within each strategy and get top N
+  impact_table <- impact_data %>%
+    group_by(Strategy) %>%
+    arrange(desc(Impact)) %>%
+    mutate(Rank = row_number()) %>%
+    filter(Rank <= top_n) %>%
+    ungroup() %>%
     mutate(
       Strategy = case_when(
         Strategy == "control" ~ "Standard of Care",
@@ -1143,29 +1288,406 @@ if (exists("impact_summary") && nrow(impact_summary) > 0) {
         TRUE ~ Strategy
       ),
       Description = param_desc[Parameter],
-      Impact_fmt = sprintf("%.1f", Impact / 1000)  # Convert to thousands with 1 decimal
+      Impact_fmt = sprintf("%.1f", Impact / 1000)
     ) %>%
-    select(Strategy, Rank, Description, Impact_fmt)
+    select(Strategy, Rank, Description, Impact_fmt) %>%
+    arrange(Strategy, Rank)
 
+  return(impact_table)
+}
+```
+
+# Model A: Joint Model Results {#model-a}
+
+Model A uses a **joint survival model** with all three biomarkers and all treatment-biomarker interactions included in a single model.
+
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+
+```{r model-a-check, results='asis'}
+if (is.null(all_dsa_results[["A"]])) {
+  cat("\n**Results not available for Model A.** Sampling cache is missing.\n\n")
+  cat("To generate the cache, run in R console:\n")
+  cat("```r\n")
+  cat("MODEL_STRUCTURE <- 0\n")
+  cat("source('scripts/R/analysis/02_setup_and_global_variables.R')\n")
+  cat("source('scripts/R/analysis/08_sampling.R')\n")
+  cat("```\n")
+}
+```
+
+```{r model-a-content, eval=!is.null(all_dsa_results[["A"]]), child=NULL}
+```
+
+## Tornado Diagrams - Model A
+
+```{r tornado-a-control, fig.cap="Tornado Diagram - Model A: Standard of Care", fig.height=7, fig.width=9}
+p <- create_model_tornado("A", "control")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-a-crp, fig.cap="Tornado Diagram - Model A: CRP-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("A", "crp")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-a-tlr, fig.cap="Tornado Diagram - Model A: TLR-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("A", "tlr")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-a-tmb, fig.cap="Tornado Diagram - Model A: TMB/BRAF-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("A", "tmb_braf")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Line Plot Sensitivity - Model A
+
+```{r line-a-nmb, fig.cap="Model A: Parameter Sensitivity - Net Monetary Benefit", fig.height=12, fig.width=10}
+p <- create_model_line_plot("A", "NMB")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-a-cost, fig.cap="Model A: Parameter Sensitivity - Total Costs", fig.height=12, fig.width=10}
+p <- create_model_line_plot("A", "Cost")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-a-effect, fig.cap="Model A: Parameter Sensitivity - Total Effectiveness", fig.height=12, fig.width=10}
+p <- create_model_line_plot("A", "Effect")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Parameter Impact Rankings - Model A
+
+```{r impact-a}
+impact_table <- create_model_impact_table("A")
+if (!is.null(impact_table)) {
   knitr::kable(impact_table,
                booktabs = TRUE,
                align = c("l", "c", "l", "r"),
-               col.names = c("Strategy", "Rank", "Parameter", "NMB Range (EUR K)")) %>%
+               col.names = c("Strategy", "Rank", "Parameter", "NMB Range (EUR K)"),
+               caption = "Model A: Top 3 Most Influential Parameters by Strategy") %>%
     kableExtra::column_spec(1, width = "3cm") %>%
     kableExtra::column_spec(2, width = "1cm") %>%
     kableExtra::column_spec(3, width = "4cm") %>%
     kableExtra::column_spec(4, width = "2.5cm") %>%
     kableExtra::collapse_rows(columns = 1, valign = "top") %>%
     kableExtra::kable_styling(latex_options = c("HOLD_position"))
-
 } else {
-  cat("Parameter impact rankings not available.\n")
+  cat("**Impact rankings not available for Model A**\n")
 }
 ```
 
-**Note:** Impact represents the absolute difference in Net Monetary Benefit between the minimum and maximum parameter values for each strategy.
+```{r pagebreak-model-a, results='asis'}
+cat("\\newpage\n")
+```
 
-```{r pagebreak-6, results='asis'}
+# Model B: Focused Model Results {#model-b}
+
+Model B uses **focused survival models** with all three biomarkers included as main effects, but only one treatment-biomarker interaction per model.
+
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx`
+
+```{r model-b-check, results='asis'}
+if (is.null(all_dsa_results[["B"]])) {
+  cat("\n**Results not available for Model B.** Sampling cache is missing.\n\n")
+  cat("To generate the cache, run in R console:\n")
+  cat("```r\n")
+  cat("MODEL_STRUCTURE <- 1\n")
+  cat("source('scripts/R/analysis/02_setup_and_global_variables.R')\n")
+  cat("source('scripts/R/analysis/08_sampling.R')\n")
+  cat("```\n")
+}
+```
+
+## Tornado Diagrams - Model B
+
+```{r tornado-b-control, fig.cap="Tornado Diagram - Model B: Standard of Care", fig.height=7, fig.width=9}
+p <- create_model_tornado("B", "control")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-b-crp, fig.cap="Tornado Diagram - Model B: CRP-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("B", "crp")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-b-tlr, fig.cap="Tornado Diagram - Model B: TLR-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("B", "tlr")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-b-tmb, fig.cap="Tornado Diagram - Model B: TMB/BRAF-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("B", "tmb_braf")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Line Plot Sensitivity - Model B
+
+```{r line-b-nmb, fig.cap="Model B: Parameter Sensitivity - Net Monetary Benefit", fig.height=12, fig.width=10}
+p <- create_model_line_plot("B", "NMB")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-b-cost, fig.cap="Model B: Parameter Sensitivity - Total Costs", fig.height=12, fig.width=10}
+p <- create_model_line_plot("B", "Cost")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-b-effect, fig.cap="Model B: Parameter Sensitivity - Total Effectiveness", fig.height=12, fig.width=10}
+p <- create_model_line_plot("B", "Effect")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Parameter Impact Rankings - Model B
+
+```{r impact-b}
+impact_table <- create_model_impact_table("B")
+if (!is.null(impact_table)) {
+  knitr::kable(impact_table,
+               booktabs = TRUE,
+               align = c("l", "c", "l", "r"),
+               col.names = c("Strategy", "Rank", "Parameter", "NMB Range (EUR K)"),
+               caption = "Model B: Top 3 Most Influential Parameters by Strategy") %>%
+    kableExtra::column_spec(1, width = "3cm") %>%
+    kableExtra::column_spec(2, width = "1cm") %>%
+    kableExtra::column_spec(3, width = "4cm") %>%
+    kableExtra::column_spec(4, width = "2.5cm") %>%
+    kableExtra::collapse_rows(columns = 1, valign = "top") %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+} else {
+  cat("**Impact rankings not available for Model B**\n")
+}
+```
+
+```{r pagebreak-model-b, results='asis'}
+cat("\\newpage\n")
+```
+
+# Model C: Separate Model Results {#model-c}
+
+Model C uses **separate survival models** with only one biomarker and its treatment interaction per model.
+
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + [biomarker]:Rx`
+
+```{r model-c-check, results='asis'}
+if (is.null(all_dsa_results[["C"]])) {
+  cat("\n**Results not available for Model C.** Sampling cache is missing.\n\n")
+  cat("To generate the cache, run in R console:\n")
+  cat("```r\n")
+  cat("MODEL_STRUCTURE <- 2\n")
+  cat("source('scripts/R/analysis/02_setup_and_global_variables.R')\n")
+  cat("source('scripts/R/analysis/08_sampling.R')\n")
+  cat("```\n")
+}
+```
+
+## Tornado Diagrams - Model C
+
+```{r tornado-c-control, fig.cap="Tornado Diagram - Model C: Standard of Care", fig.height=7, fig.width=9}
+p <- create_model_tornado("C", "control")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-c-crp, fig.cap="Tornado Diagram - Model C: CRP-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("C", "crp")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-c-tlr, fig.cap="Tornado Diagram - Model C: TLR-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("C", "tlr")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r tornado-c-tmb, fig.cap="Tornado Diagram - Model C: TMB/BRAF-guided Strategy", fig.height=7, fig.width=9}
+p <- create_model_tornado("C", "tmb_braf")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Line Plot Sensitivity - Model C
+
+```{r line-c-nmb, fig.cap="Model C: Parameter Sensitivity - Net Monetary Benefit", fig.height=12, fig.width=10}
+p <- create_model_line_plot("C", "NMB")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-c-cost, fig.cap="Model C: Parameter Sensitivity - Total Costs", fig.height=12, fig.width=10}
+p <- create_model_line_plot("C", "Cost")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+```{r line-c-effect, fig.cap="Model C: Parameter Sensitivity - Total Effectiveness", fig.height=12, fig.width=10}
+p <- create_model_line_plot("C", "Effect")
+if (!is.null(p)) print(p) else cat("**No data available**\n")
+```
+
+## Parameter Impact Rankings - Model C
+
+```{r impact-c}
+impact_table <- create_model_impact_table("C")
+if (!is.null(impact_table)) {
+  knitr::kable(impact_table,
+               booktabs = TRUE,
+               align = c("l", "c", "l", "r"),
+               col.names = c("Strategy", "Rank", "Parameter", "NMB Range (EUR K)"),
+               caption = "Model C: Top 3 Most Influential Parameters by Strategy") %>%
+    kableExtra::column_spec(1, width = "3cm") %>%
+    kableExtra::column_spec(2, width = "1cm") %>%
+    kableExtra::column_spec(3, width = "4cm") %>%
+    kableExtra::column_spec(4, width = "2.5cm") %>%
+    kableExtra::collapse_rows(columns = 1, valign = "top") %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+} else {
+  cat("**Impact rankings not available for Model C**\n")
+}
+```
+
+```{r pagebreak-model-c, results='asis'}
+cat("\\newpage\n")
+```
+
+# Cross-Model Comparison {#cross-model}
+
+This section compares the sensitivity analysis results across all three model structures to assess the robustness of conclusions.
+
+## Optimal Strategy Comparison
+
+```{r cross-model-optimal}
+# Create comparison table of optimal strategies
+comparison_df <- data.frame(
+  Model = c("A (Joint)", "B (Focused)", "C (Separate)"),
+  Structure = c(
+    "All interactions in one model",
+    "All biomarkers + one interaction",
+    "One biomarker per model"
+  ),
+  Optimal_Strategy = sapply(c("A", "B", "C"), function(m) {
+    if (!is.null(all_dsa_results[[m]])) {
+      all_dsa_results[[m]]$base_optimal
+    } else {
+      "N/A"
+    }
+  }),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(comparison_df,
+             booktabs = TRUE,
+             align = c("l", "l", "l"),
+             col.names = c("Model", "Structure", "Optimal Strategy"),
+             caption = "Base Case Optimal Strategy by Model Structure") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+## Top Parameter Comparison
+
+```{r cross-model-params}
+# Calculate top parameter for each model and strategy directly from DSA results
+# Uses same metric as tornado diagrams: max(abs(min_diff), abs(max_diff))
+top_params_comparison <- data.frame()
+
+for (m in c("A", "B", "C")) {
+  if (!is.null(all_dsa_results[[m]])) {
+    model_dsa <- all_dsa_results[[m]]$dsa_results
+    if (!is.null(model_dsa) && nrow(model_dsa) > 0) {
+
+      for (strategy in strategies) {
+        strat_results <- model_dsa[model_dsa$Strategy == strategy &
+                                   model_dsa$Parameter != "base_case", ]
+
+        # Calculate impact for each parameter
+        param_impacts <- data.frame()
+        for (param in unique(strat_results$Parameter)) {
+          min_row <- strat_results[strat_results$Parameter == param &
+                                   strat_results$Value == "min", ]
+          max_row <- strat_results[strat_results$Parameter == param &
+                                   strat_results$Value == "max", ]
+
+          if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+            min_diff <- if (!is.null(min_row$NMB_diff)) min_row$NMB_diff[1] else 0
+            max_diff <- if (!is.null(max_row$NMB_diff)) max_row$NMB_diff[1] else 0
+            if (is.na(min_diff)) min_diff <- 0
+            if (is.na(max_diff)) max_diff <- 0
+
+            max_abs_impact <- max(abs(min_diff), abs(max_diff))
+            param_impacts <- rbind(param_impacts, data.frame(
+              Parameter = param, Impact = max_abs_impact
+            ))
+          }
+        }
+
+        if (nrow(param_impacts) > 0) {
+          # Get top parameter for this strategy
+          top_param <- param_impacts[which.max(param_impacts$Impact), ]
+          top_params_comparison <- rbind(top_params_comparison, data.frame(
+            Strategy = strategy,
+            Parameter = top_param$Parameter,
+            Impact = top_param$Impact,
+            Model = m,
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    }
+  }
+}
+
+if (nrow(top_params_comparison) > 0) {
+  # Reshape to wide format
+  wide_comparison <- top_params_comparison %>%
+    mutate(
+      Strategy = case_when(
+        Strategy == "control" ~ "Standard of Care",
+        Strategy == "crp" ~ "CRP-guided",
+        Strategy == "tlr" ~ "TLR-guided",
+        Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
+        TRUE ~ Strategy
+      ),
+      Value = paste0(Parameter, " (", sprintf("%.1f", Impact/1000), "K)")
+    ) %>%
+    select(Strategy, Model, Value) %>%
+    tidyr::pivot_wider(names_from = Model, values_from = Value, values_fill = "N/A")
+
+  knitr::kable(wide_comparison,
+               booktabs = TRUE,
+               align = c("l", "l", "l", "l"),
+               col.names = c("Strategy", "Model A", "Model B", "Model C"),
+               caption = "Most Influential Parameter by Strategy and Model (with NMB Range in EUR K)") %>%
+    kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position", "scale_down"))
+} else {
+  cat("**Cross-model comparison not available - insufficient data**\n")
+}
+```
+
+## Robustness Assessment
+
+```{r robustness-assessment, results='asis'}
+# Count models with consistent optimal strategy
+available_models <- vapply(c("A", "B", "C"), function(m) !is.null(all_dsa_results[[m]]), logical(1))
+n_available <- sum(available_models)
+
+if (n_available > 0) {
+  optimal_strategies <- sapply(c("A", "B", "C"), function(m) {
+    if (!is.null(all_dsa_results[[m]])) all_dsa_results[[m]]$base_optimal else NA
+  })
+  optimal_strategies <- optimal_strategies[!is.na(optimal_strategies)]
+
+  if (length(unique(optimal_strategies)) == 1) {
+    cat("**Robust Conclusion:** The optimal strategy (**", unique(optimal_strategies),
+        "**) is consistent across all ", n_available, " model structures analyzed.\n\n", sep = "")
+    cat("This indicates that the cost-effectiveness conclusions are robust to the choice of ")
+    cat("survival model specification.\n")
+  } else {
+    cat("**Model Sensitivity Detected:** The optimal strategy varies across model structures.\n\n")
+    cat("- This suggests structural uncertainty in the survival model specification affects conclusions.\n")
+    cat("- Decision-makers should consider results from multiple model structures.\n")
+  }
+} else {
+  cat("**Robustness assessment requires at least one model with available results.**\n")
+}
+```
+
+```{r pagebreak-cross-model, results='asis'}
 cat("\\newpage\n")
 ```
 
