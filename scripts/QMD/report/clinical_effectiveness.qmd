@@ -1188,76 +1188,7 @@ Ridge regression (alpha = 0) shrinks coefficients toward zero but does not elimi
 # RIDGE REGRESSION SENSITIVITY ANALYSIS
 # =============================================================================
 
-# Try survival::ridge() first, then fall back to glmnet
-
-# Approach 1: survival::ridge() within coxph
-# Note: ridge() in survival package applies ridge penalty to specified terms
-
-tryCatch({
-  # OS with ridge penalty on biomarker terms and interactions
-  ridge_os <- coxph(
-    Surv(OSwk, Death) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
-    data = data_complete
-  )
-  ridge_os_success <- TRUE
-}, error = function(e) {
-  ridge_os_success <<- FALSE
-  ridge_os <<- NULL
-})
-
-tryCatch({
-  ridge_pfs <- coxph(
-    Surv(PFSwk, Progression) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
-    data = data_complete
-  )
-  ridge_pfs_success <- TRUE
-}, error = function(e) {
-  ridge_pfs_success <<- FALSE
-  ridge_pfs <<- NULL
-})
-
-# If ridge() fails, use glmnet
-if (!exists("ridge_os_success") || !ridge_os_success) {
-  # Fallback to glmnet
-  tryCatch({
-    # Create design matrix
-    X_os <- model.matrix(~ Age + sex + Rx_num + crp_num + tlr_num + tmb_braf_num +
-                           crp_num:Rx_num + tlr_num:Rx_num + tmb_braf_num:Rx_num - 1,
-                         data = data_complete)
-    y_os <- Surv(data_complete$OSwk, data_complete$Death)
-
-    cv_ridge_os <- cv.glmnet(X_os, y_os, family = "cox", alpha = 0, nfolds = 10)
-    ridge_coef_os <- coef(cv_ridge_os, s = "lambda.min")
-    ridge_os_glmnet <- TRUE
-  }, error = function(e) {
-    ridge_os_glmnet <<- FALSE
-  })
-} else {
-  ridge_os_glmnet <- FALSE
-}
-
-if (!exists("ridge_pfs_success") || !ridge_pfs_success) {
-  tryCatch({
-    X_pfs <- model.matrix(~ Age + sex + Rx_num + crp_num + tlr_num + tmb_braf_num +
-                            crp_num:Rx_num + tlr_num:Rx_num + tmb_braf_num:Rx_num - 1,
-                          data = data_complete)
-    y_pfs <- Surv(data_complete$PFSwk, data_complete$Progression)
-
-    cv_ridge_pfs <- cv.glmnet(X_pfs, y_pfs, family = "cox", alpha = 0, nfolds = 10)
-    ridge_coef_pfs <- coef(cv_ridge_pfs, s = "lambda.min")
-    ridge_pfs_glmnet <- TRUE
-  }, error = function(e) {
-    ridge_pfs_glmnet <<- FALSE
-  })
-} else {
-  ridge_pfs_glmnet <- FALSE
-}
-
-# Extract ridge results
+# Extract ridge results helper function
 extract_ridge_interaction <- function(model_or_coef, term_pattern, is_glmnet = FALSE) {
   if (is_glmnet) {
     if (is.null(model_or_coef)) return(list(HR = NA, SE = NA))
@@ -1277,30 +1208,273 @@ extract_ridge_interaction <- function(model_or_coef, term_pattern, is_glmnet = F
   }
 }
 
-# Get ridge interaction estimates
-if (exists("ridge_os") && !is.null(ridge_os)) {
-  ridge_crp_os <- extract_ridge_interaction(ridge_os, "crp_num.*Rx|Rx.*crp_num")
-  ridge_tlr_os <- extract_ridge_interaction(ridge_os, "tlr_num.*Rx|Rx.*tlr_num")
-  ridge_tmb_os <- extract_ridge_interaction(ridge_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
-} else if (exists("ridge_coef_os")) {
-  ridge_crp_os <- extract_ridge_interaction(ridge_coef_os, "crp_num.*Rx_num|Rx_num.*crp_num", TRUE)
-  ridge_tlr_os <- extract_ridge_interaction(ridge_coef_os, "tlr_num.*Rx_num|Rx_num.*tlr_num", TRUE)
-  ridge_tmb_os <- extract_ridge_interaction(ridge_coef_os, "tmb_braf_num.*Rx_num|Rx_num.*tmb_braf_num", TRUE)
+# =============================================================================
+# MODEL A: All-in-One (all biomarkers + all interactions)
+# =============================================================================
+
+tryCatch({
+  ridge_A_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_A_os_success <- TRUE
+}, error = function(e) {
+  ridge_A_os_success <<- FALSE
+  ridge_A_os <<- NULL
+})
+
+tryCatch({
+  ridge_A_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tlr_num:Rx + tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_A_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_A_pfs_success <<- FALSE
+  ridge_A_pfs <<- NULL
+})
+
+# Extract Model A interaction estimates
+# Note: survival::ridge() truncates coefficient names, so use shorter patterns
+if (exists("ridge_A_os") && !is.null(ridge_A_os)) {
+  ridge_A_crp_os <- extract_ridge_interaction(ridge_A_os, "crp.*Rx|Rx.*crp")
+  ridge_A_tlr_os <- extract_ridge_interaction(ridge_A_os, "tlr.*Rx|Rx.*tlr")
+  ridge_A_tmb_os <- extract_ridge_interaction(ridge_A_os, "tmb.*Rx|Rx.*tmb")
 } else {
-  ridge_crp_os <- ridge_tlr_os <- ridge_tmb_os <- list(HR = NA, SE = NA)
+  ridge_A_crp_os <- ridge_A_tlr_os <- ridge_A_tmb_os <- list(HR = NA, SE = NA)
 }
 
-if (exists("ridge_pfs") && !is.null(ridge_pfs)) {
-  ridge_crp_pfs <- extract_ridge_interaction(ridge_pfs, "crp_num.*Rx|Rx.*crp_num")
-  ridge_tlr_pfs <- extract_ridge_interaction(ridge_pfs, "tlr_num.*Rx|Rx.*tlr_num")
-  ridge_tmb_pfs <- extract_ridge_interaction(ridge_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
-} else if (exists("ridge_coef_pfs")) {
-  ridge_crp_pfs <- extract_ridge_interaction(ridge_coef_pfs, "crp_num.*Rx_num|Rx_num.*crp_num", TRUE)
-  ridge_tlr_pfs <- extract_ridge_interaction(ridge_coef_pfs, "tlr_num.*Rx_num|Rx_num.*tlr_num", TRUE)
-  ridge_tmb_pfs <- extract_ridge_interaction(ridge_coef_pfs, "tmb_braf_num.*Rx_num|Rx_num.*tmb_braf_num", TRUE)
+if (exists("ridge_A_pfs") && !is.null(ridge_A_pfs)) {
+  ridge_A_crp_pfs <- extract_ridge_interaction(ridge_A_pfs, "crp.*Rx|Rx.*crp")
+  ridge_A_tlr_pfs <- extract_ridge_interaction(ridge_A_pfs, "tlr.*Rx|Rx.*tlr")
+  ridge_A_tmb_pfs <- extract_ridge_interaction(ridge_A_pfs, "tmb.*Rx|Rx.*tmb")
 } else {
-  ridge_crp_pfs <- ridge_tlr_pfs <- ridge_tmb_pfs <- list(HR = NA, SE = NA)
+  ridge_A_crp_pfs <- ridge_A_tlr_pfs <- ridge_A_tmb_pfs <- list(HR = NA, SE = NA)
 }
+
+# =============================================================================
+# MODEL B: Focused (all biomarkers + one interaction per model)
+# =============================================================================
+
+# CRP-focused
+tryCatch({
+  ridge_B_crp_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx,
+    data = data_complete
+  )
+  ridge_B_crp_os_success <- TRUE
+}, error = function(e) {
+  ridge_B_crp_os_success <<- FALSE
+  ridge_B_crp_os <<- NULL
+})
+
+tryCatch({
+  ridge_B_crp_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx,
+    data = data_complete
+  )
+  ridge_B_crp_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_B_crp_pfs_success <<- FALSE
+  ridge_B_crp_pfs <<- NULL
+})
+
+# TLR-focused
+tryCatch({
+  ridge_B_tlr_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      tlr_num:Rx,
+    data = data_complete
+  )
+  ridge_B_tlr_os_success <- TRUE
+}, error = function(e) {
+  ridge_B_tlr_os_success <<- FALSE
+  ridge_B_tlr_os <<- NULL
+})
+
+tryCatch({
+  ridge_B_tlr_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      tlr_num:Rx,
+    data = data_complete
+  )
+  ridge_B_tlr_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_B_tlr_pfs_success <<- FALSE
+  ridge_B_tlr_pfs <<- NULL
+})
+
+# TMB/BRAF-focused
+tryCatch({
+  ridge_B_tmb_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_B_tmb_os_success <- TRUE
+}, error = function(e) {
+  ridge_B_tmb_os_success <<- FALSE
+  ridge_B_tmb_os <<- NULL
+})
+
+tryCatch({
+  ridge_B_tmb_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_B_tmb_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_B_tmb_pfs_success <<- FALSE
+  ridge_B_tmb_pfs <<- NULL
+})
+
+# Extract Model B interaction estimates (using shorter patterns for truncated names)
+ridge_B_crp_os_hr <- if (exists("ridge_B_crp_os") && !is.null(ridge_B_crp_os)) {
+  extract_ridge_interaction(ridge_B_crp_os, "crp.*Rx|Rx.*crp")
+} else { list(HR = NA, SE = NA) }
+
+ridge_B_crp_pfs_hr <- if (exists("ridge_B_crp_pfs") && !is.null(ridge_B_crp_pfs)) {
+  extract_ridge_interaction(ridge_B_crp_pfs, "crp.*Rx|Rx.*crp")
+} else { list(HR = NA, SE = NA) }
+
+ridge_B_tlr_os_hr <- if (exists("ridge_B_tlr_os") && !is.null(ridge_B_tlr_os)) {
+  extract_ridge_interaction(ridge_B_tlr_os, "tlr.*Rx|Rx.*tlr")
+} else { list(HR = NA, SE = NA) }
+
+ridge_B_tlr_pfs_hr <- if (exists("ridge_B_tlr_pfs") && !is.null(ridge_B_tlr_pfs)) {
+  extract_ridge_interaction(ridge_B_tlr_pfs, "tlr.*Rx|Rx.*tlr")
+} else { list(HR = NA, SE = NA) }
+
+ridge_B_tmb_os_hr <- if (exists("ridge_B_tmb_os") && !is.null(ridge_B_tmb_os)) {
+  extract_ridge_interaction(ridge_B_tmb_os, "tmb.*Rx|Rx.*tmb")
+} else { list(HR = NA, SE = NA) }
+
+ridge_B_tmb_pfs_hr <- if (exists("ridge_B_tmb_pfs") && !is.null(ridge_B_tmb_pfs)) {
+  extract_ridge_interaction(ridge_B_tmb_pfs, "tmb.*Rx|Rx.*tmb")
+} else { list(HR = NA, SE = NA) }
+
+# =============================================================================
+# MODEL C: Single-Biomarker (one biomarker + its interaction)
+# =============================================================================
+
+# CRP-only
+tryCatch({
+  ridge_C_crp_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(crp_num, theta = 1, scale = TRUE) +
+      crp_num:Rx,
+    data = data_complete
+  )
+  ridge_C_crp_os_success <- TRUE
+}, error = function(e) {
+  ridge_C_crp_os_success <<- FALSE
+  ridge_C_crp_os <<- NULL
+})
+
+tryCatch({
+  ridge_C_crp_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(crp_num, theta = 1, scale = TRUE) +
+      crp_num:Rx,
+    data = data_complete
+  )
+  ridge_C_crp_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_C_crp_pfs_success <<- FALSE
+  ridge_C_crp_pfs <<- NULL
+})
+
+# TLR-only
+tryCatch({
+  ridge_C_tlr_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(tlr_num, theta = 1, scale = TRUE) +
+      tlr_num:Rx,
+    data = data_complete
+  )
+  ridge_C_tlr_os_success <- TRUE
+}, error = function(e) {
+  ridge_C_tlr_os_success <<- FALSE
+  ridge_C_tlr_os <<- NULL
+})
+
+tryCatch({
+  ridge_C_tlr_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(tlr_num, theta = 1, scale = TRUE) +
+      tlr_num:Rx,
+    data = data_complete
+  )
+  ridge_C_tlr_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_C_tlr_pfs_success <<- FALSE
+  ridge_C_tlr_pfs <<- NULL
+})
+
+# TMB/BRAF-only
+tryCatch({
+  ridge_C_tmb_os <- coxph(
+    Surv(OSwk, Death) ~ Age + sex + Rx +
+      ridge(tmb_braf_num, theta = 1, scale = TRUE) +
+      tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_C_tmb_os_success <- TRUE
+}, error = function(e) {
+  ridge_C_tmb_os_success <<- FALSE
+  ridge_C_tmb_os <<- NULL
+})
+
+tryCatch({
+  ridge_C_tmb_pfs <- coxph(
+    Surv(PFSwk, Progression) ~ Age + sex + Rx +
+      ridge(tmb_braf_num, theta = 1, scale = TRUE) +
+      tmb_braf_num:Rx,
+    data = data_complete
+  )
+  ridge_C_tmb_pfs_success <- TRUE
+}, error = function(e) {
+  ridge_C_tmb_pfs_success <<- FALSE
+  ridge_C_tmb_pfs <<- NULL
+})
+
+# Extract Model C interaction estimates (using shorter patterns for truncated names)
+ridge_C_crp_os_hr <- if (exists("ridge_C_crp_os") && !is.null(ridge_C_crp_os)) {
+  extract_ridge_interaction(ridge_C_crp_os, "crp.*Rx|Rx.*crp")
+} else { list(HR = NA, SE = NA) }
+
+ridge_C_crp_pfs_hr <- if (exists("ridge_C_crp_pfs") && !is.null(ridge_C_crp_pfs)) {
+  extract_ridge_interaction(ridge_C_crp_pfs, "crp.*Rx|Rx.*crp")
+} else { list(HR = NA, SE = NA) }
+
+ridge_C_tlr_os_hr <- if (exists("ridge_C_tlr_os") && !is.null(ridge_C_tlr_os)) {
+  extract_ridge_interaction(ridge_C_tlr_os, "tlr.*Rx|Rx.*tlr")
+} else { list(HR = NA, SE = NA) }
+
+ridge_C_tlr_pfs_hr <- if (exists("ridge_C_tlr_pfs") && !is.null(ridge_C_tlr_pfs)) {
+  extract_ridge_interaction(ridge_C_tlr_pfs, "tlr.*Rx|Rx.*tlr")
+} else { list(HR = NA, SE = NA) }
+
+ridge_C_tmb_os_hr <- if (exists("ridge_C_tmb_os") && !is.null(ridge_C_tmb_os)) {
+  extract_ridge_interaction(ridge_C_tmb_os, "tmb.*Rx|Rx.*tmb")
+} else { list(HR = NA, SE = NA) }
+
+ridge_C_tmb_pfs_hr <- if (exists("ridge_C_tmb_pfs") && !is.null(ridge_C_tmb_pfs)) {
+  extract_ridge_interaction(ridge_C_tmb_pfs, "tmb.*Rx|Rx.*tmb")
+} else { list(HR = NA, SE = NA) }
 ```
 
 ```{r table-ridge-os}
@@ -1308,62 +1482,112 @@ if (exists("ridge_pfs") && !is.null(ridge_pfs)) {
 format_ridge_hr <- function(hr, se) {
   if (is.na(hr)) return("--")
   if (is.na(se)) {
-    sprintf("%.2f*", hr)  # Asterisk indicates no SE available
+    sprintf("%.2f", hr)
   } else {
     sprintf("%.2f (SE: %.2f)", hr, se)
   }
 }
 
-# Overall Survival comparison
+# Overall Survival comparison - All three model types
 ridge_comparison_os <- data.frame(
-  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
-  Firth_HR = c(
+  Biomarker = c("CRP x Rx", "TLR x Rx", "TMB/BRAF x Rx"),
+  Firth_A = c(
     format_hr_ci(hr_A_crp_os$HR, hr_A_crp_os$CI_Lower, hr_A_crp_os$CI_Upper),
     format_hr_ci(hr_A_tlr_os$HR, hr_A_tlr_os$CI_Lower, hr_A_tlr_os$CI_Upper),
     format_hr_ci(hr_A_tmb_os$HR, hr_A_tmb_os$CI_Lower, hr_A_tmb_os$CI_Upper)
   ),
-  Ridge_HR = c(
-    format_ridge_hr(ridge_crp_os$HR, ridge_crp_os$SE),
-    format_ridge_hr(ridge_tlr_os$HR, ridge_tlr_os$SE),
-    format_ridge_hr(ridge_tmb_os$HR, ridge_tmb_os$SE)
+  Ridge_A = c(
+    format_ridge_hr(ridge_A_crp_os$HR, ridge_A_crp_os$SE),
+    format_ridge_hr(ridge_A_tlr_os$HR, ridge_A_tlr_os$SE),
+    format_ridge_hr(ridge_A_tmb_os$HR, ridge_A_tmb_os$SE)
+  ),
+  Firth_B = c(
+    format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
+    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
+    format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
+  ),
+  Ridge_B = c(
+    format_ridge_hr(ridge_B_crp_os_hr$HR, ridge_B_crp_os_hr$SE),
+    format_ridge_hr(ridge_B_tlr_os_hr$HR, ridge_B_tlr_os_hr$SE),
+    format_ridge_hr(ridge_B_tmb_os_hr$HR, ridge_B_tmb_os_hr$SE)
+  ),
+  Firth_C = c(
+    format_hr_ci(hr_C_crp_os$HR, hr_C_crp_os$CI_Lower, hr_C_crp_os$CI_Upper),
+    format_hr_ci(hr_C_tlr_os$HR, hr_C_tlr_os$CI_Lower, hr_C_tlr_os$CI_Upper),
+    format_hr_ci(hr_C_tmb_os$HR, hr_C_tmb_os$CI_Lower, hr_C_tmb_os$CI_Upper)
+  ),
+  Ridge_C = c(
+    format_ridge_hr(ridge_C_crp_os_hr$HR, ridge_C_crp_os_hr$SE),
+    format_ridge_hr(ridge_C_tlr_os_hr$HR, ridge_C_tlr_os_hr$SE),
+    format_ridge_hr(ridge_C_tmb_os_hr$HR, ridge_C_tmb_os_hr$SE)
   )
 )
 
 ridge_comparison_os %>%
-  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
-        caption = "Overall Survival: Firth-Corrected vs Ridge Regression",
+  kable(col.names = c("Interaction", "Firth", "Ridge", "Firth", "Ridge", "Firth", "Ridge"),
+        caption = "Overall Survival: Firth-Corrected vs Ridge Regression Across Model Types",
         booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "* Point estimate only (SE not available from glmnet).",
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, "Model A (All-in-One)" = 2, "Model B (Focused)" = 2, "Model C (Single)" = 2)) %>%
+  footnote(general = "Firth columns show HR (95% CI); Ridge columns show point estimates only.",
            footnote_as_chunk = TRUE)
 ```
 
 ```{r table-ridge-pfs}
-# Progression-Free Survival comparison
+# Progression-Free Survival comparison - All three model types
 ridge_comparison_pfs <- data.frame(
-  Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
-  Firth_HR = c(
+  Biomarker = c("CRP x Rx", "TLR x Rx", "TMB/BRAF x Rx"),
+  Firth_A = c(
     format_hr_ci(hr_A_crp_pfs$HR, hr_A_crp_pfs$CI_Lower, hr_A_crp_pfs$CI_Upper),
     format_hr_ci(hr_A_tlr_pfs$HR, hr_A_tlr_pfs$CI_Lower, hr_A_tlr_pfs$CI_Upper),
     format_hr_ci(hr_A_tmb_pfs$HR, hr_A_tmb_pfs$CI_Lower, hr_A_tmb_pfs$CI_Upper)
   ),
-  Ridge_HR = c(
-    format_ridge_hr(ridge_crp_pfs$HR, ridge_crp_pfs$SE),
-    format_ridge_hr(ridge_tlr_pfs$HR, ridge_tlr_pfs$SE),
-    format_ridge_hr(ridge_tmb_pfs$HR, ridge_tmb_pfs$SE)
+  Ridge_A = c(
+    format_ridge_hr(ridge_A_crp_pfs$HR, ridge_A_crp_pfs$SE),
+    format_ridge_hr(ridge_A_tlr_pfs$HR, ridge_A_tlr_pfs$SE),
+    format_ridge_hr(ridge_A_tmb_pfs$HR, ridge_A_tmb_pfs$SE)
+  ),
+  Firth_B = c(
+    format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
+    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
+  ),
+  Ridge_B = c(
+    format_ridge_hr(ridge_B_crp_pfs_hr$HR, ridge_B_crp_pfs_hr$SE),
+    format_ridge_hr(ridge_B_tlr_pfs_hr$HR, ridge_B_tlr_pfs_hr$SE),
+    format_ridge_hr(ridge_B_tmb_pfs_hr$HR, ridge_B_tmb_pfs_hr$SE)
+  ),
+  Firth_C = c(
+    format_hr_ci(hr_C_crp_pfs$HR, hr_C_crp_pfs$CI_Lower, hr_C_crp_pfs$CI_Upper),
+    format_hr_ci(hr_C_tlr_pfs$HR, hr_C_tlr_pfs$CI_Lower, hr_C_tlr_pfs$CI_Upper),
+    format_hr_ci(hr_C_tmb_pfs$HR, hr_C_tmb_pfs$CI_Lower, hr_C_tmb_pfs$CI_Upper)
+  ),
+  Ridge_C = c(
+    format_ridge_hr(ridge_C_crp_pfs_hr$HR, ridge_C_crp_pfs_hr$SE),
+    format_ridge_hr(ridge_C_tlr_pfs_hr$HR, ridge_C_tlr_pfs_hr$SE),
+    format_ridge_hr(ridge_C_tmb_pfs_hr$HR, ridge_C_tmb_pfs_hr$SE)
   )
 )
 
 ridge_comparison_pfs %>%
-  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
-        caption = "Progression-Free Survival: Firth-Corrected vs Ridge Regression",
+  kable(col.names = c("Interaction", "Firth", "Ridge", "Firth", "Ridge", "Firth", "Ridge"),
+        caption = "Progression-Free Survival: Firth-Corrected vs Ridge Regression Across Model Types",
         booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "* Point estimate only (SE not available from glmnet).",
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, "Model A (All-in-One)" = 2, "Model B (Focused)" = 2, "Model C (Single)" = 2)) %>%
+  footnote(general = "Firth columns show HR (95% CI); Ridge columns show point estimates only.",
            footnote_as_chunk = TRUE)
 ```
 
-**Interpretation:** Ridge regression applies an L2 penalty that shrinks all coefficients toward zero (HR toward 1.0). Large differences between Firth and Ridge estimates (as may be observed for TLR × Rx) indicate that the interaction effect is sensitive to regularization, potentially reflecting limited data or collinearity with other predictors. When Firth estimates suggest strong effects (HR >> 1 or HR << 1) but Ridge shrinks toward 1.0, this indicates the estimate may be unstable. Similar estimates across methods would support robustness, but substantial shrinkage warrants caution in interpreting the magnitude of interaction effects.
+**Interpretation:** Ridge regression applies an L2 penalty that shrinks all coefficients toward zero (HR toward 1.0), providing a sensitivity analysis for estimate stability across three model structures:
+
+- **Model A (All-in-One)**: Ridge regularizes all three biomarker main effects simultaneously while estimating all three interactions. This tests whether interaction estimates are stable when accounting for multicollinearity among biomarkers.
+
+- **Model B (Focused)**: Ridge regularizes all biomarker main effects but only one interaction is estimated per model. Comparing Model B Ridge to Model A Ridge reveals whether regularization effects differ when fewer interaction terms compete for variance.
+
+- **Model C (Single-Biomarker)**: Ridge regularizes only one biomarker term per model. Since there is minimal multicollinearity to address, Model C Ridge estimates should be closest to their Firth counterparts. Substantial shrinkage here would indicate instability in the biomarker-treatment relationship itself, not confounding.
+
+**Key patterns to examine**: (1) Consistent shrinkage across all three models suggests the interaction estimate is inherently unstable; (2) Shrinkage only in Model A suggests multicollinearity with other biomarkers; (3) Similar Firth and Ridge estimates across all models supports robustness.
 
 \newpage
 
@@ -1379,12 +1603,12 @@ This analysis evaluated treatment effect heterogeneity across three candidate pr
 
 3. **Proportional Hazards:** The PH assumption was assessed using Schoenfeld residual tests and log-log survival plots. For overall survival, no significant PH violations were detected. For progression-free survival, significant violations were observed for TMB/BRAF main effect (p = 0.004) and TMB/BRAF × Rx interaction (p = 0.009), with the global test also significant (p = 0.004). These findings suggest time-varying effects for TMB/BRAF-related terms in PFS models, warranting caution in interpretation. The log-log plots show some crossing of survival curves for the treatment comparison, consistent with potential non-proportional hazards.
 
-4. **Sensitivity Analysis (Ridge Regression):** Ridge regression provided an alternative estimate of interaction effects with coefficient shrinkage. The TLR × Rx interaction exhibited notable sensitivity to regularization: Firth estimated HR = 2.63 while Ridge (with CV-selected λ) shrunk this to HR ≈ 0.95. This discrepancy arises because:
-   - All TLR-negative patients (n = 24) experienced 100% mortality regardless of treatment, creating a reference group where treatment effects cannot be reliably estimated
-   - The wide Firth confidence interval (0.75–8.74) reflects substantial uncertainty
-   - Ridge's cross-validation selected high regularization (λ = 0.73) given the small sample size and multicollinearity, effectively concluding that this interaction effect cannot be reliably estimated for prediction purposes
+4. **Sensitivity Analysis (Ridge Regression):** Ridge regression was applied to all three model structures (A, B, C) to assess estimate stability. This comprehensive comparison reveals whether shrinkage patterns are consistent across model specifications or driven by specific modeling choices:
+   - Consistent shrinkage across all three models suggests inherent instability in the interaction estimate
+   - Shrinkage only in Model A (all-in-one) suggests multicollinearity with other biomarkers
+   - Model C (single-biomarker) provides the most direct biomarker-treatment estimate with minimal confounding
 
-   Both methods are valid but answer different questions: Firth provides the best point estimate given the data structure, while Ridge prioritizes predictive stability. The substantial shrinkage for TLR × Rx indicates this estimate should be interpreted with caution.
+   Both methods answer different questions: Firth provides the best point estimate given the data structure, while Ridge prioritizes predictive stability. Comparing patterns across models helps distinguish true effect instability from model-specific artifacts.
 
 **Methodological Note:** The use of Firth-corrected Cox regression addresses potential monotone likelihood issues and small sample bias. Profile likelihood-based confidence intervals and penalized likelihood ratio tests are more appropriate than Wald-based methods in this setting.
 
@@ -1392,4 +1616,4 @@ This analysis evaluated treatment effect heterogeneity across three candidate pr
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.1
+**Report version:** 2.2
