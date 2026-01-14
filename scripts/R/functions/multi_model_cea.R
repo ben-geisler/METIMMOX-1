@@ -471,4 +471,258 @@ create_psa_summary_table <- function(all_psa_results, wtp = 51000) {
   return(summary_df)
 }
 
+# ===============================================================================
+# EVPPI HELPER FUNCTIONS
+# ===============================================================================
+
+#' Load scenario EVPPI results
+#'
+#' @param results_file Path to the .rds file containing scenario EVPPI results
+#' @return List containing all_scenario_results, all_model_scenario_results,
+#'         evppi_all_scenarios, and scenarios
+load_scenario_evppi_results <- function(results_file = NULL) {
+
+  if (is.null(results_file)) {
+    results_file <- here::here("data/tidy/scenario_evppi_results.rds")
+  }
+
+  if (!file.exists(results_file)) {
+    warning("EVPPI results file not found: ", results_file)
+    return(NULL)
+  }
+
+  # Load results from .rds file (stored as list)
+  result <- readRDS(results_file)
+
+  return(result)
+}
+
+#' Check if EVPPI results have multi-model data
+#'
+#' @param evppi_data Data frame of EVPPI results (evppi_all_scenarios)
+#' @return Logical indicating whether model_structure column exists
+has_multimodel_evppi <- function(evppi_data) {
+  if (is.null(evppi_data) || nrow(evppi_data) == 0) {
+    return(FALSE)
+  }
+  return("model_structure" %in% names(evppi_data))
+}
+
+#' Get unique model structures from EVPPI results
+#'
+#' @param evppi_data Data frame of EVPPI results
+#' @return Vector of unique model labels, or "joint" if single model
+get_evppi_model_labels <- function(evppi_data) {
+  if (!has_multimodel_evppi(evppi_data)) {
+    return("joint")
+  }
+  return(unique(evppi_data$model_label))
+}
+
+#' Create multi-model EVPPI comparison table
+#'
+#' @param evppi_data Data frame of EVPPI results with model_structure column
+#' @param scenario_id Scenario ID to filter (e.g., "base")
+#' @param top_n Number of top parameters to include
+#' @return Data frame with side-by-side EVPPI comparison across models
+create_multimodel_evppi_table <- function(evppi_data, scenario_id = "base", top_n = 10) {
+
+  model_configs <- get_model_configs()
+
+  if (!has_multimodel_evppi(evppi_data)) {
+    # Single model - return simple table
+    scenario_data <- evppi_data %>%
+      filter(scenario_id == !!scenario_id) %>%
+      arrange(desc(evppi)) %>%
+      slice(1:top_n)
+
+    return(scenario_data %>%
+             select(Parameter = parameter, EVPPI = evppi, `% of EVPI` = evppi_percent_of_evpi))
+  }
+
+  # Multi-model comparison
+  comparison_list <- list()
+
+  for (model_name in names(model_configs)) {
+    config <- model_configs[[model_name]]
+    short_label <- config$short_label
+    model_label <- c("joint", "focused", "separate")[config$structure + 1]
+
+    model_data <- evppi_data %>%
+      filter(scenario_id == !!scenario_id,
+             model_label == !!model_label) %>%
+      arrange(desc(evppi)) %>%
+      slice(1:top_n) %>%
+      select(parameter, evppi, evppi_percent_of_evpi)
+
+    if (nrow(model_data) > 0) {
+      comparison_list[[model_name]] <- model_data %>%
+        rename(
+          !!paste0("EVPPI_", short_label) := evppi,
+          !!paste0("Pct_", short_label) := evppi_percent_of_evpi
+        )
+    }
+  }
+
+  # Merge all models by parameter
+  if (length(comparison_list) == 0) {
+    return(data.frame())
+  }
+
+  result <- comparison_list[[1]]
+  for (i in 2:length(comparison_list)) {
+    result <- full_join(result, comparison_list[[i]], by = "parameter")
+  }
+
+  # Rename parameter column and sort
+  result <- result %>%
+    rename(Parameter = parameter) %>%
+    arrange(desc(rowMeans(select(., starts_with("EVPPI")), na.rm = TRUE)))
+
+  return(result)
+}
+
+#' Create multi-model EVPI comparison table
+#'
+#' @param evppi_data Data frame of EVPPI results with model_structure column
+#' @param scenario_id Scenario ID to filter (e.g., "base"), or NULL for all scenarios
+#' @return Data frame with EVPI values across models
+create_multimodel_evpi_table <- function(evppi_data, scenario_id = NULL) {
+
+  if (!has_multimodel_evppi(evppi_data)) {
+    # Single model
+    evpi_data <- evppi_data %>%
+      select(scenario_name, wtp, evpi) %>%
+      distinct()
+
+    if (!is.null(scenario_id)) {
+      evpi_data <- evpi_data %>% filter(scenario_id == !!scenario_id)
+    }
+
+    return(evpi_data)
+  }
+
+  # Multi-model EVPI comparison
+  evpi_data <- evppi_data %>%
+    select(scenario_id, scenario_name, wtp, model_label, model_name, evpi) %>%
+    distinct()
+
+  if (!is.null(scenario_id)) {
+    evpi_data <- evpi_data %>% filter(scenario_id == !!scenario_id)
+  }
+
+  # Pivot to wide format
+  evpi_wide <- evpi_data %>%
+    select(scenario_name, wtp, model_label, evpi) %>%
+    pivot_wider(
+      names_from = model_label,
+      values_from = evpi,
+      names_prefix = "EVPI_"
+    )
+
+  return(evpi_wide)
+}
+
+#' Format EVPPI table for display with kable
+#'
+#' @param evppi_table Data frame from create_multimodel_evppi_table()
+#' @return Formatted data frame ready for kable
+format_evppi_for_display <- function(evppi_table) {
+
+  display_df <- evppi_table
+
+  # Format EVPPI columns (currency)
+  evppi_cols <- grep("^EVPPI", names(display_df), value = TRUE)
+  for (col in evppi_cols) {
+    display_df[[col]] <- ifelse(
+      is.na(display_df[[col]]),
+      "-",
+      paste0("EUR", format(round(display_df[[col]], 2), big.mark = ","))
+    )
+  }
+
+  # Format percentage columns
+  pct_cols <- grep("^Pct", names(display_df), value = TRUE)
+  for (col in pct_cols) {
+    display_df[[col]] <- ifelse(
+      is.na(display_df[[col]]),
+      "-",
+      paste0(round(display_df[[col]], 1), "%")
+    )
+  }
+
+  return(display_df)
+}
+
+#' Create faceted EVPPI bar plot for multi-model comparison
+#'
+#' @param evppi_data Data frame of EVPPI results
+#' @param scenario_id Scenario ID to filter
+#' @param top_n Number of top parameters to show per model
+#' @return ggplot object
+create_multimodel_evppi_plot <- function(evppi_data, scenario_id = "base", top_n = 8) {
+
+  # Filter to scenario
+  plot_data <- evppi_data %>%
+    filter(scenario_id == !!scenario_id, evppi > 0)
+
+  if (nrow(plot_data) == 0) {
+    return(ggplot() +
+             annotate("text", x = 0.5, y = 0.5,
+                      label = "No EVPPI data available for this scenario") +
+             theme_void())
+  }
+
+  # Get top parameters per model
+  if (has_multimodel_evppi(evppi_data)) {
+    top_params <- plot_data %>%
+      group_by(model_label) %>%
+      arrange(desc(evppi)) %>%
+      slice(1:top_n) %>%
+      ungroup() %>%
+      pull(parameter) %>%
+      unique()
+
+    plot_data <- plot_data %>%
+      filter(parameter %in% top_params) %>%
+      mutate(parameter = factor(parameter, levels = rev(top_params)))
+
+    p <- ggplot(plot_data, aes(x = evppi, y = parameter, fill = model_name)) +
+      geom_col(position = "dodge", alpha = 0.8) +
+      facet_wrap(~model_name, ncol = 3) +
+      scale_x_continuous(labels = scales::dollar_format(prefix = "EUR")) +
+      scale_fill_brewer(palette = "Set2") +
+      labs(
+        x = "EVPPI (EUR)",
+        y = NULL,
+        fill = "Model Structure"
+      ) +
+      theme_minimal() +
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold"))
+
+  } else {
+    # Single model
+    top_params <- plot_data %>%
+      arrange(desc(evppi)) %>%
+      slice(1:top_n) %>%
+      pull(parameter)
+
+    plot_data <- plot_data %>%
+      filter(parameter %in% top_params) %>%
+      mutate(parameter = factor(parameter, levels = rev(top_params)))
+
+    p <- ggplot(plot_data, aes(x = evppi, y = parameter)) +
+      geom_col(fill = "steelblue", alpha = 0.8) +
+      scale_x_continuous(labels = scales::dollar_format(prefix = "EUR")) +
+      labs(
+        x = "EVPPI (EUR)",
+        y = NULL
+      ) +
+      theme_minimal()
+  }
+
+  return(p)
+}
+
 message("Multi-model CEA helper functions loaded successfully.")

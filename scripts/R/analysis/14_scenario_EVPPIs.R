@@ -1,6 +1,14 @@
-# Multi-scenario EVPPI analysis
+# Multi-scenario EVPPI analysis with multi-model structure support
 # This script runs PSA and EVPPI analysis across multiple scenarios
-# varying WTP thresholds and nivolumab costs
+# varying WTP thresholds and nivolumab costs, for all three model structures.
+#
+# Model structures:
+#   MODEL_STRUCTURE = 0: Joint (Model A) - all biomarkers + all interactions
+#   MODEL_STRUCTURE = 1: Focused (Model B) - all biomarkers + one interaction
+#   MODEL_STRUCTURE = 2: Separate (Model C) - one biomarker + one interaction
+#
+# Set RUN_ALL_MODELS <- TRUE to run for all model structures (generates 18 result sets)
+# Set RUN_ALL_MODELS <- FALSE to run for current MODEL_STRUCTURE only (default)
 
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
@@ -13,6 +21,7 @@ source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/evppi_functions.R"))
 source(here::here("scripts/R/functions/scenario_analysis.R"))
+source(here::here("scripts/R/functions/multi_model_cea.R"))
 
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {
@@ -22,6 +31,28 @@ if (!exists("time_points_length")) {
 # Validate time_points consistency
 if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
+}
+
+# ===============================================================================
+# MULTI-MODEL CONFIGURATION
+# ===============================================================================
+
+# Set to TRUE to run for all model structures, FALSE for current MODEL_STRUCTURE only
+if (!exists("RUN_ALL_MODELS")) {
+  RUN_ALL_MODELS <- FALSE
+}
+
+# Define model structures to process
+if (RUN_ALL_MODELS) {
+  model_structures_to_run <- c(0, 1, 2)
+  model_labels <- c("joint", "focused", "separate")
+  model_names <- c("Model A: Joint", "Model B: Focused", "Model C: Separate")
+  cat("=== MULTI-MODEL MODE: Running for all 3 model structures ===\n\n")
+} else {
+  model_structures_to_run <- MODEL_STRUCTURE
+  model_labels <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+  model_names <- c("Model A: Joint", "Model B: Focused", "Model C: Separate")[MODEL_STRUCTURE + 1]
+  cat("=== SINGLE MODEL MODE: Running for MODEL_STRUCTURE =", MODEL_STRUCTURE, "===\n\n")
 }
 
 # ===============================================================================
@@ -46,42 +77,99 @@ cat("\n")
 # DEFINE PARAMETERS FOR EVPPI ANALYSIS
 # ===============================================================================
 
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", 
+evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
                   "c_test_CT", "u_np", "u_p", "c_other_last",
                   "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
 
 # ===============================================================================
-# RUN ALL SCENARIOS
+# RUN SCENARIOS FOR EACH MODEL STRUCTURE
 # ===============================================================================
 
-cat("\n=== RUNNING ALL SCENARIOS ===\n\n")
+# Initialize storage for all results across models
+all_model_scenario_results <- list()
+all_model_evppi_results <- data.frame()
 
-all_scenario_results <- run_all_scenarios(
-  scenarios = scenarios,
-  psa_params = NULL,  # Will be generated fresh for each scenario
-  l_params_base = l_params_base,
-  param_distributions = param_distributions,
-  strategies = strategies,
-  time_horizon = time_horizon,
-  cl = cl,
-  n_sim = n_sim,
-  evppi_params = evppi_params
-)
+for (m_idx in seq_along(model_structures_to_run)) {
+  current_model_structure <- model_structures_to_run[m_idx]
+  current_model_label <- model_labels[m_idx]
+  current_model_name <- model_names[m_idx]
+
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("PROCESSING MODEL STRUCTURE:", current_model_structure, "(", current_model_label, ")\n")
+  cat(rep("=", 80), "\n\n", sep = "")
+
+  # Set MODEL_STRUCTURE globally
+  MODEL_STRUCTURE <<- current_model_structure
+
+  # Re-source scripts for this MODEL_STRUCTURE
+  cat("Re-sourcing analysis scripts for model structure", current_model_structure, "...\n")
+  suppressMessages(suppressWarnings({
+    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  }))
+
+  # Check for existing PSA cache
+  psa_cache_file <- here::here("data", "tidy", paste0("psa_obj_", current_model_label, ".rds"))
+
+  if (file.exists(psa_cache_file)) {
+    cat("Loading PSA cache from:", psa_cache_file, "\n")
+    psa_obj_cached <- readRDS(psa_cache_file)
+  } else {
+    cat("WARNING: PSA cache not found for", current_model_label, "model.\n")
+    cat("Please run 12_PSA.R with RUN_ALL_MODELS = TRUE first.\n")
+    next
+  }
+
+  # Update base nivolumab cost from current parameters
+  base_c_drug_nivo <- l_params_base$c_drug_nivo
+
+  cat("\n=== RUNNING ALL SCENARIOS FOR", current_model_name, "===\n\n")
+
+  all_scenario_results <- run_all_scenarios(
+    scenarios = scenarios,
+    psa_params = NULL,  # Will be generated fresh for each scenario
+    l_params_base = l_params_base,
+    param_distributions = param_distributions,
+    strategies = strategies,
+    time_horizon = time_horizon,
+    cl = cl,
+    n_sim = n_sim,
+    evppi_params = evppi_params
+  )
+
+  # Store results for this model
+  all_model_scenario_results[[current_model_label]] <- all_scenario_results
+
+  # Compile EVPPI results and add model structure column
+  evppi_results <- compile_evppi_results(all_scenario_results)
+
+  if (nrow(evppi_results) > 0) {
+    evppi_results$model_structure <- current_model_structure
+    evppi_results$model_label <- current_model_label
+    evppi_results$model_name <- current_model_name
+
+    all_model_evppi_results <- rbind(all_model_evppi_results, evppi_results)
+  }
+
+  cat("\nCompleted scenarios for", current_model_name, "\n")
+}
 
 # ===============================================================================
 # COMPILE AND ANALYZE RESULTS
 # ===============================================================================
 
-cat("\n=== COMPILING RESULTS ACROSS SCENARIOS ===\n")
+cat("\n", rep("=", 80), "\n", sep = "")
+cat("COMPILING RESULTS ACROSS ALL MODELS AND SCENARIOS\n")
+cat(rep("=", 80), "\n\n", sep = "")
 
-# Compile all EVPPI results
-evppi_all_scenarios <- compile_evppi_results(all_scenario_results)
+# Rename for consistency with EVPPIs.qmd expectations
+evppi_all_scenarios <- all_model_evppi_results
 
 # Summary statistics
 cat("\nEVPPI Results Summary:\n")
 if (nrow(evppi_all_scenarios) > 0) {
   summary_table <- evppi_all_scenarios %>%
-    group_by(scenario_name, wtp) %>%
+    group_by(model_name, scenario_name, wtp) %>%
     summarise(
       n_parameters = n(),
       total_evpi = first(evpi),
@@ -90,23 +178,37 @@ if (nrow(evppi_all_scenarios) > 0) {
       top_parameter = parameter[which.max(evppi)],
       .groups = "drop"
     )
-  
+
   print(summary_table)
-  
-  # Detailed results by scenario
-  cat("\n=== DETAILED EVPPI RESULTS BY SCENARIO ===\n")
-  for (scenario_id in scenarios$scenario_id) {
-    scenario_data <- evppi_all_scenarios %>%
-      filter(scenario_id == !!scenario_id) %>%
-      arrange(desc(evppi))
-    
-    if (nrow(scenario_data) > 0) {
-      cat("\n", scenario_data$scenario_name[1], "\n")
-      cat("WTP: €", format(scenario_data$wtp[1], big.mark = ","), "\n", sep = "")
-      cat("EVPI: €", round(scenario_data$evpi[1], 2), "\n", sep = "")
-      cat("\nTop 5 Parameters:\n")
-      print(scenario_data[1:min(5, nrow(scenario_data)), 
-                          c("parameter", "evppi", "evppi_percent_of_evpi")])
+
+  # Detailed results by model and scenario
+  cat("\n=== DETAILED EVPPI RESULTS BY MODEL AND SCENARIO ===\n")
+
+  for (model_label in unique(evppi_all_scenarios$model_label)) {
+    model_data <- evppi_all_scenarios %>% filter(model_label == !!model_label)
+    model_name <- unique(model_data$model_name)
+
+    cat("\n", rep("-", 60), "\n", sep = "")
+    cat(model_name, "\n")
+    cat(rep("-", 60), "\n", sep = "")
+
+    for (scenario_id in scenarios$scenario_id) {
+      scenario_data <- model_data %>%
+        filter(scenario_id == !!scenario_id) %>%
+        arrange(desc(evppi))
+
+      if (nrow(scenario_data) > 0) {
+        cat("\n  ", scenario_data$scenario_name[1], "\n")
+        cat("  WTP: EUR", format(scenario_data$wtp[1], big.mark = ","), "\n")
+        cat("  EVPI: EUR", round(scenario_data$evpi[1], 2), "\n")
+        cat("\n  Top 3 Parameters:\n")
+        top3 <- scenario_data[1:min(3, nrow(scenario_data)),
+                              c("parameter", "evppi", "evppi_percent_of_evpi")]
+        for (i in 1:nrow(top3)) {
+          cat("    ", i, ". ", top3$parameter[i], ": EUR",
+              round(top3$evppi[i], 2), " (", round(top3$evppi_percent_of_evpi[i], 1), "%)\n", sep = "")
+        }
+      }
     }
   }
 } else {
@@ -117,9 +219,31 @@ if (nrow(evppi_all_scenarios) > 0) {
 # SAVE RESULTS
 # ===============================================================================
 
-# Save all results
-save(all_scenario_results, evppi_all_scenarios, scenarios,
-     file = here::here("data/tidy/scenario_evppi_results.RData"))
+# For backward compatibility, also create all_scenario_results from first/primary model
+if (length(all_model_scenario_results) > 0) {
+  all_scenario_results <- all_model_scenario_results[[1]]
+}
+
+# Save all results as a list in .rds format (consistent with other cache files)
+evppi_cache <- list(
+  all_scenario_results = all_scenario_results,
+  all_model_scenario_results = all_model_scenario_results,
+  evppi_all_scenarios = evppi_all_scenarios,
+  scenarios = scenarios
+)
+
+saveRDS(evppi_cache, file = here::here("data/tidy/scenario_evppi_results.rds"))
 
 cat("\n=== ANALYSIS COMPLETE ===\n")
-cat("Results saved to: data/tidy/scenario_evppi_results.RData\n")
+cat("Results saved to: data/tidy/scenario_evppi_results.rds\n")
+cat("\nSaved objects (in list):\n")
+cat("  - all_scenario_results: Results for primary model (backward compatibility)\n")
+cat("  - all_model_scenario_results: Results for all model structures\n")
+cat("  - evppi_all_scenarios: Combined EVPPI data with model_structure column\n")
+cat("  - scenarios: Scenario definitions\n")
+
+if (RUN_ALL_MODELS) {
+  cat("\nProcessed", length(model_structures_to_run), "model structures x",
+      nrow(scenarios), "scenarios =",
+      length(model_structures_to_run) * nrow(scenarios), "total result sets\n")
+}
