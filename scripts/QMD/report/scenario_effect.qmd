@@ -76,7 +76,8 @@ theme_set(theme_minimal() +
 helper_functions <- c(
   "scripts/R/functions/model_fun.R",
   "scripts/R/functions/calculate_outcomes.R",
-  "scripts/R/functions/psa_functions.R"
+  "scripts/R/functions/psa_functions.R",
+  "scripts/R/functions/multi_model_cea.R"
 )
 
 for (func_file in helper_functions) {
@@ -96,7 +97,8 @@ if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
 helper_functions <- c(
   "scripts/R/functions/model_fun.R",
   "scripts/R/functions/calculate_outcomes.R",
-  "scripts/R/functions/psa_functions.R"
+  "scripts/R/functions/psa_functions.R",
+  "scripts/R/functions/multi_model_cea.R"
 )
 
 for (func_file in helper_functions) {
@@ -149,15 +151,173 @@ if (file.exists(here("scripts/R/analysis/08_sampling.R"))) {
 param_distributions_basecase <- param_distributions
 ```
 
+```{r model-structures, include=FALSE}
+# Define model structures for multi-model analysis
+model_structures <- list(
+  A = list(
+    value = 0,
+    name = "Joint (All-in-One)",
+    label = "joint",
+    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    desc = "All biomarkers and all treatment interactions in a single model"
+  ),
+  B = list(
+    value = 1,
+    name = "Focused",
+    label = "focused",
+    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    desc = "All biomarkers as main effects, one treatment interaction per model"
+  ),
+  C = list(
+    value = 2,
+    name = "Separate",
+    label = "separate",
+    formula = "~ Age + sex + Rx + [biomarker]:Rx",
+    desc = "Only one biomarker and its treatment interaction per model"
+  )
+)
+
+# Check cache availability for each model
+cache_status <- sapply(c(0, 1, 2), function(ms) {
+  label <- c("joint", "focused", "separate")[ms + 1]
+  cache_file <- here("data", "tidy",
+                     paste0("sampling_models_n", n_samples, "_full_", label, ".rds"))
+  file.exists(cache_file)
+})
+names(cache_status) <- c("A", "B", "C")
+
+cat("Sampling cache status:\n")
+for (model_letter in c("A", "B", "C")) {
+  status <- if (cache_status[model_letter]) "FOUND" else "MISSING"
+  cat("  Model", model_letter, "(", model_structures[[model_letter]]$name, "):", status, "\n")
+}
+
+# Store original MODEL_STRUCTURE to restore later
+original_model_structure <- MODEL_STRUCTURE
+```
+
+```{r multi-model-helper, include=FALSE}
+#' Run scenario analysis for all three model structures
+#'
+#' @param l_params_scenario List of scenario-specific parameters (with u_np, u_p)
+#' @param verbose Logical, print progress messages
+#' @return List containing results for all 3 models
+run_scenario_for_all_models <- function(l_params_scenario, verbose = TRUE) {
+  model_configs <- get_model_configs()
+  results_list <- list()
+
+  for (model_name in names(model_configs)) {
+    config <- model_configs[[model_name]]
+
+    if (verbose) {
+      cat("Running", config$label, "...\n")
+    }
+
+    # Set MODEL_STRUCTURE globally
+    MODEL_STRUCTURE <<- config$structure
+
+    # Re-source survival analysis to update predictions for this model structure
+    suppressMessages(suppressWarnings({
+      source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+      source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+    }))
+
+    # Update with scenario-specific utility parameters
+    l_params <- l_params_base
+    l_params$u_np <- l_params_scenario$u_np
+    l_params$u_p <- l_params_scenario$u_p
+
+    # Run model
+    base_results <- model_fun(l_params)
+
+    # Calculate ICERs
+    icer_obj <- dampack::calculate_icers(
+      cost = base_results$Cost,
+      effect = base_results$Effect,
+      strategies = base_results$Strategy
+    )
+
+    results_list[[model_name]] <- list(
+      base_results = base_results,
+      icer_obj = icer_obj,
+      config = config
+    )
+
+    if (verbose) {
+      cat("  Completed:", model_name, "\n")
+    }
+  }
+
+  return(results_list)
+}
+
+#' Create multi-model comparison table for a scenario
+#'
+#' @param all_results List of results from run_scenario_for_all_models()
+#' @return Data frame with comparison across models
+create_scenario_comparison_table <- function(all_results) {
+  strategies <- all_results[[1]]$base_results$Strategy
+
+  comparison_df <- data.frame(Strategy = strategies)
+
+  for (model_name in names(all_results)) {
+    result <- all_results[[model_name]]
+    short_label <- result$config$short_label
+
+    comparison_df[[paste0("Cost_", short_label)]] <- result$base_results$Cost
+    comparison_df[[paste0("Effect_", short_label)]] <- result$base_results$Effect
+
+    icer_df <- as.data.frame(result$icer_obj)
+    comparison_df[[paste0("ICER_", short_label)]] <- icer_df$ICER
+  }
+
+  return(comparison_df)
+}
+```
+
 # Overview
 
-This scenario analysis examines the impact of utility assumptions on the cost-effectiveness of biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer. We compare three scenarios:
+This scenario analysis examines the impact of utility assumptions on the cost-effectiveness of biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer.
+
+## Utility Scenarios
+
+We compare three utility scenarios:
 
 1. **Base Case**: Standard utility values (u_np = 0.9077, u_p = 0.9005)
 2. **Scenario 1 - Unadjusted Life Years**: All utilities set to 1.0 (no quality adjustment)
 3. **Scenario 2 - Alternative Utilities**: Lower utility values (u_np = 0.73, u_p = 0.59)
 
-For each scenario, we present deterministic cost-effectiveness results with ICERs and probabilistic sensitivity analysis results.
+## Model Structures
+
+Each scenario is analyzed using three alternative model structures for the survival analysis:
+
+```{r model-structure-table}
+model_structure_df <- data.frame(
+  Model = c("Model A", "Model B", "Model C"),
+  Name = c("Joint (All-in-One)", "Focused", "Separate"),
+  Formula = c(
+    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + [biomarker]:Rx"
+  ),
+  Description = c(
+    "All biomarkers and all treatment interactions in a single model",
+    "All biomarkers as main effects, one treatment interaction per model",
+    "Only one biomarker and its treatment interaction per model"
+  )
+)
+
+knitr::kable(model_structure_df,
+             col.names = c("Model", "Name", "Formula Pattern", "Description"),
+             align = c("l", "l", "l", "l"),
+             booktabs = TRUE,
+             caption = "Model Structures for Survival Analysis") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::column_spec(3, width = "5cm") %>%
+  kableExtra::column_spec(4, width = "5cm")
+```
+
+For each scenario, we present deterministic cost-effectiveness results comparing all three model structures, followed by probabilistic sensitivity analysis.
 
 ```{r pagebreak-1, results='asis'}
 cat("\\newpage\n")
@@ -187,53 +347,153 @@ knitr::kable(basecase_params_table,
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r basecase-analysis}
+```{r basecase-analysis, include=FALSE}
 # Re-source functions to ensure they're available
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
-                    "scripts/R/functions/psa_functions.R")) {
+                    "scripts/R/functions/psa_functions.R",
+                    "scripts/R/functions/multi_model_cea.R")) {
   if (file.exists(here(func_file))) {
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
 
-# Run base case analysis
-base_results <- model_fun(l_params_basecase)
+# Run base case analysis for all three models
+cat("Running base case analysis for all model structures...\n")
+all_basecase_results <- run_scenario_for_all_models(l_params_basecase, verbose = TRUE)
 
-# Calculate ICERs
-icer_obj <- dampack::calculate_icers(
-  cost = base_results$Cost,
-  effect = base_results$Effect,
-  strategies = base_results$Strategy
+# Store for later comparison
+base_results <- all_basecase_results$Model_A$base_results
+icer_obj <- all_basecase_results$Model_A$icer_obj
+```
+
+## Multi-Model Comparison
+
+```{r basecase-multimodel-table}
+# Create comparison table across all models
+comparison_df <- data.frame(
+  Strategy = all_basecase_results$Model_A$base_results$Strategy
 )
 
-# Display results
-icer_table_base <- as.data.frame(icer_obj)
-icer_table_base$Cost <- scales::dollar(icer_table_base$Cost, accuracy = 1)
-icer_table_base$Effect <- sprintf("%.3f", icer_table_base$Effect)
-icer_table_base$ICER[!is.na(icer_table_base$ICER)] <- 
-  scales::dollar(icer_table_base$ICER[!is.na(icer_table_base$ICER)], accuracy = 1)
+for (model_name in names(all_basecase_results)) {
+  result <- all_basecase_results[[model_name]]
+  short_label <- result$config$short_label
 
-knitr::kable(icer_table_base, 
-             align = c("l", "r", "r", "r", "l"),
+  comparison_df[[paste0("Cost_", short_label)]] <- result$base_results$Cost
+  comparison_df[[paste0("QALY_", short_label)]] <- result$base_results$Effect
+
+  icer_df <- as.data.frame(result$icer_obj)
+  comparison_df[[paste0("ICER_", short_label)]] <- icer_df$ICER
+}
+
+# Format for display
+display_df <- comparison_df
+display_df$Strategy <- c("Standard of Care", "CRP-guided", "TLR-guided", "TMB/BRAF-guided")
+
+for (col in names(display_df)[grep("^Cost_", names(display_df))]) {
+  display_df[[col]] <- scales::dollar(display_df[[col]], accuracy = 1)
+}
+for (col in names(display_df)[grep("^QALY_", names(display_df))]) {
+  display_df[[col]] <- sprintf("%.3f", display_df[[col]])
+}
+for (col in names(display_df)[grep("^ICER_", names(display_df))]) {
+  display_df[[col]] <- ifelse(is.na(display_df[[col]]), "Reference",
+                               scales::dollar(display_df[[col]], accuracy = 1))
+}
+
+# Rename columns for display
+names(display_df) <- c("Strategy",
+                        "Cost (A)", "QALY (A)", "ICER (A)",
+                        "Cost (B)", "QALY (B)", "ICER (B)",
+                        "Cost (C)", "QALY (C)", "ICER (C)")
+
+knitr::kable(display_df,
+             align = c("l", rep("r", 9)),
              booktabs = TRUE,
-             caption = "Base Case Cost-Effectiveness Results") %>%
+             caption = "Base Case Cost-Effectiveness Results by Model Structure") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::add_header_above(c(" " = 1,
+                                  "Model A: Joint" = 3,
+                                  "Model B: Focused" = 3,
+                                  "Model C: Separate" = 3))
+```
+
+```{r basecase-optimal-strategy}
+# Determine optimal strategy for each model
+optimal_strategies_base <- data.frame(
+  Model = character(),
+  Optimal_Strategy = character(),
+  NMB = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (model_name in names(all_basecase_results)) {
+  result <- all_basecase_results[[model_name]]
+  nmb <- result$base_results$Effect * WTP - result$base_results$Cost
+  optimal_idx <- which.max(nmb)
+
+  strategy_name <- result$base_results$Strategy[optimal_idx]
+  strategy_display <- case_when(
+    strategy_name == "control" ~ "Standard of Care",
+    strategy_name == "crp" ~ "CRP-guided",
+    strategy_name == "tlr" ~ "TLR-guided",
+    strategy_name == "tmb_braf" ~ "TMB/BRAF-guided",
+    TRUE ~ strategy_name
+  )
+
+  optimal_strategies_base <- rbind(optimal_strategies_base, data.frame(
+    Model = result$config$label,
+    Optimal_Strategy = strategy_display,
+    NMB = nmb[optimal_idx],
+    stringsAsFactors = FALSE
+  ))
+}
+
+optimal_strategies_base$NMB <- scales::dollar(optimal_strategies_base$NMB, accuracy = 1)
+
+knitr::kable(optimal_strategies_base,
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             align = c("l", "l", "r"),
+             booktabs = TRUE,
+             caption = "Optimal Strategy by Model Structure - Base Case") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r basecase-ce-plane}
-#| fig-cap: "Cost-Effectiveness Plane - Base Case"
+## Cost-Effectiveness Planes
 
-ce_plot_base <- plot(icer_obj, 
-                     txtsize = 12,
-                     currency = "€",
-                     effect_units = "QALYs",
-                     label = "all")
-print(ce_plot_base)
+```{r basecase-ce-planes, fig.height=10, fig.width=10}
+#| fig-cap: "Cost-Effectiveness Planes by Model Structure - Base Case"
+
+# Create CE planes for each model
+ce_plots <- list()
+for (model_name in names(all_basecase_results)) {
+  result <- all_basecase_results[[model_name]]
+
+  ce_plots[[model_name]] <- plot(result$icer_obj,
+                                  txtsize = 10,
+                                  currency = "EUR",
+                                  effect_units = "QALYs",
+                                  label = "all") +
+    ggtitle(result$config$label) +
+    theme(plot.title = element_text(size = 12, face = "bold"))
+}
+
+# Arrange plots in grid
+gridExtra::grid.arrange(
+  ce_plots$Model_A, ce_plots$Model_B, ce_plots$Model_C,
+  ncol = 2, nrow = 2
+)
 ```
 
+## Probabilistic Sensitivity Analysis (Model A)
+
+PSA results are presented for Model A (Joint) only, as this is the primary model structure. The deterministic results above show comparison across all three model structures.
+
 ```{r basecase-psa, include=FALSE}
-# Re-source functions
+# Ensure Model A (joint) structure is set for PSA
+MODEL_STRUCTURE <<- 0
+
+# Re-source functions and survival analysis for Model A
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
                     "scripts/R/functions/psa_functions.R")) {
@@ -241,6 +501,11 @@ for (func_file in c("scripts/R/functions/model_fun.R",
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
 
 # Set number of simulations
 if (!exists("n_sim")) {
@@ -275,18 +540,18 @@ psa_obj_basecase <- dampack::make_psa_obj(
 psa_summary_base <- summary(psa_obj_basecase, calc_sds = TRUE)
 ```
 
-**Table: PSA Summary Statistics - Base Case**
+**Table: PSA Summary Statistics - Base Case (Model A)**
 
 ```{r basecase-psa-summary}
 knitr::kable(psa_summary_base,
              digits = 2,
              booktabs = TRUE,
-             caption = "PSA Summary - Base Case") %>%
+             caption = "PSA Summary - Base Case (Model A: Joint)") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 ```{r basecase-psa-scatter}
-#| fig-cap: "PSA Scatterplot - Base Case"
+#| fig-cap: "PSA Scatterplot - Base Case (Model A: Joint)"
 
 psa_plot_base <- plot(psa_obj_basecase, 
                       frontier = TRUE, 
@@ -299,7 +564,7 @@ print(psa_plot_base)
 ```
 
 ```{r basecase-ceac}
-#| fig-cap: "Cost-Effectiveness Acceptability Curve - Base Case"
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Base Case (Model A: Joint)"
 
 c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
 ceac_obj_base <- ceac(c_wtp, psa_obj_basecase)
@@ -349,53 +614,153 @@ knitr::kable(scenario1_params_table,
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r scenario1-basecase}
+```{r scenario1-analysis, include=FALSE}
 # Re-source functions to ensure they're available
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
-                    "scripts/R/functions/psa_functions.R")) {
+                    "scripts/R/functions/psa_functions.R",
+                    "scripts/R/functions/multi_model_cea.R")) {
   if (file.exists(here(func_file))) {
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
 
-# Run base case analysis for Scenario 1
-base_results_scenario1 <- model_fun(l_params_scenario1)
+# Run Scenario 1 analysis for all three models
+cat("Running Scenario 1 analysis for all model structures...\n")
+all_scenario1_results <- run_scenario_for_all_models(l_params_scenario1, verbose = TRUE)
 
-# Calculate ICERs
-icer_obj_scenario1 <- dampack::calculate_icers(
-  cost = base_results_scenario1$Cost,
-  effect = base_results_scenario1$Effect,
-  strategies = base_results_scenario1$Strategy
+# Store for later comparison
+base_results_scenario1 <- all_scenario1_results$Model_A$base_results
+icer_obj_scenario1 <- all_scenario1_results$Model_A$icer_obj
+```
+
+## Multi-Model Comparison
+
+```{r scenario1-multimodel-table}
+# Create comparison table across all models
+comparison_df_s1 <- data.frame(
+  Strategy = all_scenario1_results$Model_A$base_results$Strategy
 )
 
-# Display results
-icer_table_s1 <- as.data.frame(icer_obj_scenario1)
-icer_table_s1$Cost <- scales::dollar(icer_table_s1$Cost, accuracy = 1)
-icer_table_s1$Effect <- sprintf("%.3f", icer_table_s1$Effect)
-icer_table_s1$ICER[!is.na(icer_table_s1$ICER)] <- 
-  scales::dollar(icer_table_s1$ICER[!is.na(icer_table_s1$ICER)], accuracy = 1)
+for (model_name in names(all_scenario1_results)) {
+  result <- all_scenario1_results[[model_name]]
+  short_label <- result$config$short_label
 
-knitr::kable(icer_table_s1, 
-             align = c("l", "r", "r", "r", "l"),
+  comparison_df_s1[[paste0("Cost_", short_label)]] <- result$base_results$Cost
+  comparison_df_s1[[paste0("LY_", short_label)]] <- result$base_results$Effect
+
+  icer_df <- as.data.frame(result$icer_obj)
+  comparison_df_s1[[paste0("ICER_", short_label)]] <- icer_df$ICER
+}
+
+# Format for display
+display_df_s1 <- comparison_df_s1
+display_df_s1$Strategy <- c("Standard of Care", "CRP-guided", "TLR-guided", "TMB/BRAF-guided")
+
+for (col in names(display_df_s1)[grep("^Cost_", names(display_df_s1))]) {
+  display_df_s1[[col]] <- scales::dollar(display_df_s1[[col]], accuracy = 1)
+}
+for (col in names(display_df_s1)[grep("^LY_", names(display_df_s1))]) {
+  display_df_s1[[col]] <- sprintf("%.3f", display_df_s1[[col]])
+}
+for (col in names(display_df_s1)[grep("^ICER_", names(display_df_s1))]) {
+  display_df_s1[[col]] <- ifelse(is.na(display_df_s1[[col]]), "Reference",
+                                  scales::dollar(display_df_s1[[col]], accuracy = 1))
+}
+
+# Rename columns for display
+names(display_df_s1) <- c("Strategy",
+                           "Cost (A)", "LY (A)", "ICER (A)",
+                           "Cost (B)", "LY (B)", "ICER (B)",
+                           "Cost (C)", "LY (C)", "ICER (C)")
+
+knitr::kable(display_df_s1,
+             align = c("l", rep("r", 9)),
              booktabs = TRUE,
-             caption = "Scenario 1 Cost-Effectiveness Results (Unadjusted Life Years)") %>%
+             caption = "Scenario 1 Cost-Effectiveness Results by Model Structure (Unadjusted Life Years)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::add_header_above(c(" " = 1,
+                                  "Model A: Joint" = 3,
+                                  "Model B: Focused" = 3,
+                                  "Model C: Separate" = 3))
+```
+
+```{r scenario1-optimal-strategy}
+# Determine optimal strategy for each model
+optimal_strategies_s1 <- data.frame(
+  Model = character(),
+  Optimal_Strategy = character(),
+  NMB = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (model_name in names(all_scenario1_results)) {
+  result <- all_scenario1_results[[model_name]]
+  nmb <- result$base_results$Effect * WTP - result$base_results$Cost
+  optimal_idx <- which.max(nmb)
+
+  strategy_name <- result$base_results$Strategy[optimal_idx]
+  strategy_display <- case_when(
+    strategy_name == "control" ~ "Standard of Care",
+    strategy_name == "crp" ~ "CRP-guided",
+    strategy_name == "tlr" ~ "TLR-guided",
+    strategy_name == "tmb_braf" ~ "TMB/BRAF-guided",
+    TRUE ~ strategy_name
+  )
+
+  optimal_strategies_s1 <- rbind(optimal_strategies_s1, data.frame(
+    Model = result$config$label,
+    Optimal_Strategy = strategy_display,
+    NMB = nmb[optimal_idx],
+    stringsAsFactors = FALSE
+  ))
+}
+
+optimal_strategies_s1$NMB <- scales::dollar(optimal_strategies_s1$NMB, accuracy = 1)
+
+knitr::kable(optimal_strategies_s1,
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             align = c("l", "l", "r"),
+             booktabs = TRUE,
+             caption = "Optimal Strategy by Model Structure - Scenario 1") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r scenario1-ce-plane}
-#| fig-cap: "Cost-Effectiveness Plane - Scenario 1 (Unadjusted Life Years)"
+## Cost-Effectiveness Planes
 
-ce_plot_s1 <- plot(icer_obj_scenario1, 
-                   txtsize = 12,
-                   currency = "€",
-                   effect_units = "Life Years",
-                   label = "all")
-print(ce_plot_s1)
+```{r scenario1-ce-planes, fig.height=10, fig.width=10}
+#| fig-cap: "Cost-Effectiveness Planes by Model Structure - Scenario 1 (Unadjusted Life Years)"
+
+# Create CE planes for each model
+ce_plots_s1 <- list()
+for (model_name in names(all_scenario1_results)) {
+  result <- all_scenario1_results[[model_name]]
+
+  ce_plots_s1[[model_name]] <- plot(result$icer_obj,
+                                     txtsize = 10,
+                                     currency = "EUR",
+                                     effect_units = "Life Years",
+                                     label = "all") +
+    ggtitle(result$config$label) +
+    theme(plot.title = element_text(size = 12, face = "bold"))
+}
+
+# Arrange plots in grid
+gridExtra::grid.arrange(
+  ce_plots_s1$Model_A, ce_plots_s1$Model_B, ce_plots_s1$Model_C,
+  ncol = 2, nrow = 2
+)
 ```
 
+## Probabilistic Sensitivity Analysis (Model A)
+
+PSA results are presented for Model A (Joint) only.
+
 ```{r scenario1-psa, include=FALSE}
-# Re-source functions
+# Ensure Model A (joint) structure is set for PSA
+MODEL_STRUCTURE <<- 0
+
+# Re-source functions and survival analysis for Model A
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
                     "scripts/R/functions/psa_functions.R")) {
@@ -403,6 +768,11 @@ for (func_file in c("scripts/R/functions/model_fun.R",
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
 
 # Generate PSA samples for Scenario 1
 cat("Generating PSA samples for Scenario 1:", n_sim, "simulations\n")
@@ -432,21 +802,21 @@ psa_obj_scenario1 <- dampack::make_psa_obj(
 psa_summary_s1 <- summary(psa_obj_scenario1, calc_sds = TRUE)
 ```
 
-**Table: PSA Summary Statistics - Scenario 1**
+**Table: PSA Summary Statistics - Scenario 1 (Model A)**
 
 ```{r scenario1-psa-summary}
 knitr::kable(psa_summary_s1,
              digits = 2,
              booktabs = TRUE,
-             caption = "PSA Summary - Scenario 1 (Unadjusted Life Years)") %>%
+             caption = "PSA Summary - Scenario 1 (Model A: Joint, Unadjusted Life Years)") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 ```{r scenario1-psa-scatter}
-#| fig-cap: "PSA Scatterplot - Scenario 1 (Unadjusted Life Years)"
+#| fig-cap: "PSA Scatterplot - Scenario 1 (Model A: Joint, Unadjusted Life Years)"
 
-psa_plot_s1 <- plot(psa_obj_scenario1, 
-                    frontier = TRUE, 
+psa_plot_s1 <- plot(psa_obj_scenario1,
+                    frontier = TRUE,
                     points = TRUE,
                     alpha = 0.4,
                     txtsize = 11,
@@ -456,7 +826,7 @@ print(psa_plot_s1)
 ```
 
 ```{r scenario1-ceac}
-#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 1"
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 1 (Model A: Joint)"
 
 ceac_obj_s1 <- ceac(c_wtp, psa_obj_scenario1)
 ceac_plot_s1 <- plot(ceac_obj_s1, frontier = TRUE, currency = "€", txtsize = 11)
@@ -538,53 +908,153 @@ knitr::kable(beta_params_table,
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r scenario2-basecase}
-# Re-source functions
+```{r scenario2-analysis, include=FALSE}
+# Re-source functions to ensure they're available
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
-                    "scripts/R/functions/psa_functions.R")) {
+                    "scripts/R/functions/psa_functions.R",
+                    "scripts/R/functions/multi_model_cea.R")) {
   if (file.exists(here(func_file))) {
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
 
-# Run base case analysis for Scenario 2
-base_results_scenario2 <- model_fun(l_params_scenario2)
+# Run Scenario 2 analysis for all three models
+cat("Running Scenario 2 analysis for all model structures...\n")
+all_scenario2_results <- run_scenario_for_all_models(l_params_scenario2, verbose = TRUE)
 
-# Calculate ICERs
-icer_obj_scenario2 <- dampack::calculate_icers(
-  cost = base_results_scenario2$Cost,
-  effect = base_results_scenario2$Effect,
-  strategies = base_results_scenario2$Strategy
+# Store for later comparison
+base_results_scenario2 <- all_scenario2_results$Model_A$base_results
+icer_obj_scenario2 <- all_scenario2_results$Model_A$icer_obj
+```
+
+## Multi-Model Comparison
+
+```{r scenario2-multimodel-table}
+# Create comparison table across all models
+comparison_df_s2 <- data.frame(
+  Strategy = all_scenario2_results$Model_A$base_results$Strategy
 )
 
-# Display results
-icer_table_s2 <- as.data.frame(icer_obj_scenario2)
-icer_table_s2$Cost <- scales::dollar(icer_table_s2$Cost, accuracy = 1)
-icer_table_s2$Effect <- sprintf("%.3f", icer_table_s2$Effect)
-icer_table_s2$ICER[!is.na(icer_table_s2$ICER)] <- 
-  scales::dollar(icer_table_s2$ICER[!is.na(icer_table_s2$ICER)], accuracy = 1)
+for (model_name in names(all_scenario2_results)) {
+  result <- all_scenario2_results[[model_name]]
+  short_label <- result$config$short_label
 
-knitr::kable(icer_table_s2, 
-             align = c("l", "r", "r", "r", "l"),
+  comparison_df_s2[[paste0("Cost_", short_label)]] <- result$base_results$Cost
+  comparison_df_s2[[paste0("QALY_", short_label)]] <- result$base_results$Effect
+
+  icer_df <- as.data.frame(result$icer_obj)
+  comparison_df_s2[[paste0("ICER_", short_label)]] <- icer_df$ICER
+}
+
+# Format for display
+display_df_s2 <- comparison_df_s2
+display_df_s2$Strategy <- c("Standard of Care", "CRP-guided", "TLR-guided", "TMB/BRAF-guided")
+
+for (col in names(display_df_s2)[grep("^Cost_", names(display_df_s2))]) {
+  display_df_s2[[col]] <- scales::dollar(display_df_s2[[col]], accuracy = 1)
+}
+for (col in names(display_df_s2)[grep("^QALY_", names(display_df_s2))]) {
+  display_df_s2[[col]] <- sprintf("%.3f", display_df_s2[[col]])
+}
+for (col in names(display_df_s2)[grep("^ICER_", names(display_df_s2))]) {
+  display_df_s2[[col]] <- ifelse(is.na(display_df_s2[[col]]), "Reference",
+                                  scales::dollar(display_df_s2[[col]], accuracy = 1))
+}
+
+# Rename columns for display
+names(display_df_s2) <- c("Strategy",
+                           "Cost (A)", "QALY (A)", "ICER (A)",
+                           "Cost (B)", "QALY (B)", "ICER (B)",
+                           "Cost (C)", "QALY (C)", "ICER (C)")
+
+knitr::kable(display_df_s2,
+             align = c("l", rep("r", 9)),
              booktabs = TRUE,
-             caption = "Scenario 2 Cost-Effectiveness Results (Alternative Utilities)") %>%
+             caption = "Scenario 2 Cost-Effectiveness Results by Model Structure (Alternative Utilities)") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::add_header_above(c(" " = 1,
+                                  "Model A: Joint" = 3,
+                                  "Model B: Focused" = 3,
+                                  "Model C: Separate" = 3))
+```
+
+```{r scenario2-optimal-strategy}
+# Determine optimal strategy for each model
+optimal_strategies_s2 <- data.frame(
+  Model = character(),
+  Optimal_Strategy = character(),
+  NMB = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (model_name in names(all_scenario2_results)) {
+  result <- all_scenario2_results[[model_name]]
+  nmb <- result$base_results$Effect * WTP - result$base_results$Cost
+  optimal_idx <- which.max(nmb)
+
+  strategy_name <- result$base_results$Strategy[optimal_idx]
+  strategy_display <- case_when(
+    strategy_name == "control" ~ "Standard of Care",
+    strategy_name == "crp" ~ "CRP-guided",
+    strategy_name == "tlr" ~ "TLR-guided",
+    strategy_name == "tmb_braf" ~ "TMB/BRAF-guided",
+    TRUE ~ strategy_name
+  )
+
+  optimal_strategies_s2 <- rbind(optimal_strategies_s2, data.frame(
+    Model = result$config$label,
+    Optimal_Strategy = strategy_display,
+    NMB = nmb[optimal_idx],
+    stringsAsFactors = FALSE
+  ))
+}
+
+optimal_strategies_s2$NMB <- scales::dollar(optimal_strategies_s2$NMB, accuracy = 1)
+
+knitr::kable(optimal_strategies_s2,
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             align = c("l", "l", "r"),
+             booktabs = TRUE,
+             caption = "Optimal Strategy by Model Structure - Scenario 2") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r scenario2-ce-plane}
-#| fig-cap: "Cost-Effectiveness Plane - Scenario 2 (Alternative Utilities)"
+## Cost-Effectiveness Planes
 
-ce_plot_s2 <- plot(icer_obj_scenario2, 
-                   txtsize = 12,
-                   currency = "€",
-                   effect_units = "QALYs",
-                   label = "all")
-print(ce_plot_s2)
+```{r scenario2-ce-planes, fig.height=10, fig.width=10}
+#| fig-cap: "Cost-Effectiveness Planes by Model Structure - Scenario 2 (Alternative Utilities)"
+
+# Create CE planes for each model
+ce_plots_s2 <- list()
+for (model_name in names(all_scenario2_results)) {
+  result <- all_scenario2_results[[model_name]]
+
+  ce_plots_s2[[model_name]] <- plot(result$icer_obj,
+                                     txtsize = 10,
+                                     currency = "EUR",
+                                     effect_units = "QALYs",
+                                     label = "all") +
+    ggtitle(result$config$label) +
+    theme(plot.title = element_text(size = 12, face = "bold"))
+}
+
+# Arrange plots in grid
+gridExtra::grid.arrange(
+  ce_plots_s2$Model_A, ce_plots_s2$Model_B, ce_plots_s2$Model_C,
+  ncol = 2, nrow = 2
+)
 ```
 
+## Probabilistic Sensitivity Analysis (Model A)
+
+PSA results are presented for Model A (Joint) only.
+
 ```{r scenario2-psa, include=FALSE}
-# Re-source functions
+# Ensure Model A (joint) structure is set for PSA
+MODEL_STRUCTURE <<- 0
+
+# Re-source functions and survival analysis for Model A
 for (func_file in c("scripts/R/functions/model_fun.R",
                     "scripts/R/functions/calculate_outcomes.R",
                     "scripts/R/functions/psa_functions.R")) {
@@ -592,6 +1062,11 @@ for (func_file in c("scripts/R/functions/model_fun.R",
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
 
 # Generate PSA samples for Scenario 2
 cat("Generating PSA samples for Scenario 2:", n_sim, "simulations\n")
@@ -621,21 +1096,21 @@ psa_obj_scenario2 <- dampack::make_psa_obj(
 psa_summary_s2 <- summary(psa_obj_scenario2, calc_sds = TRUE)
 ```
 
-**Table: PSA Summary Statistics - Scenario 2**
+**Table: PSA Summary Statistics - Scenario 2 (Model A)**
 
 ```{r scenario2-psa-summary}
 knitr::kable(psa_summary_s2,
              digits = 2,
              booktabs = TRUE,
-             caption = "PSA Summary - Scenario 2 (Alternative Utilities)") %>%
+             caption = "PSA Summary - Scenario 2 (Model A: Joint, Alternative Utilities)") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 ```{r scenario2-psa-scatter}
-#| fig-cap: "PSA Scatterplot - Scenario 2 (Alternative Utilities)"
+#| fig-cap: "PSA Scatterplot - Scenario 2 (Model A: Joint, Alternative Utilities)"
 
-psa_plot_s2 <- plot(psa_obj_scenario2, 
-                    frontier = TRUE, 
+psa_plot_s2 <- plot(psa_obj_scenario2,
+                    frontier = TRUE,
                     points = TRUE,
                     alpha = 0.4,
                     txtsize = 11,
@@ -645,7 +1120,7 @@ print(psa_plot_s2)
 ```
 
 ```{r scenario2-ceac}
-#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 2"
+#| fig-cap: "Cost-Effectiveness Acceptability Curve - Scenario 2 (Model A: Joint)"
 
 ceac_obj_s2 <- ceac(c_wtp, psa_obj_scenario2)
 ceac_plot_s2 <- plot(ceac_obj_s2, frontier = TRUE, currency = "€", txtsize = 11)
@@ -657,6 +1132,8 @@ cat("\\newpage\n")
 ```
 
 # Comparative Analysis Across All Scenarios
+
+## Utility Parameter Summary
 
 ```{r utility-comparison-table}
 utility_comparison <- data.frame(
@@ -682,8 +1159,75 @@ knitr::kable(utility_comparison,
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
+## Cross-Model, Cross-Scenario Optimal Strategy Comparison
+
+```{r cross-model-optimal-strategy}
+# Create a comprehensive optimal strategy table across all scenarios and models
+cross_comparison <- data.frame(
+  Scenario = character(),
+  Model = character(),
+  Optimal_Strategy = character(),
+  NMB = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Helper function to get optimal strategy
+get_optimal <- function(results, wtp) {
+  nmb <- results$base_results$Effect * wtp - results$base_results$Cost
+  optimal_idx <- which.max(nmb)
+  strategy_name <- results$base_results$Strategy[optimal_idx]
+  strategy_display <- case_when(
+    strategy_name == "control" ~ "Standard of Care",
+    strategy_name == "crp" ~ "CRP-guided",
+    strategy_name == "tlr" ~ "TLR-guided",
+    strategy_name == "tmb_braf" ~ "TMB/BRAF-guided",
+    TRUE ~ strategy_name
+  )
+  return(list(strategy = strategy_display, nmb = nmb[optimal_idx]))
+}
+
+# Process all scenarios and models
+scenario_results <- list(
+  "Base Case" = all_basecase_results,
+  "Scenario 1" = all_scenario1_results,
+  "Scenario 2" = all_scenario2_results
+)
+
+for (scenario_name in names(scenario_results)) {
+  scenario_data <- scenario_results[[scenario_name]]
+  for (model_name in names(scenario_data)) {
+    result <- scenario_data[[model_name]]
+    opt <- get_optimal(result, WTP)
+    cross_comparison <- rbind(cross_comparison, data.frame(
+      Scenario = scenario_name,
+      Model = result$config$label,
+      Optimal_Strategy = opt$strategy,
+      NMB = opt$nmb,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# Pivot to wide format
+cross_wide <- cross_comparison %>%
+  mutate(NMB_formatted = scales::dollar(NMB, accuracy = 1)) %>%
+  select(Scenario, Model, Optimal_Strategy) %>%
+  pivot_wider(names_from = Model, values_from = Optimal_Strategy)
+
+knitr::kable(cross_wide,
+             align = c("l", "l", "l", "l"),
+             col.names = c("Scenario", "Model A: Joint", "Model B: Focused", "Model C: Separate"),
+             booktabs = TRUE,
+             caption = paste0("Optimal Strategy by Scenario and Model Structure (WTP = ", scales::dollar(WTP), ")")) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+## Model A Results Across Scenarios
+
+The following tables and plots compare results across scenarios for Model A (Joint), which is the primary model structure.
+
 ```{r comparison-table}
-# Combine results from all three scenarios
+# Combine results from all three scenarios (Model A)
 comparison_results <- data.frame(
   Scenario = rep(c("Base Case", "Scenario 1", "Scenario 2"), each = length(strategies)),
   Strategy = rep(strategies, 3),
@@ -711,15 +1255,15 @@ comparison_display <- comparison_results %>%
 
 knitr::kable(comparison_display,
              align = c("l", "l", "r", "r", "r"),
-             col.names = c("Scenario", "Strategy", "Cost (€)", "Effect", "NMB (€)"),
+             col.names = c("Scenario", "Strategy", "Cost (EUR)", "Effect", "NMB (EUR)"),
              booktabs = TRUE,
-             caption = "Cost-Effectiveness Results Comparison Across Scenarios") %>%
+             caption = "Cost-Effectiveness Results Comparison Across Scenarios (Model A)") %>%
   kableExtra::collapse_rows(columns = 1, valign = "top") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 ```{r effect-comparison-plot}
-#| fig-cap: "Comparison of Effects Across Scenarios by Strategy"
+#| fig-cap: "Comparison of Effects Across Scenarios by Strategy (Model A)"
 #| fig-height: 7
 #| fig-width: 10
 
@@ -737,11 +1281,11 @@ effect_comparison_data <- comparison_results %>%
 
 p_effect <- ggplot(effect_comparison_data, aes(x = Strategy, y = Effect, fill = Scenario)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
-  scale_fill_manual(values = c("Base Case" = "#2E86AB", 
-                                "Scenario 1" = "#A23B72", 
+  scale_fill_manual(values = c("Base Case" = "#2E86AB",
+                                "Scenario 1" = "#A23B72",
                                 "Scenario 2" = "#F18F01")) +
   labs(
-    title = "Effect Comparison Across Scenarios",
+    title = "Effect Comparison Across Scenarios (Model A)",
     subtitle = "Base Case (QALYs), Scenario 1 (Life Years), Scenario 2 (Alternative QALYs)",
     x = "Strategy",
     y = "Effect (QALYs / Life Years)",
@@ -757,7 +1301,7 @@ print(p_effect)
 ```
 
 ```{r icer-comparison}
-# Extract ICERs from each scenario
+# Extract ICERs from each scenario (Model A)
 icer_base <- as.data.frame(icer_obj) %>%
   select(Strategy, ICER) %>%
   mutate(Scenario = "Base Case")
@@ -780,8 +1324,8 @@ icer_comparison <- rbind(icer_base, icer_s1, icer_s2) %>%
       Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
       TRUE ~ Strategy
     ),
-    ICER_formatted = ifelse(!is.na(ICER), 
-                            scales::dollar(ICER, accuracy = 1), 
+    ICER_formatted = ifelse(!is.na(ICER),
+                            scales::dollar(ICER, accuracy = 1),
                             "Reference")
   ) %>%
   select(Scenario, Strategy, ICER_formatted) %>%
@@ -791,12 +1335,12 @@ knitr::kable(icer_comparison,
              align = c("l", "r", "r", "r"),
              col.names = c("Strategy", "Base Case", "Scenario 1", "Scenario 2"),
              booktabs = TRUE,
-             caption = "ICER Comparison Across Scenarios (€ per QALY/Life Year)") %>%
+             caption = "ICER Comparison Across Scenarios - Model A (EUR per QALY/Life Year)") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
 ```{r nmb-comparison-plot}
-#| fig-cap: "Net Monetary Benefit Comparison Across Scenarios (WTP = €51,000)"
+#| fig-cap: "Net Monetary Benefit Comparison Across Scenarios (Model A, WTP = EUR 51,000)"
 #| fig-height: 7
 #| fig-width: 10
 
@@ -814,15 +1358,15 @@ nmb_comparison_data <- comparison_results %>%
 
 p_nmb <- ggplot(nmb_comparison_data, aes(x = Strategy, y = NMB, fill = Scenario)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
-  scale_fill_manual(values = c("Base Case" = "#2E86AB", 
-                                "Scenario 1" = "#A23B72", 
+  scale_fill_manual(values = c("Base Case" = "#2E86AB",
+                                "Scenario 1" = "#A23B72",
                                 "Scenario 2" = "#F18F01")) +
   scale_y_continuous(labels = scales::dollar_format(scale = 0.001, suffix = "K")) +
   labs(
-    title = "Net Monetary Benefit Comparison Across Scenarios",
-    subtitle = paste0("Willingness-to-Pay Threshold: €", scales::comma(WTP)),
+    title = "Net Monetary Benefit Comparison Across Scenarios (Model A)",
+    subtitle = paste0("Willingness-to-Pay Threshold: EUR ", scales::comma(WTP)),
     x = "Strategy",
-    y = "Net Monetary Benefit (€)",
+    y = "Net Monetary Benefit (EUR)",
     fill = "Scenario"
   ) +
   theme_minimal() +
@@ -834,55 +1378,103 @@ p_nmb <- ggplot(nmb_comparison_data, aes(x = Strategy, y = NMB, fill = Scenario)
 print(p_nmb)
 ```
 
-```{r optimal-strategy-comparison}
-# Determine optimal strategy for each scenario
-optimal_base <- comparison_results %>%
-  filter(Scenario == "Base Case") %>%
-  slice_max(NMB, n = 1) %>%
-  pull(Strategy)
-
-optimal_s1 <- comparison_results %>%
-  filter(Scenario == "Scenario 1") %>%
-  slice_max(NMB, n = 1) %>%
-  pull(Strategy)
-
-optimal_s2 <- comparison_results %>%
-  filter(Scenario == "Scenario 2") %>%
-  slice_max(NMB, n = 1) %>%
-  pull(Strategy)
-
-optimal_summary <- data.frame(
-  Scenario = c("Base Case", "Scenario 1 (Life Years)", "Scenario 2 (Alternative)"),
-  Optimal_Strategy = c(optimal_base, optimal_s1, optimal_s2),
-  WTP_Threshold = rep(scales::dollar(WTP), 3)
-)
-
-optimal_summary$Optimal_Strategy <- case_when(
-  optimal_summary$Optimal_Strategy == "control" ~ "Standard of Care",
-  optimal_summary$Optimal_Strategy == "crp" ~ "CRP-guided",
-  optimal_summary$Optimal_Strategy == "tlr" ~ "TLR-guided",
-  optimal_summary$Optimal_Strategy == "tmb_braf" ~ "TMB/BRAF-guided",
-  TRUE ~ optimal_summary$Optimal_Strategy
-)
-
-knitr::kable(optimal_summary,
-             align = c("l", "l", "r"),
-             col.names = c("Scenario", "Optimal Strategy", "WTP Threshold"),
-             booktabs = TRUE,
-             caption = "Optimal Strategy by Scenario at WTP Threshold") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
-```
-
 ```{r pagebreak-5, results='asis'}
 cat("\\newpage\n")
 ```
 
+# Robustness Assessment
+
+## Cross-Model Consistency
+
+```{r robustness-assessment}
+# Check if optimal strategies are consistent across models within each scenario
+robustness_summary <- cross_comparison %>%
+  group_by(Scenario) %>%
+  summarize(
+    n_models = n(),
+    unique_strategies = n_distinct(Optimal_Strategy),
+    consistent = n_distinct(Optimal_Strategy) == 1,
+    strategies_list = paste(unique(Optimal_Strategy), collapse = ", "),
+    .groups = "drop"
+  )
+
+# Summary table
+robustness_display <- robustness_summary %>%
+  mutate(
+    Consistency = ifelse(consistent, "Consistent", "Varies by model"),
+    Strategies = strategies_list
+  ) %>%
+  select(Scenario, Consistency, Strategies)
+
+knitr::kable(robustness_display,
+             align = c("l", "l", "l"),
+             col.names = c("Scenario", "Model Consistency", "Optimal Strategy(ies)"),
+             booktabs = TRUE,
+             caption = "Robustness of Optimal Strategy Across Model Structures") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r robustness-interpretation, results='asis'}
+# Provide interpretation
+all_consistent <- all(robustness_summary$consistent)
+
+if (all_consistent) {
+  cat("\n**Robust Conclusion:** The optimal strategy is consistent across all three model structures within each scenario, suggesting the conclusions are robust to the choice of survival model specification.\n")
+} else {
+  varying_scenarios <- robustness_summary$Scenario[!robustness_summary$consistent]
+  cat("\n**Note:** The optimal strategy varies by model structure in the following scenario(s):", paste(varying_scenarios, collapse = ", "), ". This suggests some sensitivity to the survival model specification.\n")
+}
+```
+
+## Cross-Scenario Consistency
+
+```{r cross-scenario-consistency}
+# Check if optimal strategies are consistent across scenarios within each model
+scenario_consistency <- cross_comparison %>%
+  group_by(Model) %>%
+  summarize(
+    n_scenarios = n(),
+    unique_strategies = n_distinct(Optimal_Strategy),
+    consistent = n_distinct(Optimal_Strategy) == 1,
+    strategies_list = paste(unique(Optimal_Strategy), collapse = ", "),
+    .groups = "drop"
+  )
+
+scenario_display <- scenario_consistency %>%
+  mutate(
+    Consistency = ifelse(consistent, "Consistent", "Varies by scenario"),
+    Strategies = strategies_list
+  ) %>%
+  select(Model, Consistency, Strategies)
+
+knitr::kable(scenario_display,
+             align = c("l", "l", "l"),
+             col.names = c("Model Structure", "Scenario Consistency", "Optimal Strategy(ies)"),
+             booktabs = TRUE,
+             caption = "Sensitivity of Optimal Strategy to Utility Assumptions by Model") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
 # Summary
 
-This scenario analysis examined the impact of utility assumptions on the METIMMOX+1 model. The cut-off effectiveness from the base case scatter plot disappears when using alternative values.
+This scenario analysis examined the impact of utility assumptions on the METIMMOX-1 cost-effectiveness model across three alternative model structures:
+
+- **Model A (Joint)**: All biomarkers and all treatment interactions in a single model
+- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model C (Separate)**: Only one biomarker and its treatment interaction per model
+
+Key findings:
+
+1. **Deterministic results**: Multi-model comparison tables show how cost-effectiveness results vary across model structures within each scenario.
+
+2. **Cross-model robustness**: The robustness assessment above indicates whether the optimal strategy is consistent across model structures.
+
+3. **Scenario sensitivity**: The cross-scenario consistency analysis shows how sensitive conclusions are to utility assumptions for each model structure.
+
+4. **PSA results**: Probabilistic sensitivity analysis was conducted for Model A (Joint) across all three scenarios to characterize decision uncertainty.
 
 ---
 
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 2.0
