@@ -1,0 +1,378 @@
+---
+title: "Figure 1: Overall Survival Strategy Comparison"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, ggplot2, dplyr, scales, cowplot,
+  flexsurv, survival
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-data, include=FALSE}
+# Force USE_BOTH_MODELS = 1 to get both gamma and weibullph distributions
+USE_BOTH_MODELS <- 1
+
+# Source analysis scripts in order
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+# Override again after 02 potentially reset it
+USE_BOTH_MODELS <- 1
+
+# Source prediction functions
+source(here("scripts/R/functions/prediction_functions.R"))
+
+# Source parametric survival analysis - this creates multi_models and multi_predictions
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
+```
+
+```{r generate-multi-predictions, include=FALSE}
+# ===============================================================================
+# Generate multi-model predictions (same as para_models.qmd Phase 3)
+# ===============================================================================
+
+# Define model formulas
+model_formulas <- list(
+  A = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+  ),
+  B_crp = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
+  ),
+  B_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
+  ),
+  B_tmb = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+  ),
+  C_crp = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
+  ),
+  C_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr:Rx
+  ),
+  C_tmb = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf:Rx
+  )
+)
+
+model_labels_short <- c(
+  "A" = "Model A",
+  "B_crp" = "Model B-CRP",
+  "B_tlr" = "Model B-TLR",
+  "B_tmb" = "Model B-TMB",
+  "C_crp" = "Model C-CRP",
+  "C_tlr" = "Model C-TLR",
+  "C_tmb" = "Model C-TMB"
+)
+
+distributions <- c("gamma", "weibullph")
+model_types <- names(model_formulas)
+
+# Initialize storage
+multi_models <- list(gamma = list(), weibullph = list())
+multi_predictions <- list(gamma = list(), weibullph = list())
+
+# Fit all models
+for (dist in distributions) {
+  for (mt in model_types) {
+    multi_models[[dist]][[mt]] <- list()
+    for (outcome in c("os", "pfs")) {
+      formula <- model_formulas[[mt]][[outcome]]
+      tryCatch({
+        multi_models[[dist]][[mt]][[outcome]] <- flexsurvreg(
+          formula = formula,
+          data = data_complete,
+          dist = dist
+        )
+      }, error = function(e) {
+        message(paste("Failed to fit", mt, outcome, dist))
+      })
+    }
+  }
+}
+
+# Define which biomarkers each model type can predict
+model_biomarker_map <- list(
+  A = c("crp", "tlr", "tmb_braf"),
+  B_crp = c("crp"),
+  B_tlr = c("tlr"),
+  B_tmb = c("tmb_braf"),
+  C_crp = c("crp"),
+  C_tlr = c("tlr"),
+  C_tmb = c("tmb_braf")
+)
+
+# Helper function for population-averaged predictions
+predict_population_avg <- function(model, newdata, time_points) {
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      } else {
+        return(surv_probs)
+      }
+    } else {
+      return(NULL)
+    }
+  }, error = function(e) {
+    return(NULL)
+  })
+}
+
+# Get treatment level references
+exp_rx <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+
+# Generate predictions
+for (dist in distributions) {
+  for (model_type in model_types) {
+    os_model <- multi_models[[dist]][[model_type]]$os
+    pfs_model <- multi_models[[dist]][[model_type]]$pfs
+
+    if (is.null(os_model) || is.null(pfs_model)) next
+
+    multi_predictions[[dist]][[model_type]] <- list()
+
+    # Control predictions
+    control_data <- data_complete
+    control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+
+    control_os <- predict_population_avg(os_model, control_data, time_points)
+    control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
+
+    if (!is.null(control_os) && !is.null(control_pfs)) {
+      multi_predictions[[dist]][[model_type]]$control <- list(
+        os = control_os,
+        pfs = control_pfs
+      )
+    }
+
+    # Biomarker-specific predictions
+    biomarkers_to_predict <- model_biomarker_map[[model_type]]
+
+    for (biomarker in biomarkers_to_predict) {
+      # Biomarker-positive: experimental treatment
+      pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 1, ]
+      if (nrow(pos_data) > 0) {
+        pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
+        pos_os <- predict_population_avg(os_model, pos_data, time_points)
+        pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
+
+        if (!is.null(pos_os) && !is.null(pos_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]] <- list(
+            os = pos_os, pfs = pos_pfs
+          )
+        }
+      }
+
+      # Biomarker-negative: control treatment
+      neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 0, ]
+      if (nrow(neg_data) > 0) {
+        neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+        neg_os <- predict_population_avg(os_model, neg_data, time_points)
+        neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
+
+        if (!is.null(neg_os) && !is.null(neg_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]] <- list(
+            os = neg_os, pfs = neg_pfs
+          )
+        }
+      }
+
+      # Population-weighted prediction
+      biomarker_prev <- strategies_df$prevalence[strategies_df$id == biomarker]
+      pos_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]
+      neg_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]]
+
+      if (length(biomarker_prev) > 0 && !is.null(pos_pred) && !is.null(neg_pred)) {
+        multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_weighted")]] <- list(
+          os = biomarker_prev * pos_pred$os + (1 - biomarker_prev) * neg_pred$os,
+          pfs = biomarker_prev * pos_pred$pfs + (1 - biomarker_prev) * neg_pred$pfs
+        )
+      }
+    }
+  }
+}
+```
+
+```{r create-os-plots, include=FALSE}
+create_os_plot <- function(biomarker, model_types_subset, color_scheme,
+                           strategy_prefix, factor_levels) {
+  strategy_data <- data.frame()
+
+  # Control (from Model A - same for all)
+  for (dist in c("gamma", "weibullph")) {
+    ctrl_pred <- multi_predictions[[dist]][["A"]]$control
+    if (!is.null(ctrl_pred)) {
+      strategy_data <- rbind(strategy_data, data.frame(
+        time = time_points,
+        os = ctrl_pred$os,
+        strategy = "Control",
+        distribution = dist
+      ))
+    }
+  }
+
+  # Biomarker strategy from each model type
+  weighted_name <- paste0(biomarker, "_weighted")
+  for (model_type in model_types_subset) {
+    for (dist in c("gamma", "weibullph")) {
+      pred <- multi_predictions[[dist]][[model_type]][[weighted_name]]
+      if (!is.null(pred)) {
+        strategy_data <- rbind(strategy_data, data.frame(
+          time = time_points,
+          os = pred$os,
+          strategy = paste(strategy_prefix, "-", model_labels_short[model_type]),
+          distribution = dist
+        ))
+      }
+    }
+  }
+
+  strategy_data$strategy <- factor(strategy_data$strategy, levels = factor_levels)
+
+  ggplot(strategy_data, aes(x = time, y = os,
+                             color = strategy, linetype = distribution)) +
+    geom_line(linewidth = 0.8) +
+    scale_color_manual(values = color_scheme, name = "Strategy") +
+    scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
+                          labels = c("Gamma", "Weibull PH"),
+                          name = "Distribution") +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    scale_x_continuous(breaks = seq(0, max(time_points), by = 104),
+                       labels = function(x) x / 52) +
+    labs(x = "Time (years)", y = "Overall Survival",
+         title = paste(strategy_prefix, "Strategy")) +
+    theme(legend.position = "bottom",
+          legend.box = "vertical",
+          legend.margin = margin(t = 0, b = 0),
+          legend.title = element_text(size = 8),
+          legend.text = element_text(size = 7),
+          plot.title = element_text(size = 11)) +
+    guides(color = guide_legend(order = 1, nrow = 2, byrow = TRUE),
+           linetype = guide_legend(order = 2))
+}
+
+p_crp_os <- create_os_plot(
+  biomarker = "crp",
+  model_types_subset = c("A", "B_crp", "C_crp"),
+  color_scheme = c(
+    "Control" = "gray50",
+    "CRP - Model A" = "#E69F00",
+    "CRP - Model B-CRP" = "#56B4E9",
+    "CRP - Model C-CRP" = "#0072B2"
+  ),
+  strategy_prefix = "CRP",
+  factor_levels = c("Control", "CRP - Model A", "CRP - Model B-CRP", "CRP - Model C-CRP")
+)
+
+p_tlr_os <- create_os_plot(
+  biomarker = "tlr",
+  model_types_subset = c("A", "B_tlr", "C_tlr"),
+  color_scheme = c(
+    "Control" = "gray50",
+    "TLR - Model A" = "#E69F00",
+    "TLR - Model B-TLR" = "#009E73",
+    "TLR - Model C-TLR" = "#D55E00"
+  ),
+  strategy_prefix = "TLR",
+  factor_levels = c("Control", "TLR - Model A", "TLR - Model B-TLR", "TLR - Model C-TLR")
+)
+
+p_tmb_os <- create_os_plot(
+  biomarker = "tmb_braf",
+  model_types_subset = c("A", "B_tmb", "C_tmb"),
+  color_scheme = c(
+    "Control" = "gray50",
+    "TMB - Model A" = "#E69F00",
+    "TMB - Model B-TMB" = "#F0E442",
+    "TMB - Model C-TMB" = "#CC79A7"
+  ),
+  strategy_prefix = "TMB",
+  factor_levels = c("Control", "TMB - Model A", "TMB - Model B-TMB", "TMB - Model C-TMB")
+)
+```
+
+```{r combined-figure, fig.width=10, fig.height=10}
+combined_plot <- plot_grid(
+  p_crp_os, p_tlr_os,
+  p_tmb_os, NULL,
+  ncol = 2, nrow = 2,
+  labels = c("A", "B", "C", ""),
+  label_size = 14
+)
+
+print(combined_plot)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("figs")
+if (!dir.exists(figs_dir)) {
+  dir.create(figs_dir, recursive = TRUE)
+}
+
+ggsave(
+  filename = here("figs", "figure1.png"),
+  plot = combined_plot,
+  width = 10,
+  height = 10,
+  dpi = 300,
+  bg = "white"
+)
+
+cat("Figure saved to:", here("figs", "figure1.png"), "\n")
+```
+
+Figure 1 has been saved to `figs/figure1.png`.
