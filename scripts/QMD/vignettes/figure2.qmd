@@ -1,0 +1,132 @@
+---
+title: "Figure 2: Cost-Effectiveness Planes"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, ggplot2, dplyr, scales, cowplot, dampack,
+  flexsurv, survival
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-analysis-scripts, include=FALSE}
+# Source required analysis scripts
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+# Source helper functions
+source(here("scripts/R/functions/model_fun.R"))
+source(here("scripts/R/functions/calculate_outcomes.R"))
+source(here("scripts/R/functions/multi_model_cea.R"))
+```
+
+```{r run-basecase-analyses, include=FALSE}
+# Run base case analysis for all three model structures
+cat("Running base case analyses for all model structures...\n")
+
+all_model_results <- run_all_basecase_analyses(verbose = TRUE)
+
+cat("\nAll base case analyses complete.\n")
+```
+
+```{r create-ce-planes, include=FALSE}
+# Extract results for each model
+result_A <- all_model_results$Model_A
+result_B <- all_model_results$Model_B
+result_C <- all_model_results$Model_C
+
+# Create CE plane plots using dampack
+# dampack::plot returns ggplot objects that can be customized
+
+ce_plot_A <- plot(result_A$icer_obj,
+                  txtsize = 8,
+                  currency = "EUR",
+                  effect_units = "QALYs",
+                  label = "all") +
+  ggtitle("Model A: Joint") +
+  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
+
+ce_plot_B <- plot(result_B$icer_obj,
+                  txtsize = 8,
+                  currency = "EUR",
+                  effect_units = "QALYs",
+                  label = "all") +
+  ggtitle("Model B: Focused") +
+  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
+
+ce_plot_C <- plot(result_C$icer_obj,
+                  txtsize = 8,
+                  currency = "EUR",
+                  effect_units = "QALYs",
+                  label = "all") +
+  ggtitle("Model C: Separate") +
+  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
+```
+
+```{r combined-figure, fig.width=10, fig.height=10}
+# Combine into 2x2 grid (3 plots + empty space)
+combined_plot <- plot_grid(
+  ce_plot_A, ce_plot_B,
+  ce_plot_C, NULL,
+  ncol = 2, nrow = 2,
+  labels = c("A", "B", "C", ""),
+  label_size = 14
+)
+
+print(combined_plot)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("figs")
+if (!dir.exists(figs_dir)) {
+  dir.create(figs_dir, recursive = TRUE)
+}
+
+ggsave(
+  filename = here("figs", "figure2.png"),
+  plot = combined_plot,
+  width = 10,
+  height = 10,
+  dpi = 300,
+  bg = "white"
+)
+
+cat("Figure saved to:", here("figs", "figure2.png"), "\n")
+```
+
+Figure 2 has been saved to `figs/figure2.png`.
