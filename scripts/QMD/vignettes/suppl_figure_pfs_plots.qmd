@@ -40,26 +40,36 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
+# Force USE_BOTH_MODELS = 1 to get both gamma and weibullph distributions
 USE_BOTH_MODELS <- 1
 
-if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
-}
+# Source analysis scripts in order
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
 
-if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
-}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
 
+# Override again after 02 potentially reset it
 USE_BOTH_MODELS <- 1
 
-if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
-}
-
+# Source prediction functions
 source(here("scripts/R/functions/prediction_functions.R"))
+
+# Source parametric survival analysis - this creates multi_models and multi_predictions
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
 ```
 
-```{r multi-model-fit, include=FALSE}
+```{r generate-multi-predictions, include=FALSE}
+# ===============================================================================
+# Generate multi-model predictions (same as para_models.qmd Phase 3)
+# ===============================================================================
+
+# Define model formulas
 model_formulas <- list(
   A = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
@@ -104,9 +114,12 @@ model_labels_short <- c(
 distributions <- c("gamma", "weibullph")
 model_types <- names(model_formulas)
 
-multi_models <- list()
+# Initialize storage
+multi_models <- list(gamma = list(), weibullph = list())
+multi_predictions <- list(gamma = list(), weibullph = list())
+
+# Fit all models
 for (dist in distributions) {
-  multi_models[[dist]] <- list()
   for (mt in model_types) {
     multi_models[[dist]][[mt]] <- list()
     for (outcome in c("os", "pfs")) {
@@ -118,94 +131,116 @@ for (dist in distributions) {
           dist = dist
         )
       }, error = function(e) {
-        message(paste("Failed to fit", mt, outcome, dist, ":", e$message))
+        message(paste("Failed to fit", mt, outcome, dist))
       })
     }
   }
 }
-```
 
-```{r generate-predictions, include=FALSE}
-predict_population_avg <- function(model, newdata, times) {
-  if (is.null(model)) return(NULL)
-
-  n_patients <- nrow(newdata)
-  surv_matrix <- matrix(NA, nrow = n_patients, ncol = length(times))
-
-  for (i in 1:n_patients) {
-    tryCatch({
-      pred <- summary(model, newdata = newdata[i, , drop = FALSE],
-                      t = times, type = "survival", ci = FALSE)
-      surv_matrix[i, ] <- pred[[1]]$est
-    }, error = function(e) {
-      surv_matrix[i, ] <- NA
-    })
-  }
-
-  colMeans(surv_matrix, na.rm = TRUE)
-}
-
-time_points <- seq(0, time_horizon, by = 1)
-
-strategies_df <- data.frame(
-  biomarker = c("crp", "tlr", "tmb_braf"),
-  prevalence = c(
-    mean(data_complete$crp, na.rm = TRUE),
-    mean(data_complete$tlr, na.rm = TRUE),
-    mean(data_complete$tmb_braf, na.rm = TRUE)
-  )
+# Define which biomarkers each model type can predict
+model_biomarker_map <- list(
+  A = c("crp", "tlr", "tmb_braf"),
+  B_crp = c("crp"),
+  B_tlr = c("tlr"),
+  B_tmb = c("tmb_braf"),
+  C_crp = c("crp"),
+  C_tlr = c("tlr"),
+  C_tmb = c("tmb_braf")
 )
 
-multi_predictions <- list()
+# Helper function for population-averaged predictions
+predict_population_avg <- function(model, newdata, time_points) {
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      } else {
+        return(surv_probs)
+      }
+    } else {
+      return(NULL)
+    }
+  }, error = function(e) {
+    return(NULL)
+  })
+}
 
+# Get treatment level references
+exp_rx <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+
+# Generate predictions
 for (dist in distributions) {
-  multi_predictions[[dist]] <- list()
+  for (model_type in model_types) {
+    os_model <- multi_models[[dist]][[model_type]]$os
+    pfs_model <- multi_models[[dist]][[model_type]]$pfs
 
-  for (mt in model_types) {
-    multi_predictions[[dist]][[mt]] <- list()
+    if (is.null(os_model) || is.null(pfs_model)) next
 
+    multi_predictions[[dist]][[model_type]] <- list()
+
+    # Control predictions
     control_data <- data_complete
-    control_data$Rx <- 0
+    control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
 
-    os_model <- multi_models[[dist]][[mt]]$os
-    pfs_model <- multi_models[[dist]][[mt]]$pfs
+    control_os <- predict_population_avg(os_model, control_data, time_points)
+    control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
 
-    if (!is.null(os_model) && !is.null(pfs_model)) {
-      control_os <- predict_population_avg(os_model, control_data, time_points)
-      control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
-
-      multi_predictions[[dist]][[mt]]$control <- list(
+    if (!is.null(control_os) && !is.null(control_pfs)) {
+      multi_predictions[[dist]][[model_type]]$control <- list(
         os = control_os,
         pfs = control_pfs
       )
     }
 
-    for (i in 1:nrow(strategies_df)) {
-      biomarker <- strategies_df$biomarker[i]
-      prevalence <- strategies_df$prevalence[i]
+    # Biomarker-specific predictions
+    biomarkers_to_predict <- model_biomarker_map[[model_type]]
 
-      pos_data <- data_complete[data_complete[[biomarker]] == 1, ]
-      neg_data <- data_complete[data_complete[[biomarker]] == 0, ]
+    for (biomarker in biomarkers_to_predict) {
+      # Biomarker-positive: experimental treatment
+      pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 1, ]
+      if (nrow(pos_data) > 0) {
+        pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
+        pos_os <- predict_population_avg(os_model, pos_data, time_points)
+        pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
 
-      if (nrow(pos_data) > 0 && nrow(neg_data) > 0) {
-        pos_data$Rx <- 1
-        neg_data$Rx <- 0
-
-        if (!is.null(os_model) && !is.null(pfs_model)) {
-          pos_os <- predict_population_avg(os_model, pos_data, time_points)
-          pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
-          neg_os <- predict_population_avg(os_model, neg_data, time_points)
-          neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
-
-          weighted_os <- prevalence * pos_os + (1 - prevalence) * neg_os
-          weighted_pfs <- prevalence * pos_pfs + (1 - prevalence) * neg_pfs
-
-          weighted_name <- paste0(biomarker, "_weighted")
-          multi_predictions[[dist]][[mt]][[weighted_name]] <- list(
-            os = weighted_os,
-            pfs = weighted_pfs
+        if (!is.null(pos_os) && !is.null(pos_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]] <- list(
+            os = pos_os, pfs = pos_pfs
           )
         }
+      }
+
+      # Biomarker-negative: control treatment
+      neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 0, ]
+      if (nrow(neg_data) > 0) {
+        neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+        neg_os <- predict_population_avg(os_model, neg_data, time_points)
+        neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
+
+        if (!is.null(neg_os) && !is.null(neg_pfs)) {
+          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]] <- list(
+            os = neg_os, pfs = neg_pfs
+          )
+        }
+      }
+
+      # Population-weighted prediction
+      biomarker_prev <- strategies_df$prevalence[strategies_df$id == biomarker]
+      pos_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]
+      neg_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]]
+
+      if (length(biomarker_prev) > 0 && !is.null(pos_pred) && !is.null(neg_pred)) {
+        multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_weighted")]] <- list(
+          os = biomarker_prev * pos_pred$os + (1 - biomarker_prev) * neg_pred$os,
+          pfs = biomarker_prev * pos_pred$pfs + (1 - biomarker_prev) * neg_pred$pfs
+        )
       }
     }
   }
@@ -217,6 +252,7 @@ create_pfs_plot <- function(biomarker, model_types_subset, color_scheme,
                             strategy_prefix, factor_levels) {
   strategy_data <- data.frame()
 
+  # Control (from Model A - same for all)
   for (dist in c("gamma", "weibullph")) {
     ctrl_pred <- multi_predictions[[dist]][["A"]]$control
     if (!is.null(ctrl_pred)) {
@@ -229,6 +265,7 @@ create_pfs_plot <- function(biomarker, model_types_subset, color_scheme,
     }
   }
 
+  # Biomarker strategy from each model type
   weighted_name <- paste0(biomarker, "_weighted")
   for (model_type in model_types_subset) {
     for (dist in c("gamma", "weibullph")) {
