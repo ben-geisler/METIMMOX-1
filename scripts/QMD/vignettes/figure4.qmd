@@ -98,7 +98,7 @@ if (nrow(ceac_data) > 0) {
 }
 ```
 
-```{r create-ceac-plot, fig.width=10, fig.height=8}
+```{r create-ceac-plot, fig.width=10, fig.height=12}
 if (nrow(ceac_data) > 0) {
   # Create cleaner strategy labels
   strategy_labels <- c(
@@ -128,44 +128,28 @@ if (nrow(ceac_data) > 0) {
     "TMB/BRAF Strategy" = "#0072B2"
   )
 
-  # Create the CEAC plot
-  ceac_plot <- ggplot(ceac_data, aes(x = WTP, y = Proportion,
-                                      color = Strategy, linetype = Model)) +
+  # Create the CEAC plot with three panels (one per model)
+  ceac_plot <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
     geom_line(linewidth = 0.8) +
+    facet_wrap(~Model, ncol = 1) +
     geom_vline(xintercept = 51000, linetype = "dotted", color = "gray40", linewidth = 0.5) +
-    annotate("text", x = 53000, y = 0.05, label = "WTP = \u20AC51K",
-             hjust = 0, size = 3, color = "gray40") +
     scale_x_continuous(
       labels = scales::label_currency(prefix = "\u20AC", scale = 0.001, suffix = "K", big.mark = ","),
       breaks = seq(0, 100000, by = 20000)
     ) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
     scale_color_manual(values = strategy_colors, name = "Strategy") +
-    scale_linetype_manual(
-      values = c("Model A: Joint" = "solid",
-                 "Model B: Focused" = "dashed",
-                 "Model C: Separate" = "dotted"),
-      name = "Model Structure"
-    ) +
     labs(
-      title = "Cost-Effectiveness Acceptability Curves",
-      subtitle = "Probability of being cost-effective across willingness-to-pay thresholds",
       x = "Willingness-to-Pay Threshold (EUR/QALY)",
       y = "Probability of Being Cost-Effective"
     ) +
     theme_minimal() +
     theme(
-      plot.title = element_text(size = 14, face = "bold"),
-      plot.subtitle = element_text(size = 10, color = "gray40"),
+      strip.text = element_text(size = 11, face = "bold"),
       legend.position = "bottom",
-      legend.box = "vertical",
-      legend.margin = margin(t = 10),
       panel.grid.minor = element_blank()
     ) +
-    guides(
-      color = guide_legend(order = 1, nrow = 2),
-      linetype = guide_legend(order = 2)
-    )
+    guides(color = guide_legend(nrow = 1))
 
   print(ceac_plot)
 } else {
@@ -184,7 +168,7 @@ if (nrow(ceac_data) > 0) {
     filename = here("figs", "figure4.png"),
     plot = ceac_plot,
     width = 10,
-    height = 8,
+    height = 12,
     dpi = 300,
     bg = "white"
   )
