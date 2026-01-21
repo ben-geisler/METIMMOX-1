@@ -319,36 +319,18 @@ create_multimodel_ceac_plot <- function(all_psa_results,
 
     if (is.null(ceac_obj)) next
 
-    # Add to combined data
-    # Note: dampack ceac() returns a data frame with strategy names as columns
-    # (not nested under $ceac), plus WTP and On_Frontier columns
-    for (i in seq_along(wtp_range)) {
-      for (strategy in psa_obj$strategies) {
-        prob <- tryCatch({
-          # Access strategy column directly from the ceac data frame
-          ceac_obj[[strategy]][i]
-        }, error = function(e) {
-          NA_real_
-        })
-
-        if (is.null(prob) || length(prob) == 0) {
-          prob <- NA_real_
-        }
-
-        ceac_list[[length(ceac_list) + 1]] <- data.frame(
-          WTP = wtp_range[i],
-          Strategy = strategy,
-          Model = config$label,
-          Probability = prob,
-          stringsAsFactors = FALSE
-        )
-      }
-    }
+    # dampack::ceac() returns a data frame with columns:
+    # WTP, Strategy, Proportion, On_Frontier
+    # Add Model column and append to list
+    ceac_obj$Model <- config$label
+    ceac_list[[length(ceac_list) + 1]] <- ceac_obj
   }
 
   # Combine all rows
   if (length(ceac_list) > 0) {
     ceac_data <- do.call(rbind, ceac_list)
+    # Rename Proportion to Probability for consistency with plot labels
+    names(ceac_data)[names(ceac_data) == "Proportion"] <- "Probability"
   } else {
     # Return empty plot if no data
     ceac_data <- data.frame(
@@ -363,26 +345,26 @@ create_multimodel_ceac_plot <- function(all_psa_results,
   # Remove NA values for plotting
   ceac_data <- ceac_data[!is.na(ceac_data$Probability), ]
 
-  # Create plot
+  # Create plot with faceted panels (one per model structure)
   if (nrow(ceac_data) > 0) {
-    p <- ggplot(ceac_data, aes(x = WTP, y = Probability,
-                                color = Strategy, linetype = Model)) +
+    p <- ggplot(ceac_data, aes(x = WTP, y = Probability, color = Strategy)) +
       geom_line(linewidth = 0.8) +
-      scale_x_continuous(labels = scales::dollar_format(scale = 0.001,
-                                                         suffix = "K")) +
+      facet_wrap(~Model, ncol = 1) +
+      geom_vline(xintercept = 51000, linetype = "dotted", color = "gray40", linewidth = 0.5) +
+      scale_x_continuous(labels = scales::dollar_format(prefix = "EUR", scale = 0.001, suffix = "K")) +
       scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
       labs(
-        x = "Willingness-to-Pay Threshold",
+        x = "Willingness-to-Pay Threshold (EUR/QALY)",
         y = "Probability of Being Cost-Effective",
-        color = "Strategy",
-        linetype = "Model Structure"
+        color = "Strategy"
       ) +
       theme_minimal() +
       theme(
+        strip.text = element_text(size = 11, face = "bold"),
         legend.position = "bottom",
-        legend.box = "vertical",
         panel.grid.minor = element_blank()
-      )
+      ) +
+      guides(color = guide_legend(nrow = 1))
   } else {
     # Return a placeholder plot if no data
     p <- ggplot() +
@@ -422,21 +404,18 @@ create_psa_summary_table <- function(all_psa_results, wtp = 51000) {
     for (i in seq_along(psa_obj$strategies)) {
       strategy <- psa_obj$strategies[i]
 
-      # Get probability at the middle WTP value (index 2)
+      # dampack::ceac() returns data frame with columns: WTP, Strategy, Proportion, On_Frontier
+      # Filter for the target WTP and strategy to get the probability
       prob_ce <- tryCatch({
-        ceac_obj$ceac[[strategy]][2]
+        ceac_row <- ceac_obj[ceac_obj$WTP == wtp & ceac_obj$Strategy == strategy, ]
+        if (nrow(ceac_row) > 0) {
+          ceac_row$Proportion[1]
+        } else {
+          NA_real_
+        }
       }, error = function(e) {
         NA_real_
       })
-
-      # If that failed, try index 1
-      if (is.null(prob_ce) || length(prob_ce) == 0) {
-        prob_ce <- tryCatch({
-          ceac_obj$ceac[[strategy]][1]
-        }, error = function(e) {
-          NA_real_
-        })
-      }
 
       # Final fallback
       if (is.null(prob_ce) || length(prob_ce) == 0) {
