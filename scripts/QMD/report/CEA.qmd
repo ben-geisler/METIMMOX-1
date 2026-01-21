@@ -165,14 +165,9 @@ if (length(missing_psa_caches) > 0) {
     source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
     source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
 
-    # Load the sampling cache for this model structure
-    sampling_cache_file <- here::here("data", "tidy",
-                                      paste0("sampling_models_n", n_samples, "_",
-                                             ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
-                                             label, ".rds"))
-    if (file.exists(sampling_cache_file)) {
-      sampling_models <- readRDS(sampling_cache_file)
-    }
+    # Source 08_sampling.R to get param_distributions and load sampling cache
+    # (08_sampling.R defines param_distributions which is needed by 12_PSA.R)
+    source(here::here("scripts/R/analysis/08_sampling.R"))
 
     # Source PSA script (generates cache)
     source(here::here("scripts/R/analysis/12_PSA.R"))
@@ -371,12 +366,21 @@ cat("\\newpage\n")
 ```{r model-a-results}
 result_A <- all_model_results$Model_A
 
-# Display ICER table
+# Display ICER table (already sorted by cost from dampack)
 icer_table_A <- as.data.frame(result_A$icer_obj)
 icer_table_A$Cost <- scales::dollar(icer_table_A$Cost, accuracy = 1)
 icer_table_A$Effect <- sprintf("%.3f", icer_table_A$Effect)
-icer_table_A$ICER[!is.na(icer_table_A$ICER)] <-
-  scales::dollar(icer_table_A$ICER[!is.na(icer_table_A$ICER)], accuracy = 1)
+
+# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
+icer_table_A$ICER <- ifelse(
+  icer_table_A$Status %in% c("D", "ED"),
+  "Dominated",
+  ifelse(
+    is.na(icer_table_A$ICER),
+    "Reference",
+    scales::dollar(icer_table_A$ICER, accuracy = 1)
+  )
+)
 
 knitr::kable(icer_table_A,
              caption = "Model A (Joint): Cost-Effectiveness Results",
@@ -403,11 +407,21 @@ cat("\\newpage\n")
 ```{r model-b-results}
 result_B <- all_model_results$Model_B
 
+# Display ICER table (already sorted by cost from dampack)
 icer_table_B <- as.data.frame(result_B$icer_obj)
 icer_table_B$Cost <- scales::dollar(icer_table_B$Cost, accuracy = 1)
 icer_table_B$Effect <- sprintf("%.3f", icer_table_B$Effect)
-icer_table_B$ICER[!is.na(icer_table_B$ICER)] <-
-  scales::dollar(icer_table_B$ICER[!is.na(icer_table_B$ICER)], accuracy = 1)
+
+# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
+icer_table_B$ICER <- ifelse(
+  icer_table_B$Status %in% c("D", "ED"),
+  "Dominated",
+  ifelse(
+    is.na(icer_table_B$ICER),
+    "Reference",
+    scales::dollar(icer_table_B$ICER, accuracy = 1)
+  )
+)
 
 knitr::kable(icer_table_B,
              caption = "Model B (Focused): Cost-Effectiveness Results",
@@ -434,11 +448,21 @@ cat("\\newpage\n")
 ```{r model-c-results}
 result_C <- all_model_results$Model_C
 
+# Display ICER table (already sorted by cost from dampack)
 icer_table_C <- as.data.frame(result_C$icer_obj)
 icer_table_C$Cost <- scales::dollar(icer_table_C$Cost, accuracy = 1)
 icer_table_C$Effect <- sprintf("%.3f", icer_table_C$Effect)
-icer_table_C$ICER[!is.na(icer_table_C$ICER)] <-
-  scales::dollar(icer_table_C$ICER[!is.na(icer_table_C$ICER)], accuracy = 1)
+
+# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
+icer_table_C$ICER <- ifelse(
+  icer_table_C$Status %in% c("D", "ED"),
+  "Dominated",
+  ifelse(
+    is.na(icer_table_C$ICER),
+    "Reference",
+    scales::dollar(icer_table_C$ICER, accuracy = 1)
+  )
+)
 
 knitr::kable(icer_table_C,
              caption = "Model C (Separate): Cost-Effectiveness Results",

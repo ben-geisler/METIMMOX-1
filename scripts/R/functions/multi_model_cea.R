@@ -187,28 +187,46 @@ load_all_psa_caches <- function(n_samples = 5000, use_both_models = 0) {
 #' Format multi-model comparison table for base case results
 #'
 #' @param all_results List of base case results from run_all_basecase_analyses()
-#' @return Data frame with side-by-side comparison
+#' @return Data frame with side-by-side comparison, sorted by cost (Model A)
 format_multimodel_comparison_table <- function(all_results) {
 
   model_configs <- get_model_configs()
 
-  # Get strategy names from first result
-  strategies <- all_results[[1]]$base_results$Strategy
+  # Get strategy names from first result's icer_obj (already sorted by cost)
+  first_icer_df <- as.data.frame(all_results[[1]]$icer_obj)
+  strategies <- first_icer_df$Strategy
 
-  # Initialize comparison data frame
-  comparison_df <- data.frame(Strategy = strategies)
+  # Initialize comparison data frame with strategies in cost-sorted order
+  comparison_df <- data.frame(Strategy = strategies, stringsAsFactors = FALSE)
 
   for (model_name in names(all_results)) {
     result <- all_results[[model_name]]
     short_label <- model_configs[[model_name]]$short_label
 
-    # Add cost and effect columns
-    comparison_df[[paste0("Cost_", short_label)]] <- result$base_results$Cost
-    comparison_df[[paste0("QALY_", short_label)]] <- result$base_results$Effect
-
-    # Add ICER from icer_obj
+    # Get icer_df which contains all the data we need, properly sorted
     icer_df <- as.data.frame(result$icer_obj)
-    comparison_df[[paste0("ICER_", short_label)]] <- icer_df$ICER
+
+    # Match strategies by name to handle potential ordering differences
+    match_idx <- match(comparison_df$Strategy, icer_df$Strategy)
+
+    # Add cost and effect columns (from icer_df to ensure consistency)
+    comparison_df[[paste0("Cost_", short_label)]] <- icer_df$Cost[match_idx]
+    comparison_df[[paste0("QALY_", short_label)]] <- icer_df$Effect[match_idx]
+
+    # Add ICER with proper handling of dominated strategies
+    # dampack marks dominated strategies with Status "D" or "ED"
+    icer_values <- icer_df$ICER[match_idx]
+    status_values <- icer_df$Status[match_idx]
+
+    # For dominated strategies, show "Dominated" instead of ICER
+    icer_display <- ifelse(
+      status_values %in% c("D", "ED"),
+      NA,  # Will be converted to "Dominated" in format_comparison_for_display
+      icer_values
+    )
+
+    comparison_df[[paste0("ICER_", short_label)]] <- icer_display
+    comparison_df[[paste0("Status_", short_label)]] <- status_values
   }
 
   return(comparison_df)
@@ -234,15 +252,38 @@ format_comparison_for_display <- function(comparison_df) {
     display_df[[col]] <- sprintf("%.3f", display_df[[col]])
   }
 
-  # Format ICER columns
+  # Format ICER columns with proper handling of reference and dominated strategies
   icer_cols <- grep("^ICER_", names(display_df), value = TRUE)
-  for (col in icer_cols) {
-    display_df[[col]] <- ifelse(
-      is.na(display_df[[col]]),
-      "Reference",
-      scales::dollar(display_df[[col]], accuracy = 1)
-    )
+  status_cols <- grep("^Status_", names(display_df), value = TRUE)
+
+  for (i in seq_along(icer_cols)) {
+    icer_col <- icer_cols[i]
+    # Extract model label (e.g., "A" from "ICER_A")
+    model_label <- gsub("^ICER_", "", icer_col)
+    status_col <- paste0("Status_", model_label)
+
+    if (status_col %in% names(display_df)) {
+      display_df[[icer_col]] <- ifelse(
+        display_df[[status_col]] %in% c("D", "ED"),
+        "Dominated",
+        ifelse(
+          is.na(display_df[[icer_col]]),
+          "Reference",
+          scales::dollar(display_df[[icer_col]], accuracy = 1)
+        )
+      )
+    } else {
+      # Fallback if no status column
+      display_df[[icer_col]] <- ifelse(
+        is.na(display_df[[icer_col]]),
+        "Reference",
+        scales::dollar(display_df[[icer_col]], accuracy = 1)
+      )
+    }
   }
+
+  # Remove Status columns from display
+  display_df <- display_df[, !grepl("^Status_", names(display_df)), drop = FALSE]
 
   return(display_df)
 }
