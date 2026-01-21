@@ -66,6 +66,8 @@ theme_set(theme_minimal() +
 # Source analysis scripts and helper functions
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
+source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
 source(here::here("scripts/R/analysis/08_sampling.R"))  # For param_distributions
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
@@ -84,6 +86,7 @@ model_configs <- get_model_configs()
 # ===============================================================================
 # Check if EVPPI cache exists with multi-model data.
 # If missing or incomplete, generate for all 3 model structures.
+# This includes auto-generating sampling and PSA caches if needed.
 # ===============================================================================
 
 results_file <- here::here("data/tidy/scenario_evppi_results.rds")
@@ -105,7 +108,7 @@ if (!file.exists(results_file)) {
 # Generate cache if needed
 if (needs_generation) {
   cat("\n=== GENERATING MULTI-MODEL EVPPI CACHE ===\n")
-  cat("This may take some time...\n\n")
+  cat("This may take considerable time if PSA caches need to be generated...\n\n")
 
   model_labels <- c("joint", "focused", "separate")
   model_names <- c("Model A: Joint", "Model B: Focused", "Model C: Separate")
@@ -119,25 +122,103 @@ if (needs_generation) {
     current_model_label <- model_labels[m_idx]
     current_model_name <- model_names[m_idx]
 
-    cat("\n--- Processing", current_model_name, "---\n")
+    cat("\n", paste(rep("=", 70), collapse = ""), "\n")
+    cat("Processing", current_model_name, "(MODEL_STRUCTURE =", current_model_structure, ")\n")
+    cat(paste(rep("=", 70), collapse = ""), "\n")
 
     # Set MODEL_STRUCTURE globally
     MODEL_STRUCTURE <<- current_model_structure
 
     # Re-source scripts for this MODEL_STRUCTURE
+    cat("Sourcing analysis scripts for MODEL_STRUCTURE =", current_model_structure, "...\n")
     suppressMessages(suppressWarnings({
       source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
       source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
     }))
 
-    # Check for PSA cache
+    # =========================================================================
+    # Step 1: Check/Generate Sampling Cache
+    # =========================================================================
+    sampling_cache_file <- here::here("data", "tidy",
+                                       paste0("sampling_models_n", n_samples, "_",
+                                              ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
+                                              current_model_label, ".rds"))
+
+    if (!file.exists(sampling_cache_file)) {
+      cat("\nSampling cache not found for", current_model_label, "\n")
+      cat("Generating sampling models (this may take several minutes)...\n")
+
+      # Source the sampling script which will generate the cache
+      suppressMessages(suppressWarnings({
+        source(here::here("scripts/R/analysis/08_sampling.R"))
+      }))
+
+      # Verify it was created
+      if (!file.exists(sampling_cache_file)) {
+        cat("ERROR: Failed to generate sampling cache for", current_model_label, "\n")
+        next
+      }
+      cat("Sampling cache generated successfully.\n")
+    } else {
+      cat("Sampling cache found:", basename(sampling_cache_file), "\n")
+      # Load the sampling models
+      sampling_models <- readRDS(sampling_cache_file)
+    }
+
+    # =========================================================================
+    # Step 2: Check/Generate PSA Cache
+    # =========================================================================
     psa_cache_file <- here::here("data", "tidy",
                                   paste0("psa_obj_", current_model_label, ".rds"))
+    psa_params_file <- here::here("data", "tidy",
+                                   paste0("psa_params_", current_model_label, ".rds"))
+
     if (!file.exists(psa_cache_file)) {
-      cat("WARNING: PSA cache not found for", current_model_label, "\n")
-      cat("Please run 12_PSA.R with RUN_ALL_MODELS = TRUE first.\n")
-      next
+      cat("\nPSA cache not found for", current_model_label, "\n")
+      cat("Generating PSA results (this may take 10-30 minutes)...\n")
+
+      # Load the sampling cache if not already loaded
+      if (!exists("sampling_models") || is.null(sampling_models)) {
+        sampling_models <- readRDS(sampling_cache_file)
+      }
+
+      # Generate PSA samples
+      psa_params <- generate_psa_samples(param_distributions, n_sim)
+
+      # Run the PSA
+      cat("Running PSA with", n_sim, "simulations...\n")
+      psa_results <- run_psa_analysis(
+        psa_params = psa_params,
+        l_params_base = l_params_base,
+        param_distributions = param_distributions,
+        strategies = strategies,
+        time_horizon = time_horizon,
+        cl = cl,
+        n_sim = n_sim
+      )
+
+      # Create the PSA object
+      psa_obj <- dampack::make_psa_obj(
+        cost = as.data.frame(psa_results$cost),
+        effect = as.data.frame(psa_results$effect),
+        strategies = strategies,
+        currency = "EUR"
+      )
+
+      # Save PSA cache
+      saveRDS(psa_params, psa_params_file)
+      saveRDS(psa_obj, psa_cache_file)
+      cat("PSA cache saved successfully.\n")
+    } else {
+      cat("PSA cache found:", basename(psa_cache_file), "\n")
+      psa_obj <- readRDS(psa_cache_file)
+      psa_params <- readRDS(psa_params_file)
     }
+
+    # =========================================================================
+    # Step 3: Run EVPPI Scenarios
+    # =========================================================================
+    cat("\nRunning EVPPI scenarios for", current_model_name, "...\n")
 
     # Define scenarios
     base_c_drug_nivo <- l_params_base$c_drug_nivo
@@ -156,7 +237,7 @@ if (needs_generation) {
     # Run scenarios for this model
     scenario_results <- run_all_scenarios(
       scenarios = scenarios,
-      psa_params = NULL,
+      psa_params = psa_params,
       l_params_base = l_params_base,
       param_distributions = param_distributions,
       strategies = strategies,
@@ -178,7 +259,13 @@ if (needs_generation) {
       all_model_evppi_results <- rbind(all_model_evppi_results, evppi_results)
     }
 
-    cat("Completed scenarios for", current_model_name, "\n")
+    cat("\nCompleted all scenarios for", current_model_name, "\n")
+  }
+
+  # Check if any models were successfully processed
+  if (length(all_model_scenario_results) == 0) {
+    stop("Failed to generate EVPPI cache for any model structure.\n",
+         "Check the error messages above for details.")
   }
 
   # Save cache
@@ -190,6 +277,7 @@ if (needs_generation) {
   )
   saveRDS(evppi_cache, file = results_file)
   cat("\n=== EVPPI cache generated and saved ===\n")
+  cat("Cache file:", results_file, "\n")
 }
 ```
 
