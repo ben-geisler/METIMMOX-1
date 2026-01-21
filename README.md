@@ -25,19 +25,26 @@ This repository is designed for **health economists** and researchers developing
 ```
 METIMMOX-1/
 ├── scripts/
-│   └── R/
-│       ├── analysis/          # Numbered analysis scripts (main workflow)
-│       ├── functions/         # Helper functions and utilities
-│       └── tests/            # Test files and validation scripts
-├── survival_plots/           # Generated survival analysis plots
-├── data/                     # Data files (not included - confidential)
-└── METIMMOX-1.Rproj         # RStudio project file
+│   ├── R/
+│   │   ├── analysis/      # Numbered analysis scripts (01-15, main workflow)
+│   │   ├── functions/     # Reusable model functions
+│   │   ├── tests/         # Validation and testing scripts
+│   │   └── archive/       # Deprecated code (for reference)
+│   └── QMD/
+│       ├── report/        # Publication-ready Quarto reports (PDF)
+│       ├── vignettes/     # Figure generation scripts
+│       └── technical_docs/# Technical documentation
+├── data/                  # Data files (not included - confidential)
+│   ├── tidy/             # Processed data and caches
+│   └── output/           # Analysis outputs and snapshots
+└── METIMMOX-1.Rproj      # RStudio project file
 ```
 
 ### Key Files
 
-- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts and R Markdown files containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `fit_all_direct.R` (contributed by Frederick Thielen)
+- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, and sensitivity analysis utilities
+- **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports (CEA, clinical effectiveness, sensitivity analyses)
 - **Tests** (`scripts/R/tests/`): Validation and testing scripts
 
 ## Installation
@@ -92,18 +99,31 @@ pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
 Run the numbered analysis scripts in the `scripts/R/analysis/` folder in sequential order:
 
 ```r
-# Example workflow
+# Core setup
+source("scripts/R/analysis/01_data_prep.R")
+source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
+
+# Survival analysis
+source("scripts/R/analysis/06_parametric_survival_analysis.R")
 source("scripts/R/analysis/07_basecase_input_parameters.R")
+
+# Survival resampling (first run generates cache - takes time)
 source("scripts/R/analysis/08_sampling.R")
+
+# Model execution
 source("scripts/R/analysis/09_traces.R")
 source("scripts/R/analysis/10_basecase_analysis.R")
-source("scripts/R/analysis/11_DSA.R")
-source("scripts/R/analysis/12_PSA.R")
-# ... continue with subsequent scripts
+
+# Sensitivity analyses
+source("scripts/R/analysis/11_DSA.R")   # Deterministic sensitivity analysis
+source("scripts/R/analysis/12_PSA.R")   # Probabilistic sensitivity analysis
+source("scripts/R/analysis/13_EVPPIs.R") # Expected value of perfect partial information
 ```
 
-**Note**: The clinical trial dataset is confidential and is not included in this repository. Anonymized or pseudonymized versions may be shared in the future pending approval from data owners.
+**Notes**:
+- Scripts 04-05 are supplementary RMarkdown files, not part of the main pipeline
+- The clinical trial dataset is confidential and not included in this repository
 
 ## Key Features
 
@@ -113,8 +133,22 @@ source("scripts/R/analysis/12_PSA.R")
 - Parametric survival modeling using multiple distributions
 - Deterministic sensitivity analysis (DSA)
 - Probabilistic sensitivity analysis (PSA)
+- Expected Value of Perfect Partial Information (EVPPI) analysis
 - Cost-effectiveness acceptability analysis
+- Quarto-based report generation (publication-ready PDFs)
 - Based on real-world clinical trial data (METIMMOX trial, NCT03388190)
+
+## Model Structure
+
+The analysis implements a **partitioned survival model (PSM)** with three health states:
+- **Progression-free (PF)**: Patients alive without disease progression
+- **Progressed (P)**: Patients alive with disease progression
+- **Dead (D)**: Absorbing state
+
+State occupancy is derived from parametric survival curves:
+- PF state = PFS curve
+- P state = OS - PFS (bounded at 0)
+- D state = 1 - OS
 
 ## Related Publications
 
@@ -166,7 +200,7 @@ This work is based on the METIMMOX clinical trial data and related research. We 
 
 - All investigators and clinical staff involved in the METIMMOX trial
 - The patients who participated in the trial
-- **Frederick Thielen** for contributing the `fit_all_direct.R` function, which was adapted for use in this analysis
+- **Frederick Thielen** for contributions to the survival modeling code
 
 ---
 
