@@ -366,8 +366,12 @@ cat("\\newpage\n")
 ```{r model-a-results}
 result_A <- all_model_results$Model_A
 
-# Display ICER table (already sorted by cost from dampack)
+# Display ICER table - sort by cost ascending before formatting
 icer_table_A <- as.data.frame(result_A$icer_obj)
+icer_table_A <- icer_table_A[order(icer_table_A$Cost), ]
+rownames(icer_table_A) <- NULL
+
+# Format columns after sorting
 icer_table_A$Cost <- scales::dollar(icer_table_A$Cost, accuracy = 1)
 icer_table_A$Effect <- sprintf("%.3f", icer_table_A$Effect)
 
@@ -407,8 +411,12 @@ cat("\\newpage\n")
 ```{r model-b-results}
 result_B <- all_model_results$Model_B
 
-# Display ICER table (already sorted by cost from dampack)
+# Display ICER table - sort by cost ascending before formatting
 icer_table_B <- as.data.frame(result_B$icer_obj)
+icer_table_B <- icer_table_B[order(icer_table_B$Cost), ]
+rownames(icer_table_B) <- NULL
+
+# Format columns after sorting
 icer_table_B$Cost <- scales::dollar(icer_table_B$Cost, accuracy = 1)
 icer_table_B$Effect <- sprintf("%.3f", icer_table_B$Effect)
 
@@ -448,8 +456,12 @@ cat("\\newpage\n")
 ```{r model-c-results}
 result_C <- all_model_results$Model_C
 
-# Display ICER table (already sorted by cost from dampack)
+# Display ICER table - sort by cost ascending before formatting
 icer_table_C <- as.data.frame(result_C$icer_obj)
+icer_table_C <- icer_table_C[order(icer_table_C$Cost), ]
+rownames(icer_table_C) <- NULL
+
+# Format columns after sorting
 icer_table_C$Cost <- scales::dollar(icer_table_C$Cost, accuracy = 1)
 icer_table_C$Effect <- sprintf("%.3f", icer_table_C$Effect)
 

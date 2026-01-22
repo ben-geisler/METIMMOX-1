@@ -192,18 +192,18 @@ format_multimodel_comparison_table <- function(all_results) {
 
   model_configs <- get_model_configs()
 
-  # Get strategy names from first result's icer_obj (already sorted by cost)
+  # Get strategy names from first result
   first_icer_df <- as.data.frame(all_results[[1]]$icer_obj)
   strategies <- first_icer_df$Strategy
 
-  # Initialize comparison data frame with strategies in cost-sorted order
+  # Initialize comparison data frame
   comparison_df <- data.frame(Strategy = strategies, stringsAsFactors = FALSE)
 
   for (model_name in names(all_results)) {
     result <- all_results[[model_name]]
     short_label <- model_configs[[model_name]]$short_label
 
-    # Get icer_df which contains all the data we need, properly sorted
+    # Get icer_df which contains all the data we need
     icer_df <- as.data.frame(result$icer_obj)
 
     # Match strategies by name to handle potential ordering differences
@@ -228,6 +228,10 @@ format_multimodel_comparison_table <- function(all_results) {
     comparison_df[[paste0("ICER_", short_label)]] <- icer_display
     comparison_df[[paste0("Status_", short_label)]] <- status_values
   }
+
+  # Sort by Cost from first model (Model A) in ascending order
+  comparison_df <- comparison_df[order(comparison_df$Cost_A), ]
+  rownames(comparison_df) <- NULL
 
   return(comparison_df)
 }
