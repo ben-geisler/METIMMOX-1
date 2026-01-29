@@ -1,0 +1,1125 @@
+---
+title: "Age Effect Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+# Set global knitr options
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 6,
+  dpi = 300,
+  out.width = "100%",
+  fig.keep = "last"
+)
+
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+
+# Load required libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, knitr, kableExtra, ggplot2, dplyr,
+  flextable, officer, scales, gridExtra,
+  devtools, readxl, tableone, flexsurv,
+  survival, survminer, gems, mstate,
+  tidyverse, xtable, darthtools, dampack,
+  mvtnorm, Matrix, reshape2
+)
+
+# Set ggplot theme
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "bottom",
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10)
+  )
+)
+```
+
+```{r load-analysis-scripts, include=FALSE}
+# Load analysis results if not already in environment
+if (!exists("data_complete")) {
+  cat("Loading analysis scripts...\n")
+
+  # Load required scripts in order
+  if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
+    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
+  }
+
+  if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
+    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
+  }
+
+  if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
+    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
+  }
+}
+
+# Create data_complete from full dataset
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+                                               "tmb_braf", "OSwk", "Death",
+                                               "PFSwk", "Progression")]), ]
+
+# Load prediction functions
+source(here("scripts/R/functions/prediction_functions.R"))
+```
+
+# Introduction
+
+This technical document investigates the impact of age heterogeneity on survival model predictions and cost-effectiveness results in the METIMMOX-1 economic evaluation. All survival models in this analysis include Age as a covariate, meaning patient-level age variation directly influences predicted outcomes.
+
+**Analysis approach:**
+
+1. **Base case**: Use actual patient ages from the dataset (standard analysis)
+2. **Same-age scenario**: Replace all patient ages with the population mean age
+
+By comparing these two approaches, we can quantify how much of the predicted survival differences across biomarker subgroups is attributable to age imbalances versus true biomarker-treatment effects.
+
+**Important note**: The same-age dataset is created and used exclusively within this document to prevent contamination of other analyses in the codebase.
+
+```{r create-same-age-dataset, include=FALSE}
+# ===============================================================================
+# CREATE SAME-AGE DATASET
+# This dataset is used ONLY within this document
+# ===============================================================================
+
+# Calculate overall population mean age
+mean_age <- mean(data_complete$Age, na.rm = TRUE)
+
+# Create same-age dataset
+data_same_age <- data_complete
+data_same_age$Age <- mean_age
+
+cat("Same-age dataset created with mean age:", round(mean_age, 1), "years\n")
+```
+
+\newpage
+
+# Age Distribution in the Sample
+
+This section presents the age distribution across the study population, stratified by treatment arm and biomarker status.
+
+## Overall Age Statistics
+
+```{r overall-age-table}
+# Calculate overall age statistics
+age_stats <- data.frame(
+  Statistic = c("Mean", "SD", "Median", "Min", "Max", "N"),
+  Value = c(
+    round(mean(data_complete$Age, na.rm = TRUE), 1),
+    round(sd(data_complete$Age, na.rm = TRUE), 1),
+    round(median(data_complete$Age, na.rm = TRUE), 1),
+    round(min(data_complete$Age, na.rm = TRUE), 0),
+    round(max(data_complete$Age, na.rm = TRUE), 0),
+    sum(!is.na(data_complete$Age))
+  )
+)
+
+kable(age_stats,
+      caption = "Overall age statistics in the study population.",
+      booktabs = TRUE,
+      align = c("l", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE)
+```
+
+The population mean age of **`r round(mean_age, 1)`** years is used for the same-age scenario throughout this analysis.
+
+## Age by Treatment Arm
+
+```{r age-by-treatment}
+# Calculate age by treatment arm
+age_by_rx <- data_complete %>%
+  group_by(Rx) %>%
+  summarise(
+    N = n(),
+    `Mean Age` = round(mean(Age, na.rm = TRUE), 1),
+    SD = round(sd(Age, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  rename(`Treatment Arm` = Rx)
+
+kable(age_by_rx,
+      caption = "Age distribution by treatment arm.",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE)
+```
+
+## Age by Biomarker Status
+
+```{r age-by-biomarker}
+# Calculate age by biomarker status for each biomarker
+biomarker_age_stats <- data.frame()
+
+for (biomarker in c("crp", "tlr", "tmb_braf")) {
+  biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
+
+  for (status in c(0, 1)) {
+    subset_data <- data_complete[data_complete[[biomarker]] == status, ]
+    status_label <- ifelse(status == 1, "Positive", "Negative")
+
+    biomarker_age_stats <- rbind(biomarker_age_stats, data.frame(
+      Biomarker = biomarker_labels[biomarker],
+      Status = status_label,
+      N = nrow(subset_data),
+      `Mean Age` = round(mean(subset_data$Age, na.rm = TRUE), 1),
+      SD = round(sd(subset_data$Age, na.rm = TRUE), 1),
+      check.names = FALSE
+    ))
+  }
+}
+
+kable(biomarker_age_stats,
+      caption = "Age distribution by biomarker status. Mean Age values are highlighted as they represent the key variable of interest in this analysis.",
+      booktabs = TRUE,
+      align = c("l", "l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE) %>%
+  column_spec(4, bold = TRUE, background = "#E8F4F8") %>%
+  collapse_rows(columns = 1, valign = "middle")
+```
+
+\newpage
+
+```{r model-setup, include=FALSE}
+# ===============================================================================
+# MODEL STRUCTURE SETUP - Gamma distribution only
+# ===============================================================================
+
+# Define model formulas for all 7 model types
+model_formulas <- list(
+  # Model A: Joint (All-in-One) - all biomarkers + all interactions
+  A = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+  ),
+
+  # Model B: Focused - all biomarkers as covariates + ONE interaction
+  B_crp = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
+  ),
+  B_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
+  ),
+  B_tmb = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+  ),
+
+  # Model C: Single-biomarker (Separate) - ONE biomarker only + its interaction
+  C_crp = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
+  ),
+  C_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr:Rx
+  ),
+  C_tmb = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf:Rx
+  )
+)
+
+# Model labels
+model_labels_short <- c(
+  "A" = "Model A",
+  "B_crp" = "Model B",
+  "B_tlr" = "Model B",
+  "B_tmb" = "Model B",
+  "C_crp" = "Model C",
+  "C_tlr" = "Model C",
+  "C_tmb" = "Model C"
+)
+
+# Color scheme for subgroups
+subgroup_colors <- c(
+  "Biomarker+" = "#E31A1C",   # Red
+  "Biomarker-" = "#1F78B4",   # Blue
+  "Strategy" = "#33A02C",      # Green
+  "Control" = "gray50"
+)
+
+# Linetype scheme for base vs same-age
+age_linetypes <- c(
+  "Base Case" = "solid",
+  "Same-Age" = "dashed"
+)
+
+# Vector of model types to fit
+model_types <- c("A", "B_crp", "B_tlr", "B_tmb", "C_crp", "C_tlr", "C_tmb")
+
+# Biomarker-model mapping
+model_biomarker_map <- list(
+  A = c("crp", "tlr", "tmb_braf"),
+  B_crp = c("crp"),
+  B_tlr = c("tlr"),
+  B_tmb = c("tmb_braf"),
+  C_crp = c("crp"),
+  C_tlr = c("tlr"),
+  C_tmb = c("tmb_braf")
+)
+```
+
+```{r fit-models, include=FALSE}
+# ===============================================================================
+# FIT GAMMA MODELS - Both base case and same-age datasets
+# ===============================================================================
+
+cat("Fitting models for base case and same-age datasets...\n")
+
+# Function to fit all models on a given dataset
+fit_all_models <- function(dataset, dataset_name) {
+  models_list <- list(gamma = list())
+
+  for (model_type in model_types) {
+    cat("Fitting model:", model_type, "on", dataset_name, "\n")
+
+    # Fit OS model
+    os_fit <- tryCatch({
+      flexsurvreg(
+        formula = model_formulas[[model_type]]$os,
+        data = dataset,
+        dist = "gamma"
+      )
+    }, error = function(e) {
+      warning(paste("Failed to fit", model_type, "OS:", e$message))
+      return(NULL)
+    })
+
+    # Fit PFS model
+    pfs_fit <- tryCatch({
+      flexsurvreg(
+        formula = model_formulas[[model_type]]$pfs,
+        data = dataset,
+        dist = "gamma"
+      )
+    }, error = function(e) {
+      warning(paste("Failed to fit", model_type, "PFS:", e$message))
+      return(NULL)
+    })
+
+    # Store models
+    models_list$gamma[[model_type]] <- list(
+      os = os_fit,
+      pfs = pfs_fit
+    )
+  }
+
+  return(models_list)
+}
+
+# Fit models on base case data
+multi_models_base <- fit_all_models(data_complete, "base case")
+
+# Fit models on same-age data
+multi_models_same_age <- fit_all_models(data_same_age, "same-age")
+
+cat("Model fitting complete.\n")
+
+# Clean up memory
+gc(verbose = FALSE)
+```
+
+```{r generate-predictions, include=FALSE}
+# ===============================================================================
+# GENERATE PREDICTIONS FOR BOTH DATASETS
+# ===============================================================================
+
+cat("Generating predictions...\n")
+
+# Helper function for population-averaged predictions
+predict_population_avg <- function(model, newdata, time_points) {
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      } else {
+        return(surv_probs)
+      }
+    } else {
+      return(NULL)
+    }
+  }, error = function(e) {
+    return(NULL)
+  })
+}
+
+# Function to generate predictions for a dataset
+generate_all_predictions <- function(models_list, dataset, dataset_name) {
+  # Get treatment level references
+  exp_rx <- levels(dataset$Rx)[2]
+  ctrl_rx <- levels(dataset$Rx)[1]
+
+  predictions_list <- list(gamma = list())
+
+  for (model_type in model_types) {
+    os_model <- models_list$gamma[[model_type]]$os
+    pfs_model <- models_list$gamma[[model_type]]$pfs
+
+    if (is.null(os_model) || is.null(pfs_model)) next
+
+    predictions_list$gamma[[model_type]] <- list()
+
+    # Control predictions
+    control_data <- dataset
+    control_data$Rx <- factor(ctrl_rx, levels = levels(dataset$Rx))
+
+    control_os <- predict_population_avg(os_model, control_data, time_points)
+    control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
+
+    if (!is.null(control_os) && !is.null(control_pfs)) {
+      predictions_list$gamma[[model_type]]$control <- list(os = control_os, pfs = control_pfs)
+    }
+
+    # Biomarker-specific predictions
+    biomarkers_to_predict <- model_biomarker_map[[model_type]]
+
+    for (biomarker in biomarkers_to_predict) {
+      # Biomarker-positive: experimental treatment
+      pos_data <- dataset[as.numeric(as.character(dataset[[biomarker]])) == 1, ]
+      if (nrow(pos_data) > 0) {
+        pos_data$Rx <- factor(exp_rx, levels = levels(dataset$Rx))
+        pos_os <- predict_population_avg(os_model, pos_data, time_points)
+        pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
+
+        if (!is.null(pos_os) && !is.null(pos_pfs)) {
+          predictions_list$gamma[[model_type]][[paste0(biomarker, "_pos")]] <- list(os = pos_os, pfs = pos_pfs)
+        }
+      }
+
+      # Biomarker-negative: control treatment
+      neg_data <- dataset[as.numeric(as.character(dataset[[biomarker]])) == 0, ]
+      if (nrow(neg_data) > 0) {
+        neg_data$Rx <- factor(ctrl_rx, levels = levels(dataset$Rx))
+        neg_os <- predict_population_avg(os_model, neg_data, time_points)
+        neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
+
+        if (!is.null(neg_os) && !is.null(neg_pfs)) {
+          predictions_list$gamma[[model_type]][[paste0(biomarker, "_neg")]] <- list(os = neg_os, pfs = neg_pfs)
+        }
+      }
+
+      # Population-weighted prediction
+      biomarker_prev <- strategies_df$prevalence[strategies_df$id == biomarker]
+      pos_pred <- predictions_list$gamma[[model_type]][[paste0(biomarker, "_pos")]]
+      neg_pred <- predictions_list$gamma[[model_type]][[paste0(biomarker, "_neg")]]
+
+      if (length(biomarker_prev) > 0 && !is.null(pos_pred) && !is.null(neg_pred)) {
+        predictions_list$gamma[[model_type]][[paste0(biomarker, "_weighted")]] <- list(
+          os = biomarker_prev * pos_pred$os + (1 - biomarker_prev) * neg_pred$os,
+          pfs = biomarker_prev * pos_pred$pfs + (1 - biomarker_prev) * neg_pred$pfs
+        )
+      }
+    }
+  }
+
+  return(predictions_list)
+}
+
+# Generate predictions for both datasets
+multi_predictions_base <- generate_all_predictions(multi_models_base, data_complete, "base case")
+multi_predictions_same_age <- generate_all_predictions(multi_models_same_age, data_same_age, "same-age")
+
+cat("Predictions generated successfully.\n")
+```
+
+```{r helper-functions, include=FALSE}
+# ===============================================================================
+# HELPER FUNCTIONS
+# ===============================================================================
+
+# Calculate life-years from survival curve
+calculate_ly <- function(survival_curve, cl = 1/52) {
+  sum(survival_curve * cl, na.rm = TRUE)
+}
+
+# Create baseline characteristics table for a biomarker (with age bolded)
+# Stratified by both biomarker status AND treatment arm
+create_baseline_table <- function(biomarker) {
+  biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
+
+  # Get treatment arm levels
+  ctrl_rx <- levels(data_complete$Rx)[1]
+  exp_rx <- levels(data_complete$Rx)[2]
+
+  # Split data by biomarker status AND treatment arm (4 groups)
+  neg_ctrl <- data_complete[data_complete[[biomarker]] == 0 & data_complete$Rx == ctrl_rx, ]
+  neg_exp <- data_complete[data_complete[[biomarker]] == 0 & data_complete$Rx == exp_rx, ]
+  pos_ctrl <- data_complete[data_complete[[biomarker]] == 1 & data_complete$Rx == ctrl_rx, ]
+  pos_exp <- data_complete[data_complete[[biomarker]] == 1 & data_complete$Rx == exp_rx, ]
+
+  # Helper function to calculate stats for a subgroup
+  calc_stats <- function(subdata) {
+    n <- nrow(subdata)
+    if (n == 0) return(list(n = 0, age = "-", sex = "-"))
+
+    age <- paste0(round(mean(subdata$Age, na.rm = TRUE), 1), " (",
+                  round(sd(subdata$Age, na.rm = TRUE), 1), ")")
+
+    male_n <- sum(subdata$sex == "male" | subdata$sex == 1, na.rm = TRUE)
+    sex <- paste0(male_n, " (", round(100 * male_n / n, 1), "%)")
+
+    return(list(n = n, age = age, sex = sex))
+  }
+
+  # Calculate statistics for all 4 groups
+  stats_neg_ctrl <- calc_stats(neg_ctrl)
+  stats_neg_exp <- calc_stats(neg_exp)
+  stats_pos_ctrl <- calc_stats(pos_ctrl)
+  stats_pos_exp <- calc_stats(pos_exp)
+
+  # Create table with 4 columns (2x2: biomarker status x treatment arm)
+  baseline_df <- data.frame(
+    Variable = c("N", "Age, mean (SD)", "Sex, n (%) Male"),
+    `Biomarker- Control` = c(stats_neg_ctrl$n, stats_neg_ctrl$age, stats_neg_ctrl$sex),
+    `Biomarker- Experimental` = c(stats_neg_exp$n, stats_neg_exp$age, stats_neg_exp$sex),
+    `Biomarker+ Control` = c(stats_pos_ctrl$n, stats_pos_ctrl$age, stats_pos_ctrl$sex),
+    `Biomarker+ Experimental` = c(stats_pos_exp$n, stats_pos_exp$age, stats_pos_exp$sex),
+    check.names = FALSE
+  )
+
+  return(baseline_df)
+}
+
+# Create life-years comparison table
+create_ly_comparison_table <- function(biomarker, outcome = "os") {
+  model_map <- list(
+    crp = c("A", "B_crp", "C_crp"),
+    tlr = c("A", "B_tlr", "C_tlr"),
+    tmb_braf = c("A", "B_tmb", "C_tmb")
+  )
+
+  relevant_models <- model_map[[biomarker]]
+  table_data <- data.frame()
+
+  for (model_type in relevant_models) {
+    pred_base <- multi_predictions_base$gamma[[model_type]]
+    pred_same <- multi_predictions_same_age$gamma[[model_type]]
+
+    if (is.null(pred_base) || is.null(pred_same)) next
+
+    model_letter <- substr(model_type, 1, 1)
+
+    # Control life-years
+    ctrl_base <- if (!is.null(pred_base$control[[outcome]])) calculate_ly(pred_base$control[[outcome]]) else NA
+    ctrl_same <- if (!is.null(pred_same$control[[outcome]])) calculate_ly(pred_same$control[[outcome]]) else NA
+    ctrl_delta <- ctrl_same - ctrl_base
+
+    # Strategy (weighted) life-years
+    strat_base <- if (!is.null(pred_base[[paste0(biomarker, "_weighted")]][[outcome]]))
+                    calculate_ly(pred_base[[paste0(biomarker, "_weighted")]][[outcome]]) else NA
+    strat_same <- if (!is.null(pred_same[[paste0(biomarker, "_weighted")]][[outcome]]))
+                    calculate_ly(pred_same[[paste0(biomarker, "_weighted")]][[outcome]]) else NA
+    strat_delta <- strat_same - strat_base
+
+    table_data <- rbind(table_data, data.frame(
+      Model = paste0("Model ", model_letter),
+      `Ctrl Base` = ctrl_base,
+      `Ctrl Same-Age` = ctrl_same,
+      `Ctrl Delta` = ctrl_delta,
+      `Strat Base` = strat_base,
+      `Strat Same-Age` = strat_same,
+      `Strat Delta` = strat_delta,
+      check.names = FALSE
+    ))
+  }
+
+  return(table_data)
+}
+
+# Create comparison survival plot (3-panel, faceted by model)
+create_comparison_plot <- function(biomarker, outcome = "os") {
+  model_map <- list(
+    crp = c("A", "B_crp", "C_crp"),
+    tlr = c("A", "B_tlr", "C_tlr"),
+    tmb_braf = c("A", "B_tmb", "C_tmb")
+  )
+
+  biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
+  relevant_models <- model_map[[biomarker]]
+
+  plot_data <- data.frame()
+
+  for (model_type in relevant_models) {
+    pred_base <- multi_predictions_base$gamma[[model_type]]
+    pred_same <- multi_predictions_same_age$gamma[[model_type]]
+
+    if (is.null(pred_base) || is.null(pred_same)) next
+
+    model_letter <- substr(model_type, 1, 1)
+    model_label <- paste0("Model ", model_letter)
+
+    # Add curves for each dataset type
+    for (dataset_type in c("Base Case", "Same-Age")) {
+      pred <- if (dataset_type == "Base Case") pred_base else pred_same
+
+      # Control
+      if (!is.null(pred$control[[outcome]])) {
+        plot_data <- rbind(plot_data, data.frame(
+          time = time_points,
+          survival = pred$control[[outcome]],
+          subgroup = "Control",
+          model = model_label,
+          dataset = dataset_type
+        ))
+      }
+
+      # Biomarker positive
+      pos_key <- paste0(biomarker, "_pos")
+      if (!is.null(pred[[pos_key]][[outcome]])) {
+        plot_data <- rbind(plot_data, data.frame(
+          time = time_points,
+          survival = pred[[pos_key]][[outcome]],
+          subgroup = "Biomarker+",
+          model = model_label,
+          dataset = dataset_type
+        ))
+      }
+
+      # Biomarker negative
+      neg_key <- paste0(biomarker, "_neg")
+      if (!is.null(pred[[neg_key]][[outcome]])) {
+        plot_data <- rbind(plot_data, data.frame(
+          time = time_points,
+          survival = pred[[neg_key]][[outcome]],
+          subgroup = "Biomarker-",
+          model = model_label,
+          dataset = dataset_type
+        ))
+      }
+
+      # Weighted strategy
+      weighted_key <- paste0(biomarker, "_weighted")
+      if (!is.null(pred[[weighted_key]][[outcome]])) {
+        plot_data <- rbind(plot_data, data.frame(
+          time = time_points,
+          survival = pred[[weighted_key]][[outcome]],
+          subgroup = "Strategy",
+          model = model_label,
+          dataset = dataset_type
+        ))
+      }
+    }
+  }
+
+  if (nrow(plot_data) == 0) return(NULL)
+
+  # Set factor levels
+  plot_data$subgroup <- factor(plot_data$subgroup,
+                                levels = c("Biomarker+", "Biomarker-", "Strategy", "Control"))
+  plot_data$model <- factor(plot_data$model, levels = c("Model A", "Model B", "Model C"))
+  plot_data$dataset <- factor(plot_data$dataset, levels = c("Base Case", "Same-Age"))
+
+  outcome_label <- ifelse(outcome == "os", "Overall Survival", "Progression-Free Survival")
+  bio_label <- biomarker_labels[biomarker]
+
+  p <- ggplot(plot_data, aes(x = time, y = survival, color = subgroup, linetype = dataset)) +
+    geom_line(linewidth = 0.8) +
+    facet_wrap(~ model, nrow = 1) +
+    scale_color_manual(values = subgroup_colors, name = "Group") +
+    scale_linetype_manual(values = age_linetypes, name = "Dataset") +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    scale_x_continuous(breaks = seq(0, max(time_points), by = 104)) +
+    labs(x = "Time (weeks)", y = "Survival Probability",
+         title = paste0(bio_label, " Strategy: ", outcome_label),
+         subtitle = "Base case (solid) vs. same-age scenario (dashed)") +
+    theme(legend.position = "bottom",
+          strip.text = element_text(size = 10, face = "bold")) +
+    guides(color = guide_legend(nrow = 1), linetype = guide_legend(nrow = 1))
+
+  return(p)
+}
+```
+
+# CRP Biomarker Strategy
+
+C-reactive protein (CRP) with a cutoff of <5 g/L for biomarker-positive status. **Biomarker prevalence: `r round(100 * p_crp, 1)`%**.
+
+## Baseline Characteristics
+
+```{r crp-baseline-table}
+baseline_crp <- create_baseline_table("crp")
+
+kable(baseline_crp,
+      caption = "CRP strategy: Baseline characteristics by biomarker status and treatment arm.",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#E8F4F8") %>%
+  add_header_above(c(" " = 1, "Biomarker-" = 2, "Biomarker+" = 2))
+```
+
+## Life-Years Comparison
+
+```{r crp-os-ly-table}
+ly_table <- create_ly_comparison_table("crp", "os")
+kable(ly_table,
+      caption = "CRP strategy: Overall survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+```{r crp-pfs-ly-table}
+ly_table <- create_ly_comparison_table("crp", "pfs")
+kable(ly_table,
+      caption = "CRP strategy: Progression-free survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+## Overall Survival Curves
+
+```{r crp-os-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("CRP strategy (prevalence: ", round(100 * p_crp, 1), "%) overall survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("crp", "os")
+if (!is.null(p)) print(p)
+```
+
+## Progression-Free Survival Curves
+
+```{r crp-pfs-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("CRP strategy (prevalence: ", round(100 * p_crp, 1), "%) progression-free survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("crp", "pfs")
+if (!is.null(p)) print(p)
+```
+
+\newpage
+
+# TLR Biomarker Strategy
+
+Tumor lesion reduction (TLR) with a cutoff of >=10% for biomarker-positive status. **Biomarker prevalence: `r round(100 * p_tlr, 1)`%**.
+
+## Baseline Characteristics
+
+```{r tlr-baseline-table}
+baseline_tlr <- create_baseline_table("tlr")
+
+kable(baseline_tlr,
+      caption = "TLR strategy: Baseline characteristics by biomarker status and treatment arm.",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#E8F4F8") %>%
+  add_header_above(c(" " = 1, "Biomarker-" = 2, "Biomarker+" = 2))
+```
+
+## Life-Years Comparison
+
+```{r tlr-os-ly-table}
+ly_table <- create_ly_comparison_table("tlr", "os")
+kable(ly_table,
+      caption = "TLR strategy: Overall survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+```{r tlr-pfs-ly-table}
+ly_table <- create_ly_comparison_table("tlr", "pfs")
+kable(ly_table,
+      caption = "TLR strategy: Progression-free survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+## Overall Survival Curves
+
+```{r tlr-os-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("TLR strategy (prevalence: ", round(100 * p_tlr, 1), "%) overall survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("tlr", "os")
+if (!is.null(p)) print(p)
+```
+
+## Progression-Free Survival Curves
+
+```{r tlr-pfs-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("TLR strategy (prevalence: ", round(100 * p_tlr, 1), "%) progression-free survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("tlr", "pfs")
+if (!is.null(p)) print(p)
+```
+
+\newpage
+
+# TMB/BRAF Biomarker Strategy
+
+Combined genomic biomarker: either tumor mutational burden (TMB) >= 9 mutations/MB or BRAF V600 mutation positive. **Biomarker prevalence: `r round(100 * p_tmb_braf, 1)`%**.
+
+## Baseline Characteristics
+
+```{r tmb-baseline-table}
+baseline_tmb <- create_baseline_table("tmb_braf")
+
+kable(baseline_tmb,
+      caption = "TMB/BRAF strategy: Baseline characteristics by biomarker status and treatment arm.",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE) %>%
+  row_spec(2, bold = TRUE, background = "#E8F4F8") %>%
+  add_header_above(c(" " = 1, "Biomarker-" = 2, "Biomarker+" = 2))
+```
+
+## Life-Years Comparison
+
+```{r tmb-os-ly-table}
+ly_table <- create_ly_comparison_table("tmb_braf", "os")
+kable(ly_table,
+      caption = "TMB/BRAF strategy: Overall survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+```{r tmb-pfs-ly-table}
+ly_table <- create_ly_comparison_table("tmb_braf", "pfs")
+kable(ly_table,
+      caption = "TMB/BRAF strategy: Progression-free survival life-years. Base case uses actual ages; Same-Age uses population mean age for all patients.",
+      booktabs = TRUE,
+      digits = 2,
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                full_width = FALSE)
+```
+
+## Overall Survival Curves
+
+```{r tmb-os-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("TMB/BRAF strategy (prevalence: ", round(100 * p_tmb_braf, 1), "%) overall survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("tmb_braf", "os")
+if (!is.null(p)) print(p)
+```
+
+## Progression-Free Survival Curves
+
+```{r tmb-pfs-plot, fig.height=5, fig.width=12}
+#| fig-cap: !expr 'paste0("TMB/BRAF strategy (prevalence: ", round(100 * p_tmb_braf, 1), "%) progression-free survival comparison. Solid lines = base case (actual ages), dashed lines = same-age scenario (all patients at mean age ", round(mean_age, 1), " years).")'
+
+p <- create_comparison_plot("tmb_braf", "pfs")
+if (!is.null(p)) print(p)
+```
+
+\newpage
+
+# Cost-Effectiveness Impact
+
+This section compares cost-effectiveness results between the base case (actual patient ages) and the same-age scenario (all patients at population mean age). Results use Model A (joint model with all biomarker interactions) for consistency with the primary analysis.
+
+```{r cea-calculations, include=FALSE}
+# ===============================================================================
+# COST-EFFECTIVENESS CALCULATIONS
+# Uses simplified approach based on survival curves and base parameters
+# ===============================================================================
+
+# Load base parameters if not available
+if (!exists("l_params_base")) {
+  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/07_basecase_input_parameters.R"))))
+}
+
+# Discount factors
+v_dw_c <- 1 / (1 + dr)^(seq(0, time_horizon) / 52)
+v_dw_e <- 1 / (1 + dr)^(seq(0, time_horizon) / 52)
+
+# Function to calculate costs and QALYs from survival curves
+calculate_cea <- function(p_os, p_pfs, treatment_type, biomarker, params) {
+  n_cycles <- length(p_os)
+
+  # State occupancy
+  p_pf <- p_pfs
+  p_p <- pmax(p_os - p_pfs, 0)
+  p_d <- 1 - p_os
+
+  # Extend treatment schedules
+  extend_schedule <- function(schedule, length_needed) {
+    if (length(schedule) < length_needed) {
+      return(c(schedule, rep(0, length_needed - length(schedule))))
+    }
+    return(schedule[1:length_needed])
+  }
+
+  l_nivo <- extend_schedule(params$l_nivo, n_cycles)
+  l_FLOX_exp <- extend_schedule(params$l_FLOX_exp, n_cycles)
+  l_FLOX_control <- extend_schedule(params$l_FLOX_control, n_cycles)
+  l_CT <- extend_schedule(params$l_CT, n_cycles)
+  l_blood <- extend_schedule(params$l_blood, n_cycles)
+  l_visit <- extend_schedule(params$l_visit, n_cycles)
+
+  # QALYs
+  qalys_pf <- p_pf * params$u_np * cl
+  qalys_p <- p_p * params$u_p * cl
+  qalys_undiscounted <- qalys_pf + qalys_p
+  qalys_discounted <- qalys_undiscounted * v_dw_e[1:n_cycles]
+  qalys_total <- sum(qalys_discounted)
+
+  # Drug costs
+  if (treatment_type == "experimental") {
+    drug_costs <- (l_nivo * params$c_drug_nivo + l_FLOX_exp * params$c_drug_FLOX) * p_pf
+  } else {
+    drug_costs <- l_FLOX_control * params$c_drug_FLOX * p_pf
+  }
+
+  # Test costs
+  test_costs <- l_CT * params$c_test_CT * p_pf + l_blood * params$c_test_blood * p_pf
+
+  # Add biomarker test cost
+  if (!is.null(biomarker)) {
+    if (biomarker == "tmb_braf") {
+      test_costs[1] <- test_costs[1] + params$c_test_NGS
+    } else if (biomarker == "crp") {
+      test_costs[1] <- test_costs[1] + params$c_test_blood
+    } else if (biomarker == "tlr") {
+      test_costs[1] <- test_costs[1] + params$c_test_CT
+    }
+  }
+
+  # Visit costs
+  visit_costs <- l_visit * params$c_other_visit * p_pf
+  visit_costs[1] <- visit_costs[1] + params$c_other_baseline
+
+  # Follow-up costs
+  quarterly_cycles <- seq(13, n_cycles, by = 13)
+  follow_up_costs <- rep(0, n_cycles)
+  if (length(quarterly_cycles) > 0) {
+    follow_up_costs[quarterly_cycles] <- params$c_other_follow * p_p[quarterly_cycles]
+  }
+
+  # End-of-life costs
+  death_transitions <- c(0, diff(p_d))
+  death_transitions <- pmax(death_transitions, 0)
+  end_life_costs <- death_transitions * params$c_other_last
+
+  # Total costs
+  total_costs_undiscounted <- drug_costs + test_costs + visit_costs + follow_up_costs + end_life_costs
+  total_costs_discounted <- total_costs_undiscounted * v_dw_c[1:n_cycles]
+  costs_total <- sum(total_costs_discounted)
+
+  return(list(qalys = qalys_total, costs = costs_total))
+}
+
+# Function to calculate strategy costs (weighted by prevalence)
+calculate_strategy_cea <- function(predictions, biomarker, params) {
+  prevalence <- params[[paste0("p_", biomarker)]]
+
+  # Get curves
+  pos_os <- predictions$gamma$A[[paste0(biomarker, "_pos")]]$os
+  pos_pfs <- predictions$gamma$A[[paste0(biomarker, "_pos")]]$pfs
+  neg_os <- predictions$gamma$A[[paste0(biomarker, "_neg")]]$os
+  neg_pfs <- predictions$gamma$A[[paste0(biomarker, "_neg")]]$pfs
+
+  # Calculate for positive (experimental) and negative (control)
+  pos_cea <- calculate_cea(pos_os, pos_pfs, "experimental", biomarker, params)
+  neg_cea <- calculate_cea(neg_os, neg_pfs, "control", NULL, params)
+
+  # Weighted average
+  qalys <- prevalence * pos_cea$qalys + (1 - prevalence) * neg_cea$qalys
+  costs <- prevalence * pos_cea$costs + (1 - prevalence) * neg_cea$costs
+
+  return(list(qalys = qalys, costs = costs))
+}
+
+# Calculate CEA results for both datasets
+cea_results <- data.frame()
+
+for (biomarker in c("control", "crp", "tlr", "tmb_braf")) {
+  biomarker_labels <- c(control = "Control", crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
+
+  for (dataset_type in c("Base Case", "Same-Age")) {
+    predictions <- if (dataset_type == "Base Case") multi_predictions_base else multi_predictions_same_age
+
+    if (biomarker == "control") {
+      ctrl_os <- predictions$gamma$A$control$os
+      ctrl_pfs <- predictions$gamma$A$control$pfs
+      cea <- calculate_cea(ctrl_os, ctrl_pfs, "control", NULL, l_params_base)
+    } else {
+      cea <- calculate_strategy_cea(predictions, biomarker, l_params_base)
+    }
+
+    cea_results <- rbind(cea_results, data.frame(
+      Strategy = biomarker_labels[biomarker],
+      Dataset = dataset_type,
+      QALYs = cea$qalys,
+      Costs = cea$costs
+    ))
+  }
+}
+
+# Reshape for comparison tables
+cea_wide <- cea_results %>%
+  pivot_wider(names_from = Dataset, values_from = c(QALYs, Costs))
+
+cea_wide$`Delta QALYs` <- cea_wide$`QALYs_Same-Age` - cea_wide$`QALYs_Base Case`
+cea_wide$`Delta Costs` <- cea_wide$`Costs_Same-Age` - cea_wide$`Costs_Base Case`
+```
+
+## QALYs Comparison
+
+```{r qalys-table}
+qalys_table <- cea_wide %>%
+  select(Strategy, `QALYs_Base Case`, `QALYs_Same-Age`, `Delta QALYs`) %>%
+  rename(`Base Case` = `QALYs_Base Case`,
+         `Same-Age` = `QALYs_Same-Age`,
+         Delta = `Delta QALYs`)
+
+kable(qalys_table,
+      caption = "QALYs comparison between base case and same-age scenario (Model A).",
+      booktabs = TRUE,
+      digits = 3,
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE)
+```
+
+## Costs Comparison
+
+```{r costs-table}
+costs_table <- cea_wide %>%
+  select(Strategy, `Costs_Base Case`, `Costs_Same-Age`, `Delta Costs`) %>%
+  rename(`Base Case` = `Costs_Base Case`,
+         `Same-Age` = `Costs_Same-Age`,
+         Delta = `Delta Costs`) %>%
+  mutate(across(where(is.numeric), ~ scales::comma(round(., 0))))
+
+kable(costs_table,
+      caption = "Costs comparison (EUR) between base case and same-age scenario (Model A).",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE)
+```
+
+## ICERs Comparison
+
+**Note:** Negative ICERs may occur when a strategy is dominated (higher costs and lower QALYs) or dominates (lower costs and higher QALYs). While negative ICERs are not conceptually meaningful for decision-making, they are presented here for numerical comparison between the base case and same-age scenarios.
+
+```{r icer-table}
+# Calculate ICERs vs control
+control_base <- cea_results %>% filter(Strategy == "Control", Dataset == "Base Case")
+control_same <- cea_results %>% filter(Strategy == "Control", Dataset == "Same-Age")
+
+icer_results <- data.frame()
+
+for (strat in c("CRP", "TLR", "TMB/BRAF")) {
+  strat_base <- cea_results %>% filter(Strategy == strat, Dataset == "Base Case")
+  strat_same <- cea_results %>% filter(Strategy == strat, Dataset == "Same-Age")
+
+  icer_base <- (strat_base$Costs - control_base$Costs) / (strat_base$QALYs - control_base$QALYs)
+  icer_same <- (strat_same$Costs - control_same$Costs) / (strat_same$QALYs - control_same$QALYs)
+
+  icer_results <- rbind(icer_results, data.frame(
+    Strategy = paste0(strat, " vs Control"),
+    `ICER Base Case` = icer_base,
+    `ICER Same-Age` = icer_same,
+    `Delta ICER` = icer_same - icer_base,
+    check.names = FALSE
+  ))
+}
+
+# Format ICERs
+icer_formatted <- icer_results %>%
+  mutate(across(where(is.numeric), ~ scales::comma(round(., 0))))
+
+kable(icer_formatted,
+      caption = "ICER comparison (EUR/QALY) between base case and same-age scenario (Model A).",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"),
+                full_width = FALSE)
+```
+
+\newpage
+
+# Summary
+
+This analysis examined the impact of age heterogeneity on survival predictions and cost-effectiveness results by comparing the base case (actual patient ages) with a same-age scenario where all patients were assigned the population mean age of **`r round(mean_age, 1)`** years.
+
+## Key Findings
+
+```{r summary-findings, include=FALSE}
+# Calculate summary statistics for key findings
+max_age_diff <- max(abs(biomarker_age_stats$`Mean Age` - mean_age))
+max_ly_delta <- max(abs(c(
+  create_ly_comparison_table("crp", "os")$`Strat Delta`,
+  create_ly_comparison_table("tlr", "os")$`Strat Delta`,
+  create_ly_comparison_table("tmb_braf", "os")$`Strat Delta`
+)), na.rm = TRUE)
+```
+
+1. **Age imbalances across biomarker subgroups**: The mean age varied by up to `r round(max_age_diff, 1)` years from the population mean across biomarker subgroups.
+
+2. **Impact on survival predictions**: Standardizing age affected OS life-year predictions by up to `r round(max_ly_delta, 2)` years, indicating the magnitude of age-related confounding.
+
+3. **Cost-effectiveness implications**: The same-age scenario shows how age differences between biomarker subgroups can influence ICER estimates independently of biomarker-treatment effects.
+
+## Interpretation
+
+When biomarker-positive and biomarker-negative subgroups have different age distributions, the observed survival differences may partially reflect age effects rather than pure biomarker-treatment interactions. This analysis helps isolate the contribution of age heterogeneity to the overall results.
+
+**Limitations**: This is a sensitivity analysis that removes natural age variation. The base case analysis using actual patient ages remains the primary analysis for decision-making.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0
