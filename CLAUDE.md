@@ -235,34 +235,17 @@ State occupancy is calculated from survival curves:
 
 Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_global_variables.R):
 
-```r
-cl <- 1/52              # Cycle length: 1 week
-time_horizon <- 520     # 10 years in weeks
-WTP <- 51000           # Willingness-to-pay threshold (Euros)
-DSA_mult <- 0.2        # ±20% variation for DSA
-n_samples <- 5000      # Resampling/PSA sample size
-dr <- 0.04             # Discount rate (4%)
-USE_BOTH_MODELS <- 0   # 0 = full model only, 1 = both models
-MODEL_STRUCTURE <- 0   # 0 = joint, 1 = focused, 2 = separate
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `cl` | 1/52 | Cycle length (1 week) |
+| `time_horizon` | 520 | 10 years in weeks |
+| `WTP` | 51000 | Willingness-to-pay threshold (EUR) |
+| `n_samples` | 5000 | Resampling/PSA sample size |
+| `dr` | 0.04 | Discount rate (4%) |
+| `USE_BOTH_MODELS` | 0 | 0=full model only, 1=compare both |
+| `MODEL_STRUCTURE` | 0 | 0=joint, 1=focused, 2=separate (see table in script) |
 
-**Note on USE_BOTH_MODELS**: This setting controls whether the analysis uses only the full (gamma) survival model or compares both full and reduced (Weibull PH) models. It is set globally in script 02, but may be overridden by:
-- `para_models.qmd` forces it to 1 (to show model comparison)
-- `CEA.qmd` and `scenario_effect.qmd` reset it to 0
-
-When changed, the sampling cache must be regenerated (different cache file per setting).
-
-**Note on MODEL_STRUCTURE**: This setting controls which survival model formula structure is used for BOTH base case and PSA analyses (matching clinical_effectiveness.qmd Model A/B/C):
-
-| Value | Name | Formula Pattern | Description |
-|-------|------|-----------------|-------------|
-| 0 | Joint | `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx` | All biomarker interactions in one model (Model A) |
-| 1 | Focused | `~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx` | All biomarkers as main effects + one interaction (Model B) |
-| 2 | Separate | `~ Age + sex + Rx + [biomarker]:Rx` | Only one biomarker per model (Model C) |
-
-**Default**: MODEL_STRUCTURE=0 (Joint) - maintains current base case behavior.
-
-**When changed**: BOTH sampling cache AND PSA cache must be regenerated. Cache filenames include the MODEL_STRUCTURE setting to prevent mixing results from different model structures.
+**When changed**: Regenerate sampling cache (USE_BOTH_MODELS or MODEL_STRUCTURE change) and PSA cache. Cache filenames encode these settings to prevent mixing results.
 
 ### Biomarker Strategies
 
@@ -279,41 +262,13 @@ Each strategy has:
 
 ### Survival Prediction Methodologies
 
-The model uses different but methodologically valid approaches for generating survival predictions in base case (deterministic) versus PSA (probabilistic) analyses. Both methods properly account for patient heterogeneity but in ways appropriate to their analytical purpose.
+The model uses different approaches for base case vs PSA, both properly accounting for patient heterogeneity:
 
-#### Base Case: Population Averaging (Issue #69)
+**Base Case** (Issue #69): Population averaging across all patients using `generate_population_averaged_predictions()` in [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340). Predicts for all patients using their actual age, sex, and biomarker values, then averages.
 
-**Implementation**: [06_parametric_survival_analysis.R](scripts/R/analysis/06_parametric_survival_analysis.R:260-265) using `generate_population_averaged_predictions()` from [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340)
+**PSA** (Issue #70): Second-order Monte Carlo sampling one patient per iteration. See detailed methodology in [model_fun.R](scripts/R/functions/model_fun.R:17-148) comments. Over 5000 iterations, the distribution of sampled patients correctly propagates uncertainty from patient heterogeneity.
 
-**Methodology**:
-1. **Control strategy**: Predict survival for ALL patients in the dataset with control treatment assigned, then average across the population
-2. **Biomarker strategies**:
-   - Subset to biomarker-positive patients → assign experimental treatment → predict for each → average within subgroup
-   - Subset to biomarker-negative patients → assign control treatment → predict for each → average within subgroup
-   - Compute population-weighted average using observed biomarker prevalence (e.g., 0.35 for CRP)
-
-**Why this approach**: The base case requires point estimates of population-average outcomes. Predicting for all patients using their actual age, sex, and biomarker values accounts for the full distribution of prognostic factors in the population. This is the methodologically rigorous approach for deterministic cost-effectiveness analysis.
-
-#### PSA: Second-Order Monte Carlo (Issue #70)
-
-**Implementation**: [model_fun.R](scripts/R/functions/model_fun.R:17-148)
-
-**Methodology**:
-1. Each PSA iteration samples **ONE random patient** from the resampled dataset for that iteration
-2. That patient's characteristics (age, sex, biomarkers) are used to generate survival predictions
-3. **For control strategy**: Patient receives control treatment
-4. **For biomarker strategies**:
-   - Patient's biomarker status determines treatment assignment (biomarker+ → experimental, biomarker- → control)
-   - Prevalence parameter is set to 1.0 if patient has biomarker, 0.0 if not (for that iteration)
-5. Over 5000 iterations, the distribution of sampled patients correctly propagates uncertainty from patient heterogeneity
-
-**Why this approach**: PSA requires sampling from the joint distribution of all sources of uncertainty, including patient-level heterogeneity. This second-order Monte Carlo approach (one patient per iteration) is standard practice in health economic modeling. The prevalence varies between 0 and 1 across iterations based on each sampled patient's biomarker status, correctly reflecting uncertainty in treatment allocation.
-
-#### Why Both Methods Are Valid
-
-- **Base case** needs a point estimate of the population-average outcome → population averaging across all patients
-- **PSA** needs to sample from all sources of uncertainty → individual patient sampling across iterations
-- Both account for heterogeneity in age, sex, and biomarkers, but in different ways suited to deterministic vs. probabilistic analysis
+Both approaches are methodologically valid for their respective analytical purposes (deterministic point estimates vs. probabilistic uncertainty quantification).
 
 ### Survival Resampling & Correlation
 
@@ -321,7 +276,7 @@ The model uses **correlated survival resampling** ([08_sampling.R](scripts/R/ana
 
 - Both PFS and OS models are fitted to the **same resampled patient cohort**
 - Results are cached in `data/tidy/`
-- Cache file naming: `sampling_models_n{n_samples}_{model_type}.rds`
+- Cache file naming: `sampling_models_n{n_samples}_{full|both}_{joint|focused|separate}.rds`
 
 **IMPORTANT**: The first run of `08_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
 
@@ -433,6 +388,19 @@ Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
 - `bootstrap_survival_model.R`: Alternative resampling approach (not used in main analysis)
 - `ref_values_emm.R`: Reference value calculations (superseded)
 
+### Multi-Model CEA Functions
+
+The **[multi_model_cea.R](scripts/R/functions/multi_model_cea.R)** file provides functions for comparing cost-effectiveness across Model A/B/C structures:
+
+**Core Functions:**
+- `get_model_configs()` - Returns Model A (joint), B (focused), C (separate) configurations
+- `run_all_basecase_analyses()` - Runs base case for all 3 model structures
+- `load_all_psa_caches()` - Loads PSA caches for all models
+- `format_multimodel_comparison_table()` - Creates side-by-side comparison tables
+- `create_multimodel_ceac_plot()` - Multi-model CEAC visualization
+
+**Workflow:** Used by CEA.qmd to generate cross-model comparisons. Requires PSA caches for each MODEL_STRUCTURE to be pre-generated via [12_PSA.R](scripts/R/analysis/12_PSA.R).
+
 ### Treatment Schedules
 
 Treatment administration is defined by binary vectors indicating weeks when treatments are given:
@@ -529,6 +497,23 @@ Each report has specific dependencies:
 - **Sources**: 02, 03, 06, 07, 08, scenario analysis scripts
 - **Shows**: Alternative scenario results (e.g., different time horizons, discount rates)
 
+**[biomarker_decomposition.qmd](scripts/QMD/report/biomarker_decomposition.qmd)** - Biomarker Effect Decomposition
+- **Sources**: 02, 03, 06, 07, 08, 10, 12
+- **Shows**: Decomposition of biomarker effects on cost-effectiveness outcomes
+
+**[biomarker_distributions.qmd](scripts/QMD/report/biomarker_distributions.qmd)** - Biomarker Distributions
+- **Sources**: 02, 03
+- **Shows**: Biomarker prevalence and distribution analyses
+
+**Technical Documentation** (in `scripts/QMD/technical_docs/`):
+- **[age_effect_analysis.qmd](scripts/QMD/technical_docs/age_effect_analysis.qmd)**: Age effect on survival outcomes
+- **[all_parametric_survival_models.qmd](scripts/QMD/technical_docs/all_parametric_survival_models.qmd)**: Full survival model diagnostics
+- **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Bug fix impact documentation
+
+**Figure Vignettes** (in `scripts/QMD/vignettes/`):
+- **figure1-4.qmd**: Publication-ready figures
+- **suppl_figure_pfs_plots.qmd**: Supplementary PFS figures
+
 ### Quarto Report Structure Pattern
 
 All reports follow a consistent pattern:
@@ -615,6 +600,8 @@ Key points for the signature:
 - Left-justified (default markdown alignment)
 - No trailing content after the signature
 
+**Footer versioning**: Reports include version numbers (e.g., 2.0, 3.0) corresponding to major methodology updates. Increment version when making significant changes to analysis methodology.
+
 **Special characters**: Avoid Unicode Greek letters (e.g., α, β, λ) in text that will render to PDF. Instead, spell out the word (e.g., "alpha = 0" instead of "α = 0") or use LaTeX math mode (`$\alpha$`) if mathematical formatting is needed.
 
 ### Key Quarto Report Features
@@ -658,9 +645,9 @@ The analysis uses two cache systems to speed up computation:
 
 **To regenerate**:
 ```r
-# Delete cache file
+# Delete cache file (example for joint model structure)
 cache_file <- here("data", "tidy",
-                   paste0("sampling_models_n", n_samples, "_full.rds"))
+                   paste0("sampling_models_n", n_samples, "_full_joint.rds"))
 file.remove(cache_file)
 # Re-run 08_sampling.R
 source("scripts/R/analysis/08_sampling.R")
@@ -668,7 +655,7 @@ source("scripts/R/analysis/08_sampling.R")
 
 ### 2. PSA Cache (Analysis Results)
 
-**Location**: `data/tidy/psa_obj.rds` and `psa_params.rds`
+**Location**: `data/tidy/psa_obj_{joint|focused|separate}.rds` and `psa_params_{joint|focused|separate}.rds`
 **Purpose**: Cached PSA simulation results (5000 runs)
 **Generation**: Script [12_PSA.R](scripts/R/analysis/12_PSA.R) (~20-60 minutes first run)
 **Size**: ~660 KB total
@@ -681,9 +668,9 @@ source("scripts/R/analysis/08_sampling.R")
 
 **To regenerate**:
 ```r
-# Delete PSA cache files
-file.remove(here("data", "tidy", "psa_obj.rds"))
-file.remove(here("data", "tidy", "psa_params.rds"))
+# Delete PSA cache files (example for joint model structure)
+file.remove(here("data", "tidy", "psa_obj_joint.rds"))
+file.remove(here("data", "tidy", "psa_params_joint.rds"))
 # Re-run 12_PSA.R
 source("scripts/R/analysis/12_PSA.R")
 ```
@@ -743,6 +730,11 @@ The test suite in `scripts/R/tests/` includes:
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
 - **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
+
+**Diagnostic Scripts** (for troubleshooting PSA/sampling issues):
+- **diagnose_prediction_failures.R**: Analyzes why PSA iterations fail
+- **test_psa_error_rate.R**: Quantifies PSA iteration error rates
+- **test_sampling_convergence_rate.R**: Tests sampling convergence
 
 ## Clinical Context
 
