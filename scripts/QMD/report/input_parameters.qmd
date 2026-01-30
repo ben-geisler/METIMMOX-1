@@ -92,7 +92,7 @@ global_params <- data.frame(
                  "Number of Monte Carlo iterations for PSA",
                  "Resampled models for survival uncertainty",
                  "Parameter variation range for DSA",
-                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (all biomarkers + one interaction), 2=separate (one biomarker only)"),
+                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (CRP + TMB/BRAF + both interactions, TLR excluded), 2=separate (one biomarker only)"),
   Source = c("Clinical follow-up period",
             "Model assumption",
             "Model specification",

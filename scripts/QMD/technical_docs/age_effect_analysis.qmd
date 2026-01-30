@@ -228,18 +228,16 @@ model_formulas <- list(
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
 
-  # Model B: Focused - all biomarkers as covariates + ONE interaction
+  # Model B: Focused - CRP and TMB/BRAF only + BOTH interactions (TLR excluded)
+  # NOTE: Both B_crp and B_tmb use the SAME shared formula
   B_crp = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
-  B_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
-  ),
+  # B_tlr removed - Model B excludes TLR
   B_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
 
   # Model C: Single-biomarker (Separate) - ONE biomarker only + its interaction
@@ -258,10 +256,10 @@ model_formulas <- list(
 )
 
 # Model labels
+# NOTE: B_tlr removed - Model B excludes TLR
 model_labels_short <- c(
   "A" = "Model A",
   "B_crp" = "Model B",
-  "B_tlr" = "Model B",
   "B_tmb" = "Model B",
   "C_crp" = "Model C",
   "C_tlr" = "Model C",
@@ -283,13 +281,15 @@ age_linetypes <- c(
 )
 
 # Vector of model types to fit
-model_types <- c("A", "B_crp", "B_tlr", "B_tmb", "C_crp", "C_tlr", "C_tmb")
+# NOTE: B_tlr removed - Model B excludes TLR
+model_types <- c("A", "B_crp", "B_tmb", "C_crp", "C_tlr", "C_tmb")
 
 # Biomarker-model mapping
+# NOTE: B_tlr removed - Model B excludes TLR
 model_biomarker_map <- list(
   A = c("crp", "tlr", "tmb_braf"),
   B_crp = c("crp"),
-  B_tlr = c("tlr"),
+  # B_tlr removed - Model B excludes TLR
   B_tmb = c("tmb_braf"),
   C_crp = c("crp"),
   C_tlr = c("tlr"),
@@ -526,9 +526,10 @@ create_baseline_table <- function(biomarker) {
 
 # Create life-years comparison table
 create_ly_comparison_table <- function(biomarker, outcome = "os") {
+  # NOTE: Model B excludes TLR - only Model A and Model C include TLR
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr"),
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 
@@ -572,9 +573,10 @@ create_ly_comparison_table <- function(biomarker, outcome = "os") {
 
 # Create comparison survival plot (3-panel, faceted by model)
 create_comparison_plot <- function(biomarker, outcome = "os") {
+  # NOTE: Model B excludes TLR - only Model A and Model C include TLR
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr"),
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 

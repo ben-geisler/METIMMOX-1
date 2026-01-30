@@ -113,8 +113,8 @@ model_structures <- list(
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    desc = "CRP and TMB/BRAF as main effects + BOTH interactions (TLR excluded)"
   ),
   C = list(
     value = 2,
@@ -487,8 +487,8 @@ run_dsa_for_model <- function(target_structure, verbose = TRUE) {
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    desc = "CRP and TMB/BRAF as main effects + BOTH interactions (TLR excluded)"
   ),
   C = list(
     value = 2,
@@ -863,7 +863,7 @@ model_status_df <- data.frame(
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Status = sapply(c("A", "B", "C"), function(m) {
@@ -1384,9 +1384,9 @@ cat("\\newpage\n")
 
 # Model B: Focused Model Results {#model-b}
 
-Model B uses **focused survival models** with all three biomarkers included as main effects, but only one treatment-biomarker interaction per model.
+Model B uses **focused survival models** with CRP and TMB/BRAF as main effects plus BOTH treatment-biomarker interactions. TLR is excluded from Model B.
 
-**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx`
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
 
 ```{r model-b-check, results='asis'}
 if (is.null(all_dsa_results[["B"]])) {

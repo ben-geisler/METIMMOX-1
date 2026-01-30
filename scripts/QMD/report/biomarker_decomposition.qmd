@@ -104,18 +104,15 @@ model_formulas <- list(
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
 
-  # Model B: Focused - all biomarkers as covariates + ONE interaction
+  # Model B: Focused - CRP and TMB/BRAF with BOTH interaction terms (TLR excluded)
+  # Both strategies use the same shared formula
   B_crp = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
-  ),
-  B_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
   B_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
 
   # Model C: Single-biomarker (Separate) - ONE biomarker only + its interaction
@@ -134,10 +131,10 @@ model_formulas <- list(
 )
 
 # Model labels
+# NOTE: Model B excludes TLR
 model_labels_short <- c(
   "A" = "Model A",
   "B_crp" = "Model B",
-  "B_tlr" = "Model B",
   "B_tmb" = "Model B",
   "C_crp" = "Model C",
   "C_tlr" = "Model C",
@@ -160,13 +157,14 @@ model_linetypes <- c(
 )
 
 # Vector of model types to fit
-model_types <- c("A", "B_crp", "B_tlr", "B_tmb", "C_crp", "C_tlr", "C_tmb")
+# NOTE: Model B excludes TLR
+model_types <- c("A", "B_crp", "B_tmb", "C_crp", "C_tlr", "C_tmb")
 
 # Biomarker-model mapping
+# NOTE: Model B excludes TLR
 model_biomarker_map <- list(
   A = c("crp", "tlr", "tmb_braf"),
   B_crp = c("crp"),
-  B_tlr = c("tlr"),
   B_tmb = c("tmb_braf"),
   C_crp = c("crp"),
   C_tlr = c("tlr"),
@@ -351,7 +349,7 @@ create_decomposition_plot <- function(biomarker, outcome = "os",
   # Map biomarker to model types
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr")  # Model B excludes TLR,
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 
@@ -544,7 +542,7 @@ create_ly_table <- function(biomarker, outcome = "os") {
   # Map biomarker to model types
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr")  # Model B excludes TLR,
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 
@@ -595,7 +593,7 @@ create_combined_ly_table <- function(biomarker) {
   # Map biomarker to model types
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr")  # Model B excludes TLR,
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 
@@ -653,7 +651,7 @@ create_single_panel_plot <- function(biomarker, outcome = "os") {
   # Map biomarker to model types
   model_map <- list(
     crp = c("A", "B_crp", "C_crp"),
-    tlr = c("A", "B_tlr", "C_tlr"),
+    tlr = c("A", "C_tlr")  # Model B excludes TLR,
     tmb_braf = c("A", "B_tmb", "C_tmb")
   )
 
@@ -1031,12 +1029,12 @@ if (!is.null(p)) print(p)
 ```{r tlr-os-individual, fig.height=12, fig.width=8}
 #| fig-cap: !expr 'paste0("TLR strategy (prevalence: ", round(100 * p_tlr, 1), "%): Individual model plots for overall survival showing detailed subgroup curves.")'
 
+# NOTE: Model B excludes TLR - only Model A and Model C plots available
 p_a <- create_individual_model_plot("tlr", "A", "os")
-p_b <- create_individual_model_plot("tlr", "B_tlr", "os")
 p_c <- create_individual_model_plot("tlr", "C_tlr", "os")
 
-if (!is.null(p_a) && !is.null(p_b) && !is.null(p_c)) {
-  gridExtra::grid.arrange(p_a, p_b, p_c, ncol = 1)
+if (!is.null(p_a) && !is.null(p_c)) {
+  gridExtra::grid.arrange(p_a, p_c, ncol = 1)
 }
 ```
 
@@ -1059,12 +1057,12 @@ if (!is.null(p)) print(p)
 ```{r tlr-pfs-individual, fig.height=12, fig.width=8}
 #| fig-cap: !expr 'paste0("TLR strategy (prevalence: ", round(100 * p_tlr, 1), "%): Individual model plots for progression-free survival showing detailed subgroup curves.")'
 
+# NOTE: Model B excludes TLR - only Model A and Model C plots available
 p_a <- create_individual_model_plot("tlr", "A", "pfs")
-p_b <- create_individual_model_plot("tlr", "B_tlr", "pfs")
 p_c <- create_individual_model_plot("tlr", "C_tlr", "pfs")
 
-if (!is.null(p_a) && !is.null(p_b) && !is.null(p_c)) {
-  gridExtra::grid.arrange(p_a, p_b, p_c, ncol = 1)
+if (!is.null(p_a) && !is.null(p_c)) {
+  gridExtra::grid.arrange(p_a, p_c, ncol = 1)
 }
 ```
 
@@ -1197,9 +1195,16 @@ summary_os <- data.frame()
 for (biomarker in c("crp", "tlr", "tmb_braf")) {
   biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
 
-  for (model_type in c("A", paste0(c("B_", "C_"), biomarker))) {
+  # NOTE: Model B excludes TLR - only Model A and Model C for TLR biomarker
+  model_types_to_check <- if (biomarker == "tlr") {
+    c("A", "C_tlr")
+  } else {
+    c("A", paste0(c("B_", "C_"), biomarker))
+  }
+
+  for (model_type in model_types_to_check) {
     if (model_type == paste0("B_", biomarker)) model_type <- switch(biomarker,
-      crp = "B_crp", tlr = "B_tlr", tmb_braf = "B_tmb")
+      crp = "B_crp", tmb_braf = "B_tmb")
     if (model_type == paste0("C_", biomarker)) model_type <- switch(biomarker,
       crp = "C_crp", tlr = "C_tlr", tmb_braf = "C_tmb")
 
@@ -1251,9 +1256,16 @@ summary_pfs <- data.frame()
 for (biomarker in c("crp", "tlr", "tmb_braf")) {
   biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
 
-  for (model_type in c("A", paste0(c("B_", "C_"), biomarker))) {
+  # NOTE: Model B excludes TLR - only Model A and Model C for TLR biomarker
+  model_types_to_check <- if (biomarker == "tlr") {
+    c("A", "C_tlr")
+  } else {
+    c("A", paste0(c("B_", "C_"), biomarker))
+  }
+
+  for (model_type in model_types_to_check) {
     if (model_type == paste0("B_", biomarker)) model_type <- switch(biomarker,
-      crp = "B_crp", tlr = "B_tlr", tmb_braf = "B_tmb")
+      crp = "B_crp", tmb_braf = "B_tmb")
     if (model_type == paste0("C_", biomarker)) model_type <- switch(biomarker,
       crp = "C_crp", tlr = "C_tlr", tmb_braf = "C_tmb")
 

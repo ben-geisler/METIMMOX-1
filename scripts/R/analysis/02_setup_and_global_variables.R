@@ -39,8 +39,9 @@ USE_BOTH_MODELS <- 0
 ## Options:
 ##   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
 ##                    Formula: ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-##   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
-##                    Formula: ~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx
+##   1 = "focused"  - CRP and TMB/BRAF with BOTH interaction terms (Model B)
+##                    Formula: ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+##                    NOTE: TLR is NOT included in Model B
 ##   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
 ##                    Formula: ~ Age + sex + Rx + [biomarker]:Rx
 ##

@@ -30,19 +30,22 @@ get_model_configs <- function() {
       structure = 0,
       label = "Model A: Joint",
       short_label = "A",
-      description = "All biomarkers + all treatment interactions in one model"
+      description = "All biomarkers + all treatment interactions in one model",
+      biomarkers = c("crp", "tlr", "tmb_braf")
     ),
     Model_B = list(
       structure = 1,
       label = "Model B: Focused",
       short_label = "B",
-      description = "All biomarkers as main effects + one interaction per model"
+      description = "CRP + TMB/BRAF with both interaction terms (no TLR)",
+      biomarkers = c("crp", "tmb_braf")
     ),
     Model_C = list(
       structure = 2,
       label = "Model C: Separate",
       short_label = "C",
-      description = "One biomarker + its interaction only per model"
+      description = "One biomarker + its interaction only per model",
+      biomarkers = c("crp", "tlr", "tmb_braf")
     )
   )
 }

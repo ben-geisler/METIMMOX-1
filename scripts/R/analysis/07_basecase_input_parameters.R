@@ -24,32 +24,39 @@ l_visit <- rep(0, time_points_length)
 l_visit[1] <- 1  # baseline
 l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
 
-# Map survival curves directly into a list structure 
+# Map survival curves directly into a list structure
+# Start with curves that are always present (control, CRP, TMB/BRAF)
 p_os <- list(
-  control_OS = predictions$control$os,  
+  control_OS = predictions$control$os,
   crp_pos_OS = predictions$crp$biomarker_positive$os,
   crp_neg_OS = predictions$crp$biomarker_negative$os,
-  tlr_pos_OS = predictions$tlr$biomarker_positive$os,
-  tlr_neg_OS = predictions$tlr$biomarker_negative$os,
   tmb_braf_pos_OS = predictions$tmb_braf$biomarker_positive$os,
   tmb_braf_neg_OS = predictions$tmb_braf$biomarker_negative$os,
   crp_weighted_OS = predictions$crp$os,      # Population-marginalized
-  tlr_weighted_OS = predictions$tlr$os,      # Population-marginalized
   tmb_braf_weighted_OS = predictions$tmb_braf$os  # Population-marginalized
 )
 
 p_pfs <- list(
-  control_PFS = predictions$control$pfs, 
+  control_PFS = predictions$control$pfs,
   crp_pos_PFS = predictions$crp$biomarker_positive$pfs,
   crp_neg_PFS = predictions$crp$biomarker_negative$pfs,
-  tlr_pos_PFS = predictions$tlr$biomarker_positive$pfs,
-  tlr_neg_PFS = predictions$tlr$biomarker_negative$pfs,
   tmb_braf_pos_PFS = predictions$tmb_braf$biomarker_positive$pfs,
   tmb_braf_neg_PFS = predictions$tmb_braf$biomarker_negative$pfs,
   crp_weighted_PFS = predictions$crp$pfs,    # Population-marginalized
-  tlr_weighted_PFS = predictions$tlr$pfs,    # Population-marginalized
   tmb_braf_weighted_PFS = predictions$tmb_braf$pfs  # Population-marginalized
 )
+
+# Add TLR curves only for Models A and C (MODEL_STRUCTURE != 1)
+# Model B (focused) excludes TLR
+if (MODEL_STRUCTURE != 1) {
+  p_os$tlr_pos_OS <- predictions$tlr$biomarker_positive$os
+  p_os$tlr_neg_OS <- predictions$tlr$biomarker_negative$os
+  p_os$tlr_weighted_OS <- predictions$tlr$os
+
+  p_pfs$tlr_pos_PFS <- predictions$tlr$biomarker_positive$pfs
+  p_pfs$tlr_neg_PFS <- predictions$tlr$biomarker_negative$pfs
+  p_pfs$tlr_weighted_PFS <- predictions$tlr$pfs
+}
 
 
 # Compile all parameters into a list for the model function
@@ -96,6 +103,11 @@ l_params_base <- list(
   
   # Biomarker prevalence - using values from strategies_df
   p_crp = strategies_df$prevalence[strategies_df$id == "crp"],
-  p_tlr = strategies_df$prevalence[strategies_df$id == "tlr"],
   p_tmb_braf = strategies_df$prevalence[strategies_df$id == "tmb_braf"]
 )
+
+# Add TLR prevalence only for Models A and C (MODEL_STRUCTURE != 1)
+# Model B (focused) excludes TLR
+if (MODEL_STRUCTURE != 1) {
+  l_params_base$p_tlr <- strategies_df$prevalence[strategies_df$id == "tlr"]
+}

@@ -1,0 +1,921 @@
+---
+title: "Model B Comparison: OLD vs NEW Design"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = here::here())
+
+# Load packages BEFORE sourcing scripts
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(here, survival, flexsurv, dplyr, ggplot2, knitr, kableExtra, tidyr)
+```
+
+# Introduction
+
+This document compares the OLD and NEW Model B (Focused) designs to document the methodological change and its impact on results.
+
+## Summary of Changes
+
+| Aspect | OLD Model B | NEW Model B |
+|--------|-------------|-------------|
+| Biomarkers as main effects | crp + tlr + tmb_braf | crp + tmb_braf |
+| Interaction terms | One per model | BOTH (crp:Rx + tmb_braf:Rx) |
+| Strategies evaluated | control, crp, tlr, tmb_braf | control, crp, tmb_braf |
+| Number of distinct formulas | 3 (one per biomarker) | 1 (shared formula) |
+
+## Rationale for Change
+
+The OLD Model B included TLR as a biomarker but evidence suggests TLR may not provide sufficient predictive value for treatment selection. The NEW Model B:
+
+1. **Excludes TLR entirely** - focuses on CRP and TMB/BRAF only
+2. **Includes both interaction terms** - providing estimates for how each biomarker modifies treatment effect while adjusting for the other
+
+# Methodology
+
+```{r load-data, include=FALSE}
+# Source analysis scripts - suppress all output
+invisible(capture.output({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+# Re-load packages after rm(list=ls()) in sourced scripts
+pacman::p_load(here, survival, flexsurv, dplyr, ggplot2, knitr, kableExtra, tidyr)
+
+# Set ggplot theme
+theme_set(theme_minimal() +
+  theme(
+    text = element_text(size = 11),
+    axis.text = element_text(size = 9),
+    legend.position = "bottom"
+  ))
+
+# Ensure categorical variables are properly coded
+data$crp <- as.factor(data$crp)
+data$tlr <- as.factor(data$tlr)
+data$tmb_braf <- as.factor(data$tmb_braf)
+
+# Create complete dataset
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", "tmb_braf", "OSwk", "Death", "PFSwk", "Progression")]), ]
+
+# Time points for predictions
+time_points <- seq(0, time_horizon, by = 1)
+```
+
+## Formula Definitions
+
+### OLD Model B Formulas
+
+Three different formulas, each with one interaction term and all three biomarkers as main effects:
+
+- CRP strategy: `Surv(...) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx`
+- TLR strategy: `Surv(...) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx`
+- TMB/BRAF strategy: `Surv(...) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx`
+
+### NEW Model B Formula
+
+One shared formula with both interaction terms (TLR excluded):
+
+- All strategies: `Surv(...) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
+
+```{r define-formulas}
+# OLD Model B formulas (3 different formulas)
+old_formulas <- list(
+  crp = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
+  ),
+  tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
+  ),
+  tmb_braf = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+  )
+)
+
+# NEW Model B formula (1 shared formula with BOTH interactions)
+new_formula_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+new_formula_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+```
+
+# Model Fitting
+
+```{r fit-models}
+# Fit OLD Model B models
+old_fits <- list()
+for (biomarker in names(old_formulas)) {
+  old_fits[[biomarker]] <- tryCatch({
+    list(
+      os = flexsurvreg(old_formulas[[biomarker]]$os, data = data_complete, dist = "gamma"),
+      pfs = flexsurvreg(old_formulas[[biomarker]]$pfs, data = data_complete, dist = "gamma")
+    )
+  }, error = function(e) {
+    message("Error fitting OLD Model B for ", biomarker, ": ", e$message)
+    NULL
+  })
+}
+
+# Fit NEW Model B (single model)
+new_fit <- tryCatch({
+  list(
+    os = flexsurvreg(new_formula_os, data = data_complete, dist = "gamma"),
+    pfs = flexsurvreg(new_formula_pfs, data = data_complete, dist = "gamma")
+  )
+}, error = function(e) {
+  message("Error fitting NEW Model B: ", e$message)
+  NULL
+})
+```
+
+## Model Fit Comparison (AIC)
+
+```{r aic-comparison}
+# Extract AIC values
+aic_comparison <- data.frame(
+  Model = character(),
+  OS_AIC = numeric(),
+  PFS_AIC = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (biomarker in names(old_fits)) {
+  if (!is.null(old_fits[[biomarker]]) &&
+      !is.null(old_fits[[biomarker]]$os) &&
+      !is.null(old_fits[[biomarker]]$pfs)) {
+    aic_comparison <- rbind(aic_comparison, data.frame(
+      Model = paste0("OLD B-", toupper(biomarker)),
+      OS_AIC = AIC(old_fits[[biomarker]]$os),
+      PFS_AIC = AIC(old_fits[[biomarker]]$pfs)
+    ))
+  }
+}
+
+if (!is.null(new_fit) && !is.null(new_fit$os) && !is.null(new_fit$pfs)) {
+  aic_comparison <- rbind(aic_comparison, data.frame(
+    Model = "NEW B (shared)",
+    OS_AIC = AIC(new_fit$os),
+    PFS_AIC = AIC(new_fit$pfs)
+  ))
+}
+
+if (nrow(aic_comparison) > 0) {
+  kable(aic_comparison,
+        col.names = c("Model", "OS AIC", "PFS AIC"),
+        caption = "AIC Comparison: OLD vs NEW Model B",
+        digits = 1,
+        booktabs = TRUE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 10)
+} else {
+  cat("Could not compute AIC values - model fitting may have failed.\n")
+}
+```
+
+\newpage
+
+# Parameter Estimates Comparison
+
+```{r extract-coefs-function}
+# Extract ALL coefficients from flexsurv model
+extract_all_coefs <- function(model, label) {
+  if (is.null(model)) return(NULL)
+
+  # Get coefficients and variance-covariance matrix
+  coefs <- coef(model)
+  vcov_mat <- vcov(model)
+  se <- sqrt(diag(vcov_mat))
+
+  data.frame(
+    Model = label,
+    Term = names(coefs),
+    Estimate = as.numeric(coefs),
+    SE = as.numeric(se),
+    HR = exp(as.numeric(coefs)),
+    stringsAsFactors = FALSE,
+    row.names = NULL
+  )
+}
+```
+
+## Overall Survival - All Coefficients
+
+```{r os-extract-coefs}
+# Extract coefficients for all models
+old_crp_coefs <- extract_all_coefs(old_fits$crp$os, "OLD B-CRP")
+old_tlr_coefs <- extract_all_coefs(old_fits$tlr$os, "OLD B-TLR")
+old_tmb_coefs <- extract_all_coefs(old_fits$tmb_braf$os, "OLD B-TMB")
+new_coefs <- extract_all_coefs(new_fit$os, "NEW B")
+
+# Helper function to format coefficient table
+format_coef_table <- function(coef_df) {
+  if (is.null(coef_df) || nrow(coef_df) == 0) return(NULL)
+  coef_df$HR_CI <- sprintf("%.3f (%.3f-%.3f)",
+                            coef_df$HR,
+                            exp(coef_df$Estimate - 1.96 * coef_df$SE),
+                            exp(coef_df$Estimate + 1.96 * coef_df$SE))
+  display_df <- coef_df[, c("Term", "Estimate", "SE", "HR_CI")]
+  names(display_df) <- c("Term", "Estimate", "SE", "HR (95% CI)")
+  return(display_df)
+}
+```
+
+### OLD B-CRP - OS
+
+```{r os-old-crp}
+display_df <- format_coef_table(old_crp_coefs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### OLD B-TLR - OS
+
+```{r os-old-tlr}
+display_df <- format_coef_table(old_tlr_coefs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### OLD B-TMB - OS
+
+```{r os-old-tmb}
+display_df <- format_coef_table(old_tmb_coefs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### NEW B - OS
+
+```{r os-new}
+display_df <- format_coef_table(new_coefs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+\newpage
+
+## Progression-Free Survival - All Coefficients
+
+```{r pfs-extract-coefs}
+# Extract coefficients for all models
+old_crp_pfs <- extract_all_coefs(old_fits$crp$pfs, "OLD B-CRP")
+old_tlr_pfs <- extract_all_coefs(old_fits$tlr$pfs, "OLD B-TLR")
+old_tmb_pfs <- extract_all_coefs(old_fits$tmb_braf$pfs, "OLD B-TMB")
+new_pfs_coefs <- extract_all_coefs(new_fit$pfs, "NEW B")
+```
+
+### OLD B-CRP - PFS
+
+```{r pfs-old-crp}
+display_df <- format_coef_table(old_crp_pfs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### OLD B-TLR - PFS
+
+```{r pfs-old-tlr}
+display_df <- format_coef_table(old_tlr_pfs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### OLD B-TMB - PFS
+
+```{r pfs-old-tmb}
+display_df <- format_coef_table(old_tmb_pfs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+### NEW B - PFS
+
+```{r pfs-new}
+display_df <- format_coef_table(new_pfs_coefs)
+if (!is.null(display_df)) {
+  kable(display_df, booktabs = TRUE, digits = 3, row.names = FALSE) %>%
+    kable_styling(latex_options = c("hold_position"), font_size = 9)
+}
+```
+
+\newpage
+
+# Survival Curves Comparison
+
+```{r generate-predictions}
+# Generate predictions for each model
+# For biomarker strategies, we need population-averaged predictions for:
+# - Biomarker+ subgroup (receives experimental treatment)
+# - Biomarker- subgroup (receives control treatment)
+# Then weight by prevalence
+
+pred_times <- seq(0, 520, by = 4)  # Every 4 weeks for 10 years
+
+# Function to get survival predictions for a specific newdata
+get_surv_pred_newdata <- function(model, times, newdata) {
+  if (is.null(model)) return(NULL)
+  tryCatch({
+    pred <- summary(model, t = times, newdata = newdata, type = "survival", ci = FALSE)
+    # Average across all patients in newdata
+    survs <- sapply(pred, function(x) x$est)
+    if (is.matrix(survs)) {
+      rowMeans(survs)
+    } else {
+      survs
+    }
+  }, error = function(e) {
+    message("Prediction error: ", e$message)
+    NULL
+  })
+}
+
+# Get biomarker prevalences
+p_crp <- mean(as.numeric(as.character(data_complete$crp)))
+p_tlr <- mean(as.numeric(as.character(data_complete$tlr)))
+p_tmb <- mean(as.numeric(as.character(data_complete$tmb_braf)))
+
+os_preds <- list()
+pfs_preds <- list()
+
+# ============================================================================
+# OLD Model B predictions (3 separate models, each with different formula)
+# ============================================================================
+for (bm in c("crp", "tlr", "tmb_braf")) {
+  if (!is.null(old_fits[[bm]])) {
+    # Biomarker+ subgroup (experimental treatment)
+    data_pos <- data_complete[data_complete[[bm]] == "1", ]
+    data_pos$Rx <- factor(levels(data_complete$Rx)[2], levels = levels(data_complete$Rx))
+
+    # Biomarker- subgroup (control treatment)
+    data_neg <- data_complete[data_complete[[bm]] == "0", ]
+    data_neg$Rx <- factor(levels(data_complete$Rx)[1], levels = levels(data_complete$Rx))
+
+    # Get prevalence for this biomarker
+    prev <- if (bm == "crp") p_crp else if (bm == "tlr") p_tlr else p_tmb
+
+    # Get predictions for each subgroup
+    os_pos <- get_surv_pred_newdata(old_fits[[bm]]$os, pred_times, data_pos)
+    os_neg <- get_surv_pred_newdata(old_fits[[bm]]$os, pred_times, data_neg)
+    pfs_pos <- get_surv_pred_newdata(old_fits[[bm]]$pfs, pred_times, data_pos)
+    pfs_neg <- get_surv_pred_newdata(old_fits[[bm]]$pfs, pred_times, data_neg)
+
+    # Weighted average
+    if (!is.null(os_pos) && !is.null(os_neg)) {
+      os_preds[[paste0("OLD_", bm)]] <- prev * os_pos + (1 - prev) * os_neg
+    }
+    if (!is.null(pfs_pos) && !is.null(pfs_neg)) {
+      pfs_preds[[paste0("OLD_", bm)]] <- prev * pfs_pos + (1 - prev) * pfs_neg
+    }
+  }
+}
+
+# ============================================================================
+# NEW Model B predictions (1 shared model, 2 strategies)
+# ============================================================================
+# NEW Model B uses the SAME fitted model for both strategies, but predictions
+# differ because different biomarkers determine treatment assignment
+
+if (!is.null(new_fit)) {
+  # CRP Strategy: crp+ gets experimental, crp- gets control
+  data_crp_pos <- data_complete[data_complete$crp == "1", ]
+  data_crp_pos$Rx <- factor(levels(data_complete$Rx)[2], levels = levels(data_complete$Rx))
+  data_crp_neg <- data_complete[data_complete$crp == "0", ]
+  data_crp_neg$Rx <- factor(levels(data_complete$Rx)[1], levels = levels(data_complete$Rx))
+
+  os_crp_pos <- get_surv_pred_newdata(new_fit$os, pred_times, data_crp_pos)
+  os_crp_neg <- get_surv_pred_newdata(new_fit$os, pred_times, data_crp_neg)
+  pfs_crp_pos <- get_surv_pred_newdata(new_fit$pfs, pred_times, data_crp_pos)
+  pfs_crp_neg <- get_surv_pred_newdata(new_fit$pfs, pred_times, data_crp_neg)
+
+  if (!is.null(os_crp_pos) && !is.null(os_crp_neg)) {
+    os_preds[["NEW_crp"]] <- p_crp * os_crp_pos + (1 - p_crp) * os_crp_neg
+  }
+  if (!is.null(pfs_crp_pos) && !is.null(pfs_crp_neg)) {
+    pfs_preds[["NEW_crp"]] <- p_crp * pfs_crp_pos + (1 - p_crp) * pfs_crp_neg
+  }
+
+  # TMB/BRAF Strategy: tmb_braf+ gets experimental, tmb_braf- gets control
+  data_tmb_pos <- data_complete[data_complete$tmb_braf == "1", ]
+  data_tmb_pos$Rx <- factor(levels(data_complete$Rx)[2], levels = levels(data_complete$Rx))
+  data_tmb_neg <- data_complete[data_complete$tmb_braf == "0", ]
+  data_tmb_neg$Rx <- factor(levels(data_complete$Rx)[1], levels = levels(data_complete$Rx))
+
+  os_tmb_pos <- get_surv_pred_newdata(new_fit$os, pred_times, data_tmb_pos)
+  os_tmb_neg <- get_surv_pred_newdata(new_fit$os, pred_times, data_tmb_neg)
+  pfs_tmb_pos <- get_surv_pred_newdata(new_fit$pfs, pred_times, data_tmb_pos)
+  pfs_tmb_neg <- get_surv_pred_newdata(new_fit$pfs, pred_times, data_tmb_neg)
+
+  if (!is.null(os_tmb_pos) && !is.null(os_tmb_neg)) {
+    os_preds[["NEW_tmb"]] <- p_tmb * os_tmb_pos + (1 - p_tmb) * os_tmb_neg
+  }
+  if (!is.null(pfs_tmb_pos) && !is.null(pfs_tmb_neg)) {
+    pfs_preds[["NEW_tmb"]] <- p_tmb * pfs_tmb_pos + (1 - p_tmb) * pfs_tmb_neg
+  }
+}
+```
+
+## Overall Survival Curves
+
+```{r os-curves, fig.height=5, fig.cap="Overall Survival Curves: OLD vs NEW Model B (population-weighted)"}
+# Build plot data
+os_plot_data <- data.frame()
+for (model_name in names(os_preds)) {
+  if (!is.null(os_preds[[model_name]])) {
+    os_plot_data <- rbind(os_plot_data, data.frame(
+      Time = pred_times / 52,  # Convert to years
+      Survival = os_preds[[model_name]],
+      Model = model_name
+    ))
+  }
+}
+
+if (nrow(os_plot_data) > 0) {
+  ggplot(os_plot_data, aes(x = Time, y = Survival, color = Model, linetype = Model)) +
+    geom_line(linewidth = 1) +
+    scale_color_manual(values = c("OLD_crp" = "#E69F00", "OLD_tlr" = "#56B4E9",
+                                   "OLD_tmb_braf" = "#009E73",
+                                   "NEW_crp" = "#D55E00", "NEW_tmb" = "#CC79A7"),
+                       labels = c("OLD_crp" = "OLD B-CRP", "OLD_tlr" = "OLD B-TLR",
+                                  "OLD_tmb_braf" = "OLD B-TMB",
+                                  "NEW_crp" = "NEW B-CRP", "NEW_tmb" = "NEW B-TMB")) +
+    scale_linetype_manual(values = c("OLD_crp" = "dashed", "OLD_tlr" = "dotted",
+                                      "OLD_tmb_braf" = "dotdash",
+                                      "NEW_crp" = "solid", "NEW_tmb" = "solid"),
+                          labels = c("OLD_crp" = "OLD B-CRP", "OLD_tlr" = "OLD B-TLR",
+                                     "OLD_tmb_braf" = "OLD B-TMB",
+                                     "NEW_crp" = "NEW B-CRP", "NEW_tmb" = "NEW B-TMB")) +
+    labs(x = "Time (Years)", y = "Overall Survival Probability",
+         title = "Overall Survival: OLD vs NEW Model B") +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+} else {
+  cat("Could not generate OS survival curves.\n")
+}
+```
+
+## Progression-Free Survival Curves
+
+```{r pfs-curves, fig.height=5, fig.cap="Progression-Free Survival Curves: OLD vs NEW Model B (population-weighted)"}
+# Build plot data
+pfs_plot_data <- data.frame()
+for (model_name in names(pfs_preds)) {
+  if (!is.null(pfs_preds[[model_name]])) {
+    pfs_plot_data <- rbind(pfs_plot_data, data.frame(
+      Time = pred_times / 52,  # Convert to years
+      Survival = pfs_preds[[model_name]],
+      Model = model_name
+    ))
+  }
+}
+
+if (nrow(pfs_plot_data) > 0) {
+  ggplot(pfs_plot_data, aes(x = Time, y = Survival, color = Model, linetype = Model)) +
+    geom_line(linewidth = 1) +
+    scale_color_manual(values = c("OLD_crp" = "#E69F00", "OLD_tlr" = "#56B4E9",
+                                   "OLD_tmb_braf" = "#009E73",
+                                   "NEW_crp" = "#D55E00", "NEW_tmb" = "#CC79A7"),
+                       labels = c("OLD_crp" = "OLD B-CRP", "OLD_tlr" = "OLD B-TLR",
+                                  "OLD_tmb_braf" = "OLD B-TMB",
+                                  "NEW_crp" = "NEW B-CRP", "NEW_tmb" = "NEW B-TMB")) +
+    scale_linetype_manual(values = c("OLD_crp" = "dashed", "OLD_tlr" = "dotted",
+                                      "OLD_tmb_braf" = "dotdash",
+                                      "NEW_crp" = "solid", "NEW_tmb" = "solid"),
+                          labels = c("OLD_crp" = "OLD B-CRP", "OLD_tlr" = "OLD B-TLR",
+                                     "OLD_tmb_braf" = "OLD B-TMB",
+                                     "NEW_crp" = "NEW B-CRP", "NEW_tmb" = "NEW B-TMB")) +
+    labs(x = "Time (Years)", y = "Progression-Free Survival Probability",
+         title = "PFS: OLD vs NEW Model B") +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+} else {
+  cat("Could not generate PFS survival curves.\n")
+}
+```
+
+\newpage
+
+# Life Years, QALYs, and Costs
+
+```{r calculate-outcomes}
+# Calculate life years, QALYs, and costs for each model
+# Using area under curve calculation (trapezoidal rule)
+
+# Discount rate from global variables
+discount_rate <- dr  # Should be 0.04
+
+# Function to calculate life years from survival curve
+# dr = 0 for undiscounted, dr > 0 for discounted
+calc_ly <- function(surv, times, dr = 0) {
+  if (is.null(surv) || length(surv) == 0) return(NA)
+
+  # Discount factors (1 if dr = 0)
+  discount_factors <- 1 / (1 + dr)^(times / 52)
+
+  # Area under curve (trapezoidal rule)
+  n <- length(surv)
+  ly <- 0
+  for (i in 2:n) {
+    dt <- (times[i] - times[i-1]) / 52  # Time in years
+    avg_surv <- (surv[i] + surv[i-1]) / 2
+    avg_discount <- (discount_factors[i] + discount_factors[i-1]) / 2
+    ly <- ly + avg_surv * avg_discount * dt
+  }
+  return(ly)
+}
+
+# ============================================================================
+# Calculate control strategy outcomes (all patients get FLOX only)
+# ============================================================================
+# For control, we use the control model predictions (age/sex adjusted only)
+# Since we don't have a separate control model here, estimate from biomarker-
+# negative subgroups (who receive control treatment)
+
+# Use average of biomarker-negative predictions as control estimate
+control_os <- (os_preds[["OLD_crp"]] + os_preds[["OLD_tmb_braf"]]) / 2  # Rough proxy
+control_pfs <- (pfs_preds[["OLD_crp"]] + pfs_preds[["OLD_tmb_braf"]]) / 2
+
+control_ly_os_undisc <- calc_ly(control_os, pred_times, dr = 0)
+control_ly_pfs_undisc <- calc_ly(control_pfs, pred_times, dr = 0)
+control_ly_os_disc <- calc_ly(control_os, pred_times, dr = discount_rate)
+control_ly_pfs_disc <- calc_ly(control_pfs, pred_times, dr = discount_rate)
+
+# ============================================================================
+# Calculate outcomes for all strategies
+# ============================================================================
+# Store in a structured way for comparison tables
+
+calc_strategy_outcomes <- function(os_pred, pfs_pred, prev) {
+  list(
+    ly_os_undisc = calc_ly(os_pred, pred_times, dr = 0),
+    ly_pfs_undisc = calc_ly(pfs_pred, pred_times, dr = 0),
+    ly_os_disc = calc_ly(os_pred, pred_times, dr = discount_rate),
+    ly_pfs_disc = calc_ly(pfs_pred, pred_times, dr = discount_rate),
+    prevalence = prev
+  )
+}
+
+# Calculate for each strategy
+old_crp <- calc_strategy_outcomes(os_preds[["OLD_crp"]], pfs_preds[["OLD_crp"]], p_crp)
+old_tlr <- calc_strategy_outcomes(os_preds[["OLD_tlr"]], pfs_preds[["OLD_tlr"]], p_tlr)
+old_tmb <- calc_strategy_outcomes(os_preds[["OLD_tmb_braf"]], pfs_preds[["OLD_tmb_braf"]], p_tmb)
+new_crp <- calc_strategy_outcomes(os_preds[["NEW_crp"]], pfs_preds[["NEW_crp"]], p_crp)
+new_tmb <- calc_strategy_outcomes(os_preds[["NEW_tmb"]], pfs_preds[["NEW_tmb"]], p_tmb)
+
+# Add progressed state LY
+add_prog_ly <- function(x) {
+  x$ly_prog_undisc <- pmax(x$ly_os_undisc - x$ly_pfs_undisc, 0)
+  x$ly_prog_disc <- pmax(x$ly_os_disc - x$ly_pfs_disc, 0)
+  return(x)
+}
+
+old_crp <- add_prog_ly(old_crp)
+old_tlr <- add_prog_ly(old_tlr)
+old_tmb <- add_prog_ly(old_tmb)
+new_crp <- add_prog_ly(new_crp)
+new_tmb <- add_prog_ly(new_tmb)
+
+# Control
+control <- list(
+  ly_os_undisc = control_ly_os_undisc,
+  ly_pfs_undisc = control_ly_pfs_undisc,
+  ly_os_disc = control_ly_os_disc,
+  ly_pfs_disc = control_ly_pfs_disc,
+  ly_prog_undisc = pmax(control_ly_os_undisc - control_ly_pfs_undisc, 0),
+  ly_prog_disc = pmax(control_ly_os_disc - control_ly_pfs_disc, 0),
+  prevalence = NA
+)
+
+# Utilities from base case
+u_pf <- 0.9077  # Utility in progression-free state
+u_p <- 0.9005   # Utility in progressed state
+
+# Cost parameters
+c_drug_nivo <- 13923   # Cost per nivolumab administration
+c_drug_flox <- 427     # Cost per FLOX administration
+n_nivo_admin <- 8
+n_flox_admin_exp <- 8
+n_flox_admin_ctrl <- 16
+
+cost_exp <- n_nivo_admin * c_drug_nivo + n_flox_admin_exp * c_drug_flox
+cost_ctrl <- n_flox_admin_ctrl * c_drug_flox
+
+# Calculate QALYs and costs
+calc_qaly_cost <- function(x) {
+  x$qaly <- x$ly_pfs_disc * u_pf + x$ly_prog_disc * u_p
+  if (!is.na(x$prevalence)) {
+    x$cost <- x$prevalence * cost_exp + (1 - x$prevalence) * cost_ctrl
+  } else {
+    x$cost <- cost_ctrl  # Control strategy
+  }
+  return(x)
+}
+
+control <- calc_qaly_cost(control)
+old_crp <- calc_qaly_cost(old_crp)
+old_tlr <- calc_qaly_cost(old_tlr)
+old_tmb <- calc_qaly_cost(old_tmb)
+new_crp <- calc_qaly_cost(new_crp)
+new_tmb <- calc_qaly_cost(new_tmb)
+```
+
+## Discounted Life Years Comparison
+
+```{r ly-comparison-table}
+# Create comparison table: Control | TLR (OLD only) | CRP (OLD, NEW, Delta) | TMB (OLD, NEW, Delta)
+ly_comparison <- data.frame(
+  Outcome = c("LY (OS)", "LY (PFS)", "LY (Progressed)"),
+  Control = c(control$ly_os_disc, control$ly_pfs_disc, control$ly_prog_disc),
+  TLR_OLD = c(old_tlr$ly_os_disc, old_tlr$ly_pfs_disc, old_tlr$ly_prog_disc),
+  CRP_OLD = c(old_crp$ly_os_disc, old_crp$ly_pfs_disc, old_crp$ly_prog_disc),
+  CRP_NEW = c(new_crp$ly_os_disc, new_crp$ly_pfs_disc, new_crp$ly_prog_disc),
+  CRP_Delta = c(new_crp$ly_os_disc - old_crp$ly_os_disc,
+                new_crp$ly_pfs_disc - old_crp$ly_pfs_disc,
+                new_crp$ly_prog_disc - old_crp$ly_prog_disc),
+  TMB_OLD = c(old_tmb$ly_os_disc, old_tmb$ly_pfs_disc, old_tmb$ly_prog_disc),
+  TMB_NEW = c(new_tmb$ly_os_disc, new_tmb$ly_pfs_disc, new_tmb$ly_prog_disc),
+  TMB_Delta = c(new_tmb$ly_os_disc - old_tmb$ly_os_disc,
+                new_tmb$ly_pfs_disc - old_tmb$ly_pfs_disc,
+                new_tmb$ly_prog_disc - old_tmb$ly_prog_disc)
+)
+
+kable(ly_comparison,
+      col.names = c("Outcome", "Control", "TLR (OLD)",
+                    "OLD", "NEW", "Delta",
+                    "OLD", "NEW", "Delta"),
+      caption = paste0("Discounted Life Years Comparison (dr = ", discount_rate * 100, "\\%)"),
+      booktabs = TRUE,
+      digits = 3) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, " " = 1, " " = 1, "CRP Strategy" = 3, "TMB/BRAF Strategy" = 3))
+```
+
+## Undiscounted Life Years Comparison
+
+```{r ly-undisc-comparison-table}
+ly_undisc_comparison <- data.frame(
+  Outcome = c("LY (OS)", "LY (PFS)", "LY (Progressed)"),
+  Control = c(control$ly_os_undisc, control$ly_pfs_undisc, control$ly_prog_undisc),
+  TLR_OLD = c(old_tlr$ly_os_undisc, old_tlr$ly_pfs_undisc, old_tlr$ly_prog_undisc),
+  CRP_OLD = c(old_crp$ly_os_undisc, old_crp$ly_pfs_undisc, old_crp$ly_prog_undisc),
+  CRP_NEW = c(new_crp$ly_os_undisc, new_crp$ly_pfs_undisc, new_crp$ly_prog_undisc),
+  CRP_Delta = c(new_crp$ly_os_undisc - old_crp$ly_os_undisc,
+                new_crp$ly_pfs_undisc - old_crp$ly_pfs_undisc,
+                new_crp$ly_prog_undisc - old_crp$ly_prog_undisc),
+  TMB_OLD = c(old_tmb$ly_os_undisc, old_tmb$ly_pfs_undisc, old_tmb$ly_prog_undisc),
+  TMB_NEW = c(new_tmb$ly_os_undisc, new_tmb$ly_pfs_undisc, new_tmb$ly_prog_undisc),
+  TMB_Delta = c(new_tmb$ly_os_undisc - old_tmb$ly_os_undisc,
+                new_tmb$ly_pfs_undisc - old_tmb$ly_pfs_undisc,
+                new_tmb$ly_prog_undisc - old_tmb$ly_prog_undisc)
+)
+
+kable(ly_undisc_comparison,
+      col.names = c("Outcome", "Control", "TLR (OLD)",
+                    "OLD", "NEW", "Delta",
+                    "OLD", "NEW", "Delta"),
+      caption = "Undiscounted Life Years Comparison",
+      booktabs = TRUE,
+      digits = 3) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, " " = 1, " " = 1, "CRP Strategy" = 3, "TMB/BRAF Strategy" = 3))
+```
+
+## QALYs Comparison
+
+```{r qaly-comparison-table}
+qaly_comparison <- data.frame(
+  Metric = "QALYs",
+  Control = control$qaly,
+  TLR_OLD = old_tlr$qaly,
+  CRP_OLD = old_crp$qaly,
+  CRP_NEW = new_crp$qaly,
+  CRP_Delta = new_crp$qaly - old_crp$qaly,
+  TMB_OLD = old_tmb$qaly,
+  TMB_NEW = new_tmb$qaly,
+  TMB_Delta = new_tmb$qaly - old_tmb$qaly
+)
+
+kable(qaly_comparison,
+      col.names = c("Metric", "Control", "TLR (OLD)",
+                    "OLD", "NEW", "Delta",
+                    "OLD", "NEW", "Delta"),
+      caption = paste0("Discounted QALYs Comparison (Utilities: PF=", u_pf, ", P=", u_p, ")"),
+      booktabs = TRUE,
+      digits = 3) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, " " = 1, " " = 1, "CRP Strategy" = 3, "TMB/BRAF Strategy" = 3))
+```
+
+## Costs Comparison
+
+```{r cost-comparison-table}
+cost_comparison <- data.frame(
+  Metric = "Cost (EUR)",
+  Control = control$cost,
+  TLR_OLD = old_tlr$cost,
+  CRP_OLD = old_crp$cost,
+  CRP_NEW = new_crp$cost,
+  CRP_Delta = new_crp$cost - old_crp$cost,
+  TMB_OLD = old_tmb$cost,
+  TMB_NEW = new_tmb$cost,
+  TMB_Delta = new_tmb$cost - old_tmb$cost
+)
+
+# Format costs with thousands separator
+cost_comparison[1, -1] <- sapply(cost_comparison[1, -1], function(x) {
+  format(round(as.numeric(x), 0), big.mark = ",", scientific = FALSE)
+})
+
+kable(cost_comparison,
+      col.names = c("Metric", "Control", "TLR (OLD)",
+                    "OLD", "NEW", "Delta",
+                    "OLD", "NEW", "Delta"),
+      caption = "Treatment Costs Comparison",
+      booktabs = TRUE,
+      escape = FALSE) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 1, " " = 1, " " = 1, "CRP Strategy" = 3, "TMB/BRAF Strategy" = 3))
+```
+
+## ICER Comparison - OLD Model B
+
+```{r icer-old}
+# Calculate ICERs for OLD Model B (CRP and TMB strategies only, vs control)
+icer_old <- data.frame(
+  Strategy = c("Control", "CRP", "TMB/BRAF"),
+  Cost = c(control$cost, old_crp$cost, old_tmb$cost),
+  QALYs = c(control$qaly, old_crp$qaly, old_tmb$qaly),
+  Inc_Cost = c(NA, old_crp$cost - control$cost, old_tmb$cost - control$cost),
+  Inc_QALY = c(NA, old_crp$qaly - control$qaly, old_tmb$qaly - control$qaly)
+)
+icer_old$ICER <- ifelse(is.na(icer_old$Inc_QALY) | icer_old$Inc_QALY <= 0,
+                         NA,
+                         icer_old$Inc_Cost / icer_old$Inc_QALY)
+
+# Format for display
+icer_old_display <- icer_old
+icer_old_display$Cost <- format(round(icer_old_display$Cost, 0), big.mark = ",")
+icer_old_display$QALYs <- round(icer_old_display$QALYs, 3)
+icer_old_display$Inc_Cost <- ifelse(is.na(icer_old_display$Inc_Cost), "-",
+                                     format(round(icer_old_display$Inc_Cost, 0), big.mark = ","))
+icer_old_display$Inc_QALY <- ifelse(is.na(icer_old_display$Inc_QALY), "-",
+                                     round(icer_old_display$Inc_QALY, 3))
+icer_old_display$ICER <- ifelse(is.na(icer_old_display$ICER), "-",
+                                 format(round(icer_old_display$ICER, 0), big.mark = ","))
+
+kable(icer_old_display,
+      col.names = c("Strategy", "Cost (EUR)", "QALYs", "Incr. Cost", "Incr. QALYs", "ICER"),
+      caption = "Cost-Effectiveness: OLD Model B (vs Control)",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10)
+```
+
+## ICER Comparison - NEW Model B
+
+```{r icer-new}
+# Calculate ICERs for NEW Model B (CRP and TMB strategies only, vs control)
+icer_new <- data.frame(
+  Strategy = c("Control", "CRP", "TMB/BRAF"),
+  Cost = c(control$cost, new_crp$cost, new_tmb$cost),
+  QALYs = c(control$qaly, new_crp$qaly, new_tmb$qaly),
+  Inc_Cost = c(NA, new_crp$cost - control$cost, new_tmb$cost - control$cost),
+  Inc_QALY = c(NA, new_crp$qaly - control$qaly, new_tmb$qaly - control$qaly)
+)
+icer_new$ICER <- ifelse(is.na(icer_new$Inc_QALY) | icer_new$Inc_QALY <= 0,
+                         NA,
+                         icer_new$Inc_Cost / icer_new$Inc_QALY)
+
+# Format for display
+icer_new_display <- icer_new
+icer_new_display$Cost <- format(round(icer_new_display$Cost, 0), big.mark = ",")
+icer_new_display$QALYs <- round(icer_new_display$QALYs, 3)
+icer_new_display$Inc_Cost <- ifelse(is.na(icer_new_display$Inc_Cost), "-",
+                                     format(round(icer_new_display$Inc_Cost, 0), big.mark = ","))
+icer_new_display$Inc_QALY <- ifelse(is.na(icer_new_display$Inc_QALY), "-",
+                                     round(icer_new_display$Inc_QALY, 3))
+icer_new_display$ICER <- ifelse(is.na(icer_new_display$ICER), "-",
+                                 format(round(icer_new_display$ICER, 0), big.mark = ","))
+
+kable(icer_new_display,
+      col.names = c("Strategy", "Cost (EUR)", "QALYs", "Incr. Cost", "Incr. QALYs", "ICER"),
+      caption = "Cost-Effectiveness: NEW Model B (vs Control)",
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10)
+```
+
+## ICER Change: OLD vs NEW
+
+```{r icer-change}
+# Show how ICERs changed between OLD and NEW
+icer_change <- data.frame(
+  Strategy = c("CRP", "TMB/BRAF"),
+  ICER_OLD = c(icer_old$ICER[2], icer_old$ICER[3]),
+  ICER_NEW = c(icer_new$ICER[2], icer_new$ICER[3])
+)
+icer_change$Delta <- icer_change$ICER_NEW - icer_change$ICER_OLD
+icer_change$Pct_Change <- (icer_change$Delta / icer_change$ICER_OLD) * 100
+
+# Format
+icer_change_display <- icer_change
+icer_change_display$ICER_OLD <- ifelse(is.na(icer_change_display$ICER_OLD), "-",
+                                        format(round(icer_change_display$ICER_OLD, 0), big.mark = ","))
+icer_change_display$ICER_NEW <- ifelse(is.na(icer_change_display$ICER_NEW), "-",
+                                        format(round(icer_change_display$ICER_NEW, 0), big.mark = ","))
+icer_change_display$Delta <- ifelse(is.na(icer_change_display$Delta), "-",
+                                     format(round(icer_change_display$Delta, 0), big.mark = ","))
+icer_change_display$Pct_Change <- ifelse(is.na(icer_change_display$Pct_Change), "-",
+                                          paste0(round(icer_change_display$Pct_Change, 1), "\\%"))
+
+kable(icer_change_display,
+      col.names = c("Strategy", "OLD ICER", "NEW ICER", "Delta", "Change"),
+      caption = "ICER Change: OLD vs NEW Model B (EUR/QALY)",
+      booktabs = TRUE,
+      escape = FALSE,
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("hold_position"), font_size = 10)
+```
+
+\newpage
+
+# Summary
+
+```{r summary-calculations, include=FALSE}
+# Extract values for interpretation
+old_crp_inc_qaly <- old_crp$qaly - control$qaly
+new_crp_inc_qaly <- new_crp$qaly - control$qaly
+old_tmb_inc_qaly <- old_tmb$qaly - control$qaly
+new_tmb_inc_qaly <- new_tmb$qaly - control$qaly
+
+old_crp_icer <- icer_old$ICER[2]
+new_crp_icer <- icer_new$ICER[2]
+old_tmb_icer <- icer_old$ICER[3]
+new_tmb_icer <- icer_new$ICER[3]
+```
+
+The redesign of Model B from OLD (all biomarkers as main effects with single interaction per strategy) to NEW (CRP + TMB/BRAF only with both interactions) has notable implications for cost-effectiveness results.
+
+## Key Findings
+
+**CRP Strategy**: Under the OLD Model B, the CRP strategy showed `r ifelse(old_crp_inc_qaly <= 0, "negative or negligible", "positive")` incremental QALYs compared to control (`r round(old_crp_inc_qaly, 3)` QALYs), which resulted in `r ifelse(is.na(old_crp_icer) || old_crp_inc_qaly <= 0, "no valid ICER (dominated or equivalent)", paste0("an ICER of EUR ", format(round(old_crp_icer, 0), big.mark = ",")))`. With the NEW Model B, the CRP strategy now shows a `r ifelse(new_crp_inc_qaly > 0, "positive", "negative")` incremental effect (`r round(new_crp_inc_qaly, 3)` QALYs), `r ifelse(!is.na(new_crp_icer) && new_crp_inc_qaly > 0, paste0("yielding a calculable ICER of EUR ", format(round(new_crp_icer, 0), big.mark = ",")), "but still without a valid ICER")`.
+
+**TMB/BRAF Strategy**: The effect of the TMB/BRAF strategy is larger under the NEW model. OLD Model B showed incremental QALYs of `r round(old_tmb_inc_qaly, 3)` `r ifelse(!is.na(old_tmb_icer) && old_tmb_inc_qaly > 0, paste0("(ICER: EUR ", format(round(old_tmb_icer, 0), big.mark = ","), ")"), "")`, while NEW Model B shows `r round(new_tmb_inc_qaly, 3)` incremental QALYs`r ifelse(!is.na(new_tmb_icer) && new_tmb_inc_qaly > 0, paste0(" (ICER: EUR ", format(round(new_tmb_icer, 0), big.mark = ","), ")"), "")`. This represents a `r ifelse(new_tmb_inc_qaly > old_tmb_inc_qaly, "larger", "smaller")` treatment benefit under the revised model specification.
+
+## Implications
+
+The NEW Model B design has the following implications:
+
+1. **TLR is excluded**: The analysis now focuses on only two biomarker strategies (CRP and TMB/BRAF) rather than three.
+
+2. **Both interactions estimated simultaneously**: The shared formula includes both `crp:Rx` and `tmb_braf:Rx` interaction terms, meaning each biomarker's treatment effect is estimated while adjusting for the other.
+
+3. **Changed cost-effectiveness profile**: The model redesign affects the estimated incremental effects and ICERs, with CRP showing improved cost-effectiveness and TMB/BRAF showing a larger treatment benefit (and consequently lower ICER) compared to the OLD model specification.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.2

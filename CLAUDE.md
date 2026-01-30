@@ -243,7 +243,12 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `n_samples` | 5000 | Resampling/PSA sample size |
 | `dr` | 0.04 | Discount rate (4%) |
 | `USE_BOTH_MODELS` | 0 | 0=full model only, 1=compare both |
-| `MODEL_STRUCTURE` | 0 | 0=joint, 1=focused, 2=separate (see table in script) |
+| `MODEL_STRUCTURE` | 0 | 0=joint (Model A), 1=focused (Model B), 2=separate (Model C) |
+
+**Model Structure Options:**
+- **Model A (joint, 0)**: All biomarkers + all treatment interactions: `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+- **Model B (focused, 1)**: CRP + TMB/BRAF with BOTH interaction terms (TLR EXCLUDED): `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
+- **Model C (separate, 2)**: One biomarker + its interaction only: `~ Age + sex + Rx + [biomarker]:Rx`
 
 **When changed**: Regenerate sampling cache (USE_BOTH_MODELS or MODEL_STRUCTURE change) and PSA cache. Cache filenames encode these settings to prevent mixing results.
 
@@ -254,6 +259,8 @@ Three biomarkers are evaluated (defined in [03_biomarker_strategies.R](scripts/R
 1. **CRP** (C-reactive protein): Binary variable, cut-off <5
 2. **TLR** (Tumor lesion reduction): Binary variable, cut-off ≥10%
 3. **TMB/BRAF**: Combined biomarker (TMB ≥9 mut/MB OR BRAF mutation)
+
+**Note**: Model B (focused) only uses CRP and TMB/BRAF with both interaction terms; TLR is excluded from Model B but included in Models A and C.
 
 Each strategy has:
 - **Biomarker-positive subgroup**: Receives experimental treatment (alternating FLOX + nivolumab)
