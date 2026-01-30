@@ -87,7 +87,7 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 #
 # MODEL_STRUCTURE options:
 #   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
+#   1 = "focused"  - CRP + TMB/BRAF + BOTH interactions (Model B, no TLR)
 #   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
 # ===============================================================================
 
@@ -115,21 +115,24 @@ if (MODEL_STRUCTURE == 0) {
 
 } else if (MODEL_STRUCTURE == 1) {
   # =========================================================================
-  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
+  # FOCUSED (Model B): CRP + TMB/BRAF with BOTH interaction terms
   # =========================================================================
+  # NOTE: TLR is NOT included in Model B
+  # Both CRP and TMB/BRAF strategies use the SAME formula with both interactions
   model_type <- "focused"
-  cat("Resampling: Using FOCUSED models (Model B - all biomarkers + one interaction)\n")
+  cat("Resampling: Using FOCUSED models (Model B - CRP + TMB/BRAF + both interactions)\n")
 
-  # Control model - all biomarkers as main effects, no interactions
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex + crp + tlr + tmb_braf
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex + crp + tlr + tmb_braf
+  # Control model - CRP and TMB/BRAF as main effects, no interactions
+  control_os_formula <- Surv(OSwk, Death) ~ Age + sex + crp + tmb_braf
+  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex + crp + tmb_braf
 
-  # Biomarker formulas - all biomarkers + only THIS biomarker's interaction
+  # Shared biomarker formula - BOTH interactions for all biomarker strategies
   create_biomarker_formula <- function(outcome, biomarker) {
+    # Same formula for both CRP and TMB/BRAF strategies
     if (outcome == "os") {
-      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
+      return(as.formula("Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx"))
     } else {
-      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
+      return(as.formula("Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx"))
     }
   }
 
@@ -267,14 +270,16 @@ if (file.exists(cache_file)) {
 
   sampling_models <- readRDS(cache_file)
 
-  # Validate cache
+  # Validate cache - use model-specific biomarkers
+  # Model B (focused) only uses CRP and TMB/BRAF; Models A and C use all three
+  biomarkers_to_validate <- if (MODEL_STRUCTURE == 1) biomarkers_model_b else biomarkers
   if (is.list(sampling_models) &&
       "control" %in% names(sampling_models) &&
-      all(biomarkers %in% names(sampling_models))) {
+      all(biomarkers_to_validate %in% names(sampling_models))) {
 
     cat("Cache loaded successfully!\n")
     cat("- Control samples:", sampling_models$control$n_samples, "\n")
-    cat("- Biomarkers:", paste(biomarkers, collapse = ", "), "\n")
+    cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
     cat("- Created:", format(sampling_models$control$creation_time), "\n")
     cat("- Distribution:", sampling_models$control$dist, "\n")
 
@@ -318,7 +323,9 @@ if (is.null(sampling_models)) {
   )
 
   # Sample biomarker models with age and sex adjustments
-  for (biomarker in biomarkers) {
+  # Model B (focused) uses only CRP and TMB/BRAF; Models A and C use all three biomarkers
+  biomarkers_to_sample <- if (MODEL_STRUCTURE == 1) biomarkers_model_b else biomarkers
+  for (biomarker in biomarkers_to_sample) {
     cat("\nSampling", biomarker, "strategy...\n")
 
     # OS model with age, sex, biomarker, treatment, and interaction
@@ -351,8 +358,8 @@ if (MODEL_STRUCTURE == 0) {
   cat("- Control models: Age + sex adjusted\n")
   cat("- Biomarker models: Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx (JOINT)\n")
 } else if (MODEL_STRUCTURE == 1) {
-  cat("- Control models: Age + sex + crp + tlr + tmb_braf\n")
-  cat("- Biomarker models: Age + sex + Rx + all biomarkers + [biomarker]:Rx (FOCUSED)\n")
+  cat("- Control models: Age + sex + crp + tmb_braf (TLR excluded)\n")
+  cat("- Biomarker models: Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx (FOCUSED)\n")
 } else if (MODEL_STRUCTURE == 2) {
   cat("- Control models: Age + sex adjusted\n")
   cat("- Biomarker models: Age + sex + Rx + [biomarker]:Rx (SEPARATE)\n")
@@ -504,10 +511,14 @@ dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utili
 dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
 
 # Prevalence parameters - beta distributions (bounded between 0 and 1)
+# Model B (focused) excludes TLR
 cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
 dist_p_crp <- c(list(dist = "beta"), get_beta_params(l_params_base$p_crp, cv_prevalence))
-dist_p_tlr <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tlr, cv_prevalence))
 dist_p_tmb_braf <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tmb_braf, cv_prevalence))
+# Only create TLR distribution for Models A and C
+if (MODEL_STRUCTURE != 1) {
+  dist_p_tlr <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tlr, cv_prevalence))
+}
 
 # Create comprehensive parameter distributions list
 # Note: Survival curves are NOT in this list - they come from bootstrap samples
@@ -522,18 +533,22 @@ param_distributions <- list(
   c_other_baseline = dist_c_other_baseline,
   c_other_follow = dist_c_other_follow,
   c_other_last = dist_c_other_last,
-  
+
   # Utility parameters
   u_np = dist_u_np,
   u_p = dist_u_p,
 
   # Prevalence parameters
   p_crp = dist_p_crp,
-  p_tlr = dist_p_tlr,
   p_tmb_braf = dist_p_tmb_braf
 )
+# Add TLR prevalence distribution only for Models A and C
+if (MODEL_STRUCTURE != 1) {
+  param_distributions$p_tlr <- dist_p_tlr
+}
 
 # Parameter groups for sensitivity analysis (EVPPI)
+# Model B (focused) excludes TLR
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
   test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
@@ -543,7 +558,7 @@ param_groups <- list(
                 "c_test_NGS", "c_other_visit", "c_other_baseline",
                 "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tlr", "p_tmb_braf")
+  prevalence = if (MODEL_STRUCTURE != 1) c("p_crp", "p_tlr", "p_tmb_braf") else c("p_crp", "p_tmb_braf")
 )
 
 # ===============================================================================

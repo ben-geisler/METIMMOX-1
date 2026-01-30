@@ -231,12 +231,12 @@ model_structure_df <- data.frame(
   Name = c("Joint", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Description = c(
     "All biomarkers and all treatment interactions in one unified model",
-    "All biomarkers as main effects, with only one interaction per biomarker-specific model",
+    "CRP and TMB/BRAF with both interaction terms (TLR excluded)",
     "Only one biomarker and its treatment interaction per model (simplest specification)"
   )
 )

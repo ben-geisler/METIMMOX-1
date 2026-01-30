@@ -165,8 +165,8 @@ model_structures <- list(
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    desc = "CRP and TMB/BRAF as main effects + BOTH interactions (TLR excluded)"
   ),
   C = list(
     value = 2,
@@ -297,12 +297,12 @@ model_structure_df <- data.frame(
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Description = c(
     "All biomarkers and all treatment interactions in a single model",
-    "All biomarkers as main effects, one treatment interaction per model",
+    "CRP and TMB/BRAF as main effects + BOTH interactions (TLR excluded)",
     "Only one biomarker and its treatment interaction per model"
   )
 )

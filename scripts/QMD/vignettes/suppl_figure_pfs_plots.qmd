@@ -70,22 +70,21 @@ suppressMessages(suppressWarnings({
 # ===============================================================================
 
 # Define model formulas
+# NOTE: Model B excludes TLR - uses shared formula with CRP + TMB/BRAF + BOTH interactions
 model_formulas <- list(
   A = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
+  # Model B: Shared formula with CRP and TMB/BRAF + BOTH interactions (TLR excluded)
   B_crp = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
-  B_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
-  ),
+  # B_tlr removed - Model B excludes TLR
   B_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
   C_crp = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
@@ -104,7 +103,7 @@ model_formulas <- list(
 model_labels_short <- c(
   "A" = "Model A",
   "B_crp" = "Model B-CRP",
-  "B_tlr" = "Model B-TLR",
+  # B_tlr removed - Model B excludes TLR
   "B_tmb" = "Model B-TMB",
   "C_crp" = "Model C-CRP",
   "C_tlr" = "Model C-TLR",
@@ -138,10 +137,11 @@ for (dist in distributions) {
 }
 
 # Define which biomarkers each model type can predict
+# NOTE: Model B excludes TLR - only B_crp and B_tmb exist
 model_biomarker_map <- list(
   A = c("crp", "tlr", "tmb_braf"),
   B_crp = c("crp"),
-  B_tlr = c("tlr"),
+  # B_tlr removed - Model B excludes TLR
   B_tmb = c("tmb_braf"),
   C_crp = c("crp"),
   C_tlr = c("tlr"),
@@ -318,17 +318,17 @@ p_crp_pfs <- create_pfs_plot(
   factor_levels = c("Control", "CRP - Model A", "CRP - Model B-CRP", "CRP - Model C-CRP")
 )
 
+# NOTE: Model B excludes TLR - only Model A and Model C include TLR
 p_tlr_pfs <- create_pfs_plot(
   biomarker = "tlr",
-  model_types_subset = c("A", "B_tlr", "C_tlr"),
+  model_types_subset = c("A", "C_tlr"),
   color_scheme = c(
     "Control" = "gray50",
     "TLR - Model A" = "#E69F00",
-    "TLR - Model B-TLR" = "#009E73",
     "TLR - Model C-TLR" = "#D55E00"
   ),
   strategy_prefix = "TLR",
-  factor_levels = c("Control", "TLR - Model A", "TLR - Model B-TLR", "TLR - Model C-TLR")
+  factor_levels = c("Control", "TLR - Model A", "TLR - Model C-TLR")
 )
 
 p_tmb_pfs <- create_pfs_plot(

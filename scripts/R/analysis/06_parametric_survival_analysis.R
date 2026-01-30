@@ -70,7 +70,7 @@ data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", 
 # ===============================================================================
 # MODEL_STRUCTURE controls which model formula structure is used:
 #   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
+#   1 = "focused"  - CRP + TMB/BRAF + BOTH interactions (Model B, no TLR)
 #   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
 #
 # USE_BOTH_MODELS controls age/sex adjustment:
@@ -122,32 +122,28 @@ if (MODEL_STRUCTURE == 0) {
 
 } else if (MODEL_STRUCTURE == 1) {
   # =========================================================================
-  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
+  # FOCUSED (Model B): CRP and TMB/BRAF with BOTH interaction terms
   # =========================================================================
-  # Each biomarker strategy uses a separate model with:
-  # - All biomarkers as main effects (adjusting for their prognostic value)
-  # - Only the relevant biomarker's treatment interaction
-  # This allows each biomarker's predictive effect to be estimated independently
-  # while still adjusting for other biomarkers' prognostic effects.
+  # NOTE: TLR is NOT included in Model B
+  # Both CRP and TMB/BRAF strategies use the SAME formula with:
+  # - CRP and TMB/BRAF as main effects (adjusting for their prognostic value)
+  # - BOTH treatment interaction terms (crp:Rx and tmb_braf:Rx)
+  # This model provides estimates for how each biomarker modifies treatment
+  # effect while adjusting for the other biomarker's predictive value.
   # =========================================================================
   model_type_label <- "focused"
-  cat("Configuration: Using FOCUSED models (Model B - all biomarkers + one interaction each)\n")
-  cat("Fitting 3 separate models (one per biomarker strategy).\n")
+  cat("Configuration: Using FOCUSED models (Model B - CRP + TMB/BRAF + both interactions)\n")
+  cat("Fitting models for CRP and TMB/BRAF strategies (TLR excluded).\n")
+
+  # Single shared formula used for both CRP and TMB/BRAF strategies
+  shared_formula_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+  shared_formula_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
 
   model_formulas <- list(
-    crp = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
-    ),
-    tlr = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
-    ),
-    tmb_braf = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
-    )
+    crp = list(os = shared_formula_os, pfs = shared_formula_pfs),
+    tmb_braf = list(os = shared_formula_os, pfs = shared_formula_pfs)
   )
+  # TLR is NOT included in Model B
 
 } else if (MODEL_STRUCTURE == 2) {
   # =========================================================================
@@ -447,7 +443,7 @@ if (is_biomarker_specific) {
 # CONFIGURATION:
 # - MODEL_STRUCTURE: Controls which model formula structure is used
 #   * 0 = "joint" (Model A): All biomarkers + all interactions in one model
-#   * 1 = "focused" (Model B): All biomarkers as main effects + one interaction each
+#   * 1 = "focused" (Model B): CRP + TMB/BRAF + BOTH interactions (no TLR)
 #   * 2 = "separate" (Model C): Only one biomarker + its interaction per model
 #
 # - USE_BOTH_MODELS: Controls age/sex adjustment (only for Model A)

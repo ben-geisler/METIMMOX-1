@@ -313,7 +313,7 @@ The analysis uses **Firth-corrected Cox proportional hazards regression** with p
 We compare three model structures to assess the robustness of treatment-biomarker interactions:
 
 - **Model A**: All-in-one model with all biomarkers and interactions
-- **Model B**: Focused models with all biomarkers but only one interaction per model
+- **Model B**: Focused models with CRP and TMB/BRAF plus both interaction terms (TLR excluded)
 - **Model C**: Single-biomarker models with one biomarker and its interaction
 
 # Methodological Notes
@@ -509,26 +509,23 @@ model_A_pfs <- fit_firth_cox(formula_A_pfs, data_complete, "Model A PFS")
 # Model Type B: Focused Models (all biomarkers, one interaction each)
 # -----------------------------------------------------------------------------
 
-# CRP focus
-formula_B_crp_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + crp_num:Rx
-formula_B_crp_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + crp_num:Rx
+# Model B: CRP + TMB/BRAF with BOTH interaction terms (TLR excluded)
+# Shared formula used for both CRP and TMB/BRAF strategies
+formula_B_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num + crp_num:Rx + tmb_braf_num:Rx
+formula_B_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num + crp_num:Rx + tmb_braf_num:Rx
+
+# Use shared formula for both CRP and TMB strategies
+formula_B_crp_os <- formula_B_os
+formula_B_crp_pfs <- formula_B_pfs
+formula_B_tmb_os <- formula_B_os
+formula_B_tmb_pfs <- formula_B_pfs
 
 model_B_crp_os <- fit_firth_cox(formula_B_crp_os, data_complete, "Model B CRP OS")
 model_B_crp_pfs <- fit_firth_cox(formula_B_crp_pfs, data_complete, "Model B CRP PFS")
-
-# TLR focus
-formula_B_tlr_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tlr_num:Rx
-formula_B_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tlr_num:Rx
-
-model_B_tlr_os <- fit_firth_cox(formula_B_tlr_os, data_complete, "Model B TLR OS")
-model_B_tlr_pfs <- fit_firth_cox(formula_B_tlr_pfs, data_complete, "Model B TLR PFS")
-
-# TMB/BRAF focus
-formula_B_tmb_os <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tmb_braf_num:Rx
-formula_B_tmb_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tlr_num + tmb_braf_num + tmb_braf_num:Rx
-
 model_B_tmb_os <- fit_firth_cox(formula_B_tmb_os, data_complete, "Model B TMB OS")
 model_B_tmb_pfs <- fit_firth_cox(formula_B_tmb_pfs, data_complete, "Model B TMB PFS")
+
+# Note: TLR is NOT included in Model B
 
 # -----------------------------------------------------------------------------
 # Model Type C: Single-Biomarker Models (one biomarker + interaction)
@@ -570,13 +567,12 @@ plrt_A_crp_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "crp_num:R
 plrt_A_tlr_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "tlr_num:Rx")
 plrt_A_tmb_pfs <- test_interaction_plrt(formula_A_pfs, data_complete, "tmb_braf_num:Rx")
 
-# Model B interaction tests (one per model)
+# Model B interaction tests (shared formula with BOTH interactions)
+# NOTE: Model B excludes TLR - only CRP and TMB/BRAF
 plrt_B_crp_os <- test_interaction_plrt(formula_B_crp_os, data_complete, "crp_num:Rx")
-plrt_B_tlr_os <- test_interaction_plrt(formula_B_tlr_os, data_complete, "tlr_num:Rx")
 plrt_B_tmb_os <- test_interaction_plrt(formula_B_tmb_os, data_complete, "tmb_braf_num:Rx")
 
 plrt_B_crp_pfs <- test_interaction_plrt(formula_B_crp_pfs, data_complete, "crp_num:Rx")
-plrt_B_tlr_pfs <- test_interaction_plrt(formula_B_tlr_pfs, data_complete, "tlr_num:Rx")
 plrt_B_tmb_pfs <- test_interaction_plrt(formula_B_tmb_pfs, data_complete, "tmb_braf_num:Rx")
 
 # Model C interaction tests
@@ -607,10 +603,9 @@ names(bh_adjusted) <- c("CRP_OS", "TLR_OS", "TMB_OS", "CRP_PFS", "TLR_PFS", "TMB
 results_A_os <- extract_coxphf_results(model_A_os)
 results_A_pfs <- extract_coxphf_results(model_A_pfs)
 
+# Model B results (TLR excluded from Model B)
 results_B_crp_os <- extract_coxphf_results(model_B_crp_os)
 results_B_crp_pfs <- extract_coxphf_results(model_B_crp_pfs)
-results_B_tlr_os <- extract_coxphf_results(model_B_tlr_os)
-results_B_tlr_pfs <- extract_coxphf_results(model_B_tlr_pfs)
 results_B_tmb_os <- extract_coxphf_results(model_B_tmb_os)
 results_B_tmb_pfs <- extract_coxphf_results(model_B_tmb_pfs)
 
@@ -733,36 +728,31 @@ get_interaction_hr <- function(results_df, pattern) {
        CI_Upper = results_df$CI_Upper[idx[1]])
 }
 
-# OS results
+# OS results (Model B excludes TLR)
 hr_B_crp_os <- get_interaction_hr(results_B_crp_os, "crp_num.*Rx|Rx.*crp_num")
-hr_B_tlr_os <- get_interaction_hr(results_B_tlr_os, "tlr_num.*Rx|Rx.*tlr_num")
 hr_B_tmb_os <- get_interaction_hr(results_B_tmb_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 
-# PFS results
+# PFS results (Model B excludes TLR)
 hr_B_crp_pfs <- get_interaction_hr(results_B_crp_pfs, "crp_num.*Rx|Rx.*crp_num")
-hr_B_tlr_pfs <- get_interaction_hr(results_B_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
 hr_B_tmb_pfs <- get_interaction_hr(results_B_tmb_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 
+# NOTE: Model B excludes TLR - only CRP and TMB/BRAF interactions
 model_B_summary <- data.frame(
-  Biomarker = c("CRP × Treatment", "TLR × Treatment", "TMB/BRAF × Treatment"),
+  Biomarker = c("CRP × Treatment", "TMB/BRAF × Treatment"),
   HR_OS = c(
     format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
-    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
     format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
   ),
   P_OS = c(
     format_pvalue(plrt_B_crp_os$p_value),
-    format_pvalue(plrt_B_tlr_os$p_value),
     format_pvalue(plrt_B_tmb_os$p_value)
   ),
   HR_PFS = c(
     format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
-    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
     format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
   ),
   P_PFS = c(
     format_pvalue(plrt_B_crp_pfs$p_value),
-    format_pvalue(plrt_B_tlr_pfs$p_value),
     format_pvalue(plrt_B_tmb_pfs$p_value)
   )
 )
@@ -775,7 +765,7 @@ model_B_summary %>%
   add_header_above(c(" " = 1, "Overall Survival" = 2, "Progression-Free Survival" = 2))
 ```
 
-**Note:** Each row represents a separate model with all biomarkers as main effects but only the specified interaction.
+**Note:** Model B uses a shared formula with CRP and TMB/BRAF as main effects plus BOTH interaction terms (crp:Rx and tmb_braf:Rx). TLR is excluded from Model B.
 
 \newpage
 
@@ -815,39 +805,7 @@ if (!is.null(results_B_crp_pfs)) {
 }
 ```
 
-```{r table-B-tlr-os}
-if (!is.null(results_B_tlr_os)) {
-  display_B_tlr_os <- results_B_tlr_os %>%
-    mutate(
-      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
-      P = format_pvalue(P_Value)
-    ) %>%
-    select(Term, HR_CI, P)
-
-  display_B_tlr_os %>%
-    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
-          caption = "Model B TLR-Focused: Overall Survival - Full Coefficients",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9)
-}
-```
-
-```{r table-B-tlr-pfs}
-if (!is.null(results_B_tlr_pfs)) {
-  display_B_tlr_pfs <- results_B_tlr_pfs %>%
-    mutate(
-      HR_CI = format_hr_ci(HR, CI_Lower, CI_Upper),
-      P = format_pvalue(P_Value)
-    ) %>%
-    select(Term, HR_CI, P)
-
-  display_B_tlr_pfs %>%
-    kable(col.names = c("Term", "HR (95% CI)", "p-value"),
-          caption = "Model B TLR-Focused: Progression-Free Survival - Full Coefficients",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9)
-}
-```
+<!-- Model B excludes TLR - no B-TLR tables needed -->
 
 ```{r table-B-tmb-os}
 if (!is.null(results_B_tmb_os)) {
@@ -1051,6 +1009,7 @@ hr_A_crp_os <- get_interaction_hr(results_A_os, "crp_num.*Rx|Rx.*crp_num")
 hr_A_tlr_os <- get_interaction_hr(results_A_os, "tlr_num.*Rx|Rx.*tlr_num")
 hr_A_tmb_os <- get_interaction_hr(results_A_os, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 
+# NOTE: Model B excludes TLR - show N/A for TLR row
 comparison_os <- data.frame(
   Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
   Model_A = c(
@@ -1060,7 +1019,7 @@ comparison_os <- data.frame(
   ),
   Model_B = c(
     format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
-    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
+    "N/A",  # Model B excludes TLR
     format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
   ),
   Model_C = c(
@@ -1075,7 +1034,7 @@ comparison_os %>%
         caption = "Overall Survival: Treatment × Biomarker Interactions Across Model Types",
         booktabs = TRUE, format = "latex") %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Model A: All-in-one; Model B: Focused; Model C: Single biomarker.",
+  footnote(general = "Model A: All-in-one; Model B: Focused (TLR excluded); Model C: Single biomarker.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1084,6 +1043,7 @@ hr_A_crp_pfs <- get_interaction_hr(results_A_pfs, "crp_num.*Rx|Rx.*crp_num")
 hr_A_tlr_pfs <- get_interaction_hr(results_A_pfs, "tlr_num.*Rx|Rx.*tlr_num")
 hr_A_tmb_pfs <- get_interaction_hr(results_A_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 
+# NOTE: Model B excludes TLR - show N/A for TLR row
 comparison_pfs <- data.frame(
   Biomarker = c("CRP × Rx", "TLR × Rx", "TMB/BRAF × Rx"),
   Model_A = c(
@@ -1093,7 +1053,7 @@ comparison_pfs <- data.frame(
   ),
   Model_B = c(
     format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
-    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
+    "N/A",  # Model B excludes TLR
     format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
   ),
   Model_C = c(
@@ -1108,7 +1068,7 @@ comparison_pfs %>%
         caption = "Progression-Free Survival: Treatment × Biomarker Interactions Across Model Types",
         booktabs = TRUE, format = "latex") %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Model A: All-in-one; Model B: Focused; Model C: Single biomarker.",
+  footnote(general = "Model A: All-in-one; Model B: Focused (TLR excluded); Model C: Single biomarker.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1118,27 +1078,28 @@ comparison_pfs %>%
 
 ```{r forest-plot-os, fig.height=5, fig.width=9}
 # Prepare data for forest plot - OS
+# NOTE: Model B excludes TLR - use NA for Model B TLR entries
 forest_data_os <- data.frame(
   Biomarker = rep(c("CRP", "TLR", "TMB/BRAF"), 3),
   Model = rep(c("A: All-in-One", "B: Focused", "C: Single"), each = 3),
   HR = c(
     hr_A_crp_os$HR, hr_A_tlr_os$HR, hr_A_tmb_os$HR,
-    hr_B_crp_os$HR, hr_B_tlr_os$HR, hr_B_tmb_os$HR,
+    hr_B_crp_os$HR, NA, hr_B_tmb_os$HR,  # Model B excludes TLR
     hr_C_crp_os$HR, hr_C_tlr_os$HR, hr_C_tmb_os$HR
   ),
   CI_Lower = c(
     hr_A_crp_os$CI_Lower, hr_A_tlr_os$CI_Lower, hr_A_tmb_os$CI_Lower,
-    hr_B_crp_os$CI_Lower, hr_B_tlr_os$CI_Lower, hr_B_tmb_os$CI_Lower,
+    hr_B_crp_os$CI_Lower, NA, hr_B_tmb_os$CI_Lower,  # Model B excludes TLR
     hr_C_crp_os$CI_Lower, hr_C_tlr_os$CI_Lower, hr_C_tmb_os$CI_Lower
   ),
   CI_Upper = c(
     hr_A_crp_os$CI_Upper, hr_A_tlr_os$CI_Upper, hr_A_tmb_os$CI_Upper,
-    hr_B_crp_os$CI_Upper, hr_B_tlr_os$CI_Upper, hr_B_tmb_os$CI_Upper,
+    hr_B_crp_os$CI_Upper, NA, hr_B_tmb_os$CI_Upper,  # Model B excludes TLR
     hr_C_crp_os$CI_Upper, hr_C_tlr_os$CI_Upper, hr_C_tmb_os$CI_Upper
   )
 )
 
-# Remove NA values
+# Remove NA values (includes Model B TLR which is excluded)
 forest_data_os <- forest_data_os[complete.cases(forest_data_os), ]
 
 if (nrow(forest_data_os) > 0) {
@@ -1148,26 +1109,28 @@ if (nrow(forest_data_os) > 0) {
 
 ```{r forest-plot-pfs, fig.height=5, fig.width=9}
 # Prepare data for forest plot - PFS
+# NOTE: Model B excludes TLR - use NA for Model B TLR entries
 forest_data_pfs <- data.frame(
   Biomarker = rep(c("CRP", "TLR", "TMB/BRAF"), 3),
   Model = rep(c("A: All-in-One", "B: Focused", "C: Single"), each = 3),
   HR = c(
     hr_A_crp_pfs$HR, hr_A_tlr_pfs$HR, hr_A_tmb_pfs$HR,
-    hr_B_crp_pfs$HR, hr_B_tlr_pfs$HR, hr_B_tmb_pfs$HR,
+    hr_B_crp_pfs$HR, NA, hr_B_tmb_pfs$HR,  # Model B excludes TLR
     hr_C_crp_pfs$HR, hr_C_tlr_pfs$HR, hr_C_tmb_pfs$HR
   ),
   CI_Lower = c(
     hr_A_crp_pfs$CI_Lower, hr_A_tlr_pfs$CI_Lower, hr_A_tmb_pfs$CI_Lower,
-    hr_B_crp_pfs$CI_Lower, hr_B_tlr_pfs$CI_Lower, hr_B_tmb_pfs$CI_Lower,
+    hr_B_crp_pfs$CI_Lower, NA, hr_B_tmb_pfs$CI_Lower,  # Model B excludes TLR
     hr_C_crp_pfs$CI_Lower, hr_C_tlr_pfs$CI_Lower, hr_C_tmb_pfs$CI_Lower
   ),
   CI_Upper = c(
     hr_A_crp_pfs$CI_Upper, hr_A_tlr_pfs$CI_Upper, hr_A_tmb_pfs$CI_Upper,
-    hr_B_crp_pfs$CI_Upper, hr_B_tlr_pfs$CI_Upper, hr_B_tmb_pfs$CI_Upper,
+    hr_B_crp_pfs$CI_Upper, NA, hr_B_tmb_pfs$CI_Upper,  # Model B excludes TLR
     hr_C_crp_pfs$CI_Upper, hr_C_tlr_pfs$CI_Upper, hr_C_tmb_pfs$CI_Upper
   )
 )
 
+# Remove NA values (includes Model B TLR which is excluded)
 forest_data_pfs <- forest_data_pfs[complete.cases(forest_data_pfs), ]
 
 if (nrow(forest_data_pfs) > 0) {
@@ -1257,113 +1220,55 @@ if (exists("ridge_A_pfs") && !is.null(ridge_A_pfs)) {
 }
 
 # =============================================================================
-# MODEL B: Focused (all biomarkers + one interaction per model)
+# MODEL B: Focused (CRP + TMB/BRAF + BOTH interactions, TLR excluded)
 # =============================================================================
+# NOTE: Model B uses a shared formula with CRP and TMB/BRAF as main effects
+# plus BOTH interaction terms. TLR is excluded from Model B.
 
-# CRP-focused
+# Shared formula for Model B (CRP and TMB only, both interactions)
 tryCatch({
-  ridge_B_crp_os <- coxph(
+  ridge_B_os <- coxph(
     Surv(OSwk, Death) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx,
+      ridge(crp_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tmb_braf_num:Rx,
     data = data_complete
   )
-  ridge_B_crp_os_success <- TRUE
+  ridge_B_os_success <- TRUE
 }, error = function(e) {
-  ridge_B_crp_os_success <<- FALSE
-  ridge_B_crp_os <<- NULL
+  ridge_B_os_success <<- FALSE
+  ridge_B_os <<- NULL
 })
 
 tryCatch({
-  ridge_B_crp_pfs <- coxph(
+  ridge_B_pfs <- coxph(
     Surv(PFSwk, Progression) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx,
+      ridge(crp_num, tmb_braf_num, theta = 1, scale = TRUE) +
+      crp_num:Rx + tmb_braf_num:Rx,
     data = data_complete
   )
-  ridge_B_crp_pfs_success <- TRUE
+  ridge_B_pfs_success <- TRUE
 }, error = function(e) {
-  ridge_B_crp_pfs_success <<- FALSE
-  ridge_B_crp_pfs <<- NULL
-})
-
-# TLR-focused
-tryCatch({
-  ridge_B_tlr_os <- coxph(
-    Surv(OSwk, Death) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      tlr_num:Rx,
-    data = data_complete
-  )
-  ridge_B_tlr_os_success <- TRUE
-}, error = function(e) {
-  ridge_B_tlr_os_success <<- FALSE
-  ridge_B_tlr_os <<- NULL
-})
-
-tryCatch({
-  ridge_B_tlr_pfs <- coxph(
-    Surv(PFSwk, Progression) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      tlr_num:Rx,
-    data = data_complete
-  )
-  ridge_B_tlr_pfs_success <- TRUE
-}, error = function(e) {
-  ridge_B_tlr_pfs_success <<- FALSE
-  ridge_B_tlr_pfs <<- NULL
-})
-
-# TMB/BRAF-focused
-tryCatch({
-  ridge_B_tmb_os <- coxph(
-    Surv(OSwk, Death) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      tmb_braf_num:Rx,
-    data = data_complete
-  )
-  ridge_B_tmb_os_success <- TRUE
-}, error = function(e) {
-  ridge_B_tmb_os_success <<- FALSE
-  ridge_B_tmb_os <<- NULL
-})
-
-tryCatch({
-  ridge_B_tmb_pfs <- coxph(
-    Surv(PFSwk, Progression) ~ Age + sex + Rx +
-      ridge(crp_num, tlr_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      tmb_braf_num:Rx,
-    data = data_complete
-  )
-  ridge_B_tmb_pfs_success <- TRUE
-}, error = function(e) {
-  ridge_B_tmb_pfs_success <<- FALSE
-  ridge_B_tmb_pfs <<- NULL
+  ridge_B_pfs_success <<- FALSE
+  ridge_B_pfs <<- NULL
 })
 
 # Extract Model B interaction estimates (using shorter patterns for truncated names)
-ridge_B_crp_os_hr <- if (exists("ridge_B_crp_os") && !is.null(ridge_B_crp_os)) {
-  extract_ridge_interaction(ridge_B_crp_os, "crp.*Rx|Rx.*crp")
+# CRP interaction from shared Model B
+ridge_B_crp_os_hr <- if (exists("ridge_B_os") && !is.null(ridge_B_os)) {
+  extract_ridge_interaction(ridge_B_os, "crp.*Rx|Rx.*crp")
 } else { list(HR = NA, SE = NA) }
 
-ridge_B_crp_pfs_hr <- if (exists("ridge_B_crp_pfs") && !is.null(ridge_B_crp_pfs)) {
-  extract_ridge_interaction(ridge_B_crp_pfs, "crp.*Rx|Rx.*crp")
+ridge_B_crp_pfs_hr <- if (exists("ridge_B_pfs") && !is.null(ridge_B_pfs)) {
+  extract_ridge_interaction(ridge_B_pfs, "crp.*Rx|Rx.*crp")
 } else { list(HR = NA, SE = NA) }
 
-ridge_B_tlr_os_hr <- if (exists("ridge_B_tlr_os") && !is.null(ridge_B_tlr_os)) {
-  extract_ridge_interaction(ridge_B_tlr_os, "tlr.*Rx|Rx.*tlr")
+# TMB interaction from shared Model B
+ridge_B_tmb_os_hr <- if (exists("ridge_B_os") && !is.null(ridge_B_os)) {
+  extract_ridge_interaction(ridge_B_os, "tmb.*Rx|Rx.*tmb")
 } else { list(HR = NA, SE = NA) }
 
-ridge_B_tlr_pfs_hr <- if (exists("ridge_B_tlr_pfs") && !is.null(ridge_B_tlr_pfs)) {
-  extract_ridge_interaction(ridge_B_tlr_pfs, "tlr.*Rx|Rx.*tlr")
-} else { list(HR = NA, SE = NA) }
-
-ridge_B_tmb_os_hr <- if (exists("ridge_B_tmb_os") && !is.null(ridge_B_tmb_os)) {
-  extract_ridge_interaction(ridge_B_tmb_os, "tmb.*Rx|Rx.*tmb")
-} else { list(HR = NA, SE = NA) }
-
-ridge_B_tmb_pfs_hr <- if (exists("ridge_B_tmb_pfs") && !is.null(ridge_B_tmb_pfs)) {
-  extract_ridge_interaction(ridge_B_tmb_pfs, "tmb.*Rx|Rx.*tmb")
+ridge_B_tmb_pfs_hr <- if (exists("ridge_B_pfs") && !is.null(ridge_B_pfs)) {
+  extract_ridge_interaction(ridge_B_pfs, "tmb.*Rx|Rx.*tmb")
 } else { list(HR = NA, SE = NA) }
 
 # =============================================================================
@@ -1489,6 +1394,7 @@ format_ridge_hr <- function(hr, se) {
 }
 
 # Overall Survival comparison - All three model types
+# NOTE: Model B excludes TLR - show N/A for TLR row
 ridge_comparison_os <- data.frame(
   Biomarker = c("CRP x Rx", "TLR x Rx", "TMB/BRAF x Rx"),
   Firth_A = c(
@@ -1503,12 +1409,12 @@ ridge_comparison_os <- data.frame(
   ),
   Firth_B = c(
     format_hr_ci(hr_B_crp_os$HR, hr_B_crp_os$CI_Lower, hr_B_crp_os$CI_Upper),
-    format_hr_ci(hr_B_tlr_os$HR, hr_B_tlr_os$CI_Lower, hr_B_tlr_os$CI_Upper),
+    "N/A",  # Model B excludes TLR
     format_hr_ci(hr_B_tmb_os$HR, hr_B_tmb_os$CI_Lower, hr_B_tmb_os$CI_Upper)
   ),
   Ridge_B = c(
     format_ridge_hr(ridge_B_crp_os_hr$HR, ridge_B_crp_os_hr$SE),
-    format_ridge_hr(ridge_B_tlr_os_hr$HR, ridge_B_tlr_os_hr$SE),
+    "N/A",  # Model B excludes TLR
     format_ridge_hr(ridge_B_tmb_os_hr$HR, ridge_B_tmb_os_hr$SE)
   ),
   Firth_C = c(
@@ -1535,6 +1441,7 @@ ridge_comparison_os %>%
 
 ```{r table-ridge-pfs}
 # Progression-Free Survival comparison - All three model types
+# NOTE: Model B excludes TLR - show N/A for TLR row
 ridge_comparison_pfs <- data.frame(
   Biomarker = c("CRP x Rx", "TLR x Rx", "TMB/BRAF x Rx"),
   Firth_A = c(
@@ -1549,12 +1456,12 @@ ridge_comparison_pfs <- data.frame(
   ),
   Firth_B = c(
     format_hr_ci(hr_B_crp_pfs$HR, hr_B_crp_pfs$CI_Lower, hr_B_crp_pfs$CI_Upper),
-    format_hr_ci(hr_B_tlr_pfs$HR, hr_B_tlr_pfs$CI_Lower, hr_B_tlr_pfs$CI_Upper),
+    "N/A",  # Model B excludes TLR
     format_hr_ci(hr_B_tmb_pfs$HR, hr_B_tmb_pfs$CI_Lower, hr_B_tmb_pfs$CI_Upper)
   ),
   Ridge_B = c(
     format_ridge_hr(ridge_B_crp_pfs_hr$HR, ridge_B_crp_pfs_hr$SE),
-    format_ridge_hr(ridge_B_tlr_pfs_hr$HR, ridge_B_tlr_pfs_hr$SE),
+    "N/A",  # Model B excludes TLR
     format_ridge_hr(ridge_B_tmb_pfs_hr$HR, ridge_B_tmb_pfs_hr$SE)
   ),
   Firth_C = c(

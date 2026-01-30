@@ -54,6 +54,10 @@ data_tmb_braf$strategy <- "tmb_braf"
 strategies <- c("control", "crp", "tlr", "tmb_braf")
 biomarkers <- c("crp", "tlr", "tmb_braf")
 
+# Model B biomarkers (focused model excludes TLR)
+# Used when MODEL_STRUCTURE == 1 to limit analysis to CRP and TMB/BRAF only
+biomarkers_model_b <- c("crp", "tmb_braf")
+
 # Create a comprehensive strategy dataframe with all relevant information
 strategies_df <- data.frame(
   id = strategies,
@@ -84,7 +88,7 @@ rm(list = setdiff(ls(), c(
   # Main datasets
   "data", "data_control", "data_crp", "data_tlr", "data_tmb_braf",
   # Model parameters and structure
-  "strategies", "biomarkers", "strategies_df",
+  "strategies", "biomarkers", "biomarkers_model_b", "strategies_df",
   # Biomarker prevalence
   "p_crp", "p_tlr", "p_tmb_braf",
   # Other essential variables from 02_setup_and_global_variables.R

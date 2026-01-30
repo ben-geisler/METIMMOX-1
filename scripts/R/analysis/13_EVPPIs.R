@@ -64,10 +64,16 @@ cat("  - EVPI:", round(evpi_manual, 2), "\n")
 # ===============================================================================
 
 # Define parameters for EVPPI analysis
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
-                  "c_test_CT", "u_np", "u_p", "c_other_last",
-                  "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow",
-                  "p_crp", "p_tlr", "p_tmb_braf")
+# Model B (focused) excludes TLR, so p_tlr is only included for Models A and C
+evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
+                       "c_test_CT", "u_np", "u_p", "c_other_last",
+                       "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow",
+                       "p_crp", "p_tmb_braf")
+if (MODEL_STRUCTURE != 1) {
+  evppi_params <- c(evppi_params_base, "p_tlr")
+} else {
+  evppi_params <- evppi_params_base
+}
 
 # Run EVPPI analysis (param_groups defined in 08_sampling.R)
 evppi_results <- run_evppi_analysis(

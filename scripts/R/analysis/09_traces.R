@@ -71,12 +71,15 @@ for(strategy in strategies) {
 }
 
 # Create strategy labels for faceting
-all_strategies_df$Strategy <- factor(all_strategies_df$Strategy, 
+# Labels are dynamic based on number of strategies (Model B excludes TLR)
+strategy_labels <- if (length(strategies) == 3) {
+  c("Standard of Care", "CRP Strategy", "TMB/BRAF Strategy")
+} else {
+  c("Standard of Care", "CRP Strategy", "TLR Strategy", "TMB/BRAF Strategy")
+}
+all_strategies_df$Strategy <- factor(all_strategies_df$Strategy,
                                      levels = strategies,
-                                     labels = c("Standard of Care", 
-                                                "CRP Strategy", 
-                                                "TLR Strategy", 
-                                                "TMB/BRAF Strategy"))
+                                     labels = strategy_labels)
 
 # Create faceted plot
 all_strategies_plot <- ggplot(all_strategies_df, aes(x = Year, y = Proportion, fill = State)) +
