@@ -57,7 +57,7 @@ The OLD Model B included TLR as a biomarker but evidence suggests TLR may not pr
 1. **Excludes TLR entirely** - focuses on CRP and TMB/BRAF only
 2. **Includes both interaction terms** - providing estimates for how each biomarker modifies treatment effect while adjusting for the other
 
-# Methodology
+# Methodology 
 
 ```{r load-data, include=FALSE}
 # Source analysis scripts - suppress all output
