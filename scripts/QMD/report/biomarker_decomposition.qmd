@@ -857,7 +857,7 @@ This report uses only the Gamma distribution for all survival models. For detail
 Three model structures are compared for each biomarker strategy:
 
 - **Model A (Joint)**: All biomarker-treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects plus one interaction term
+- **Model B (Focused)**: CRP and TMB/BRAF as main effects plus both interactions (TLR excluded)
 - **Model C (Separate)**: Single biomarker with its interaction term only
 
 Table 1 summarizes the patient populations for each biomarker strategy, showing the number of biomarker-positive and biomarker-negative patients and the overall prevalence rate.

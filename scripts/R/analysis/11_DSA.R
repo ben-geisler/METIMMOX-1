@@ -221,7 +221,9 @@ if (exists("models") && !is.null(models$full$os)) {
       test_params$p_pfs$control_PFS <- test_predictions$control$pfs
 
       # Update biomarker strategy survival curves
-      for (biomarker in biomarkers) {
+      # Model B (focused) only uses CRP and TMB/BRAF; Models A and C use all three
+      biomarkers_to_loop <- if (exists("MODEL_STRUCTURE") && MODEL_STRUCTURE == 1) biomarkers_model_b else biomarkers
+      for (biomarker in biomarkers_to_loop) {
         test_params$p_os[[paste0(biomarker, "_pos_OS")]] <- test_predictions[[biomarker]]$biomarker_positive$os
         test_params$p_os[[paste0(biomarker, "_neg_OS")]] <- test_predictions[[biomarker]]$biomarker_negative$os
         test_params$p_os[[paste0(biomarker, "_weighted_OS")]] <- test_predictions[[biomarker]]$os

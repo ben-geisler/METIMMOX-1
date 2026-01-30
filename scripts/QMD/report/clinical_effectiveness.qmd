@@ -715,7 +715,7 @@ if (!is.null(results_A_pfs)) {
 
 ## Model B: Focused Models
 
-These models include all three biomarkers as main effects but only ONE treatment-biomarker interaction per model. This approach tests each interaction while controlling for all biomarkers.
+These models include CRP and TMB/BRAF as main effects plus BOTH treatment-biomarker interactions (crp:Rx and tmb_braf:Rx). TLR is excluded from Model B. This shared formula provides estimates for how each biomarker modifies treatment effect while adjusting for the other.
 
 ```{r table-B-summary}
 # Extract interaction HRs from Model B

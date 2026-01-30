@@ -1460,7 +1460,7 @@ knitr::kable(scenario_display,
 This scenario analysis examined the impact of utility assumptions on the METIMMOX-1 cost-effectiveness model across three alternative model structures:
 
 - **Model A (Joint)**: All biomarkers and all treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model B (Focused)**: CRP and TMB/BRAF as main effects plus both interactions (TLR excluded)
 - **Model C (Separate)**: Only one biomarker and its treatment interaction per model
 
 Key findings:

@@ -98,7 +98,7 @@ n_samples <- 5000  # Number of resampled models (for cache file naming)
 # =============================================================================
 # This report analyzes all three model structures:
 # - Model A (joint): All biomarkers + all treatment interactions in one model
-# - Model B (focused): All biomarkers as main effects + one interaction per model
+# - Model B (focused): CRP + TMB/BRAF as main effects + both interactions (TLR excluded)
 # - Model C (separate): Only one biomarker + its interaction per model
 
 model_structures <- list(
@@ -833,7 +833,7 @@ The analysis examines how variations in individual model parameters affect the n
 **This report presents OWSA results for all three survival model structures:**
 
 - **Model A (Joint)**: All biomarkers and treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model B (Focused)**: CRP and TMB/BRAF as main effects plus both interactions (TLR excluded)
 - **Model C (Separate)**: Only one biomarker and its treatment interaction per model
 
 This report contains:
