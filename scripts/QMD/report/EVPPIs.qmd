@@ -425,7 +425,7 @@ model_structure_df <- data.frame(
   ),
   Description = c(
     "All biomarkers and all treatment interactions in one unified model",
-    "CRP and TMB/BRAF as main effects + BOTH interactions (TLR excluded)",
+    "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction",
     "Only one biomarker and its treatment interaction per model (simplest specification)"
   )
 )
@@ -1334,4 +1334,4 @@ if (nrow(evppi_all_scenarios) > 0) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

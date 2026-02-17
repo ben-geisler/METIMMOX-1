@@ -79,12 +79,12 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # BIOMARKER-GUIDED STRATEGIES: Treatment assigned by biomarker status
   # -------------------------------------------------------------------------
 
-  # Determine which biomarkers to process based on model structure
-  # Model B (focused) excludes TLR
-  biomarkers_to_predict <- if (exists("MODEL_STRUCTURE") && MODEL_STRUCTURE == 1) {
-    c("crp", "tmb_braf")
+  # Determine which biomarkers to process
+  # All models now include all three biomarker strategies
+  biomarkers_to_predict <- if (exists("get_biomarkers")) {
+    get_biomarkers()
   } else {
-    c("crp", "tlr", "tmb_braf")
+    c("crp", "tlr", "tmb_braf")  # Fallback
   }
 
   # Loop through each biomarker strategy
@@ -260,12 +260,12 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
   # BIOMARKER-GUIDED STRATEGIES: Each uses its specific model
   # -------------------------------------------------------------------------
 
-  # Determine which biomarkers to process based on model structure
-  # Model B (focused) excludes TLR
-  biomarkers_to_predict <- if (exists("MODEL_STRUCTURE") && MODEL_STRUCTURE == 1) {
-    c("crp", "tmb_braf")
+  # Determine which biomarkers to process
+  # All models now include all three biomarker strategies
+  biomarkers_to_predict <- if (exists("get_biomarkers")) {
+    get_biomarkers()
   } else {
-    c("crp", "tlr", "tmb_braf")
+    c("crp", "tlr", "tmb_braf")  # Fallback
   }
 
   for (biomarker_name in biomarkers_to_predict) {

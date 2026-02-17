@@ -70,18 +70,21 @@ suppressMessages(suppressWarnings({
 # ===============================================================================
 
 # Define model formulas
-# NOTE: Model B excludes TLR - uses shared formula with CRP + TMB/BRAF + BOTH interactions
+# NOTE: Model B uses per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction
 model_formulas <- list(
   A = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
-  # Model B: Shared formula with CRP and TMB/BRAF + BOTH interactions (TLR excluded)
+  # Model B: Per-strategy formulas
   B_crp = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
-  # B_tlr removed - Model B excludes TLR
+  B_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
+  ),
   B_tmb = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx

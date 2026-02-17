@@ -20,35 +20,22 @@ p_load(here, dplyr, ggplot2, scales, dampack)
 # ===============================================================================
 # MODEL CONFIGURATION
 # ===============================================================================
+# Model configurations are defined in scripts/R/functions/model_configs.R
+# which provides the single source of truth for all model structures.
+# The get_model_configs() function is imported from that file.
 
-#' Get model configuration definitions
-#'
-#' @return Named list of model configurations
-get_model_configs <- function() {
-  list(
-    Model_A = list(
-      structure = 0,
-      label = "Model A: Joint",
-      short_label = "A",
-      description = "All biomarkers + all treatment interactions in one model",
-      biomarkers = c("crp", "tlr", "tmb_braf")
-    ),
-    Model_B = list(
-      structure = 1,
-      label = "Model B: Focused",
-      short_label = "B",
-      description = "CRP + TMB/BRAF with both interaction terms (no TLR)",
-      biomarkers = c("crp", "tmb_braf")
-    ),
-    Model_C = list(
-      structure = 2,
-      label = "Model C: Separate",
-      short_label = "C",
-      description = "One biomarker + its interaction only per model",
-      biomarkers = c("crp", "tlr", "tmb_braf")
-    )
-  )
+# Source model configurations if not already loaded
+if (!exists("get_model_configs") || !exists("get_strategies")) {
+  model_configs_path <- here::here("scripts/R/functions/model_configs.R")
+  if (file.exists(model_configs_path)) {
+    source(model_configs_path)
+  } else {
+    stop("model_configs.R not found. Please ensure scripts/R/functions/model_configs.R exists.")
+  }
 }
+
+# Note: get_model_configs() is now provided by model_configs.R
+# All models include all three biomarker strategies (CRP, TLR, TMB/BRAF)
 
 # ===============================================================================
 # BASE CASE ANALYSIS FUNCTIONS

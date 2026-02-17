@@ -236,7 +236,7 @@ model_structure_df <- data.frame(
   ),
   Description = c(
     "All biomarkers and all treatment interactions in one unified model",
-    "CRP and TMB/BRAF with both interaction terms (TLR excluded)",
+    "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction",
     "Only one biomarker and its treatment interaction per model (simplest specification)"
   )
 )
@@ -638,4 +638,4 @@ This analysis compared cost-effectiveness results across three model structures 
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

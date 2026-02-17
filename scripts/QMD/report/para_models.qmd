@@ -128,9 +128,8 @@ model_formulas <- list(
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
 
-  # Model B: Focused - CRP and TMB/BRAF with BOTH interaction terms
-  # NOTE: TLR is NOT included in Model B
-  # Both CRP and TMB/BRAF strategies use the SAME shared formula
+  # Model B: Focused - Per-strategy formulas
+  # CRP and TMB/BRAF share a formula with both interactions
   B_crp = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
@@ -138,6 +137,11 @@ model_formulas <- list(
   B_tmb = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+  ),
+  # TLR uses its own formula with TLR-only interaction
+  B_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
   ),
 
   # Model C: Single-biomarker (Separate) - ONE biomarker only + its interaction
@@ -160,10 +164,10 @@ model_formulas <- list(
 # -------------------------------------------------------------------------------
 
 # Short labels for plots
-# NOTE: Model B excludes TLR - only CRP and TMB/BRAF are included
 model_labels_short <- c(
   "A" = "Model A",
   "B_crp" = "Model B-CRP",
+  "B_tlr" = "Model B-TLR",
   "B_tmb" = "Model B-TMB",
   "C_crp" = "Model C-CRP",
   "C_tlr" = "Model C-TLR",
@@ -174,6 +178,7 @@ model_labels_short <- c(
 model_labels_full <- c(
   "A" = "Model A: Joint (all biomarkers + all interactions)",
   "B_crp" = "Model B-CRP: Focused (CRP + TMB/BRAF + both interactions)",
+  "B_tlr" = "Model B-TLR: Focused (CRP + TMB/BRAF main effects, TLR interaction only)",
   "B_tmb" = "Model B-TMB: Focused (CRP + TMB/BRAF + both interactions)",
   "C_crp" = "Model C-CRP: Single-biomarker (CRP only)",
   "C_tlr" = "Model C-TLR: Single-biomarker (TLR only)",
@@ -184,11 +189,11 @@ model_labels_full <- c(
 # 3. Define color palettes (colorblind-friendly)
 # -------------------------------------------------------------------------------
 
-# Model type colors
-# NOTE: Model B excludes TLR
+# Model type colors (colorblind-friendly)
 model_colors <- c(
   "A" = "#E69F00",        # Orange
   "B_crp" = "#56B4E9",    # Sky blue
+  "B_tlr" = "#009E73",    # Bluish green
   "B_tmb" = "#F0E442",    # Yellow
   "C_crp" = "#0072B2",    # Blue
   "C_tlr" = "#D55E00",    # Vermillion
@@ -225,8 +230,7 @@ multi_predictions <- list(
 )
 
 # Vector of model types to fit
-# NOTE: Model B excludes TLR - only B_crp and B_tmb are included
-model_types <- c("A", "B_crp", "B_tmb", "C_crp", "C_tlr", "C_tmb")
+model_types <- c("A", "B_crp", "B_tlr", "B_tmb", "C_crp", "C_tlr", "C_tmb")
 
 # Vector of distributions to test
 distributions <- c("gamma", "weibullph")
@@ -345,8 +349,8 @@ cat("===============================================\n")
 # Define which biomarkers each model type can predict
 model_biomarker_map <- list(
   A = c("crp", "tlr", "tmb_braf"),
-  # Model B excludes TLR - only CRP and TMB/BRAF
   B_crp = c("crp"),
+  B_tlr = c("tlr"),
   B_tmb = c("tmb_braf"),
   C_crp = c("crp"),
   C_tlr = c("tlr"),
@@ -513,11 +517,11 @@ This report compares three model structure types to assess sensitivity to biomar
 
 - **Model A (Joint)**: All three biomarkers and their treatment interactions are included in a single model. This specification tests each biomarker interaction while adjusting for the others, providing mutually adjusted effect estimates. Model A is the primary specification used in the cost-effectiveness analysis.
 
-- **Model B (Focused)**: CRP and TMB/BRAF are included as main effects (covariates), with one treatment interaction tested per model. Note that TLR is NOT included in Model B. This creates two separate models per outcome (B-CRP, B-TMB), allowing biomarker-specific model selection while controlling for confounding from the other biomarker.
+- **Model B (Focused)**: Per-strategy formulas. CRP and TMB/BRAF strategies share a formula with both biomarkers as main effects and both interaction terms (`crp:Rx + tmb_braf:Rx`). TLR uses a separate formula with CRP and TMB/BRAF as main effects but only the TLR interaction (`tlr:Rx`). This creates three models per outcome (B-CRP, B-TLR, B-TMB).
 
 - **Model C (Single-biomarker)**: Each biomarker is modeled separately without adjustment for other biomarkers, creating three independent models per outcome (C-CRP, C-TLR, C-TMB). This is the simplest specification but may overestimate effects if biomarkers are correlated.
 
-For each model structure type, we fit two parametric distributions (Gamma and Weibull proportional hazards) for both OS and PFS, resulting in **24 total models** (6 model variants × 2 distributions × 2 outcomes).
+For each model structure type, we fit two parametric distributions (Gamma and Weibull proportional hazards) for both OS and PFS, resulting in **28 total models** (7 model variants × 2 distributions × 2 outcomes).
 
 # Population Characteristics including Biomarker Prevalences
 
@@ -559,17 +563,18 @@ We compare seven model variants representing three structural approaches:
 
 ```{r model-formulas-table, results='asis'}
 # Create model formulas table
-# NOTE: Model B excludes TLR - uses single shared formula with BOTH interactions
 formula_table <- data.frame(
   `Model Type` = c(
     "Model A",
-    "Model B (shared)",
+    "Model B-CRP/TMB",
+    "Model B-TLR",
     "Model C-CRP",
     "Model C-TLR",
     "Model C-TMB"
   ),
   `Structure` = c(
     "Joint",
+    "Focused",
     "Focused",
     "Single-biomarker",
     "Single-biomarker",
@@ -578,6 +583,7 @@ formula_table <- data.frame(
   `Formula` = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
     "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp + tmb_braf + tlr:Rx",
     "Age + sex + Rx + crp:Rx",
     "Age + sex + Rx + tlr:Rx",
     "Age + sex + Rx + tmb_braf:Rx"
@@ -891,7 +897,6 @@ cat("\\newpage\n")
 ## Model B-CRP (Focused) Coefficients
 
 Model B-CRP includes CRP and TMB/BRAF with both interaction terms: `Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
-(TLR is excluded from Model B)
 
 ```{r model-b-crp-coefs, results='asis'}
 if (exists("multi_models") && !is.null(multi_models$gamma$B_crp)) {
@@ -924,7 +929,6 @@ cat("\\newpage\n")
 ## Model B-TMB (Focused) Coefficients
 
 Model B-TMB includes CRP and TMB/BRAF with both interaction terms: `Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
-(TLR is excluded from Model B)
 
 ```{r model-b-tmb-coefs, results='asis'}
 if (exists("multi_models") && !is.null(multi_models$gamma$B_tmb)) {
@@ -951,6 +955,38 @@ if (exists("multi_models") && !is.null(multi_models$gamma$B_tmb)) {
 ```
 
 ```{r pagebreak-coef-b-tmb, results='asis'}
+cat("\\newpage\n")
+```
+
+## Model B-TLR (Focused) Coefficients
+
+Model B-TLR includes CRP and TMB/BRAF as main effects with TLR interaction only: `Age + sex + Rx + crp + tmb_braf + tlr:Rx`
+
+```{r model-b-tlr-coefs, results='asis'}
+if (exists("multi_models") && !is.null(multi_models$gamma$B_tlr)) {
+  cat("### Overall Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tlr$os, "Gamma")
+  display_coef_table(coef_df, "Model B-TLR - OS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tlr$os, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TLR - OS - Weibull PH")
+
+  cat("\n\n### Progression-Free Survival\n\n")
+  cat("**Gamma Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$gamma$B_tlr$pfs, "Gamma")
+  display_coef_table(coef_df, "Model B-TLR - PFS - Gamma")
+
+  cat("\n\n**Weibull PH Distribution:**\n\n")
+  coef_df <- extract_coef_table(multi_models$weibullph$B_tlr$pfs, "Weibull PH")
+  display_coef_table(coef_df, "Model B-TLR - PFS - Weibull PH")
+} else {
+  cat("Model B-TLR coefficients not available.\n")
+}
+```
+
+```{r pagebreak-coef-b-tlr, results='asis'}
 cat("\\newpage\n")
 ```
 
@@ -1362,15 +1398,14 @@ cat("\\newpage\n")
 
 ## TLR Biomarker Strategy
 
-```{r tlr-plots, fig.height=8, fig.width=10}
-#| fig-cap: "TLR biomarker strategy: Model structure comparison across OS and PFS. Rows show Model A (Joint) and Model C-TLR (Single-biomarker). NOTE: Model B excludes TLR, so no Model B-TLR exists. Colored lines: parametric predictions (red=TLR+, blue=TLR-; solid=Gamma, dashed=Weibull PH). Black step lines: Kaplan-Meier estimates (solid=biomarker+, dashed=biomarker-)."
+```{r tlr-plots, fig.height=12, fig.width=10}
+#| fig-cap: "TLR biomarker strategy: Model structure comparison across OS and PFS. Rows show Model A (Joint), Model B-TLR (Focused), and Model C-TLR (Single-biomarker). Colored lines: parametric predictions (red=TLR+, blue=TLR-; solid=Gamma, dashed=Weibull PH). Black step lines: Kaplan-Meier estimates (solid=biomarker+, dashed=biomarker-)."
 
 if (exists("multi_predictions") && exists("time_points")) {
 
   tryCatch({
     # Define relevant model types for TLR
-    # NOTE: Model B excludes TLR - only Model A and Model C include TLR
-    tlr_model_types <- c("A", "C_tlr")
+    tlr_model_types <- c("A", "B_tlr", "C_tlr")
 
     # Build plot data from multi_predictions
     plot_data <- data.frame()
@@ -1403,9 +1438,9 @@ if (exists("multi_predictions") && exists("time_points")) {
       }
     }
 
-    # Set factor levels for ordering (Model B excluded for TLR)
+    # Set factor levels for ordering
     plot_data$model_type <- factor(plot_data$model_type,
-                                    levels = c("Model A", "Model C-TLR"))
+                                    levels = c("Model A", "Model B-TLR", "Model C-TLR"))
     plot_data$outcome <- factor(plot_data$outcome, levels = c("OS", "PFS"))
 
     # Get KM data and expand to all model types for faceting
@@ -1424,7 +1459,7 @@ if (exists("multi_predictions") && exists("time_points")) {
       }
     }
     km_data$model_type <- factor(km_data$model_type,
-                                  levels = c("Model A", "Model C-TLR"))
+                                  levels = c("Model A", "Model B-TLR", "Model C-TLR"))
     km_data$outcome <- factor(km_data$outcome, levels = c("OS", "PFS"))
 
     # Split KM by group for separate linetypes
@@ -1701,8 +1736,7 @@ if (exists("multi_predictions") && exists("time_points")) {
     }
 
     # TLR strategy from each model type
-    # NOTE: Model B excludes TLR - only Model A and Model C include TLR
-    for (model_type in c("A", "C_tlr")) {
+    for (model_type in c("A", "B_tlr", "C_tlr")) {
       for (dist in c("gamma", "weibullph")) {
         tlr_pred <- multi_predictions[[dist]][[model_type]][["tlr_weighted"]]
         if (!is.null(tlr_pred)) {
@@ -1718,7 +1752,7 @@ if (exists("multi_predictions") && exists("time_points")) {
     }
 
     strategy_data$strategy <- factor(strategy_data$strategy,
-      levels = c("Control", "TLR - Model A", "TLR - Model C-TLR"))
+      levels = c("Control", "TLR - Model A", "TLR - Model B-TLR", "TLR - Model C-TLR"))
 
     # OS plot
     p_os <- ggplot(strategy_data, aes(x = time, y = os,
@@ -1727,6 +1761,7 @@ if (exists("multi_predictions") && exists("time_points")) {
       scale_color_manual(values = c(
         "Control" = "gray50",
         "TLR - Model A" = "#E69F00",
+        "TLR - Model B-TLR" = "#009E73",
         "TLR - Model C-TLR" = "#D55E00"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
@@ -1735,7 +1770,7 @@ if (exists("multi_predictions") && exists("time_points")) {
       scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
       scale_x_continuous(breaks = seq(0, max(time_points), by = 52)) +
       labs(x = "Time (weeks)", y = "Overall Survival Probability",
-           title = "TLR Strategy: Overall Survival (Model B excludes TLR)") +
+           title = "TLR Strategy: Overall Survival") +
       theme(legend.position = "bottom", legend.box = "vertical") +
       guides(color = guide_legend(order = 1, nrow = 1),
              linetype = guide_legend(order = 2, override.aes = list(linewidth = 1.2)))
@@ -1747,6 +1782,7 @@ if (exists("multi_predictions") && exists("time_points")) {
       scale_color_manual(values = c(
         "Control" = "gray50",
         "TLR - Model A" = "#E69F00",
+        "TLR - Model B-TLR" = "#009E73",
         "TLR - Model C-TLR" = "#D55E00"
       ), name = "Strategy") +
       scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
@@ -1901,10 +1937,9 @@ if (exists("multi_predictions") && exists("time_points")) {
     )
 
     # Biomarker-model mapping: which models are relevant for each biomarker
-    # NOTE: Model B excludes TLR - only Model A and Model C include TLR
     biomarker_model_map <- list(
       crp = c("A", "B_crp", "C_crp"),
-      tlr = c("A", "C_tlr"),  # Model B excludes TLR
+      tlr = c("A", "B_tlr", "C_tlr"),
       tmb_braf = c("A", "B_tmb", "C_tmb")
     )
 
@@ -1964,7 +1999,7 @@ cat("\\newpage\n")
 This report compared three model structure types for parametric survival analysis:
 
 - **Model A (Joint)**: All biomarkers and interactions in one model - provides mutually adjusted estimates and is used for the primary cost-effectiveness analysis
-- **Model B (Focused)**: Each biomarker modeled with one interaction while controlling for other biomarkers - allows biomarker-specific model selection
+- **Model B (Focused)**: Each biomarker modeled with its treatment interaction while controlling for other biomarker main effects. CRP and TMB/BRAF share a formula with both interaction terms; TLR has a separate formula with only its interaction term. Allows biomarker-specific model selection
 - **Model C (Single-biomarker)**: Each biomarker modeled independently - simplest specification but may overestimate effects if biomarkers are correlated
 
 ## Key Findings
@@ -1986,4 +2021,4 @@ This report compared three model structure types for parametric survival analysi
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.2
+**Report version:** 2.3

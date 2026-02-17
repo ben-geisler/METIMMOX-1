@@ -50,13 +50,15 @@ data_crp$strategy <- "crp"
 data_tlr$strategy <- "tlr"
 data_tmb_braf$strategy <- "tmb_braf"
 
-# Define key vectors
-strategies <- c("control", "crp", "tlr", "tmb_braf")
-biomarkers <- c("crp", "tlr", "tmb_braf")
-
-# Model B biomarkers (focused model excludes TLR)
-# Used when MODEL_STRUCTURE == 1 to limit analysis to CRP and TMB/BRAF only
-biomarkers_model_b <- c("crp", "tmb_braf")
+# Define key vectors - use helper functions if available (from model_configs.R)
+# Otherwise fall back to hardcoded values for backward compatibility
+if (exists("get_strategies")) {
+  strategies <- get_strategies()
+  biomarkers <- get_biomarkers()
+} else {
+  strategies <- c("control", "crp", "tlr", "tmb_braf")
+  biomarkers <- c("crp", "tlr", "tmb_braf")
+}
 
 # Create a comprehensive strategy dataframe with all relevant information
 strategies_df <- data.frame(
@@ -88,11 +90,16 @@ rm(list = setdiff(ls(), c(
   # Main datasets
   "data", "data_control", "data_crp", "data_tlr", "data_tmb_braf",
   # Model parameters and structure
-  "strategies", "biomarkers", "biomarkers_model_b", "strategies_df",
+  "strategies", "biomarkers", "strategies_df",
   # Biomarker prevalence
   "p_crp", "p_tlr", "p_tmb_braf",
   # Other essential variables from 02_setup_and_global_variables.R
   "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr",
   # Model configuration switches
-  "USE_BOTH_MODELS", "MODEL_STRUCTURE"
+  "USE_BOTH_MODELS", "MODEL_STRUCTURE",
+  # Model config helper functions
+  "get_strategies", "get_biomarkers", "get_model_configs", "get_current_model_config",
+  "get_strategy_formula", "get_control_formula", "get_model_type_label",
+  "get_model_short_label", "get_model_formulas", "uses_per_strategy_formulas",
+  "validate_model_structure", "print_model_config", "ALL_STRATEGIES", "ALL_BIOMARKERS"
 )))
