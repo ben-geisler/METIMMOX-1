@@ -34,6 +34,7 @@ SNAPSHOT SYSTEM OVERVIEW:
 PURPOSE:
   Track the impact of bug fixes on cost-effectiveness analysis results by
   comparing baseline (before fix) and fixed (after fix) snapshots.
+  Supports multi-model snapshots (A=joint, B=focused, C=separate).
 
 WORKFLOW:
   1. Before fixing bug: Rscript 15_save_snapshot.R <issue> baseline
@@ -47,11 +48,15 @@ FILE NAMING:
   - psa_<issue>_baseline_<commit>.rds       (PSA before)
   - psa_<issue>_fixed_<commit>.rds          (PSA after)
 
+SNAPSHOT FORMAT:
+  Legacy (v2.0): top-level base_results, icer_obj, nmb_at_wtp, psa_summary
+  Multi-model (v3.0+): same top-level fields PLUS models = list(joint=..., focused=..., separate=...)
+
 REPORT BEHAVIOR:
   - Automatically finds the most recent baseline/fixed snapshot pair
-  - Loads snapshots directly from data/output/snapshots/
-  - Computes all comparisons on-the-fly (no intermediate files)
-  - Shows detailed results including PSA scatter plots
+  - Detects multi-model vs legacy snapshots and adapts display
+  - Multi-model: shows per-model sections (A, B, C) + cross-model summary
+  - Legacy: shows single model section
 -->
 
 ```{r setup, include=FALSE}
@@ -77,6 +82,9 @@ pacman::p_load(
   flextable, officer, scales, gridExtra,
   png, grid, dampack
 )
+
+# Load snapshot utilities for multi-model detection
+source(here::here("scripts/R/functions/snapshot_utils.R"))
 
 # Set ggplot theme
 theme_set(theme_minimal() +
@@ -155,7 +163,6 @@ complete_pairs <- complete_pairs[order(complete_pairs$Timestamp, decreasing = TR
 # Fetch issue titles from GitHub
 complete_pairs$Issue_Title <- sapply(complete_pairs$Issue, function(issue_num) {
   tryCatch({
-    # Use gh CLI to fetch issue title
     result <- system(paste0("gh issue view ", issue_num, " --json title --jq .title"),
                      intern = TRUE, ignore.stderr = TRUE)
     if (length(result) > 0 && result != "") {
@@ -172,7 +179,7 @@ if (nrow(complete_pairs) == 0) {
   stop("No complete snapshot pairs found. Each issue needs both baseline and fixed snapshots.")
 }
 
-# Get the most recent snapshot pair (first row, since sorted by timestamp descending)
+# Get the most recent snapshot pair
 latest_pair <- complete_pairs[1, ]
 latest_issue <- latest_pair$Issue
 
@@ -180,17 +187,156 @@ latest_issue <- latest_pair$Issue
 baseline_snapshot <- readRDS(latest_pair$Baseline_File)
 fixed_snapshot <- readRDS(latest_pair$Fixed_File)
 
-# Load PSA objects
+# Load PSA objects (handle both legacy single-object and new list format)
 baseline_psa_file <- gsub("snapshot_", "psa_", latest_pair$Baseline_File)
 fixed_psa_file <- gsub("snapshot_", "psa_", latest_pair$Fixed_File)
 
-baseline_psa <- readRDS(baseline_psa_file)
-fixed_psa <- readRDS(fixed_psa_file)
+baseline_psa_raw <- readRDS(baseline_psa_file)
+fixed_psa_raw <- readRDS(fixed_psa_file)
+
+# Detect format: legacy = single psa object, new = named list
+if (inherits(baseline_psa_raw, "psa")) {
+  baseline_psa_all <- list(legacy = baseline_psa_raw)
+} else {
+  baseline_psa_all <- baseline_psa_raw
+}
+if (inherits(fixed_psa_raw, "psa")) {
+  fixed_psa_all <- list(legacy = fixed_psa_raw)
+} else {
+  fixed_psa_all <- fixed_psa_raw
+}
 
 # Extract metadata
 issue_num <- latest_issue
 before_meta <- baseline_snapshot$metadata
 after_meta <- fixed_snapshot$metadata
+
+# Detect multi-model snapshots
+baseline_multimodel <- is_multimodel_snapshot(baseline_snapshot)
+fixed_multimodel <- is_multimodel_snapshot(fixed_snapshot)
+both_multimodel <- baseline_multimodel && fixed_multimodel
+
+model_display_names <- c(
+  joint = "Model A: Joint",
+  focused = "Model B: Focused",
+  separate = "Model C: Separate",
+  legacy = "Single Model"
+)
+
+if (both_multimodel) {
+  model_names <- intersect(
+    names(baseline_snapshot$models),
+    names(fixed_snapshot$models)
+  )
+} else {
+  model_names <- "legacy"
+}
+```
+
+```{r compute-comparisons}
+# Reusable function: compute all comparisons for one model
+compute_model_comparison <- function(bl_data, fx_data, bl_psa = NULL, fx_psa = NULL) {
+  base_before <- bl_data$icer_obj
+  base_after <- fx_data$icer_obj
+
+  base_comp <- merge(
+    base_before[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+    base_after[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+    by = "Strategy",
+    suffixes = c("_before", "_after")
+  )
+  base_comp$Cost_diff <- base_comp$Cost_after - base_comp$Cost_before
+  base_comp$Effect_diff <- base_comp$Effect_after - base_comp$Effect_before
+  base_comp$ICER_diff <- ifelse(
+    is.na(base_comp$ICER_before) | is.na(base_comp$ICER_after),
+    NA, base_comp$ICER_after - base_comp$ICER_before
+  )
+
+  # NMB comparison
+  nmb_before <- bl_data$nmb_at_wtp
+  nmb_after <- fx_data$nmb_at_wtp
+  nmb_comp <- merge(
+    nmb_before[, c("Strategy", "NMB")],
+    nmb_after[, c("Strategy", "NMB")],
+    by = "Strategy", suffixes = c("_before", "_after")
+  )
+  nmb_comp$NMB_diff <- nmb_comp$NMB_after - nmb_comp$NMB_before
+  nmb_comp <- nmb_comp[order(-nmb_comp$NMB_after), ]
+
+  optimal_before <- nmb_before$Strategy[which.max(nmb_before$NMB)]
+  optimal_after <- nmb_after$Strategy[which.max(nmb_after$NMB)]
+
+  # PSA comparison
+  psa_comp <- NULL
+  if (!is.null(bl_data$psa_summary) && !is.null(fx_data$psa_summary)) {
+    psa_comp <- merge(
+      bl_data$psa_summary, fx_data$psa_summary,
+      by = "Strategy", suffixes = c("_before", "_after")
+    )
+    psa_comp$meanCost_diff <- psa_comp$meanCost_after - psa_comp$meanCost_before
+    psa_comp$meanEffect_diff <- psa_comp$meanEffect_after - psa_comp$meanEffect_before
+  }
+
+  # Significance metrics
+  max_cost_change <- max(abs(base_comp$Cost_diff), na.rm = TRUE)
+  max_effect_change <- max(abs(base_comp$Effect_diff), na.rm = TRUE)
+  max_icer_change <- max(abs(base_comp$ICER_diff), na.rm = TRUE)
+
+  list(
+    base_comp = base_comp,
+    base_before = base_before,
+    base_after = base_after,
+    nmb_comp = nmb_comp,
+    psa_comp = psa_comp,
+    bl_psa = bl_psa,
+    fx_psa = fx_psa,
+    optimal_before = optimal_before,
+    optimal_after = optimal_after,
+    optimal_changed = optimal_before != optimal_after,
+    max_cost_change = max_cost_change,
+    max_effect_change = max_effect_change,
+    max_icer_change = max_icer_change
+  )
+}
+
+# Compute comparisons for each model
+all_comparisons <- list()
+for (model_name in model_names) {
+  if (model_name == "legacy") {
+    bl_data <- list(
+      icer_obj = baseline_snapshot$icer_obj,
+      nmb_at_wtp = baseline_snapshot$nmb_at_wtp,
+      psa_summary = baseline_snapshot$psa_summary
+    )
+    fx_data <- list(
+      icer_obj = fixed_snapshot$icer_obj,
+      nmb_at_wtp = fixed_snapshot$nmb_at_wtp,
+      psa_summary = fixed_snapshot$psa_summary
+    )
+  } else {
+    bl_data <- baseline_snapshot$models[[model_name]]
+    fx_data <- fixed_snapshot$models[[model_name]]
+  }
+
+  # Get PSA objects for this model
+  bl_psa <- if (model_name %in% names(baseline_psa_all)) baseline_psa_all[[model_name]] else NULL
+  fx_psa <- if (model_name %in% names(fixed_psa_all)) fixed_psa_all[[model_name]] else NULL
+
+  all_comparisons[[model_name]] <- compute_model_comparison(
+    bl_data, fx_data, bl_psa, fx_psa
+  )
+}
+
+# Check for parameter changes (uses metadata, model-independent)
+param_names <- names(before_meta$parameters)
+param_changes <- c()
+for (param in param_names) {
+  before_val <- before_meta$parameters[[param]]
+  after_val <- after_meta$parameters[[param]]
+  if (!identical(before_val, after_val)) {
+    param_changes <- c(param_changes, param)
+  }
+}
 ```
 
 # Summary
@@ -202,102 +348,38 @@ This report compares cost-effectiveness analysis results before and after addres
 - **Issue:** #`r issue_num` - `r if(latest_pair$Issue_Title != "") latest_pair$Issue_Title else "No title available"`
 - **Baseline:** Commit `r before_meta$git_commit` (`r before_meta$timestamp`)
 - **Fixed:** Commit `r after_meta$git_commit` (`r after_meta$timestamp`)
-
-\newpage
-
-```{r compute-comparisons}
-# Compare base case results
-base_before <- baseline_snapshot$icer_obj
-base_after <- fixed_snapshot$icer_obj
-
-base_comp <- merge(
-  base_before[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
-  base_after[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
-  by = "Strategy",
-  suffixes = c("_before", "_after")
-)
-
-base_comp$Cost_diff <- base_comp$Cost_after - base_comp$Cost_before
-base_comp$Effect_diff <- base_comp$Effect_after - base_comp$Effect_before
-base_comp$Cost_pct_change <- (base_comp$Cost_diff / base_comp$Cost_before) * 100
-base_comp$Effect_pct_change <- (base_comp$Effect_diff / base_comp$Effect_before) * 100
-base_comp$ICER_diff <- ifelse(
-  is.na(base_comp$ICER_before) | is.na(base_comp$ICER_after),
-  NA,
-  base_comp$ICER_after - base_comp$ICER_before
-)
-
-# Compare NMB
-nmb_before <- baseline_snapshot$nmb_at_wtp
-nmb_after <- fixed_snapshot$nmb_at_wtp
-
-nmb_comp <- merge(
-  nmb_before[, c("Strategy", "NMB")],
-  nmb_after[, c("Strategy", "NMB")],
-  by = "Strategy",
-  suffixes = c("_before", "_after")
-)
-nmb_comp$NMB_diff <- nmb_comp$NMB_after - nmb_comp$NMB_before
-nmb_comp <- nmb_comp[order(-nmb_comp$NMB_after), ]
-
-optimal_before <- nmb_before$Strategy[which.max(nmb_before$NMB)]
-optimal_after <- nmb_after$Strategy[which.max(nmb_after$NMB)]
-
-# Compare PSA
-psa_before <- baseline_snapshot$psa_summary
-psa_after <- fixed_snapshot$psa_summary
-
-psa_comp <- merge(
-  psa_before,
-  psa_after,
-  by = "Strategy",
-  suffixes = c("_before", "_after")
-)
-psa_comp$meanCost_diff <- psa_comp$meanCost_after - psa_comp$meanCost_before
-psa_comp$meanEffect_diff <- psa_comp$meanEffect_after - psa_comp$meanEffect_before
-
-# Check for parameter changes
-param_names <- names(before_meta$parameters)
-param_changes <- c()
-for (param in param_names) {
-  before_val <- before_meta$parameters[[param]]
-  after_val <- after_meta$parameters[[param]]
-  if (!identical(before_val, after_val)) {
-    param_changes <- c(param_changes, param)
-  }
-}
-
-# Calculate significance thresholds
-max_cost_change <- max(abs(base_comp$Cost_diff), na.rm = TRUE)
-max_effect_change <- max(abs(base_comp$Effect_diff), na.rm = TRUE)
-max_icer_change <- max(abs(base_comp$ICER_diff), na.rm = TRUE)
-
-optimal_changed <- optimal_before != optimal_after
-cost_significant <- max_cost_change > 100
-effect_significant <- max_effect_change > 0.01
-icer_significant <- max_icer_change > 1000
-```
+- **Models included:** `r if(both_multimodel) paste(sapply(model_names, function(m) model_display_names[m]), collapse = ", ") else "Single model (legacy snapshot)"`
 
 \newpage
 
 # Metadata Comparison
 
 ```{r metadata-table}
+# Get model structure display
+get_ms_display <- function(meta) {
+  ms <- meta$parameters$MODEL_STRUCTURE
+  if (is.null(ms) || is.na(ms)) return("0 (joint)")
+  paste0(ms, " (", c("joint", "focused", "separate")[ms + 1], ")")
+}
+
 metadata_comp <- data.frame(
-  Item = c("Git Commit", "Timestamp", "R Version", "Issue Number", "Model Structure"),
+  Item = c("Git Commit", "Timestamp", "R Version", "Issue Number",
+           "Model Structure", "Multi-Model Snapshot"),
   Baseline = c(
     before_meta$git_commit,
     before_meta$timestamp,
     before_meta$r_version,
     before_meta$issue_number,
-    if(!is.null(before_meta$model_structure)) paste0(before_meta$model_structure, " (", c("joint", "focused", "separate")[before_meta$model_structure + 1], ")") else "0 (joint)"
+    get_ms_display(before_meta),
+    ifelse(baseline_multimodel, "Yes", "No")
   ),
   Fixed = c(
     after_meta$git_commit,
     after_meta$timestamp,
     after_meta$r_version,
     after_meta$issue_number,
-    if(!is.null(after_meta$model_structure)) paste0(after_meta$model_structure, " (", c("joint", "focused", "separate")[after_meta$model_structure + 1], ")") else "0 (joint)"
+    get_ms_display(after_meta),
+    ifelse(fixed_multimodel, "Yes", "No")
   )
 )
 
@@ -340,315 +422,315 @@ kable(param_comp,
 
 \newpage
 
-# Base Case Results Comparison
+# Per-Model Comparisons
 
-```{r base-case-incremental-setup}
-# Calculate incremental values relative to control for ALL strategies
-# (dampack's Inc_Cost/Inc_Effect are NA for reference and dominated strategies)
-control_cost_before <- base_comp$Cost_before[base_comp$Strategy == "control"]
-control_cost_after <- base_comp$Cost_after[base_comp$Strategy == "control"]
-control_effect_before <- base_comp$Effect_before[base_comp$Strategy == "control"]
-control_effect_after <- base_comp$Effect_after[base_comp$Strategy == "control"]
+```{r per-model-comparisons, results='asis', fig.width=8, fig.height=5}
+for (model_name in model_names) {
+  comp <- all_comparisons[[model_name]]
+  display_name <- model_display_names[model_name]
 
-base_incremental <- base_comp %>%
-  mutate(
-    # Calculate incremental values vs control for all strategies
-    Calc_Inc_Cost_before = Cost_before - control_cost_before,
-    Calc_Inc_Cost_after = Cost_after - control_cost_after,
-    Calc_Inc_Effect_before = Effect_before - control_effect_before,
-    Calc_Inc_Effect_after = Effect_after - control_effect_after
+  cat("\n\n## ", display_name, "\n\n")
+
+  # ---- Base Case Incremental Cost ----
+  cat("### Base Case Results\n\n")
+
+  base_comp <- comp$base_comp
+  control_cost_before <- base_comp$Cost_before[base_comp$Strategy == "control"]
+  control_cost_after <- base_comp$Cost_after[base_comp$Strategy == "control"]
+  control_effect_before <- base_comp$Effect_before[base_comp$Strategy == "control"]
+  control_effect_after <- base_comp$Effect_after[base_comp$Strategy == "control"]
+
+  base_inc <- base_comp %>%
+    mutate(
+      Inc_Cost_bl = Cost_before - control_cost_before,
+      Inc_Cost_fx = Cost_after - control_cost_after,
+      Inc_Effect_bl = Effect_before - control_effect_before,
+      Inc_Effect_fx = Effect_after - control_effect_after
+    )
+
+  # Incremental Cost table
+  cost_d <- base_inc %>%
+    mutate(
+      Cost_diff = Inc_Cost_fx - Inc_Cost_bl,
+      Inc_Cost_bl = format(round(Inc_Cost_bl, 2), big.mark = ",", nsmall = 2),
+      Inc_Cost_fx = format(round(Inc_Cost_fx, 2), big.mark = ",", nsmall = 2),
+      Cost_diff = format(round(Cost_diff, 2), big.mark = ",", nsmall = 2)
+    ) %>%
+    select(Strategy, Inc_Cost_bl, Inc_Cost_fx, Cost_diff)
+
+  print(kable(cost_d,
+        caption = paste0(display_name, " - Incremental Cost Comparison"),
+        col.names = c("Strategy", "Baseline (EUR)", "Fixed (EUR)", "Difference (EUR)"),
+        booktabs = TRUE, format = "latex", align = c("l", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position")))
+
+  cat("\n\\vspace{0.5em}\n\n")
+
+  # Incremental Effect table
+  effect_d <- base_inc %>%
+    mutate(
+      Effect_diff = Inc_Effect_fx - Inc_Effect_bl,
+      Inc_Effect_bl = format(round(Inc_Effect_bl, 4), nsmall = 4),
+      Inc_Effect_fx = format(round(Inc_Effect_fx, 4), nsmall = 4),
+      Effect_diff = format(round(Effect_diff, 4), nsmall = 4)
+    ) %>%
+    select(Strategy, Inc_Effect_bl, Inc_Effect_fx, Effect_diff)
+
+  print(kable(effect_d,
+        caption = paste0(display_name, " - Incremental Effect Comparison"),
+        col.names = c("Strategy", "Baseline (QALYs)", "Fixed (QALYs)", "Difference (QALYs)"),
+        booktabs = TRUE, format = "latex", align = c("l", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position")))
+
+  cat("\n\\vspace{0.5em}\n\n")
+
+  # ICER table
+  icer_d <- base_comp %>%
+    select(Strategy, ICER_before, ICER_after) %>%
+    mutate(
+      ICER_diff = ICER_after - ICER_before,
+      ICER_before = ifelse(is.na(ICER_before), "---",
+                           format(round(ICER_before, 0), big.mark = ",")),
+      ICER_after = ifelse(is.na(ICER_after), "---",
+                          format(round(ICER_after, 0), big.mark = ",")),
+      ICER_diff = ifelse(is.na(ICER_diff), "---",
+                         format(round(ICER_diff, 0), big.mark = ","))
+    )
+
+  print(kable(icer_d,
+        caption = paste0(display_name, " - ICER Comparison"),
+        col.names = c("Strategy", "Baseline (EUR/QALY)", "Fixed (EUR/QALY)", "Difference (EUR/QALY)"),
+        booktabs = TRUE, format = "latex", align = c("l", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position")))
+
+  # ---- Efficiency Frontier ----
+  cat("\n\n### Efficiency Frontier\n\n")
+
+  baseline_icer <- dampack::calculate_icers(
+    cost = comp$base_before$Cost,
+    effect = comp$base_before$Effect,
+    strategies = comp$base_before$Strategy
   )
-```
-
-```{r base-case-incremental-cost-table}
-# Table 3a: Incremental Cost Comparison
-cost_display <- base_incremental %>%
-  mutate(
-    Cost_diff = Calc_Inc_Cost_after - Calc_Inc_Cost_before
-  ) %>%
-  select(Strategy, Calc_Inc_Cost_before, Calc_Inc_Cost_after, Cost_diff) %>%
-  mutate(
-    Calc_Inc_Cost_before = format(round(Calc_Inc_Cost_before, 2), big.mark = ",", nsmall = 2),
-    Calc_Inc_Cost_after = format(round(Calc_Inc_Cost_after, 2), big.mark = ",", nsmall = 2),
-    Cost_diff = format(round(Cost_diff, 2), big.mark = ",", nsmall = 2)
-  )
-
-kable(cost_display,
-      caption = "Base Case Incremental Cost Comparison",
-      col.names = c("Strategy", "Baseline (€)", "Fixed (€)", "Difference (€)"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"))
-```
-
-\vspace{0.5em}
-
-```{r base-case-incremental-effect-table}
-# Table 3b: Incremental Effect Comparison
-effect_display <- base_incremental %>%
-  mutate(
-    Effect_diff = Calc_Inc_Effect_after - Calc_Inc_Effect_before
-  ) %>%
-  select(Strategy, Calc_Inc_Effect_before, Calc_Inc_Effect_after, Effect_diff) %>%
-  mutate(
-    Calc_Inc_Effect_before = format(round(Calc_Inc_Effect_before, 4), nsmall = 4),
-    Calc_Inc_Effect_after = format(round(Calc_Inc_Effect_after, 4), nsmall = 4),
-    Effect_diff = format(round(Effect_diff, 4), nsmall = 4)
-  )
-
-kable(effect_display,
-      caption = "Base Case Incremental Effect Comparison",
-      col.names = c("Strategy", "Baseline (QALYs)", "Fixed (QALYs)", "Difference (QALYs)"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"))
-```
-
-\vspace{0.5em}
-
-```{r base-case-icer-table}
-# Table 3c: ICER Comparison
-icer_display <- base_incremental %>%
-  select(Strategy, ICER_before, ICER_after) %>%
-  mutate(
-    ICER_diff = ICER_after - ICER_before,
-    ICER_before = ifelse(is.na(ICER_before), "—", format(round(ICER_before, 0), big.mark = ",")),
-    ICER_after = ifelse(is.na(ICER_after), "—", format(round(ICER_after, 0), big.mark = ",")),
-    ICER_diff = ifelse(is.na(ICER_diff), "—", format(round(ICER_diff, 0), big.mark = ","))
-  )
-
-kable(icer_display,
-      caption = "Base Case ICER Comparison",
-      col.names = c("Strategy", "Baseline (€/QALY)", "Fixed (€/QALY)", "Difference (€/QALY)"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"))
-```
-
-## Efficiency Frontier Comparison
-
-```{r efficiency-frontier, fig.cap="Cost-effectiveness efficiency frontier comparison using dampack. Baseline (top) and fixed (bottom) strategies are shown with the efficiency frontier connecting non-dominated strategies. Dominated strategies appear off the frontier line.", out.width="100%", fig.height=9}
-# Create ICER objects for baseline and fixed using dampack
-baseline_icer <- dampack::calculate_icers(
-  cost = base_before$Cost,
-  effect = base_before$Effect,
-  strategies = base_before$Strategy
-)
-
-fixed_icer <- dampack::calculate_icers(
-  cost = base_after$Cost,
-  effect = base_after$Effect,
-  strategies = base_after$Strategy
-)
-
-# Create plots using dampack's plot method
-plot_baseline_frontier <- plot(baseline_icer,
-                                txtsize = 10,
-                                currency = "€",
-                                effect_units = "QALYs",
-                                label = "all") +
-  labs(title = "Baseline") +
-  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
-
-plot_fixed_frontier <- plot(fixed_icer,
-                              txtsize = 10,
-                              currency = "€",
-                              effect_units = "QALYs",
-                              label = "all") +
-  labs(title = "Fixed") +
-  theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
-
-# Arrange vertically (one below the other)
-gridExtra::grid.arrange(plot_baseline_frontier, plot_fixed_frontier, nrow = 2)
-```
-
-## Net Monetary Benefit Comparison
-
-```{r nmb-table}
-nmb_display <- nmb_comp %>%
-  mutate(
-    NMB_before = format(round(NMB_before, 2), big.mark = ",", nsmall = 2),
-    NMB_after = format(round(NMB_after, 2), big.mark = ",", nsmall = 2),
-    NMB_diff = format(round(NMB_diff, 2), big.mark = ",", nsmall = 2)
+  fixed_icer <- dampack::calculate_icers(
+    cost = comp$base_after$Cost,
+    effect = comp$base_after$Effect,
+    strategies = comp$base_after$Strategy
   )
 
-kable(nmb_display,
-      caption = paste0("Net Monetary Benefit Comparison at WTP = €",
-                      format(before_meta$parameters$WTP, big.mark = ",")),
-      col.names = c("Strategy", "Baseline (€)", "Fixed (€)", "Difference (€)"),
-      booktabs = TRUE,
-      format = "latex") %>%
-  kable_styling(latex_options = c("striped", "hold_position")) %>%
-  row_spec(1, bold = TRUE, background = "#E8F4F8")
+  p_bl <- plot(baseline_icer, txtsize = 10, currency = "EUR",
+               effect_units = "QALYs", label = "all") +
+    labs(title = "Baseline") +
+    theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+
+  p_fx <- plot(fixed_icer, txtsize = 10, currency = "EUR",
+               effect_units = "QALYs", label = "all") +
+    labs(title = "Fixed") +
+    theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5))
+
+  print(gridExtra::grid.arrange(p_bl, p_fx, nrow = 2))
+
+  # ---- NMB ----
+  cat("\n\n### Net Monetary Benefit\n\n")
+
+  nmb_d <- comp$nmb_comp %>%
+    mutate(
+      NMB_before = format(round(NMB_before, 2), big.mark = ",", nsmall = 2),
+      NMB_after = format(round(NMB_after, 2), big.mark = ",", nsmall = 2),
+      NMB_diff = format(round(NMB_diff, 2), big.mark = ",", nsmall = 2)
+    )
+
+  print(kable(nmb_d,
+        caption = paste0(display_name, " - NMB at WTP = EUR ",
+                        format(before_meta$parameters$WTP, big.mark = ",")),
+        col.names = c("Strategy", "Baseline (EUR)", "Fixed (EUR)", "Difference (EUR)"),
+        booktabs = TRUE, format = "latex") %>%
+    kable_styling(latex_options = c("striped", "hold_position")) %>%
+    row_spec(1, bold = TRUE, background = "#E8F4F8"))
+
+  cat("\n\n**Optimal Strategy:** ",
+      if (comp$optimal_changed) {
+        paste0("**Changed** from ", comp$optimal_before, " to ", comp$optimal_after)
+      } else {
+        paste0("Unchanged (", comp$optimal_after, ")")
+      }, "\n\n", sep = "")
+
+  # ---- PSA Results ----
+  if (!is.null(comp$psa_comp)) {
+    cat("### PSA Results\n\n")
+    psa_comp <- comp$psa_comp
+
+    # PSA Cost table
+    psa_cost_d <- psa_comp %>%
+      mutate(
+        BL = sprintf("EUR %s (EUR %s; EUR %s)",
+                     format(round(meanCost_before, 2), big.mark = ",", nsmall = 2),
+                     format(round(Cost_2.5_percent_before, 2), big.mark = ",", nsmall = 2),
+                     format(round(Cost_97.5_percent_before, 2), big.mark = ",", nsmall = 2)),
+        FX = sprintf("EUR %s (EUR %s; EUR %s)",
+                     format(round(meanCost_after, 2), big.mark = ",", nsmall = 2),
+                     format(round(Cost_2.5_percent_after, 2), big.mark = ",", nsmall = 2),
+                     format(round(Cost_97.5_percent_after, 2), big.mark = ",", nsmall = 2)),
+        Diff = format(round(meanCost_diff, 2), big.mark = ",", nsmall = 2)
+      ) %>%
+      select(Strategy, BL, FX, Diff)
+
+    print(kable(psa_cost_d,
+          caption = paste0(display_name, " - PSA Cost Results"),
+          col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)",
+                        "Fixed Mean (2.5%; 97.5%)", "Difference (EUR)"),
+          booktabs = TRUE, format = "latex", align = c("l", "r", "r", "r")) %>%
+      kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                    font_size = 9))
+
+    cat("\n\\vspace{0.5em}\n\n")
+
+    # PSA Effect table
+    psa_eff_d <- psa_comp %>%
+      mutate(
+        BL = sprintf("%.4f (%.4f; %.4f)",
+                     meanEffect_before, Effect_2.5_percent_before,
+                     Effect_97.5_percent_before),
+        FX = sprintf("%.4f (%.4f; %.4f)",
+                     meanEffect_after, Effect_2.5_percent_after,
+                     Effect_97.5_percent_after),
+        Diff = sprintf("%.4f", meanEffect_diff)
+      ) %>%
+      select(Strategy, BL, FX, Diff)
+
+    print(kable(psa_eff_d,
+          caption = paste0(display_name, " - PSA Effect Results"),
+          col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)",
+                        "Fixed Mean (2.5%; 97.5%)", "Difference (QALYs)"),
+          booktabs = TRUE, format = "latex", align = c("l", "r", "r", "r")) %>%
+      kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                    font_size = 9))
+
+    cat("\n\\vspace{0.5em}\n\n")
+
+    # PSA ICER table
+    psa_icer_d <- psa_comp %>%
+      select(Strategy, meanCost_before, meanEffect_before,
+             meanCost_after, meanEffect_after) %>%
+      mutate(
+        inc_cost_bl = meanCost_before - meanCost_before[1],
+        inc_eff_bl = meanEffect_before - meanEffect_before[1],
+        icer_bl = ifelse(inc_eff_bl > 0.0001, inc_cost_bl / inc_eff_bl, NA),
+        inc_cost_fx = meanCost_after - meanCost_after[1],
+        inc_eff_fx = meanEffect_after - meanEffect_after[1],
+        icer_fx = ifelse(inc_eff_fx > 0.0001, inc_cost_fx / inc_eff_fx, NA)
+      ) %>%
+      mutate(
+        BL_ICER = ifelse(is.na(icer_bl), "---",
+                         sprintf("EUR %s/QALY",
+                                 format(round(icer_bl, 0), big.mark = ","))),
+        FX_ICER = ifelse(is.na(icer_fx), "---",
+                         sprintf("EUR %s/QALY",
+                                 format(round(icer_fx, 0), big.mark = ",")))
+      ) %>%
+      select(Strategy, BL_ICER, FX_ICER)
+
+    print(kable(psa_icer_d,
+          caption = paste0(display_name, " - PSA ICER Results"),
+          col.names = c("Strategy", "Baseline Mean ICER", "Fixed Mean ICER"),
+          booktabs = TRUE, format = "latex", align = c("l", "r", "r")) %>%
+      kable_styling(latex_options = c("striped", "hold_position"), font_size = 10))
+  }
+
+  # ---- PSA Scatter Plots ----
+  bl_psa <- comp$bl_psa
+  fx_psa <- comp$fx_psa
+
+  if (!is.null(bl_psa) && !is.null(fx_psa)) {
+    cat("\n\n### PSA Scatter Plots\n\n")
+
+    bl_psa_data <- data.frame(
+      Strategy = rep(bl_psa$strategies, each = bl_psa$n_sim),
+      Cost = as.vector(as.matrix(bl_psa$cost)),
+      Effect = as.vector(as.matrix(bl_psa$effectiveness)),
+      Snapshot = "Baseline"
+    )
+    fx_psa_data <- data.frame(
+      Strategy = rep(fx_psa$strategies, each = fx_psa$n_sim),
+      Cost = as.vector(as.matrix(fx_psa$cost)),
+      Effect = as.vector(as.matrix(fx_psa$effectiveness)),
+      Snapshot = "Fixed"
+    )
+
+    p_bl_scatter <- ggplot(bl_psa_data,
+                           aes(x = Effect, y = Cost, color = Strategy)) +
+      geom_point(alpha = 0.4, size = 2) +
+      labs(title = "Baseline", x = "Effect (QALYs)", y = "Cost (EUR)") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            legend.text = element_text(size = 8),
+            axis.title = element_text(size = 10))
+
+    p_fx_scatter <- ggplot(fx_psa_data,
+                           aes(x = Effect, y = Cost, color = Strategy)) +
+      geom_point(alpha = 0.4, size = 2) +
+      labs(title = "Fixed", x = "Effect (QALYs)", y = "Cost (EUR)") +
+      theme_minimal() +
+      theme(legend.position = "bottom",
+            legend.text = element_text(size = 8),
+            axis.title = element_text(size = 10))
+
+    print(gridExtra::grid.arrange(p_bl_scatter, p_fx_scatter, ncol = 2))
+  }
+
+  cat("\n\n\\newpage\n\n")
+}
 ```
 
-**Optimal Strategy:** `r if(optimal_changed) paste0("**Changed** from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
+# Cross-Model Summary
 
-\newpage
+```{r cross-model-summary}
+if (length(model_names) > 1) {
+  cross_summary <- data.frame(
+    Model = character(),
+    Optimal_Before = character(),
+    Optimal_After = character(),
+    Changed = character(),
+    Max_Cost = numeric(),
+    Max_Effect = numeric(),
+    Max_ICER = numeric(),
+    stringsAsFactors = FALSE
+  )
 
-# PSA Results Comparison
+  for (mn in model_names) {
+    comp <- all_comparisons[[mn]]
+    cross_summary <- rbind(cross_summary, data.frame(
+      Model = model_display_names[mn],
+      Optimal_Before = comp$optimal_before,
+      Optimal_After = comp$optimal_after,
+      Changed = ifelse(comp$optimal_changed, "Yes", "No"),
+      Max_Cost = comp$max_cost_change,
+      Max_Effect = comp$max_effect_change,
+      Max_ICER = comp$max_icer_change,
+      stringsAsFactors = FALSE
+    ))
+  }
 
-```{r psa-cost-table}
-psa_cost_display <- psa_comp %>%
-  select(Strategy,
-         meanCost_before, Cost_2.5_percent_before, Cost_97.5_percent_before,
-         meanCost_after, Cost_2.5_percent_after, Cost_97.5_percent_after,
-         meanCost_diff) %>%
-  mutate(
-    Baseline_Cost = sprintf("€%s (€%s; €%s)",
-                           format(round(meanCost_before, 2), big.mark = ",", nsmall = 2),
-                           format(round(Cost_2.5_percent_before, 2), big.mark = ",", nsmall = 2),
-                           format(round(Cost_97.5_percent_before, 2), big.mark = ",", nsmall = 2)),
-    Fixed_Cost = sprintf("€%s (€%s; €%s)",
-                        format(round(meanCost_after, 2), big.mark = ",", nsmall = 2),
-                        format(round(Cost_2.5_percent_after, 2), big.mark = ",", nsmall = 2),
-                        format(round(Cost_97.5_percent_after, 2), big.mark = ",", nsmall = 2)),
-    Difference = format(round(meanCost_diff, 2), big.mark = ",", nsmall = 2)
-  ) %>%
-  select(Strategy, Baseline_Cost, Fixed_Cost, Difference)
+  cross_display <- cross_summary %>%
+    mutate(
+      Max_Cost = format(round(Max_Cost, 2), big.mark = ",", nsmall = 2),
+      Max_Effect = format(round(Max_Effect, 4), nsmall = 4),
+      Max_ICER = format(round(Max_ICER, 0), big.mark = ",")
+    )
 
-kable(psa_cost_display,
-      caption = paste0("PSA Cost Results (n = ",
-                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
-      col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)", "Fixed Mean (2.5%; 97.5%)", "Difference (€)"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
-```
-
-\vspace{0.5em}
-
-```{r psa-effect-table}
-psa_effect_display <- psa_comp %>%
-  select(Strategy,
-         meanEffect_before, Effect_2.5_percent_before, Effect_97.5_percent_before,
-         meanEffect_after, Effect_2.5_percent_after, Effect_97.5_percent_after,
-         meanEffect_diff) %>%
-  mutate(
-    Baseline_Effect = sprintf("%.4f (%.4f; %.4f)",
-                             meanEffect_before,
-                             Effect_2.5_percent_before,
-                             Effect_97.5_percent_before),
-    Fixed_Effect = sprintf("%.4f (%.4f; %.4f)",
-                          meanEffect_after,
-                          Effect_2.5_percent_after,
-                          Effect_97.5_percent_after),
-    Difference = sprintf("%.4f", meanEffect_diff)
-  ) %>%
-  select(Strategy, Baseline_Effect, Fixed_Effect, Difference)
-
-kable(psa_effect_display,
-      caption = paste0("PSA Effects Results (n = ",
-                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
-      col.names = c("Strategy", "Baseline Mean (2.5%; 97.5%)", "Fixed Mean (2.5%; 97.5%)", "Difference (QALYs)"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
-```
-
-\vspace{0.5em}
-
-```{r psa-icer-table}
-# Calculate ICERs from PSA means as point estimates
-# Note: This is an approximation; ideally would calculate from iteration-level data
-psa_icer_display <- psa_comp %>%
-  select(Strategy, meanCost_before, meanEffect_before, meanCost_after, meanEffect_after) %>%
-  # Assume first strategy is reference (control)
-  mutate(
-    # For baseline
-    inc_cost_bl = meanCost_before - meanCost_before[1],
-    inc_effect_bl = meanEffect_before - meanEffect_before[1],
-    icer_bl = ifelse(inc_effect_bl > 0.0001, inc_cost_bl / inc_effect_bl, NA),
-    # For fixed
-    inc_cost_fx = meanCost_after - meanCost_after[1],
-    inc_effect_fx = meanEffect_after - meanEffect_after[1],
-    icer_fx = ifelse(inc_effect_fx > 0.0001, inc_cost_fx / inc_effect_fx, NA)
-  ) %>%
-  mutate(
-    Baseline_ICER = ifelse(is.na(icer_bl), "—",
-                           sprintf("€%s/QALY", format(round(icer_bl, 0), big.mark = ","))),
-    Fixed_ICER = ifelse(is.na(icer_fx), "—",
-                       sprintf("€%s/QALY", format(round(icer_fx, 0), big.mark = ",")))
-  ) %>%
-  select(Strategy, Baseline_ICER, Fixed_ICER)
-
-kable(psa_icer_display,
-      caption = paste0("PSA ICER Results (n = ",
-                      format(before_meta$parameters$n_sim, big.mark = ","), " simulations)"),
-      col.names = c("Strategy", "Baseline Mean ICER", "Fixed Mean ICER"),
-      booktabs = TRUE,
-      format = "latex",
-      align = c("l", "r", "r")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 10)
-```
-
-*Note: ICERs calculated from PSA mean costs and effects as point estimates.*
-
-## PSA Visual Analysis
-
-### PSA Scatter Plots (Side-by-Side)
-
-```{r psa-sidebyside, fig.cap="Cost-effectiveness plane showing PSA simulations baseline (left) and fixed (right)", out.width="100%", fig.height=5}
-# Extract PSA data
-baseline_psa_data <- data.frame(
-  Strategy = rep(baseline_psa$strategies, each = baseline_psa$n_sim),
-  Cost = as.vector(as.matrix(baseline_psa$cost)),
-  Effect = as.vector(as.matrix(baseline_psa$effectiveness)),
-  Snapshot = "Baseline"
-)
-
-fixed_psa_data <- data.frame(
-  Strategy = rep(fixed_psa$strategies, each = fixed_psa$n_sim),
-  Cost = as.vector(as.matrix(fixed_psa$cost)),
-  Effect = as.vector(as.matrix(fixed_psa$effectiveness)),
-  Snapshot = "Fixed"
-)
-
-# Create side-by-side plots
-plot_baseline <- ggplot(baseline_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
-  geom_point(alpha = 0.4, size = 2.5) +
-  labs(title = "Baseline", x = "Effect (QALYs)", y = "Cost (€)") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 9),
-        axis.title = element_text(size = 10))
-
-plot_fixed <- ggplot(fixed_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
-  geom_point(alpha = 0.4, size = 2.5) +
-  labs(title = "Fixed", x = "Effect (QALYs)", y = "Cost (€)") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 9),
-        axis.title = element_text(size = 10))
-
-gridExtra::grid.arrange(plot_baseline, plot_fixed, ncol = 2)
-```
-
-### PSA Scatter Plots (Overlaid)
-
-```{r psa-overlaid, fig.cap="Overlaid cost-effectiveness plane comparing baseline and fixed PSA simulations. This plot overlays all PSA simulation results from both snapshots on a single plane, where each point represents one PSA iteration for a given strategy. Hollow circles indicate baseline simulations, while filled circles indicate fixed simulations. Colors distinguish strategies, while shapes distinguish snapshots. The overlay allows direct visual comparison of how the probabilistic distributions changed after the bug fix: if the fix was purely methodological with no impact on central estimates, baseline and fixed points would overlap completely, whereas systematic shifts in the point clouds indicate changes in underlying model behavior.", out.width="85%", fig.height=6}
-# Combine data
-combined_psa_data <- rbind(baseline_psa_data, fixed_psa_data)
-
-ggplot(combined_psa_data, aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
-  geom_point(alpha = 0.3, size = 3) +
-  scale_shape_manual(values = c("Baseline" = 21, "Fixed" = 16),
-                     name = "Snapshot",
-                     labels = c("Baseline (hollow)", "Fixed (filled)")) +
-  labs(title = "Baseline vs Fixed Comparison",
-       x = "Effect (QALYs)",
-       y = "Cost (€)",
-       color = "Strategy") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        legend.box = "vertical",
-        legend.text = element_text(size = 9),
-        axis.title = element_text(size = 10))
+  kable(cross_display,
+        caption = "Cross-Model Impact Summary",
+        col.names = c("Model", "Opt. (BL)", "Opt. (Fix)", "Changed?",
+                      "Max Cost Delta (EUR)", "Max Effect Delta (QALYs)",
+                      "Max ICER Delta (EUR/QALY)"),
+        booktabs = TRUE, format = "latex",
+        align = c("l", "l", "l", "c", "r", "r", "r")) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                  font_size = 9)
+} else {
+  # Single model - show simple summary
+  comp <- all_comparisons[[model_names[1]]]
+  cat("Single-model snapshot. See the detailed comparison above.\n")
+}
 ```
 
 \newpage
@@ -662,7 +744,7 @@ if (nrow(complete_pairs) > 0) {
   pairs_display <- complete_pairs %>%
     select(Issue, Issue_Title, Baseline_Commit, Fixed_Commit) %>%
     mutate(
-      Issue_Title = ifelse(Issue_Title == "", "—", Issue_Title)
+      Issue_Title = ifelse(Issue_Title == "", "---", Issue_Title)
     )
 
   # Find which row is the current issue (before any formatting)
@@ -697,7 +779,7 @@ if (n_issues_available >= 2) {
   n_to_compare <- min(5, n_issues_available)
   recent_issues <- head(complete_pairs, n_to_compare)
 
-  # Build comparison table
+  # Build comparison table (uses legacy top-level fields for consistency)
   multi_comp <- data.frame(
     Issue = character(),
     Issue_Title = character(),
@@ -710,14 +792,13 @@ if (n_issues_available >= 2) {
     stringsAsFactors = FALSE
   )
 
-  for (i in 1:nrow(recent_issues)) {
+  for (i in seq_len(nrow(recent_issues))) {
     issue_row <- recent_issues[i, ]
 
-    # Load snapshots
+    # Load snapshots (use top-level fields for cross-issue comparison)
     snap_base <- readRDS(issue_row$Baseline_File)
     snap_fixed <- readRDS(issue_row$Fixed_File)
 
-    # Compare
     base_comp_temp <- merge(
       snap_base$icer_obj[, c("Strategy", "Cost", "Effect", "ICER")],
       snap_fixed$icer_obj[, c("Strategy", "Cost", "Effect", "ICER")],
@@ -729,8 +810,7 @@ if (n_issues_available >= 2) {
     base_comp_temp$Effect_diff <- base_comp_temp$Effect_after - base_comp_temp$Effect_before
     base_comp_temp$ICER_diff <- ifelse(
       is.na(base_comp_temp$ICER_before) | is.na(base_comp_temp$ICER_after),
-      NA,
-      base_comp_temp$ICER_after - base_comp_temp$ICER_before
+      NA, base_comp_temp$ICER_after - base_comp_temp$ICER_before
     )
 
     nmb_base <- snap_base$nmb_at_wtp
@@ -740,7 +820,8 @@ if (n_issues_available >= 2) {
 
     multi_comp <- rbind(multi_comp, data.frame(
       Issue = issue_row$Issue,
-      Issue_Title = ifelse(issue_row$Issue_Title == "", "—", issue_row$Issue_Title),
+      Issue_Title = ifelse(issue_row$Issue_Title == "", "---",
+                           issue_row$Issue_Title),
       Optimal_Baseline = opt_base,
       Optimal_Fixed = opt_fixed,
       Changed = ifelse(opt_base != opt_fixed, "Yes", "No"),
@@ -763,13 +844,15 @@ if (n_issues_available >= 2) {
     )
 
   print(kable(multi_comp_display,
-        caption = paste0("Summary of Bug Fix Impacts (", n_to_compare, " Most Recent Issues)"),
+        caption = paste0("Summary of Bug Fix Impacts (", n_to_compare,
+                        " Most Recent Issues)"),
         col.names = c("Issue", "Title", "Opt. (BL)", "Opt. (Fix)", "Chg?",
-                      "Max Cost Δ (€)", "Max Effect Δ (QALYs)", "Max ICER Δ (€/QALY)"),
-        booktabs = TRUE,
-        format = "latex",
+                      "Max Cost Delta (EUR)", "Max Effect Delta (QALYs)",
+                      "Max ICER Delta (EUR/QALY)"),
+        booktabs = TRUE, format = "latex",
         align = c("l", "l", "l", "l", "c", "r", "r", "r")) %>%
-    kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"), font_size = 8) %>%
+    kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"),
+                  font_size = 8) %>%
     column_spec(2, width = "4cm") %>%
     column_spec(c(1, 5), width = "0.8cm") %>%
     column_spec(c(3, 4), width = "2cm") %>%
@@ -782,18 +865,57 @@ if (n_issues_available >= 2) {
 
 # Summary
 
-The comparison for issue #`r issue_num` shows:
+```{r summary-text, results='asis'}
+# Use the first model for the top-level summary stats
+primary <- all_comparisons[[model_names[1]]]
 
-- **Optimal Strategy:** `r if(optimal_changed) paste0("Changed from ", optimal_before, " to ", optimal_after) else paste0("Unchanged (", optimal_after, ")")`
-- **Maximum Cost Change:** €`r format(round(max_cost_change, 2), big.mark = ",", nsmall = 2)` (`r if(cost_significant) "substantial" else "minor"`)
-- **Maximum Effect Change:** `r format(round(max_effect_change, 3), nsmall = 3)` QALYs (`r if(effect_significant) "substantial" else "minor"`)
-- **Maximum ICER Change:** €`r format(round(max_icer_change, 0), big.mark = ",")`/QALY (`r if(icer_significant) "substantial" else "minor"`)
-- **Parameter Changes:** `r if(length(param_changes) > 0) paste(param_changes, collapse = ", ") else "None detected"`
+cat("The comparison for issue #", issue_num, " shows:\n\n", sep = "")
 
-`r if(optimal_changed || cost_significant || effect_significant || icer_significant) "**Interpretation:** Changes exceed typical thresholds and should be carefully reviewed to ensure they align with the intended bug fix." else "**Interpretation:** Changes are within expected bounds for bug fixes that improve numerical stability or code quality."`
+cat("- **Models compared:** ",
+    if (both_multimodel) paste(model_display_names[model_names], collapse = ", ")
+    else "Single model (legacy snapshot)", "\n", sep = "")
+
+cat("- **Optimal Strategy (",
+    model_display_names[model_names[1]], "):** ",
+    if (primary$optimal_changed)
+      paste0("Changed from ", primary$optimal_before,
+             " to ", primary$optimal_after)
+    else paste0("Unchanged (", primary$optimal_after, ")"),
+    "\n", sep = "")
+
+cat("- **Maximum Cost Change:** EUR ",
+    format(round(primary$max_cost_change, 2), big.mark = ",", nsmall = 2),
+    " (", if (primary$max_cost_change > 100) "substantial" else "minor",
+    ")\n", sep = "")
+
+cat("- **Maximum Effect Change:** ",
+    format(round(primary$max_effect_change, 3), nsmall = 3), " QALYs (",
+    if (primary$max_effect_change > 0.01) "substantial" else "minor",
+    ")\n", sep = "")
+
+cat("- **Maximum ICER Change:** EUR ",
+    format(round(primary$max_icer_change, 0), big.mark = ","), "/QALY (",
+    if (primary$max_icer_change > 1000) "substantial" else "minor",
+    ")\n", sep = "")
+
+cat("- **Parameter Changes:** ",
+    if (length(param_changes) > 0) paste(param_changes, collapse = ", ")
+    else "None detected", "\n", sep = "")
+
+any_significant <- primary$optimal_changed ||
+  primary$max_cost_change > 100 ||
+  primary$max_effect_change > 0.01 ||
+  primary$max_icer_change > 1000
+
+cat("\n", if (any_significant) {
+  "**Interpretation:** Changes exceed typical thresholds and should be carefully reviewed to ensure they align with the intended bug fix."
+} else {
+  "**Interpretation:** Changes are within expected bounds for bug fixes that improve numerical stability or code quality."
+}, "\n", sep = "")
+```
 
 ---
 
-**Report completed on:** `r Sys.Date()`  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 2.0
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 3.0

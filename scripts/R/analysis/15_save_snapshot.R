@@ -3,6 +3,7 @@
 # PURPOSE:
 #   Track the impact of bug fixes on cost-effectiveness analysis results by
 #   creating snapshots before (baseline) and after (fixed) the bug fix.
+#   Saves results for ALL three model structures (A=joint, B=focused, C=separate).
 #
 # USAGE:
 #   Rscript 15_save_snapshot.R <issue_number> <baseline|fixed>
@@ -23,18 +24,19 @@
 #   4. Generate report:   quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd
 #
 # OUTPUT FILES:
-#   - snapshot_<issue>_<status>_<commit>.rds  (base case + metadata)
-#   - psa_<issue>_<status>_<commit>.rds       (PSA object with 5000 sims)
+#   - snapshot_<issue>_<status>_<commit>.rds  (base case + metadata for all 3 models)
+#   - psa_<issue>_<status>_<commit>.rds       (PSA objects for all 3 models)
 #
 # NOTES:
-#   - Runs scripts 02, 03, 06, 07, 08, 10, 12 (takes 20-60 min for PSA)
+#   - Runs base case for all 3 model structures (joint, focused, separate)
+#   - Loads pre-computed PSA caches (psa_obj_joint.rds, etc.)
 #   - Uses sampling cache if available (much faster on subsequent runs)
 #   - Snapshots saved to data/output/snapshots/
 
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here)
+p_load(here, dampack)
 
 # Load snapshot utilities
 source(here::here("scripts/R/functions/snapshot_utils.R"))
@@ -70,108 +72,171 @@ if (!snapshot_status %in% c("baseline", "fixed")) {
   stop("Invalid snapshot status. Must be 'baseline' or 'fixed'.")
 }
 
-cat("=== Running Analysis Scripts ===\n")
-
 # Save parameters as environment variables (survives rm(list = ls()))
 Sys.setenv(SNAPSHOT_ISSUE_NUMBER = issue_number)
 Sys.setenv(SNAPSHOT_STATUS = snapshot_status)
 
-# Run analysis scripts in sequence
-cat("\n[1/7] Running 02_setup_and_global_variables.R...\n")
+# ============================================================================
+# Step 1: Run model-independent setup
+# ============================================================================
+cat("=== Running Setup Scripts ===\n")
+
+cat("\n[1/3] Running 02_setup_and_global_variables.R...\n")
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 
-cat("[2/7] Running 03_biomarker_strategies.R...\n")
+cat("[2/3] Running 03_biomarker_strategies.R...\n")
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 
-cat("[3/7] Running 06_parametric_survival_analysis.R...\n")
-source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-
-cat("[4/7] Running 07_basecase_input_parameters.R...\n")
-source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-
-cat("[5/7] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
+cat("[3/3] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
 source(here::here("scripts/R/analysis/08_sampling.R"))
 
-cat("[6/7] Running 10_basecase_analysis.R...\n")
-source(here::here("scripts/R/analysis/10_basecase_analysis.R"))
+# Save WTP for NMB calculation (survives re-sourcing)
+Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
 
-cat("[7/7] Running 12_PSA.R...\n")
-source(here::here("scripts/R/analysis/12_PSA.R"))
-
-cat("\n=== Analysis Complete ===\n\n")
-
-# Reload snapshot utilities and parameters (script 02 clears workspace)
+# ============================================================================
+# Step 2: Source helper functions
+# ============================================================================
+cat("\n=== Loading Helper Functions ===\n")
+source(here::here("scripts/R/functions/model_fun.R"))
+source(here::here("scripts/R/functions/calculate_outcomes.R"))
+source(here::here("scripts/R/functions/multi_model_cea.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
+
+# Recover environment variables
 issue_number <- Sys.getenv("SNAPSHOT_ISSUE_NUMBER")
 snapshot_status <- Sys.getenv("SNAPSHOT_STATUS")
+wtp_val <- as.numeric(Sys.getenv("SNAPSHOT_WTP"))
 
-# Check that required objects exist
-cat("Validating required objects...\n")
-required_objects <- c("base_results", "icer_obj", "nmb_at_wtp", "psa_obj")
-missing_objects <- setdiff(required_objects, ls())
+# ============================================================================
+# Step 3: Run analysis for all 3 model structures
+# ============================================================================
+cat("\n=== Running Multi-Model Analysis ===\n")
 
-if (length(missing_objects) > 0) {
-  stop("Missing required objects: ", paste(missing_objects, collapse = ", "),
-       "\nAnalysis may have failed. Check for errors above.")
+model_labels <- c("joint", "focused", "separate")
+models_results <- list()
+psa_objects <- list()
+
+# Helper: compute PSA summary with CIs from a psa object
+compute_psa_summary <- function(psa_obj) {
+  psa_summary_full <- summary(psa_obj, calc_sds = TRUE,
+                              prob = c(0.025, 0.975))
+  cost_q <- apply(psa_obj$cost, 2, quantile, probs = c(0.025, 0.975))
+  effect_q <- apply(psa_obj$effectiveness, 2, quantile,
+                    probs = c(0.025, 0.975))
+  data.frame(
+    Strategy = psa_summary_full$Strategy,
+    meanCost = psa_summary_full$meanCost,
+    sdCost = psa_summary_full$sdCost,
+    meanEffect = psa_summary_full$meanEffect,
+    sdEffect = psa_summary_full$sdEffect,
+    Cost_2.5_percent = cost_q[1, ],
+    Cost_97.5_percent = cost_q[2, ],
+    Effect_2.5_percent = effect_q[1, ],
+    Effect_97.5_percent = effect_q[2, ],
+    stringsAsFactors = FALSE
+  )
 }
 
-# Collect metadata
-cat("Collecting metadata...\n")
+for (i in seq_along(model_labels)) {
+  ms <- i - 1  # MODEL_STRUCTURE: 0, 1, 2
+  label <- model_labels[i]
+  cat("\n--- [Model ", i, "/3: ", label, "] ---\n", sep = "")
+
+  # Run base case (re-sources 06 + 07 internally)
+  tryCatch({
+    bc <- run_basecase_for_structure(ms, verbose = TRUE)
+    br <- bc$base_results
+    io <- bc$icer_obj
+
+    # Calculate NMB
+    nmb <- data.frame(
+      Strategy = br$Strategy,
+      Cost = br$Cost,
+      Effect = br$Effect,
+      NMB = br$Effect * wtp_val - br$Cost
+    )
+    nmb <- nmb[order(-nmb$NMB), ]
+
+    # Load PSA cache
+    psa_obj <- load_psa_cache_for_structure(ms)
+    psa_summary <- NULL
+    if (!is.null(psa_obj)) {
+      psa_summary <- compute_psa_summary(psa_obj)
+      psa_objects[[label]] <- psa_obj
+    } else {
+      cat("  WARNING: PSA cache not found for", label, "- skipping PSA\n")
+    }
+
+    models_results[[label]] <- list(
+      base_results = br,
+      icer_obj = as.data.frame(io),
+      nmb_at_wtp = nmb,
+      psa_summary = psa_summary
+    )
+    cat("  Done:", label, "\n")
+
+  }, error = function(e) {
+    cat("  ERROR running", label, ":", conditionMessage(e), "\n")
+    cat("  Skipping this model structure.\n")
+  })
+}
+
+cat("\n=== Multi-Model Analysis Complete ===\n")
+cat("Models completed:", paste(names(models_results), collapse = ", "), "\n")
+
+if (length(models_results) == 0) {
+  stop("No models completed successfully. Cannot save snapshot.")
+}
+
+# ============================================================================
+# Step 4: Collect metadata and build snapshot
+# ============================================================================
+cat("\nCollecting metadata...\n")
 metadata <- collect_metadata(issue_number)
 
-# Get PSA summary with confidence intervals
-cat("Calculating PSA summary statistics...\n")
-psa_summary_full <- summary(psa_obj, calc_sds = TRUE, prob = c(0.025, 0.975))
+# Use first available model as the primary (legacy top-level fields)
+primary_label <- names(models_results)[1]
+primary <- models_results[[primary_label]]
 
-# Calculate 95% credible intervals from PSA object directly
-cost_quantiles <- apply(psa_obj$cost, 2, quantile, probs = c(0.025, 0.975))
-effect_quantiles <- apply(psa_obj$effectiveness, 2, quantile, probs = c(0.025, 0.975))
-
-# Create summary with credible intervals
-psa_summary_with_ci <- data.frame(
-  Strategy = psa_summary_full$Strategy,
-  meanCost = psa_summary_full$meanCost,
-  sdCost = psa_summary_full$sdCost,
-  meanEffect = psa_summary_full$meanEffect,
-  sdEffect = psa_summary_full$sdEffect,
-  Cost_2.5_percent = cost_quantiles[1, ],
-  Cost_97.5_percent = cost_quantiles[2, ],
-  Effect_2.5_percent = effect_quantiles[1, ],
-  Effect_97.5_percent = effect_quantiles[2, ],
-  stringsAsFactors = FALSE
-)
-
-# Create snapshot object
 cat("Creating snapshot object...\n")
 snapshot <- list(
   metadata = metadata,
-  base_results = base_results,
-  icer_obj = as.data.frame(icer_obj),  # Ensure it's a data frame
-  nmb_at_wtp = nmb_at_wtp,
-  psa_summary = psa_summary_with_ci
+  # Legacy top-level fields (backward compatibility)
+  base_results = primary$base_results,
+  icer_obj = primary$icer_obj,
+  nmb_at_wtp = primary$nmb_at_wtp,
+  psa_summary = primary$psa_summary,
+  # Multi-model results
+  models = models_results
 )
 
-# Generate filenames with baseline/fixed status
+# ============================================================================
+# Step 5: Save files
+# ============================================================================
 commit <- get_git_commit()
-
-snapshot_filename <- paste0("snapshot_", issue_number, "_", snapshot_status, "_", commit, ".rds")
-psa_filename <- paste0("psa_", issue_number, "_", snapshot_status, "_", commit, ".rds")
-
+snapshot_filename <- paste0("snapshot_", issue_number, "_",
+                            snapshot_status, "_", commit, ".rds")
+psa_filename <- paste0("psa_", issue_number, "_",
+                        snapshot_status, "_", commit, ".rds")
 snapshots_dir <- here::here("data", "output", "snapshots")
 
-# Save snapshot file
 cat("\nSaving snapshot file...\n")
 snapshot_path <- file.path(snapshots_dir, snapshot_filename)
 saveRDS(snapshot, snapshot_path)
 cat("  Saved:", snapshot_path, "\n")
 
-# Save PSA object
-cat("Saving PSA object...\n")
+cat("Saving PSA objects...\n")
 psa_path <- file.path(snapshots_dir, psa_filename)
-saveRDS(psa_obj, psa_path)
-cat("  Saved:", psa_path, "\n")
+if (length(psa_objects) > 0) {
+  saveRDS(psa_objects, psa_path)
+  cat("  Saved:", psa_path, "(", length(psa_objects), "models)\n")
+} else {
+  cat("  WARNING: No PSA objects available - PSA file not saved\n")
+}
 
+# ============================================================================
 # Print summary
+# ============================================================================
 cat("\n=== Snapshot Saved Successfully ===\n")
 cat("Issue number:", issue_number, "\n")
 cat("Git commit:", commit, "\n")
@@ -180,20 +245,24 @@ cat("Snapshot file:", snapshot_filename, "\n")
 cat("PSA file:", psa_filename, "\n")
 
 cat("\nSnapshot contains:\n")
-cat("  - Base case results (", nrow(base_results), " strategies)\n", sep = "")
-cat("  - ICER analysis\n")
-cat("  - Net Monetary Benefit at WTP = €", format(WTP, big.mark = ","), "\n", sep = "")
-cat("  - PSA summary (", psa_obj$n_sim, " simulations)\n", sep = "")
+for (label in names(models_results)) {
+  mr <- models_results[[label]]
+  cat("  - ", label, ": ", nrow(mr$base_results), " strategies",
+      if (!is.null(mr$psa_summary)) " + PSA" else "",
+      "\n", sep = "")
+}
 cat("  - Metadata (git commit, R version, package versions, parameters)\n")
 
 if (snapshot_status == "baseline") {
   cat("\nNext steps:\n")
   cat("  1. Fix the bug and commit your changes\n")
-  cat("  2. Run: Rscript scripts/R/analysis/15_save_snapshot.R", issue_number, "fixed\n")
-  cat("  3. Generate report: quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd -P issue:", issue_number, "\n")
+  cat("  2. Run: Rscript scripts/R/analysis/15_save_snapshot.R",
+      issue_number, "fixed\n")
+  cat("  3. Generate report: quarto render",
+      "scripts/QMD/technical_docs/bug_fix_impact.qmd\n")
 } else {
   cat("\nTo generate the bug fix impact report, run:\n")
-  cat("  quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd -P issue:", issue_number, "\n")
+  cat("  quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd\n")
 }
 
 cat("\n=== Done ===\n\n")
