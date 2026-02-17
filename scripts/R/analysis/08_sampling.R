@@ -82,80 +82,30 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 # ===============================================================================
 # MODEL FORMULA SELECTION BASED ON GLOBAL MODEL_STRUCTURE SWITCH
 # ===============================================================================
-# Matches clinical_effectiveness.qmd Model A/B/C structure
-# This ensures PSA uses the SAME model structure as base case
+# Model formulas are defined in scripts/R/functions/model_configs.R
+# This ensures PSA uses the SAME model structure as base case.
 #
-# MODEL_STRUCTURE options:
-#   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
-#   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
+# All three biomarker strategies (CRP, TLR, TMB/BRAF) are available in ALL models.
 # ===============================================================================
 
-if (MODEL_STRUCTURE == 0) {
-  # =========================================================================
-  # JOINT (Model A): All biomarkers + all treatment interactions
-  # =========================================================================
-  model_type <- "joint"
-  cat("Resampling: Using JOINT model (Model A - all biomarkers + all interactions)\n")
+# Source model configurations if not already loaded
+if (!exists("get_model_configs")) {
+  source(here::here("scripts/R/functions/model_configs.R"))
+}
 
-  # Control model - full model with all terms, fitted to ALL patients
-  # Note: For control strategy, we still use simpler model since control patients
-  # don't have treatment variation
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
+# Get model configuration
+model_config <- get_current_model_config()
+model_type <- get_model_type_label()
+cat("Resampling: Using", model_config$label, "\n")
+cat("Description:", model_config$description, "\n")
 
-  # Biomarker formulas - JOINT model with ALL biomarker interactions
-  create_biomarker_formula <- function(outcome, biomarker) {
-    if (outcome == "os") {
-      return(Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx)
-    } else {
-      return(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx)
-    }
-  }
+# Get control formulas from central config
+control_os_formula <- get_control_formula("os")
+control_pfs_formula <- get_control_formula("pfs")
 
-} else if (MODEL_STRUCTURE == 1) {
-  # =========================================================================
-  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
-  # =========================================================================
-  model_type <- "focused"
-  cat("Resampling: Using FOCUSED models (Model B - all biomarkers + one interaction)\n")
-
-  # Control model - all biomarkers as main effects, no interactions
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex + crp + tlr + tmb_braf
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex + crp + tlr + tmb_braf
-
-  # Biomarker formulas - all biomarkers + only THIS biomarker's interaction
-  create_biomarker_formula <- function(outcome, biomarker) {
-    if (outcome == "os") {
-      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
-    } else {
-      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + ", biomarker, ":Rx")))
-    }
-  }
-
-} else if (MODEL_STRUCTURE == 2) {
-  # =========================================================================
-  # SEPARATE (Model C): Only ONE biomarker + its interaction per model
-  # =========================================================================
-  model_type <- "separate"
-  cat("Resampling: Using SEPARATE models (Model C - one biomarker only)\n")
-
-  # Control model - simple age + sex (fitted to control patients only)
-  control_os_formula <- Surv(OSwk, Death) ~ Age + sex
-  control_pfs_formula <- Surv(PFSwk, Progression) ~ Age + sex
-
-  # Biomarker formulas - only THIS biomarker + its interaction
-  create_biomarker_formula <- function(outcome, biomarker) {
-    if (outcome == "os") {
-      return(as.formula(paste0("Surv(OSwk, Death) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    } else {
-      return(as.formula(paste0("Surv(PFSwk, Progression) ~ Age + sex + Rx + ", biomarker, ":Rx")))
-    }
-  }
-
-} else {
-  stop("Invalid MODEL_STRUCTURE value: ", MODEL_STRUCTURE,
-       ". Must be 0 (joint), 1 (focused), or 2 (separate)")
+# Create biomarker formula function using central config
+create_biomarker_formula <- function(outcome, biomarker) {
+  return(get_strategy_formula(biomarker, outcome))
 }
 
 # ===============================================================================
@@ -267,14 +217,15 @@ if (file.exists(cache_file)) {
 
   sampling_models <- readRDS(cache_file)
 
-  # Validate cache
+  # Validate cache - all models now use all three biomarkers
+  biomarkers_to_validate <- get_biomarkers()
   if (is.list(sampling_models) &&
       "control" %in% names(sampling_models) &&
-      all(biomarkers %in% names(sampling_models))) {
+      all(biomarkers_to_validate %in% names(sampling_models))) {
 
     cat("Cache loaded successfully!\n")
     cat("- Control samples:", sampling_models$control$n_samples, "\n")
-    cat("- Biomarkers:", paste(biomarkers, collapse = ", "), "\n")
+    cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
     cat("- Created:", format(sampling_models$control$creation_time), "\n")
     cat("- Distribution:", sampling_models$control$dist, "\n")
 
@@ -318,7 +269,9 @@ if (is.null(sampling_models)) {
   )
 
   # Sample biomarker models with age and sex adjustments
-  for (biomarker in biomarkers) {
+  # All models now use all three biomarkers (TLR is included in Model B with its own formula)
+  biomarkers_to_sample <- get_biomarkers()
+  for (biomarker in biomarkers_to_sample) {
     cat("\nSampling", biomarker, "strategy...\n")
 
     # OS model with age, sex, biomarker, treatment, and interaction
@@ -347,16 +300,9 @@ if (is.null(sampling_models)) {
 # Print confirmation of model structures
 cat("\n=== Sampling model structures ready ===\n")
 cat("- MODEL_STRUCTURE:", MODEL_STRUCTURE, "(", model_type, ")\n")
-if (MODEL_STRUCTURE == 0) {
-  cat("- Control models: Age + sex adjusted\n")
-  cat("- Biomarker models: Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx (JOINT)\n")
-} else if (MODEL_STRUCTURE == 1) {
-  cat("- Control models: Age + sex + crp + tlr + tmb_braf\n")
-  cat("- Biomarker models: Age + sex + Rx + all biomarkers + [biomarker]:Rx (FOCUSED)\n")
-} else if (MODEL_STRUCTURE == 2) {
-  cat("- Control models: Age + sex adjusted\n")
-  cat("- Biomarker models: Age + sex + Rx + [biomarker]:Rx (SEPARATE)\n")
-}
+cat("- Model:", model_config$label, "\n")
+cat("- All three biomarker strategies: CRP, TLR, TMB/BRAF\n")
+cat("- Formulas defined in: scripts/R/functions/model_configs.R\n")
 cat("- Number of resampled models:", sampling_models$control$n_samples, "\n")
 cat("- PFS and OS are CORRELATED within each resampled model\n")
 
@@ -504,6 +450,7 @@ dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utili
 dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
 
 # Prevalence parameters - beta distributions (bounded between 0 and 1)
+# All models now include all three biomarkers
 cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
 dist_p_crp <- c(list(dist = "beta"), get_beta_params(l_params_base$p_crp, cv_prevalence))
 dist_p_tlr <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tlr, cv_prevalence))
@@ -511,6 +458,7 @@ dist_p_tmb_braf <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tmb_br
 
 # Create comprehensive parameter distributions list
 # Note: Survival curves are NOT in this list - they come from bootstrap samples
+# All models now include all three biomarkers
 param_distributions <- list(
   # Cost parameters
   c_drug_nivo = dist_c_drug_nivo,
@@ -522,18 +470,19 @@ param_distributions <- list(
   c_other_baseline = dist_c_other_baseline,
   c_other_follow = dist_c_other_follow,
   c_other_last = dist_c_other_last,
-  
+
   # Utility parameters
   u_np = dist_u_np,
   u_p = dist_u_p,
 
-  # Prevalence parameters
+  # Prevalence parameters (all three biomarkers)
   p_crp = dist_p_crp,
   p_tlr = dist_p_tlr,
   p_tmb_braf = dist_p_tmb_braf
 )
 
 # Parameter groups for sensitivity analysis (EVPPI)
+# All models now include all three biomarkers
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
   test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),

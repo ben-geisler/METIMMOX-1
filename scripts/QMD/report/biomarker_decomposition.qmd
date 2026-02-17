@@ -104,18 +104,19 @@ model_formulas <- list(
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
 
-  # Model B: Focused - all biomarkers as covariates + ONE interaction
+  # Model B: Focused - Per-strategy formulas
+  # CRP/TMB_BRAF: both interactions; TLR: TLR-only interaction
   B_crp = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
-  ),
-  B_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
   B_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+  ),
+  B_tlr = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
   ),
 
   # Model C: Single-biomarker (Separate) - ONE biomarker only + its interaction
@@ -137,8 +138,8 @@ model_formulas <- list(
 model_labels_short <- c(
   "A" = "Model A",
   "B_crp" = "Model B",
-  "B_tlr" = "Model B",
   "B_tmb" = "Model B",
+  "B_tlr" = "Model B",
   "C_crp" = "Model C",
   "C_tlr" = "Model C",
   "C_tmb" = "Model C"
@@ -160,14 +161,14 @@ model_linetypes <- c(
 )
 
 # Vector of model types to fit
-model_types <- c("A", "B_crp", "B_tlr", "B_tmb", "C_crp", "C_tlr", "C_tmb")
+model_types <- c("A", "B_crp", "B_tmb", "B_tlr", "C_crp", "C_tlr", "C_tmb")
 
 # Biomarker-model mapping
 model_biomarker_map <- list(
   A = c("crp", "tlr", "tmb_braf"),
   B_crp = c("crp"),
-  B_tlr = c("tlr"),
   B_tmb = c("tmb_braf"),
+  B_tlr = c("tlr"),
   C_crp = c("crp"),
   C_tlr = c("tlr"),
   C_tmb = c("tmb_braf")
@@ -859,7 +860,7 @@ This report uses only the Gamma distribution for all survival models. For detail
 Three model structures are compared for each biomarker strategy:
 
 - **Model A (Joint)**: All biomarker-treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects plus one interaction term
+- **Model B (Focused)**: Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction
 - **Model C (Separate)**: Single biomarker with its interaction term only
 
 Table 1 summarizes the patient populations for each biomarker strategy, showing the number of biomarker-positive and biomarker-negative patients and the overall prevalence rate.
@@ -1035,8 +1036,9 @@ p_a <- create_individual_model_plot("tlr", "A", "os")
 p_b <- create_individual_model_plot("tlr", "B_tlr", "os")
 p_c <- create_individual_model_plot("tlr", "C_tlr", "os")
 
-if (!is.null(p_a) && !is.null(p_b) && !is.null(p_c)) {
-  gridExtra::grid.arrange(p_a, p_b, p_c, ncol = 1)
+plots <- Filter(Negate(is.null), list(p_a, p_b, p_c))
+if (length(plots) > 0) {
+  gridExtra::grid.arrange(grobs = plots, ncol = 1)
 }
 ```
 
@@ -1063,8 +1065,9 @@ p_a <- create_individual_model_plot("tlr", "A", "pfs")
 p_b <- create_individual_model_plot("tlr", "B_tlr", "pfs")
 p_c <- create_individual_model_plot("tlr", "C_tlr", "pfs")
 
-if (!is.null(p_a) && !is.null(p_b) && !is.null(p_c)) {
-  gridExtra::grid.arrange(p_a, p_b, p_c, ncol = 1)
+plots <- Filter(Negate(is.null), list(p_a, p_b, p_c))
+if (length(plots) > 0) {
+  gridExtra::grid.arrange(grobs = plots, ncol = 1)
 }
 ```
 
@@ -1197,12 +1200,14 @@ summary_os <- data.frame()
 for (biomarker in c("crp", "tlr", "tmb_braf")) {
   biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
 
-  for (model_type in c("A", paste0(c("B_", "C_"), biomarker))) {
-    if (model_type == paste0("B_", biomarker)) model_type <- switch(biomarker,
-      crp = "B_crp", tlr = "B_tlr", tmb_braf = "B_tmb")
-    if (model_type == paste0("C_", biomarker)) model_type <- switch(biomarker,
-      crp = "C_crp", tlr = "C_tlr", tmb_braf = "C_tmb")
+  # All three model structures include TLR
+  model_types_to_check <- switch(biomarker,
+    crp = c("A", "B_crp", "C_crp"),
+    tlr = c("A", "B_tlr", "C_tlr"),
+    tmb_braf = c("A", "B_tmb", "C_tmb")
+  )
 
+  for (model_type in model_types_to_check) {
     pred <- multi_predictions$gamma[[model_type]]
     if (is.null(pred)) next
 
@@ -1251,12 +1256,14 @@ summary_pfs <- data.frame()
 for (biomarker in c("crp", "tlr", "tmb_braf")) {
   biomarker_labels <- c(crp = "CRP", tlr = "TLR", tmb_braf = "TMB/BRAF")
 
-  for (model_type in c("A", paste0(c("B_", "C_"), biomarker))) {
-    if (model_type == paste0("B_", biomarker)) model_type <- switch(biomarker,
-      crp = "B_crp", tlr = "B_tlr", tmb_braf = "B_tmb")
-    if (model_type == paste0("C_", biomarker)) model_type <- switch(biomarker,
-      crp = "C_crp", tlr = "C_tlr", tmb_braf = "C_tmb")
+  # All three model structures include TLR
+  model_types_to_check <- switch(biomarker,
+    crp = c("A", "B_crp", "C_crp"),
+    tlr = c("A", "B_tlr", "C_tlr"),
+    tmb_braf = c("A", "B_tmb", "C_tmb")
+  )
 
+  for (model_type in model_types_to_check) {
     pred <- multi_predictions$gamma[[model_type]]
     if (is.null(pred)) next
 
@@ -1302,4 +1309,4 @@ kable(summary_pfs,
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 1.1

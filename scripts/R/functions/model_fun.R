@@ -36,7 +36,7 @@
 # ===============================================================================
 
 validate_model_params <- function(params, time_horizon) {
-  # Required scalar parameters
+  # Required scalar parameters - all three biomarker prevalence values always required
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
                         "c_test_blood", "c_test_NGS", "c_other_visit",
@@ -76,6 +76,7 @@ validate_model_params <- function(params, time_horizon) {
   }
 
   # Validate prevalence parameters are in [0, 1]
+  # All three biomarkers are required in all models
   prev_params <- c("p_crp", "p_tlr", "p_tmb_braf")
   for (p in prev_params) {
     if (params[[p]] < 0 || params[[p]] > 1) {
@@ -96,8 +97,16 @@ validate_model_params <- function(params, time_horizon) {
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
-  # Get the strategies from our global variables
-  strat_names <- strategies  # This should be defined in section 2
+  # Get strategies and biomarkers from central config
+  # All models now include all three biomarker strategies (CRP, TLR, TMB/BRAF)
+  if (exists("get_strategies")) {
+    strat_names <- get_strategies()
+    biomarkers_to_run <- get_biomarkers()
+  } else {
+    # Fallback for backward compatibility
+    strat_names <- c("control", "crp", "tlr", "tmb_braf")
+    biomarkers_to_run <- c("crp", "tlr", "tmb_braf")
+  }
 
   # Validate input parameters (Issue #47)
   validate_model_params(params, time_horizon)
@@ -186,7 +195,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     #   - Biomarker- subgroup: ALL biomarker- patients with control Rx
     # Weighted combination uses TRUE prevalence (not 0/1)
 
-    for(biomarker in biomarkers) {
+    for(biomarker in biomarkers_to_run) {
       tryCatch({
         # Get population-averaged predictions for BOTH subgroups
         preds_os <- generate_psa_population_averaged_predictions(
@@ -321,7 +330,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # =========================================================================
   
   # Loop through each biomarker strategy
-  for(biomarker in biomarkers) {
+  for(biomarker in biomarkers_to_run) {
     # Get biomarker prevalence directly from params
     biomarker_prev <- params[[paste0("p_", biomarker)]]
     

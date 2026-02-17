@@ -39,10 +39,13 @@ p_load(here, knitr, kableExtra, DT, dplyr, tidyr, ggplot2)
 # Set knitr options for PDF
 options(knitr.table.format = "latex")
 
-# Load PSA results - adjust path as needed based on where your PSA results are saved
-# This assumes the PSA has been run and results are available
-psa_results_path <- here("data/tidy", "psa_results.rds")
-psa_params_path <- here("data/tidy", "psa_params.rds")
+# Load PSA results - uses model structure suffix matching cache naming convention
+model_structure_labels <- c("joint", "focused", "separate")
+MODEL_STRUCTURE <- 0  # Must match setting in 02_setup_and_global_variables.R
+current_model_label <- model_structure_labels[MODEL_STRUCTURE + 1]
+
+psa_results_path <- here("data/tidy", paste0("psa_obj_", current_model_label, ".rds"))
+psa_params_path <- here("data/tidy", paste0("psa_params_", current_model_label, ".rds"))
 
 # Try to load PSA object and parameters
 psa_obj <- NULL
@@ -92,7 +95,7 @@ global_params <- data.frame(
                  "Number of Monte Carlo iterations for PSA",
                  "Resampled models for survival uncertainty",
                  "Parameter variation range for DSA",
-                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (all biomarkers + one interaction), 2=separate (one biomarker only)"),
+                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction), 2=separate (one biomarker only)"),
   Source = c("Clinical follow-up period",
             "Model assumption",
             "Model specification",
@@ -301,4 +304,4 @@ if (!is.null(psa_params) && is.data.frame(psa_params)) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

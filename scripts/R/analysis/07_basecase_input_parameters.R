@@ -24,9 +24,10 @@ l_visit <- rep(0, time_points_length)
 l_visit[1] <- 1  # baseline
 l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
 
-# Map survival curves directly into a list structure 
+# Map survival curves directly into a list structure
+# All three biomarker strategies (CRP, TLR, TMB/BRAF) are included in all models
 p_os <- list(
-  control_OS = predictions$control$os,  
+  control_OS = predictions$control$os,
   crp_pos_OS = predictions$crp$biomarker_positive$os,
   crp_neg_OS = predictions$crp$biomarker_negative$os,
   tlr_pos_OS = predictions$tlr$biomarker_positive$os,
@@ -39,7 +40,7 @@ p_os <- list(
 )
 
 p_pfs <- list(
-  control_PFS = predictions$control$pfs, 
+  control_PFS = predictions$control$pfs,
   crp_pos_PFS = predictions$crp$biomarker_positive$pfs,
   crp_neg_PFS = predictions$crp$biomarker_negative$pfs,
   tlr_pos_PFS = predictions$tlr$biomarker_positive$pfs,
@@ -95,6 +96,7 @@ l_params_base <- list(
   p_pfs = p_pfs,
   
   # Biomarker prevalence - using values from strategies_df
+  # All three biomarkers are included in all models
   p_crp = strategies_df$prevalence[strategies_df$id == "crp"],
   p_tlr = strategies_df$prevalence[strategies_df$id == "tlr"],
   p_tmb_braf = strategies_df$prevalence[strategies_df$id == "tmb_braf"]

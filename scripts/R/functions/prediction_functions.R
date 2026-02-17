@@ -79,8 +79,16 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # BIOMARKER-GUIDED STRATEGIES: Treatment assigned by biomarker status
   # -------------------------------------------------------------------------
 
+  # Determine which biomarkers to process
+  # All models now include all three biomarker strategies
+  biomarkers_to_predict <- if (exists("get_biomarkers")) {
+    get_biomarkers()
+  } else {
+    c("crp", "tlr", "tmb_braf")  # Fallback
+  }
+
   # Loop through each biomarker strategy
-  for (biomarker_name in c("crp", "tlr", "tmb_braf")) {
+  for (biomarker_name in biomarkers_to_predict) {
 
     cat("Generating population-averaged predictions for", biomarker_name, "strategy...\n")
 
@@ -252,7 +260,15 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
   # BIOMARKER-GUIDED STRATEGIES: Each uses its specific model
   # -------------------------------------------------------------------------
 
-  for (biomarker_name in c("crp", "tlr", "tmb_braf")) {
+  # Determine which biomarkers to process
+  # All models now include all three biomarker strategies
+  biomarkers_to_predict <- if (exists("get_biomarkers")) {
+    get_biomarkers()
+  } else {
+    c("crp", "tlr", "tmb_braf")  # Fallback
+  }
+
+  for (biomarker_name in biomarkers_to_predict) {
 
     cat("Generating population-averaged predictions for", biomarker_name,
         "strategy (using", biomarker_name, "model)...\n")

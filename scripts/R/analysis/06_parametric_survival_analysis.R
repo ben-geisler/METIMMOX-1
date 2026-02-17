@@ -68,15 +68,26 @@ data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", 
 # ===============================================================================
 # MODEL STRUCTURE DEFINITIONS
 # ===============================================================================
+# Model formulas are defined in scripts/R/functions/model_configs.R
+# which provides a single source of truth for all model configurations.
+#
 # MODEL_STRUCTURE controls which model formula structure is used:
 #   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-#   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
+#   1 = "focused"  - Per-strategy formulas (Model B):
+#                    - CRP/TMB_BRAF: crp + tmb_braf + crp:Rx + tmb_braf:Rx
+#                    - TLR: crp + tmb_braf + tlr:Rx
 #   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
 #
-# USE_BOTH_MODELS controls age/sex adjustment:
+# All three biomarker strategies (CRP, TLR, TMB/BRAF) are available in ALL models.
+# USE_BOTH_MODELS controls age/sex adjustment (only relevant for Model A):
 #   0 = Full model with age and sex adjustments only
 #   1 = Both full model and model without age/sex adjustments
 # ===============================================================================
+
+# Source model configurations if not already loaded
+if (!exists("get_model_configs")) {
+  source(here::here("scripts/R/functions/model_configs.R"))
+}
 
 # Validate MODEL_STRUCTURE
 if (!exists("MODEL_STRUCTURE")) {
@@ -84,105 +95,16 @@ if (!exists("MODEL_STRUCTURE")) {
   cat("MODEL_STRUCTURE not defined, defaulting to 0 (joint)\n")
 }
 
-if (MODEL_STRUCTURE == 0) {
-  # =========================================================================
-  # JOINT (Model A): All biomarkers + all treatment interactions in ONE model
-  # =========================================================================
-  model_type_label <- "joint"
-  cat("Configuration: Using JOINT model (Model A - all biomarkers + all interactions)\n")
+validate_model_structure(MODEL_STRUCTURE)
 
-  # Define model formulas based on USE_BOTH_MODELS
-  if (USE_BOTH_MODELS == 0) {
-    model_formulas <- list(
-      full = list(
-        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-      )
-    )
-  } else if (USE_BOTH_MODELS == 1) {
-    model_formulas <- list(
-      full = list(
-        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-      ),
-      no_age_sex = list(
-        os = Surv(OSwk, Death) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-        pfs = Surv(PFSwk, Progression) ~ Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-      )
-    )
-  } else {
-    model_formulas <- list(
-      full = list(
-        os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-        pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-      )
-    )
-    cat("Warning: Invalid USE_BOTH_MODELS value. Defaulting to full model only\n")
-  }
+# Get model configuration from central source
+model_config <- get_current_model_config()
+model_type_label <- get_model_type_label()
+model_formulas <- get_model_formulas()
 
-} else if (MODEL_STRUCTURE == 1) {
-  # =========================================================================
-  # FOCUSED (Model B): All biomarkers as main effects + ONE interaction per model
-  # =========================================================================
-  # Each biomarker strategy uses a separate model with:
-  # - All biomarkers as main effects (adjusting for their prognostic value)
-  # - Only the relevant biomarker's treatment interaction
-  # This allows each biomarker's predictive effect to be estimated independently
-  # while still adjusting for other biomarkers' prognostic effects.
-  # =========================================================================
-  model_type_label <- "focused"
-  cat("Configuration: Using FOCUSED models (Model B - all biomarkers + one interaction each)\n")
-  cat("Fitting 3 separate models (one per biomarker strategy).\n")
-
-  model_formulas <- list(
-    crp = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx
-    ),
-    tlr = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tlr:Rx
-    ),
-    tmb_braf = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tlr + tmb_braf + tmb_braf:Rx
-    )
-  )
-
-} else if (MODEL_STRUCTURE == 2) {
-  # =========================================================================
-  # SEPARATE (Model C): Only ONE biomarker + its interaction per model
-  # =========================================================================
-  # Each biomarker strategy uses a separate model with:
-  # - Only the relevant biomarker's treatment interaction
-  # - No adjustment for other biomarkers
-  # This is the most parsimonious approach, estimating each biomarker's
-  # predictive effect in isolation.
-  # =========================================================================
-  model_type_label <- "separate"
-  cat("Configuration: Using SEPARATE models (Model C - one biomarker + its interaction only)\n")
-  cat("Fitting 3 separate models (one per biomarker strategy).\n")
-
-  model_formulas <- list(
-    crp = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
-    ),
-    tlr = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + tlr:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr:Rx
-    ),
-    tmb_braf = list(
-      os = Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf:Rx,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf:Rx
-    )
-  )
-
-} else {
-  stop("Invalid MODEL_STRUCTURE value: ", MODEL_STRUCTURE,
-       ". Must be 0 (joint), 1 (focused), or 2 (separate)")
-}
-
+# Print configuration summary
+cat("Configuration:", model_config$label, "\n")
+cat("Description:", model_config$description, "\n")
 cat("Model type label:", model_type_label, "\n")
 
 # Print which models will be fitted
@@ -264,8 +186,8 @@ for (structure_name in names(model_formulas)) {
 # ===============================================================================
 
 # Check if this is a biomarker-specific model structure (Models B/C)
-is_biomarker_specific <- MODEL_STRUCTURE %in% c(1, 2)
-biomarker_names <- c("crp", "tlr", "tmb_braf")
+is_biomarker_specific <- uses_per_strategy_formulas()
+biomarker_names <- get_biomarkers()
 
 if (is_biomarker_specific) {
   # =========================================================================
@@ -447,8 +369,13 @@ if (is_biomarker_specific) {
 # CONFIGURATION:
 # - MODEL_STRUCTURE: Controls which model formula structure is used
 #   * 0 = "joint" (Model A): All biomarkers + all interactions in one model
-#   * 1 = "focused" (Model B): All biomarkers as main effects + one interaction each
+#   * 1 = "focused" (Model B): Per-strategy formulas:
+#         - CRP/TMB_BRAF: crp + tmb_braf + crp:Rx + tmb_braf:Rx
+#         - TLR: crp + tmb_braf + tlr:Rx (adjusts for other biomarkers)
 #   * 2 = "separate" (Model C): Only one biomarker + its interaction per model
+#
+# All three biomarker strategies are available in ALL models.
+# See scripts/R/functions/model_configs.R for complete formula definitions.
 #
 # - USE_BOTH_MODELS: Controls age/sex adjustment (only for Model A)
 #   * 0 = Only fit full model with age and sex adjustments

@@ -34,16 +34,30 @@ dr = 0.04
 ## switch to use either just the full model (0) or also the age- and sex-adjusted model
 USE_BOTH_MODELS <- 0
 
-## Model structure switch for survival analysis (matches clinical_effectiveness.qmd)
+## Model structure switch for survival analysis
 ## Controls which model formula structure is used for BOTH base case and PSA
 ## Options:
 ##   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-##                    Formula: ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
-##   1 = "focused"  - All biomarkers as main effects + ONE interaction per model (Model B)
-##                    Formula: ~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx
+##   1 = "focused"  - Per-strategy formulas (Model B):
+##                    - CRP/TMB_BRAF: ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
+##                    - TLR: ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
 ##   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
-##                    Formula: ~ Age + sex + Rx + [biomarker]:Rx
+##
+## All three biomarker strategies (CRP, TLR, TMB/BRAF) are available in ALL models.
+## See scripts/R/functions/model_configs.R for complete formula definitions.
 ##
 ## IMPORTANT: When changed, BOTH sampling cache AND PSA cache must be regenerated.
 ## Cache filenames will include this setting for safety.
 MODEL_STRUCTURE <- 0  # Default: joint model (current base case behavior)
+
+# ===============================================================================
+# SOURCE MODEL CONFIGURATIONS (Single Source of Truth)
+# ===============================================================================
+# This sources the central model configuration file which defines all formulas
+# and provides helper functions: get_strategies(), get_biomarkers(), etc.
+source(here::here("scripts/R/functions/model_configs.R"))
+
+# Set global strategy and biomarker vectors for backward compatibility
+# These are now dynamically determined based on MODEL_STRUCTURE
+strategies <- get_strategies()
+biomarkers <- get_biomarkers()

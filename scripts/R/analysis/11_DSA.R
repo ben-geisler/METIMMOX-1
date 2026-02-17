@@ -19,10 +19,16 @@ if (length(time_points) != time_points_length) {
 }
 
 # Define parameters to vary in sensitivity analysis (matches EVPPI parameters)
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
-              "c_test_blood", "c_other_visit", "c_other_baseline",
-              "c_other_follow", "c_other_last", "u_np", "u_p",
-              "p_crp", "p_tlr", "p_tmb_braf")
+# Model B (focused) excludes TLR, so p_tlr is only included for Models A and C
+dsa_pars_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                   "c_test_blood", "c_other_visit", "c_other_baseline",
+                   "c_other_follow", "c_other_last", "u_np", "u_p",
+                   "p_crp", "p_tmb_braf")
+if (MODEL_STRUCTURE != 1) {
+  dsa_pars <- c(dsa_pars_base, "p_tlr")
+} else {
+  dsa_pars <- dsa_pars_base
+}
 
 # Use base case values as starting point
 dsa_basecase <- l_params_base
@@ -46,7 +52,12 @@ for (param in utility_params) {
 }
 
 # Cap prevalence values between 0 and 1
-prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+# Model B (focused) excludes TLR
+prevalence_params <- if (MODEL_STRUCTURE != 1) {
+  c("p_crp", "p_tlr", "p_tmb_braf")
+} else {
+  c("p_crp", "p_tmb_braf")
+}
 for (param in prevalence_params) {
   idx <- which(dsa_ranges$pars == param)
   if (length(idx) > 0) {
@@ -210,7 +221,9 @@ if (exists("models") && !is.null(models$full$os)) {
       test_params$p_pfs$control_PFS <- test_predictions$control$pfs
 
       # Update biomarker strategy survival curves
-      for (biomarker in biomarkers) {
+      # Model B (focused) only uses CRP and TMB/BRAF; Models A and C use all three
+      biomarkers_to_loop <- if (exists("MODEL_STRUCTURE") && MODEL_STRUCTURE == 1) biomarkers_model_b else biomarkers
+      for (biomarker in biomarkers_to_loop) {
         test_params$p_os[[paste0(biomarker, "_pos_OS")]] <- test_predictions[[biomarker]]$biomarker_positive$os
         test_params$p_os[[paste0(biomarker, "_neg_OS")]] <- test_predictions[[biomarker]]$biomarker_negative$os
         test_params$p_os[[paste0(biomarker, "_weighted_OS")]] <- test_predictions[[biomarker]]$os
@@ -338,7 +351,12 @@ par(mfrow = c(2, 2))  # Set up a 2x2 plot grid
 optimal_tornado <- create_tornado_plot(base_optimal, dsa_results)
 
 # Then for each biomarker strategy
-biomarker_strategies <- c("crp", "tlr", "tmb_braf")
+# Model B (focused) excludes TLR
+biomarker_strategies <- if (MODEL_STRUCTURE != 1) {
+  c("crp", "tlr", "tmb_braf")
+} else {
+  c("crp", "tmb_braf")
+}
 tornado_results <- list()
 
 for (strat in biomarker_strategies) {

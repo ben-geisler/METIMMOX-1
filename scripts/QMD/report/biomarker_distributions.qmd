@@ -199,7 +199,10 @@ kable(tab_crp_mat,
                 font_size = 10)
 ```
 
-{{< pagebreak >}}
+```{r pagebreak-1, results='asis'}
+cat("\\newpage\n")
+```
+
 # TLR Stratification
 
 Distribution of patient characteristics by treatment arm and TLR status.
@@ -270,7 +273,10 @@ kable(tab_tmb_mat,
                 font_size = 10)
 ```
 
-{{< pagebreak >}}
+```{r pagebreak-2, results='asis'}
+cat("\\newpage\n")
+```
+
 # Biomarker Correlations
 
 ```{r biomarker-correlation}
@@ -317,4 +323,4 @@ correlation_df %>%
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 1.1

@@ -420,12 +420,12 @@ model_structure_df <- data.frame(
   Name = c("Joint", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Description = c(
     "All biomarkers and all treatment interactions in one unified model",
-    "All biomarkers as main effects, with only one interaction per biomarker-specific model",
+    "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction",
     "Only one biomarker and its treatment interaction per model (simplest specification)"
   )
 )
@@ -442,7 +442,7 @@ knitr::kable(model_structure_df,
   kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position"))
 ```
 
-**Rationale**: Model A (Joint) is the most comprehensive specification but may suffer from overfitting with limited sample size. Model C (Separate) is the simplest but ignores potential confounding from other biomarkers. Model B (Focused) represents a middle ground. Comparing results across all three structures provides insight into the structural uncertainty of our findings.
+**Rationale**: Model A (Joint) is the most comprehensive specification but may suffer from overfitting with limited sample size. Model C (Separate) is the simplest but ignores potential confounding from other biomarkers. Model B (Focused) uses a shared formula with CRP and TMB/BRAF (excluding TLR), providing simultaneous estimates for both interactions while adjusting for each other. Comparing results across all three structures provides insight into the structural uncertainty of our findings.
 
 \newpage
 
@@ -1334,4 +1334,4 @@ if (nrow(evppi_all_scenarios) > 0) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

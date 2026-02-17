@@ -165,8 +165,8 @@ model_structures <- list(
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    desc = "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction"
   ),
   C = list(
     value = 2,
@@ -297,12 +297,12 @@ model_structure_df <- data.frame(
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Description = c(
     "All biomarkers and all treatment interactions in a single model",
-    "All biomarkers as main effects, one treatment interaction per model",
+    "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction",
     "Only one biomarker and its treatment interaction per model"
   )
 )
@@ -452,7 +452,7 @@ for (model_name in names(all_basecase_results)) {
 optimal_strategies_base$NMB <- scales::dollar(optimal_strategies_base$NMB, accuracy = 1)
 
 knitr::kable(optimal_strategies_base,
-             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=EUR ", format(WTP, big.mark = ","))),
              align = c("l", "l", "r"),
              booktabs = TRUE,
              caption = "Optimal Strategy by Model Structure - Base Case") %>%
@@ -719,7 +719,7 @@ for (model_name in names(all_scenario1_results)) {
 optimal_strategies_s1$NMB <- scales::dollar(optimal_strategies_s1$NMB, accuracy = 1)
 
 knitr::kable(optimal_strategies_s1,
-             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=EUR ", format(WTP, big.mark = ","))),
              align = c("l", "l", "r"),
              booktabs = TRUE,
              caption = "Optimal Strategy by Model Structure - Scenario 1") %>%
@@ -1013,7 +1013,7 @@ for (model_name in names(all_scenario2_results)) {
 optimal_strategies_s2$NMB <- scales::dollar(optimal_strategies_s2$NMB, accuracy = 1)
 
 knitr::kable(optimal_strategies_s2,
-             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=", scales::dollar(WTP))),
+             col.names = c("Model Structure", "Optimal Strategy", paste0("NMB at WTP=EUR ", format(WTP, big.mark = ","))),
              align = c("l", "l", "r"),
              booktabs = TRUE,
              caption = "Optimal Strategy by Model Structure - Scenario 2") %>%
@@ -1218,7 +1218,7 @@ knitr::kable(cross_wide,
              align = c("l", "l", "l", "l"),
              col.names = c("Scenario", "Model A: Joint", "Model B: Focused", "Model C: Separate"),
              booktabs = TRUE,
-             caption = paste0("Optimal Strategy by Scenario and Model Structure (WTP = ", scales::dollar(WTP), ")")) %>%
+             caption = paste0("Optimal Strategy by Scenario and Model Structure (WTP = EUR ", format(WTP, big.mark = ","), ")")) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
@@ -1460,7 +1460,7 @@ knitr::kable(scenario_display,
 This scenario analysis examined the impact of utility assumptions on the METIMMOX-1 cost-effectiveness model across three alternative model structures:
 
 - **Model A (Joint)**: All biomarkers and all treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model B (Focused)**: Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction
 - **Model C (Separate)**: Only one biomarker and its treatment interaction per model
 
 Key findings:
@@ -1477,4 +1477,4 @@ Key findings:
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

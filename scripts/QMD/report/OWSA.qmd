@@ -98,7 +98,7 @@ n_samples <- 5000  # Number of resampled models (for cache file naming)
 # =============================================================================
 # This report analyzes all three model structures:
 # - Model A (joint): All biomarkers + all treatment interactions in one model
-# - Model B (focused): All biomarkers as main effects + one interaction per model
+# - Model B (focused): Per-strategy formulas; CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction
 # - Model C (separate): Only one biomarker + its interaction per model
 
 model_structures <- list(
@@ -113,8 +113,8 @@ model_structures <- list(
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "Per-strategy: CRP/TMB_BRAF use crp:Rx + tmb_braf:Rx; TLR uses tlr:Rx only",
+    desc = "CRP/TMB_BRAF with both interactions; TLR with TLR-only interaction (adjusts for other biomarkers)"
   ),
   C = list(
     value = 2,
@@ -144,13 +144,16 @@ for (model_letter in c("A", "B", "C")) {
 # Set default MODEL_STRUCTURE for fallback/mock data scenarios
 MODEL_STRUCTURE <- 0  # 0 = joint, 1 = focused, 2 = separate
 
+# Source model configurations (single source of truth)
+source(here::here("scripts/R/functions/model_configs.R"))
+
 # Time points (from script 07)
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
 
-# Strategies (from script 03)
-strategies <- c("control", "crp", "tlr", "tmb_braf")
-biomarkers <- c("crp", "tlr", "tmb_braf")
+# Strategies and biomarkers from central config
+strategies <- get_strategies()
+biomarkers <- get_biomarkers()
 
 # Parameter groups for sensitivity analysis (from 08_sampling.R)
 # Define here for availability in fallback/mock data scenarios
@@ -474,6 +477,9 @@ run_dsa_for_model <- function(target_structure, verbose = TRUE) {
 # persist across source() calls.
 .owsa_protected_env <- new.env(parent = emptyenv())
 
+# Store the run_dsa_for_model function in protected environment (survives rm(list=ls()))
+.owsa_protected_env$run_dsa_for_model <- run_dsa_for_model
+
 # Define model_structures in the protected environment
 .owsa_protected_env$model_structures <- list(
   A = list(
@@ -487,8 +493,8 @@ run_dsa_for_model <- function(target_structure, verbose = TRUE) {
     value = 1,
     name = "Focused",
     label = "focused",
-    formula = "~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
-    desc = "All biomarkers as main effects, one treatment interaction per model"
+    formula = "Per-strategy: CRP/TMB_BRAF use crp:Rx + tmb_braf:Rx; TLR uses tlr:Rx only",
+    desc = "CRP/TMB_BRAF with both interactions; TLR with TLR-only interaction (adjusts for other biomarkers)"
   ),
   C = list(
     value = 2,
@@ -539,8 +545,11 @@ if (any(!.owsa_protected_env$cache_status)) {
   cat("Missing caches for:", paste(missing_models, collapse = ", "), "\n\n")
 
   for (model_letter in missing_models) {
+    # Store loop variable in protected environment (survives rm(list=ls()) in sourced scripts)
+    .owsa_protected_env$current_model_letter <- model_letter
     target_structure <- .owsa_protected_env$model_structures[[model_letter]]$value
     label <- .owsa_protected_env$model_structures[[model_letter]]$label
+    .owsa_protected_env$current_label <- label
 
     cat("Generating cache for Model", model_letter, "(", label, ")...\n")
     cat("  NOTE: This may take 20-60 minutes on first run.\n")
@@ -555,11 +564,12 @@ if (any(!.owsa_protected_env$cache_status)) {
         source(here("scripts/R/analysis/08_sampling.R"))  # This generates/loads the cache
       }))
 
-      # Verify cache was created
+      # Verify cache was created (use protected env variables - originals cleared by rm(list=ls()))
       cache_file <- here("data", "tidy",
-                         paste0("sampling_models_n", .owsa_protected_env$n_samples, "_full_", label, ".rds"))
+                         paste0("sampling_models_n", .owsa_protected_env$n_samples, "_full_",
+                                .owsa_protected_env$current_label, ".rds"))
       if (file.exists(cache_file)) {
-        .owsa_protected_env$cache_status[model_letter] <- TRUE
+        .owsa_protected_env$cache_status[.owsa_protected_env$current_model_letter] <- TRUE
         cat("  SUCCESS: Cache created at", cache_file, "\n\n")
       } else {
         cat("  WARNING: Cache file not found after generation attempt\n\n")
@@ -584,13 +594,19 @@ cat("\n=== Running DSA for All Model Structures ===\n\n")
 # so we use .owsa_protected_env which is NOT cleared (objects starting with . are excluded from ls())
 
 for (model_letter in c("A", "B", "C")) {
+  # Store loop variable in protected environment (survives rm(list=ls()) in run_dsa_for_model)
+  .owsa_protected_env$current_model_letter <- model_letter
+
   cat("Model", model_letter, "(", .owsa_protected_env$model_structures[[model_letter]]$name, "):\n")
 
   if (.owsa_protected_env$cache_status[model_letter]) {
     # Cache exists - run DSA for this model structure
     target_structure <- .owsa_protected_env$model_structures[[model_letter]]$value
 
-    result <- run_dsa_for_model(target_structure, verbose = TRUE)
+    result <- .owsa_protected_env$run_dsa_for_model(target_structure, verbose = TRUE)
+
+    # Restore model_letter from protected environment (may have been cleared by rm(list=ls()))
+    model_letter <- .owsa_protected_env$current_model_letter
 
     # Store result in protected environment (survives rm(list=ls()) from next iteration)
     if (!is.null(result) && !is.null(result$dsa_results)) {
@@ -833,7 +849,7 @@ The analysis examines how variations in individual model parameters affect the n
 **This report presents OWSA results for all three survival model structures:**
 
 - **Model A (Joint)**: All biomarkers and treatment interactions in a single model
-- **Model B (Focused)**: All biomarkers as main effects, one treatment interaction per model
+- **Model B (Focused)**: Per-strategy formulas; CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction (adjusts for other biomarkers)
 - **Model C (Separate)**: Only one biomarker and its treatment interaction per model
 
 This report contains:
@@ -863,7 +879,7 @@ model_status_df <- data.frame(
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
     "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
   Status = sapply(c("A", "B", "C"), function(m) {
@@ -907,7 +923,7 @@ knitr::kable(model_status_df,
 **Analysis completed on:** `r format(Sys.Date(), "%B %d, %Y")`
 **R version:** `r R.version.string`
 **Repository:** ben-geisler/METIMMOX-1
-**Report version:** 3.0
+**Report version:** 3.1
 
 ```{r pagebreak-2, results='asis'}
 cat("\\newpage\n")
@@ -1384,9 +1400,12 @@ cat("\\newpage\n")
 
 # Model B: Focused Model Results {#model-b}
 
-Model B uses **focused survival models** with all three biomarkers included as main effects, but only one treatment-biomarker interaction per model.
+Model B uses **focused survival models** with per-strategy formulas. CRP and TMB/BRAF strategies use both interaction terms (crp:Rx + tmb_braf:Rx), while TLR uses only the TLR-treatment interaction (tlr:Rx), adjusting for other biomarkers as main effects.
 
-**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + [biomarker]:Rx`
+**Formulas:**
+
+- CRP/TMB_BRAF: `Surv(time, event) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
+- TLR: `Surv(time, event) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`
 
 ```{r model-b-check, results='asis'}
 if (is.null(all_dsa_results[["B"]])) {
@@ -1794,4 +1813,4 @@ The range of NMB across distributions indicates sensitivity to these extrapolati
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.0
+**Report version:** 3.1
