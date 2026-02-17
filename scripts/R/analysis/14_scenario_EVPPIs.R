@@ -81,6 +81,16 @@ evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
                   "c_test_CT", "u_np", "u_p", "c_other_last",
                   "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
 
+# Add interaction parameters if extraction function is available
+if (exists("get_interaction_evppi_params")) {
+  interaction_params <- get_interaction_evppi_params()
+  if (length(interaction_params) > 0) {
+    evppi_params <- c(evppi_params, interaction_params)
+    cat("Scenario EVPPI includes", length(interaction_params),
+        "interaction parameters\n")
+  }
+}
+
 # ===============================================================================
 # RUN SCENARIOS FOR EACH MODEL STRUCTURE
 # ===============================================================================

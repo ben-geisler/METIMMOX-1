@@ -331,3 +331,191 @@ calculate_population_evppi <- function(evppi_per_patient,
 
   return(population_evppi_millions)
 }
+
+
+#' Extract treatment-biomarker interaction coefficients from sampling models
+#'
+#' Extracts the biomarker:Rx interaction coefficients from resampled survival
+#' models and returns them as additional columns aligned with PSA iterations.
+#' These can be appended to psa_params for EVPPI analysis of treatment effect
+#' modification parameters.
+#'
+#' @param sampling_models List of resampled models (global variable from 08_sampling.R)
+#' @param n_sim Number of PSA iterations (must match length of sampling_models$*$samples)
+#' @param model_structure Integer (0, 1, or 2) indicating MODEL_STRUCTURE.
+#'   If NULL, reads from global MODEL_STRUCTURE.
+#' @return Data frame with n_sim rows and columns for each extracted interaction
+#'   coefficient (b_<biomarker>_rx_<outcome>). Returns NULL if extraction fails.
+extract_interaction_coefficients <- function(sampling_models, n_sim,
+                                              model_structure = NULL) {
+  if (is.null(sampling_models)) {
+    warning("sampling_models is NULL - cannot extract interaction coefficients")
+    return(NULL)
+  }
+
+  if (is.null(model_structure)) {
+    if (exists("MODEL_STRUCTURE", envir = .GlobalEnv)) {
+      model_structure <- get("MODEL_STRUCTURE", envir = .GlobalEnv)
+    } else {
+      warning("MODEL_STRUCTURE not defined - cannot determine available interactions")
+      return(NULL)
+    }
+  }
+
+  biomarkers <- c("crp", "tlr", "tmb_braf")
+  outcomes <- c("os", "pfs")
+
+  # Coefficient name patterns for each biomarker
+  # flexsurvreg encodes factor levels: crp -> crp1, tlr -> tlr1, tmb_braf -> tmb_braf1
+  coef_patterns <- list(
+    crp = "crp.*:Rx",
+    tlr = "tlr.*:Rx",
+    tmb_braf = "tmb_braf.*:Rx"
+  )
+
+  result <- data.frame(row.names = 1:n_sim)
+
+  cat("\n=== Extracting interaction coefficients from sampling models ===\n")
+  cat("MODEL_STRUCTURE:", model_structure, "\n")
+
+  for (biomarker in biomarkers) {
+    if (!biomarker %in% names(sampling_models)) {
+      cat("  Warning:", biomarker, "not found in sampling_models - skipping\n")
+      next
+    }
+
+    strategy_models <- sampling_models[[biomarker]]
+
+    for (outcome in outcomes) {
+      col_name <- paste0("b_", biomarker, "_rx_", outcome)
+      values <- numeric(n_sim)
+      n_extracted <- 0
+      n_failed <- 0
+      n_missing <- 0
+
+      for (i in 1:n_sim) {
+        sample_i <- strategy_models$samples[[i]]
+
+        if (is.null(sample_i)) {
+          values[i] <- NA
+          n_failed <- n_failed + 1
+          next
+        }
+
+        coefs <- sample_i[[outcome]]$coefficients
+
+        if (is.null(coefs)) {
+          values[i] <- NA
+          n_failed <- n_failed + 1
+          next
+        }
+
+        # Find the interaction coefficient by pattern matching
+        pattern <- coef_patterns[[biomarker]]
+        matching_names <- grep(pattern, names(coefs), value = TRUE,
+                               ignore.case = TRUE)
+
+        if (length(matching_names) > 0) {
+          values[i] <- coefs[matching_names[1]]
+          n_extracted <- n_extracted + 1
+        } else {
+          values[i] <- NA
+          n_missing <- n_missing + 1
+        }
+      }
+
+      result[[col_name]] <- values
+
+      cat(sprintf("  %s: extracted=%d, failed=%d, missing=%d\n",
+                  col_name, n_extracted, n_failed, n_missing))
+
+      if (n_extracted / n_sim < 0.9) {
+        warning("Only ", round(n_extracted / n_sim * 100, 1),
+                "% of iterations have valid ", col_name, " values")
+      }
+    }
+  }
+
+  # Remove columns that are entirely NA (coefficient not in model formula)
+  all_na_cols <- sapply(result, function(x) all(is.na(x)))
+  if (any(all_na_cols)) {
+    cat("  Removing all-NA columns:",
+        paste(names(result)[all_na_cols], collapse = ", "), "\n")
+    result <- result[, !all_na_cols, drop = FALSE]
+  }
+
+  # Report summary statistics
+  cat("\nExtracted coefficient summary:\n")
+  for (col in names(result)) {
+    vals <- result[[col]]
+    valid_vals <- vals[!is.na(vals)]
+    if (length(valid_vals) > 0) {
+      cat(sprintf("  %s: mean=%.4f, sd=%.4f, range=[%.4f, %.4f], n_valid=%d\n",
+                  col, mean(valid_vals), sd(valid_vals),
+                  min(valid_vals), max(valid_vals), length(valid_vals)))
+    }
+  }
+
+  if (ncol(result) == 0) {
+    warning("No interaction coefficients could be extracted")
+    return(NULL)
+  }
+
+  return(result)
+}
+
+
+#' Get interaction EVPPI parameter names available for current model structure
+#'
+#' @param model_structure Integer (0, 1, or 2). If NULL, reads from global.
+#' @return Character vector of parameter names (e.g., "b_crp_rx_os")
+get_interaction_evppi_params <- function(model_structure = NULL) {
+  if (is.null(model_structure)) {
+    if (exists("MODEL_STRUCTURE", envir = .GlobalEnv)) {
+      model_structure <- get("MODEL_STRUCTURE", envir = .GlobalEnv)
+    } else {
+      return(character(0))
+    }
+  }
+
+  biomarkers <- c("crp", "tlr", "tmb_braf")
+  outcomes <- c("os", "pfs")
+
+  params <- character(0)
+  for (biomarker in biomarkers) {
+    for (outcome in outcomes) {
+      params <- c(params, paste0("b_", biomarker, "_rx_", outcome))
+    }
+  }
+
+  return(params)
+}
+
+
+#' Add interaction parameter groups for EVPPI analysis
+#'
+#' Extends existing param_groups with per-biomarker interaction groups.
+#' Only adds groups of 2 parameters (OS + PFS per biomarker) because the
+#' kNN EVPPI method uses expand.grid() making larger groups infeasible.
+#'
+#' @param existing_groups Named list of existing parameter groups
+#' @param model_structure Integer (0, 1, or 2). If NULL, reads from global.
+#' @return Updated named list with additional interaction groups
+add_interaction_param_groups <- function(existing_groups, model_structure = NULL) {
+  interaction_params <- get_interaction_evppi_params(model_structure)
+
+  if (length(interaction_params) == 0) {
+    return(existing_groups)
+  }
+
+  # Per-biomarker groups (OS + PFS together, 2 params each - feasible)
+  for (biomarker in c("crp", "tlr", "tmb_braf")) {
+    bio_params <- grep(paste0("^b_", biomarker, "_rx_"),
+                       interaction_params, value = TRUE)
+    if (length(bio_params) >= 2) {
+      existing_groups[[paste0("interaction_", biomarker)]] <- bio_params
+    }
+  }
+
+  return(existing_groups)
+}

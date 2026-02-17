@@ -8,6 +8,39 @@ source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/evppi_functions.R"))
 
+# ===============================================================================
+# EXTRACT INTERACTION COEFFICIENTS FROM SAMPLING MODELS
+# ===============================================================================
+# Treatment-biomarker interaction coefficients are extracted from the cached
+# sampling_models and appended to psa_params. This enables EVPPI analysis for
+# the interaction parameters that drive biomarker-guided treatment decisions.
+# No cache regeneration required - extraction uses existing sampling_models.
+# ===============================================================================
+
+cat("\n=== Extracting interaction coefficients for EVPPI ===\n")
+
+if (!exists("sampling_models") || is.null(sampling_models)) {
+  warning("sampling_models not available - interaction EVPPI will be skipped")
+  interaction_params_available <- FALSE
+} else {
+  interaction_coefs <- extract_interaction_coefficients(
+    sampling_models = sampling_models,
+    n_sim = nrow(psa_params),
+    model_structure = MODEL_STRUCTURE
+  )
+
+  if (!is.null(interaction_coefs) &&
+      nrow(interaction_coefs) == nrow(psa_params)) {
+    psa_params <- cbind(psa_params, interaction_coefs)
+    cat("Interaction coefficients appended to psa_params\n")
+    cat("psa_params now has", ncol(psa_params), "columns\n")
+    interaction_params_available <- TRUE
+  } else {
+    warning("Failed to extract interaction coefficients - skipping")
+    interaction_params_available <- FALSE
+  }
+}
+
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {
   time_points_length <- length(time_points)
@@ -73,6 +106,26 @@ if (MODEL_STRUCTURE != 1) {
   evppi_params <- c(evppi_params_base, "p_tlr")
 } else {
   evppi_params <- evppi_params_base
+}
+
+# Add interaction parameters if available
+if (interaction_params_available) {
+  interaction_evppi_params <- get_interaction_evppi_params(MODEL_STRUCTURE)
+  interaction_evppi_params <- intersect(
+    interaction_evppi_params, colnames(psa_params)
+  )
+  evppi_params <- c(evppi_params, interaction_evppi_params)
+  cat("EVPPI parameters include", length(interaction_evppi_params),
+      "interaction coefficients\n")
+}
+
+# Add interaction parameter groups (if available)
+if (interaction_params_available) {
+  param_groups <- add_interaction_param_groups(
+    param_groups, MODEL_STRUCTURE
+  )
+  cat("Added interaction parameter groups to param_groups\n")
+  cat("Total param_groups:", length(param_groups), "\n")
 }
 
 # Run EVPPI analysis (param_groups defined in 08_sampling.R)

@@ -234,6 +234,16 @@ if (needs_generation) {
                       "c_test_blood", "c_other_visit",
                       "c_other_baseline", "c_other_follow")
 
+    # Add interaction parameters if extraction function is available
+    if (exists("get_interaction_evppi_params")) {
+      interaction_params <- get_interaction_evppi_params(
+        current_model_structure
+      )
+      if (length(interaction_params) > 0) {
+        evppi_params <- c(evppi_params, interaction_params)
+      }
+    }
+
     # Run scenarios for this model
     scenario_results <- run_all_scenarios(
       scenarios = scenarios,
@@ -441,6 +451,14 @@ To inform research prioritization decisions, EVPPI values are scaled from per-pa
 Population-level EVPPI represents the total expected value (in millions of EUR) of eliminating uncertainty about a parameter or parameter group across the entire eligible population over the research horizon. This scaling accounts for the discounted flow of future patients who would benefit from the research.
 
 **Data sources**: The annual incidence estimate is based on Norwegian Cancer Registry data (approximately 4,000 annual CRC cases) and international literature estimates for MSS/pMMR proportion (70-75% of metastatic cases) and metastatic presentation rates (approximately 50%), yielding a conservative estimate of 1,500 eligible patients per year.
+
+## Treatment-Biomarker Interaction Parameters
+
+In addition to cost, utility, and prevalence parameters, this analysis evaluates the EVPPI for treatment-biomarker interaction coefficients extracted from the survival models. These parameters (prefixed `b_`) represent the effect modification of experimental treatment by biomarker status -- the core clinical question underlying biomarker-guided therapy.
+
+The interaction coefficients are extracted from the same resampled survival models used in the PSA, ensuring alignment between coefficient variation and outcome variation. For each biomarker strategy, the interaction coefficient is extracted from that strategy's own resampled model (e.g., `b_crp_rx_os` from `sampling_models$crp`). Both OS and PFS interaction coefficients are analyzed individually and as per-biomarker groups.
+
+High EVPPI for interaction parameters would indicate that better estimates of differential treatment benefit by biomarker status would significantly reduce decision uncertainty -- directly informing future trial design and biomarker validation studies.
 
 \newpage
 
@@ -1505,6 +1523,6 @@ if (nrow(evppi_all_scenarios) > 0) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.2
+**Report version:** 2.3
 
 **Note on population-level EVPPI**: Population-level values calculated assuming `r annual_incidence_norway` annual eligible MSS/pMMR mCRC patients in Norway (based on Cancer Registry data and international prevalence estimates), discounted at `r discount_rate_research * 100`% per year over a `r research_horizon_years`-year research horizon.

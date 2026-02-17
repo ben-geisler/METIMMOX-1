@@ -70,7 +70,34 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
   
   # Generate new PSA samples with updated distributions
   scenario_psa_params <- generate_psa_samples(scenario_param_dist, n_sim)
-  
+
+  # Append interaction coefficients from sampling_models (if available)
+  # These are the same across scenarios since they come from resampled
+  # survival models, not from scenario-specific parameter distributions
+  if (exists("extract_interaction_coefficients") &&
+      exists("sampling_models") && !is.null(sampling_models)) {
+    interaction_coefs <- extract_interaction_coefficients(
+      sampling_models = sampling_models,
+      n_sim = n_sim
+    )
+    if (!is.null(interaction_coefs) &&
+        nrow(interaction_coefs) == n_sim) {
+      scenario_psa_params <- cbind(scenario_psa_params, interaction_coefs)
+    }
+  }
+
+  # Augment evppi_params with interaction parameters if available
+  augmented_evppi_params <- evppi_params
+  if (exists("get_interaction_evppi_params")) {
+    interaction_params <- get_interaction_evppi_params()
+    interaction_params <- intersect(
+      interaction_params, colnames(scenario_psa_params)
+    )
+    if (length(interaction_params) > 0) {
+      augmented_evppi_params <- c(evppi_params, interaction_params)
+    }
+  }
+
   # Run PSA
   psa_results <- run_psa_analysis(
     psa_params = scenario_psa_params,
@@ -98,7 +125,7 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
     psa_obj = psa_obj,
     psa_params = scenario_psa_params,
     wtp = scenario_row$wtp,
-    evppi_params = evppi_params
+    evppi_params = augmented_evppi_params
   )
   
   # Add scenario information to results
