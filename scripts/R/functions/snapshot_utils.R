@@ -60,7 +60,8 @@ collect_metadata <- function(issue_number) {
       cl = if(exists("cl")) cl else NA,
       dr = if(exists("dr")) dr else NA,
       DSA_mult = if(exists("DSA_mult")) DSA_mult else NA,
-      USE_BOTH_MODELS = if(exists("USE_BOTH_MODELS")) USE_BOTH_MODELS else NA
+      USE_BOTH_MODELS = if(exists("USE_BOTH_MODELS")) USE_BOTH_MODELS else NA,
+      MODEL_STRUCTURE = if(exists("MODEL_STRUCTURE")) MODEL_STRUCTURE else NA
     )
   )
 
@@ -149,14 +150,35 @@ load_snapshot <- function(filename, snapshots_dir = here::here("data", "output",
     }
   }
 
-  # Validate structure for PSA files
+  # Validate structure for PSA files (accept single psa object or named list)
   if (grepl("^psa_", filename)) {
-    if (!("psa" %in% class(snapshot))) {
-      warning("PSA file does not contain a valid dampack psa object")
+    if (!("psa" %in% class(snapshot)) && !is.list(snapshot)) {
+      warning("PSA file does not contain a valid dampack psa object or model list")
     }
   }
 
   return(snapshot)
+}
+
+#' Check if a snapshot contains multi-model results
+#'
+#' @param snapshot A loaded snapshot object
+#' @return Logical TRUE if snapshot contains models list
+is_multimodel_snapshot <- function(snapshot) {
+  "models" %in% names(snapshot)
+}
+
+#' Get model names from a snapshot (multi or single)
+#'
+#' @param snapshot A loaded snapshot object
+#' @return Character vector of model names
+get_snapshot_model_names <- function(snapshot) {
+  if (is_multimodel_snapshot(snapshot)) {
+    return(names(snapshot$models))
+  }
+  ms <- snapshot$metadata$parameters$MODEL_STRUCTURE
+  if (is.null(ms) || is.na(ms)) return("joint")
+  c("joint", "focused", "separate")[ms + 1]
 }
 
 #' Find Matching Snapshot Pair
