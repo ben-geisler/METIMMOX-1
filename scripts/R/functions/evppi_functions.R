@@ -290,3 +290,44 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
 
   return(evppi_results)
 }
+
+#' Calculate Population-Level EVPPI
+#'
+#' Scales per-patient EVPPI values to the eligible population level
+#' using annual incidence, research horizon, and discounting.
+#'
+#' @param evppi_per_patient Numeric. Per-patient EVPPI value in EUR.
+#' @param annual_incidence Numeric. Annual eligible patients (default: 1500).
+#' @param research_horizon Numeric. Years of research value (default: 10).
+#' @param discount_rate Numeric. Annual discount rate for research benefits (default: 0.035).
+#' @return Numeric. Population-level EVPPI in millions of EUR.
+#'
+#' @details
+#' The calculation accounts for the time value of research by discounting
+#' future benefits. The formula is:
+#'   Population EVPPI = Per-patient EVPPI × Annual incidence ×
+#'                      Sum of discount factors over research horizon
+#'
+#' Example: For EUR 1,000 per-patient EVPPI with 1,500 patients/year over 10 years:
+#'   Sum of discount factors ≈ 8.317 (using 3.5% discount rate)
+#'   Population EVPPI = EUR 1,000 × 1,500 × 8.317 = EUR 12.48 million
+#'
+#' @export
+calculate_population_evppi <- function(evppi_per_patient,
+                                       annual_incidence = 1500,
+                                       research_horizon = 10,
+                                       discount_rate = 0.035) {
+  # Calculate sum of discount factors over research horizon
+  # (Present value of an annuity of 1 unit per year for n years)
+  years <- 1:research_horizon
+  discount_factors <- 1 / (1 + discount_rate)^years
+  sum_discount_factors <- sum(discount_factors)
+
+  # Scale per-patient value to population
+  population_evppi_eur <- evppi_per_patient * annual_incidence * sum_discount_factors
+
+  # Convert to millions
+  population_evppi_millions <- population_evppi_eur / 1e6
+
+  return(population_evppi_millions)
+}

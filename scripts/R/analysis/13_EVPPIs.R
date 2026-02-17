@@ -85,6 +85,41 @@ evppi_results <- run_evppi_analysis(
 )
 
 # ===============================================================================
+# ADD POPULATION-LEVEL EVPPI
+# ===============================================================================
+
+# Add population-level EVPPI columns
+evppi_results <- evppi_results %>%
+  mutate(
+    evppi_population_millions = calculate_population_evppi(
+      evppi,
+      annual_incidence = annual_incidence_norway,
+      research_horizon = research_horizon_years,
+      discount_rate = discount_rate_research
+    ),
+    evpi_population_millions = calculate_population_evppi(
+      evpi,
+      annual_incidence = annual_incidence_norway,
+      research_horizon = research_horizon_years,
+      discount_rate = discount_rate_research
+    )
+  )
+
+# Print summary of population-level values
+cat("\n=== Population-Level EVPPI Summary ===\n")
+cat(sprintf("Annual incidence: %d patients/year\n", annual_incidence_norway))
+cat(sprintf("Research horizon: %d years\n", research_horizon_years))
+cat(sprintf("Discount rate: %.1f%%\n", discount_rate_research * 100))
+cat(sprintf("Total eligible population (discounted): %.0f patient-years\n",
+            annual_incidence_norway * sum(1 / (1 + discount_rate_research)^(1:research_horizon_years))))
+cat("\nTop 5 parameters by population-level EVPPI:\n")
+print(evppi_results %>%
+        arrange(desc(evppi_population_millions)) %>%
+        select(parameter, evppi_population_millions, evppi_percent_of_evpi) %>%
+        head(5) %>%
+        mutate(evppi_population_millions = sprintf("€%.2fM", evppi_population_millions)))
+
+# ===============================================================================
 # SUMMARY AND OUTPUT
 # ===============================================================================
 

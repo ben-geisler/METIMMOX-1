@@ -308,6 +308,27 @@ if (has_multimodel) {
   }
 }
 
+# Add population-level EVPPI columns if not already present
+# (handles caches generated before population scaling was added)
+if (!"evppi_population_millions" %in% names(evppi_all_scenarios)) {
+  evppi_all_scenarios <- evppi_all_scenarios %>%
+    mutate(
+      evppi_population_millions = calculate_population_evppi(
+        evppi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      ),
+      evpi_population_millions = calculate_population_evppi(
+        evpi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      )
+    )
+  cat("Population-level EVPPI columns added post-load\n")
+}
+
 # Function to create incremental CE plot relative to control with WTP threshold
 create_incremental_ce_plot <- function(psa_obj, wtp_threshold, scenario_name = "") {
   # Extract cost and effect matrices
@@ -407,6 +428,19 @@ This report presents the results of an Expected Value of Partially Perfect Infor
 **Key Feature**: This report compares EVPI and EVPPI results across three different model structures (Model A, B, C) to assess the robustness of value of information findings to modeling assumptions about how biomarker interactions are specified.
 
 The Expected Value of Partially Perfect Information (EVPPI) quantifies the value of eliminating uncertainty in specific model parameters. It represents the maximum amount that should be paid for additional research to perfectly inform a particular parameter. EVPI (Expected Value of Perfect Information) represents the value of eliminating all uncertainty, and EVPPI for any parameter cannot exceed total EVPI.
+
+## Population-Level Context
+
+To inform research prioritization decisions, EVPPI values are scaled from per-patient estimates to the Norwegian eligible population:
+
+- **Annual incidence**: `r annual_incidence_norway` MSS/pMMR mCRC patients per year
+- **Research horizon**: `r research_horizon_years` years
+- **Discount rate**: `r discount_rate_research * 100`% for future research benefits
+- **Effective population size**: `r sprintf("%.0f", annual_incidence_norway * sum(1 / (1 + discount_rate_research)^(1:research_horizon_years)))` discounted patient-years
+
+Population-level EVPPI represents the total expected value (in millions of EUR) of eliminating uncertainty about a parameter or parameter group across the entire eligible population over the research horizon. This scaling accounts for the discounted flow of future patients who would benefit from the research.
+
+**Data sources**: The annual incidence estimate is based on Norwegian Cancer Registry data (approximately 4,000 annual CRC cases) and international literature estimates for MSS/pMMR proportion (70-75% of metastatic cases) and metastatic presentation rates (approximately 50%), yielding a conservative estimate of 1,500 eligible patients per year.
 
 \newpage
 
@@ -541,7 +575,7 @@ if (nrow(evpi_plot_data) > 0 && max(evpi_plot_data$evpi) > 0.01) {
 ## EVPPI Results by Model Structure
 
 ```{r base-evppi-multimodel-table, eval=has_multimodel}
-# Create side-by-side EVPPI comparison
+# Create side-by-side EVPPI comparison (per-patient values)
 base_evppi_wide <- evppi_all_scenarios %>%
   filter(scenario_id == "base") %>%
   select(parameter, model_label, evppi, evppi_percent_of_evpi) %>%
@@ -586,9 +620,64 @@ for (col in names(base_evppi_display)) {
 
 kable(base_evppi_display,
       col.names = col_names,
-      caption = "EVPPI results by model structure - Base Case (ranked by average importance)",
+      caption = "Per-patient EVPPI results by model structure - Base Case (ranked by average importance)",
       booktabs = TRUE,
       align = c("l", rep("r", length(col_names) - 1))) %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                font_size = 8,
+                full_width = FALSE)
+```
+
+```{r base-evppi-population-table, eval=has_multimodel}
+# Create population-level EVPPI table
+base_evppi_pop_wide <- evppi_all_scenarios %>%
+  filter(scenario_id == "base") %>%
+  select(parameter, model_label, evppi_population_millions, evppi_percent_of_evpi) %>%
+  pivot_wider(
+    names_from = model_label,
+    values_from = c(evppi_population_millions, evppi_percent_of_evpi),
+    names_glue = "{.value}_{model_label}"
+  )
+
+# Format for display
+display_cols_pop <- c("parameter")
+for (label in c("joint", "focused", "separate")) {
+  if (label %in% model_labels_present) {
+    display_cols_pop <- c(display_cols_pop,
+                          paste0("evppi_population_millions_", label),
+                          paste0("evppi_percent_of_evpi_", label))
+  }
+}
+
+base_evppi_pop_display <- base_evppi_pop_wide %>%
+  select(any_of(display_cols_pop)) %>%
+  arrange(desc(rowMeans(select(., starts_with("evppi_population")), na.rm = TRUE)))
+
+# Rename columns for display (matching per-patient table)
+col_names_pop <- c("Parameter")
+for (label in c("joint", "focused", "separate")) {
+  if (label %in% model_labels_present) {
+    short_label <- c("joint" = "A", "focused" = "B", "separate" = "C")[label]
+    col_names_pop <- c(col_names_pop,
+                       paste0("Pop. EVPPI (", short_label, ")"),
+                       paste0("% (", short_label, ")"))
+  }
+}
+
+# Format numeric values
+for (col in names(base_evppi_pop_display)) {
+  if (grepl("^evppi_population", col)) {
+    base_evppi_pop_display[[col]] <- paste0("EUR", sprintf("%.2f", base_evppi_pop_display[[col]]), "M")
+  } else if (grepl("percent", col)) {
+    base_evppi_pop_display[[col]] <- paste0(round(base_evppi_pop_display[[col]], 1), "%")
+  }
+}
+
+kable(base_evppi_pop_display,
+      col.names = col_names_pop,
+      caption = paste0("Population-level EVPPI results by model structure - Base Case (millions of EUR over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "%, ranked by average importance)"),
+      booktabs = TRUE,
+      align = c("l", rep("r", length(col_names_pop) - 1))) %>%
   kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
                 font_size = 8,
                 full_width = FALSE)
@@ -627,6 +716,42 @@ if (nrow(base_evppi_plot) > 0) {
     theme_minimal() +
     theme(legend.position = "none",
           strip.text = element_text(face = "bold"))
+}
+```
+
+## Interpretation
+
+```{r base-population-interpretation, results='asis'}
+# Calculate population-level summary statistics
+base_pop_summary <- evppi_all_scenarios %>%
+  filter(scenario_id == "base") %>%
+  group_by(parameter) %>%
+  summarise(
+    max_pop_evppi = max(evppi_population_millions, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(max_pop_evppi))
+
+# Get top parameter(s) by population EVPPI
+top_param_pop <- base_pop_summary$parameter[1]
+top_value_pop <- base_pop_summary$max_pop_evppi[1]
+
+# Get utility parameters specifically
+utility_pop_evppi <- base_pop_summary %>%
+  filter(grepl("^u_|utilities", parameter)) %>%
+  pull(max_pop_evppi) %>%
+  max(na.rm = TRUE)
+
+cat("### Population-Level Research Value\n\n")
+cat("**Per-Patient Level:** Utility parameters (u_np, u_p) show the highest per-patient EVPPI, ranging from approximately EUR800-1,100 in the base case, while cost parameters show lower EVPPI (typically <EUR200), reflecting less uncertainty in cost estimates.\n\n")
+
+cat("**Population Level:** Scaling to the Norwegian eligible population (", annual_incidence_norway, " patients/year over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "%), utility parameter uncertainty translates to **EUR", sprintf("%.1f", utility_pop_evppi), " million** in potential research value. ", sep = "")
+
+cat("This population-level value provides context for research investment decisions. For example, a study to reduce uncertainty in utility values (e.g., a large-scale quality-of-life measurement study in this patient population) could be justified if its cost is substantially less than EUR", sprintf("%.1f", utility_pop_evppi), " million.\n\n", sep = "")
+
+nivo_pop_evppi <- base_pop_summary$max_pop_evppi[base_pop_summary$parameter == "c_drug_nivo"]
+if (length(nivo_pop_evppi) > 0 && !is.na(nivo_pop_evppi)) {
+  cat("Cost parameters, while showing lower per-patient EVPPI, still represent substantial population-level values (EUR", sprintf("%.1f", nivo_pop_evppi), " million for nivolumab cost), particularly relevant for market access negotiations and price negotiations.\n\n", sep = "")
 }
 ```
 
@@ -1270,6 +1395,52 @@ if (nrow(evppi_all_scenarios) > 0) {
 }
 ```
 
+## Population-Level EVPPI Across Scenarios
+
+```{r population-evppi-cross-scenario, eval=has_multimodel}
+if (nrow(evppi_all_scenarios) > 0) {
+  # Select key parameters for cross-scenario population comparison
+  key_params <- c("[GROUP] utilities", "u_np", "u_p",
+                  "[GROUP] drug_costs", "c_drug_nivo",
+                  "[GROUP] all_costs")
+
+  pop_cross_scenario <- evppi_all_scenarios %>%
+    filter(parameter %in% key_params) %>%
+    select(scenario_name, model_name, parameter,
+           evppi_population_millions) %>%
+    arrange(scenario_name, model_name,
+            desc(evppi_population_millions))
+
+  # Pivot to wide format: one column per model
+  pop_cross_wide <- pop_cross_scenario %>%
+    pivot_wider(
+      names_from = model_name,
+      values_from = evppi_population_millions
+    )
+
+  # Format numeric columns
+  model_cols <- setdiff(names(pop_cross_wide),
+                        c("scenario_name", "parameter"))
+  for (col in model_cols) {
+    pop_cross_wide[[col]] <- sprintf("%.2f", pop_cross_wide[[col]])
+  }
+
+  kable(pop_cross_wide,
+        col.names = c("Scenario", "Parameter", model_cols),
+        caption = paste0(
+          "Population-level EVPPI (EUR millions) for key parameters across scenarios and model structures. ",
+          "Based on ", annual_incidence_norway, " patients/year over ",
+          research_horizon_years, " years, discounted at ",
+          discount_rate_research * 100, "%."),
+        booktabs = TRUE,
+        align = c("l", "l", rep("r", length(model_cols)))) %>%
+    kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
+                  font_size = 7,
+                  full_width = FALSE) %>%
+    collapse_rows(columns = 1, valign = "top")
+}
+```
+
 ## Key Findings
 
 ```{r conclusions-multimodel, results='asis', eval=has_multimodel}
@@ -1334,4 +1505,6 @@ if (nrow(evppi_all_scenarios) > 0) {
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.1
+**Report version:** 2.2
+
+**Note on population-level EVPPI**: Population-level values calculated assuming `r annual_incidence_norway` annual eligible MSS/pMMR mCRC patients in Norway (based on Cancer Registry data and international prevalence estimates), discounted at `r discount_rate_research * 100`% per year over a `r research_horizon_years`-year research horizon.

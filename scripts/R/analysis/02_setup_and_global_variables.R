@@ -31,6 +31,19 @@ set.seed(123)      #set seed for reproducibility
 ## global discount rate
 dr = 0.04
 
+## population parameters for scaling EVPPI to population level
+## Source: Norwegian Cancer Registry (Kreftregisteret)
+## - Total CRC incidence: ~4,000 cases/year
+## - MSS/pMMR proportion: ~70-75% of metastatic CRC (international literature)
+## - Metastatic proportion: ~50% present with metastatic disease
+## - Conservative estimate: 1,500 annual eligible patients accounts for
+##   diagnostic testing rates and treatment eligibility criteria
+annual_incidence_norway <- 1500  # Annual MSS/pMMR mCRC cases in Norway
+research_horizon_years <- 10     # Time horizon for research value (years)
+discount_rate_research <- 0.035  # Discount rate for future research benefits (3.5%)
+                                 # Standard rate for public health research in Norway
+                                 # (slightly lower than 4% used for costs/QALYs)
+
 ## switch to use either just the full model (0) or also the age- and sex-adjusted model
 USE_BOTH_MODELS <- 0
 

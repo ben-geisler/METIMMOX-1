@@ -165,6 +165,52 @@ cat(rep("=", 80), "\n\n", sep = "")
 # Rename for consistency with EVPPIs.qmd expectations
 evppi_all_scenarios <- all_model_evppi_results
 
+# ===============================================================================
+# ADD POPULATION-LEVEL EVPPI
+# ===============================================================================
+
+# Add population-level EVPPI to all scenario results
+if (nrow(evppi_all_scenarios) > 0) {
+  evppi_all_scenarios <- evppi_all_scenarios %>%
+    mutate(
+      evppi_population_millions = calculate_population_evppi(
+        evppi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      ),
+      evpi_population_millions = calculate_population_evppi(
+        evpi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      )
+    )
+
+  # Print scenario-specific population EVPPI summary
+  cat("\n=== Population-Level EVPPI by Scenario ===\n")
+  cat(sprintf("Annual incidence: %d patients/year\n", annual_incidence_norway))
+  cat(sprintf("Research horizon: %d years\n", research_horizon_years))
+  cat(sprintf("Discount rate: %.1f%%\n\n", discount_rate_research * 100))
+
+  for (scen in unique(evppi_all_scenarios$scenario_name)) {
+    cat(sprintf("%s:\n", scen))
+    scen_data <- evppi_all_scenarios %>%
+      filter(scenario_name == scen, model_label == "joint") %>%
+      arrange(desc(evppi_population_millions)) %>%
+      head(3)
+
+    if (nrow(scen_data) > 0) {
+      for (i in 1:nrow(scen_data)) {
+        cat(sprintf("  %s: €%.2fM\n",
+                    scen_data$parameter[i],
+                    scen_data$evppi_population_millions[i]))
+      }
+    }
+    cat("\n")
+  }
+}
+
 # Summary statistics
 cat("\nEVPPI Results Summary:\n")
 if (nrow(evppi_all_scenarios) > 0) {
