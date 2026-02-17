@@ -28,12 +28,12 @@ METIMMOX-1/
 │   ├── R/
 │   │   ├── analysis/      # Numbered analysis scripts (01-15, main workflow)
 │   │   ├── functions/     # Reusable model functions
-│   │   ├── tests/         # Validation and testing scripts
+│   │   ├── tests/         # Validation and diagnostic scripts
 │   │   └── archive/       # Deprecated code (for reference)
 │   └── QMD/
 │       ├── report/        # Publication-ready Quarto reports (PDF)
-│       ├── vignettes/     # Figure generation scripts
-│       └── technical_docs/# Technical documentation
+│       ├── vignettes/     # Figure generation (Figures 1-4, supplemental)
+│       └── technical_docs/# Technical documentation (bug impacts, methodological analyses)
 ├── data/                  # Data files (not included - confidential)
 │   ├── tidy/             # Processed data and caches
 │   └── output/           # Analysis outputs and snapshots
@@ -43,9 +43,11 @@ METIMMOX-1/
 ### Key Files
 
 - **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, and sensitivity analysis utilities
-- **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports (CEA, clinical effectiveness, sensitivity analyses)
-- **Tests** (`scripts/R/tests/`): Validation and testing scripts
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (multi-model comparison), and sensitivity analysis utilities
+- **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
+- **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
+- **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses
+- **Tests** (`scripts/R/tests/`): Validation, diagnostic, and convergence testing scripts
 
 ## Installation
 
@@ -70,6 +72,15 @@ This project is built in R. The following packages are used throughout the analy
 - tidyverse
 - ggplot2
 - readxl
+- scales
+- gridExtra
+- reshape2
+
+# Report generation
+- knitr
+- kableExtra
+- flextable
+- officer
 
 # Other utilities
 - pacman (for package management)
@@ -89,9 +100,10 @@ setwd("METIMMOX-1")
 
 # Install required packages using pacman
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv, 
-               survival, survminer, gems, mstate, tidyverse, xtable, 
-               darthtools, dampack, mvtnorm, Matrix, here)
+pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
+               survival, survminer, gems, mstate, tidyverse, xtable,
+               darthtools, dampack, mvtnorm, Matrix, here,
+               knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)
 ```
 
 ## Usage
@@ -124,19 +136,82 @@ source("scripts/R/analysis/13_EVPPIs.R") # Expected value of perfect partial inf
 **Notes**:
 - Scripts 04-05 are supplementary RMarkdown files, not part of the main pipeline
 - The clinical trial dataset is confidential and not included in this repository
+- First runs of scripts 08 (sampling) and 12 (PSA) generate caches and may take significant time; subsequent runs are much faster
+
+### Optional and Extended Analyses
+
+Additional analysis scripts provide extended functionality:
+
+```r
+# Extended analyses (optional)
+source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+source("scripts/R/analysis/15_save_snapshot.R")    # Save results for bug fix impact assessment
+```
+
+**When to use**:
+- `14_scenario_EVPPIs.R`: For scenario-specific value of information analysis
+- `15_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
+
+### Generating Reports
+
+The project includes comprehensive Quarto reports in `scripts/QMD/report/` that generate publication-ready PDFs:
+
+```bash
+# Render individual reports (from project root)
+quarto render scripts/QMD/report/para_models.qmd
+quarto render scripts/QMD/report/input_parameters.qmd
+quarto render scripts/QMD/report/clinical_effectiveness.qmd
+quarto render scripts/QMD/report/CEA.qmd
+quarto render scripts/QMD/report/OWSA.qmd
+quarto render scripts/QMD/report/EVPPIs.qmd
+quarto render scripts/QMD/report/scenario_effect.qmd
+quarto render scripts/QMD/report/biomarker_decomposition.qmd
+quarto render scripts/QMD/report/biomarker_distributions.qmd
+
+# Or render all reports at once
+quarto render scripts/QMD/report/
+```
+
+**Report Descriptions**:
+1. **para_models.qmd** - Parametric survival model fits and diagnostics
+2. **input_parameters.qmd** - Model input parameters summary
+3. **clinical_effectiveness.qmd** - Survival outcomes and life-years gained
+4. **CEA.qmd** - Cost-effectiveness analysis with ICERs
+5. **OWSA.qmd** - One-way deterministic sensitivity analysis (tornado diagrams)
+6. **EVPPIs.qmd** - Value of information analysis
+7. **scenario_effect.qmd** - Scenario analysis results
+8. **biomarker_decomposition.qmd** - Biomarker effect decomposition analysis
+9. **biomarker_distributions.qmd** - Biomarker distribution and prevalence sensitivity
+
+**Prerequisites**: All analysis scripts (02-13) must be run first to generate required data objects.
 
 ## Key Features
 
-- Decision-analytic model for cost-effectiveness analysis
-- Biomarker-guided treatment strategy comparison
-- Microsatellite-stable (MSS) colorectal cancer focus
-- Parametric survival modeling using multiple distributions
-- Deterministic sensitivity analysis (DSA)
-- Probabilistic sensitivity analysis (PSA)
-- Expected Value of Perfect Partial Information (EVPPI) analysis
-- Cost-effectiveness acceptability analysis
-- Quarto-based report generation (publication-ready PDFs)
-- Based on real-world clinical trial data (METIMMOX trial, NCT03388190)
+### Core Modeling
+- **Partitioned survival model** for cost-effectiveness analysis
+- **Biomarker-guided treatment strategies** comparing three biomarkers (CRP, TLR, TMB/BRAF) against standard of care
+- **Microsatellite-stable (MSS) colorectal cancer** focus
+- **Parametric survival modeling** using multiple distributions (Weibull, exponential, gamma, etc.)
+- **Multi-model structure comparison** (Model A/B/C: joint/focused/separate biomarker modeling approaches)
+
+### Sensitivity and Uncertainty Analysis
+- **Deterministic sensitivity analysis (DSA)** with tornado diagrams
+- **Probabilistic sensitivity analysis (PSA)** with second-order Monte Carlo simulation
+- **Expected Value of Perfect Partial Information (EVPPI)** analysis
+- **Cost-effectiveness acceptability curves** and analysis
+- **Scenario analysis framework** for alternative assumptions
+
+### Advanced Analytical Features
+- **Biomarker effect decomposition** - quantifying direct biomarker effects vs. treatment interactions
+- **Biomarker distribution and prevalence sensitivity** analysis
+- **Age effect analysis** - investigating age as prognostic factor
+- **Correlated survival resampling** - maintaining PFS/OS correlation in PSA
+
+### Quality Assurance and Reporting
+- **Snapshot system** for bug fix impact assessment and model validation
+- **Quarto-based report generation** - publication-ready PDFs with embedded R code
+- **Comprehensive test suite** - validation, diagnostic, and convergence tests
+- **Based on real-world clinical trial data** (METIMMOX trial, NCT03388190)
 
 ## Model Structure
 
@@ -149,6 +224,33 @@ State occupancy is derived from parametric survival curves:
 - PF state = PFS curve
 - P state = OS - PFS (bounded at 0)
 - D state = 1 - OS
+
+## Publication Figures
+
+The repository includes Quarto vignettes (`scripts/QMD/vignettes/`) for generating publication-ready figures:
+
+- **figure1.qmd** - Figure 1 (model structure/patient flow)
+- **figure2.qmd** - Figure 2 (survival curves)
+- **figure3.qmd** - Figure 3 (cost-effectiveness results)
+- **figure4.qmd** - Figure 4 (sensitivity analysis)
+- **suppl_figure_pfs_plots.qmd** - Supplemental PFS plots
+
+Render individual figures or all at once:
+```bash
+quarto render scripts/QMD/vignettes/figure1.qmd
+# Or render all figures
+quarto render scripts/QMD/vignettes/
+```
+
+## Technical Documentation
+
+The `scripts/QMD/technical_docs/` directory contains methodological documentation:
+
+- **bug_fix_impact.qmd** - Template for documenting bug fix impacts on model results
+- **age_effect_analysis.qmd** - Analysis of age as prognostic factor in survival models
+- **all_parametric_survival_models.qmd** - Comparison of all candidate parametric model fits
+
+These reports support model validation and document methodological decisions. For comprehensive guidance on using this codebase, see [CLAUDE.md](CLAUDE.md).
 
 ## Related Publications
 
