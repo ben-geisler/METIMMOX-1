@@ -1,6 +1,6 @@
 commandArgs <- function(trailingOnly = TRUE) {
   if (trailingOnly) {
-    return(c("18", "fixed"))
+    return(c("118", "baseline"))
   }
 }
 
