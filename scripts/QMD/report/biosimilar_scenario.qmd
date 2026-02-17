@@ -1,0 +1,481 @@
+---
+title: "Biosimilar Nivolumab Pricing Scenario"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r biosim-setup, include=FALSE}
+# Set global knitr options
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 6,
+  dpi = 300,
+  out.width = "100%"
+)
+
+# Set working directory to project root
+knitr::opts_knit$set(root.dir = here::here())
+
+# Load required libraries
+if (!require("pacman")) install.packages("pacman")
+
+# Load rlang explicitly first
+library(rlang)
+
+# Then load other packages
+pacman::p_load(
+  here, knitr, kableExtra, ggplot2, dplyr,
+  flextable, officer, scales, gridExtra,
+  devtools, readxl, tableone, flexsurv,
+  survival, survminer, gems, mstate,
+  tidyverse, xtable, darthtools, dampack,
+  mvtnorm, Matrix, reshape2
+)
+
+# Set ggplot theme
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    strip.text = element_text(size = 11, face = "bold")
+  ))
+
+# Source helper functions
+helper_functions <- c(
+  "scripts/R/functions/model_fun.R",
+  "scripts/R/functions/calculate_outcomes.R",
+  "scripts/R/functions/psa_functions.R",
+  "scripts/R/functions/evppi_functions.R",
+  "scripts/R/functions/scenario_analysis.R",
+  "scripts/R/functions/multi_model_cea.R"
+)
+
+for (func_file in helper_functions) {
+  if (file.exists(here(func_file))) {
+    suppressMessages(suppressWarnings(source(here(func_file))))
+  }
+}
+```
+
+```{r biosim-load-cache, include=FALSE}
+# Load scenario analysis results (try full cache first, then preview)
+cache_file <- here("data/tidy/scenario_evppi_results.rds")
+preview_cache_file <- here("data/tidy/scenario_evppi_results_PREVIEW.rds")
+
+if (file.exists(cache_file)) {
+  cat("Loading full scenario analysis results from cache...\n")
+  evppi_cache <- readRDS(cache_file)
+} else if (file.exists(preview_cache_file)) {
+  cat("Full cache not found. Loading PREVIEW results (reduced iterations)...\n")
+  evppi_cache <- readRDS(preview_cache_file)
+} else {
+  stop("No scenario analysis cache found. Please run script 14 (14_scenario_EVPPIs.R) or 14b_scenario_preview.R first.")
+}
+
+# Extract components
+all_model_scenario_results <- evppi_cache$all_model_scenario_results
+scenarios <- evppi_cache$scenarios
+
+cat("Cache loaded successfully.\n")
+cat("Available model structures:", names(all_model_scenario_results), "\n")
+cat("Available scenarios:", scenarios$scenario_id, "\n")
+```
+
+```{r biosim-extract-results, include=FALSE}
+# Determine which model structures are available in cache
+all_model_labels <- c("joint", "focused", "separate")
+all_model_names <- c("Model A: Joint", "Model B: Focused", "Model C: Separate")
+all_short_labels <- c("A", "B", "C")
+
+available_mask <- all_model_labels %in% names(all_model_scenario_results)
+model_labels <- all_model_labels[available_mask]
+model_names <- all_model_names[available_mask]
+short_labels <- all_short_labels[available_mask]
+
+cat("Available model structures:", paste(model_labels, collapse = ", "), "\n")
+
+# Storage for comparison
+base_case_results <- list()
+biosim_results <- list()
+
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+
+  # Base case
+  base_case_results[[model_label]] <- all_model_scenario_results[[model_label]][["base"]]
+
+  # Biosimilar scenario
+  biosim_results[[model_label]] <- all_model_scenario_results[[model_label]][["s1_decreased_nivo"]]
+}
+
+cat("Results extracted for base case and biosimilar scenario.\n")
+```
+
+# Overview
+
+This report presents cost-effectiveness results under a biosimilar nivolumab pricing scenario. The analysis examines whether reduced drug costs make biomarker-guided immunotherapy strategies cost-effective at the EUR 51,000 willingness-to-pay threshold.
+
+## Pricing Scenarios
+
+We compare two pricing scenarios:
+
+```{r biosim-pricing-table}
+pricing_table <- data.frame(
+  Scenario = c("Base Case", "Biosimilar"),
+  Nivolumab_Cost = c("EUR 13,923", "EUR 4,641"),
+  Price_Change = c("--", "-67%"),
+  Description = c(
+    "List price for branded nivolumab per administration",
+    "Biosimilar price (80% discount from list price)"
+  )
+)
+
+knitr::kable(pricing_table,
+             col.names = c("Scenario", "Nivolumab Cost", "Price Change", "Description"),
+             align = c("l", "r", "r", "l"),
+             booktabs = TRUE,
+             caption = "Nivolumab Pricing Scenarios") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+The biosimilar price of EUR 4,641 per administration represents a 67% reduction from the base case price of EUR 13,923, equivalent to an 80% discount from the list price.
+
+## Model Structures
+
+Each pricing scenario is analyzed using three alternative model structures for survival analysis:
+
+```{r biosim-model-table}
+model_structure_df <- data.frame(
+  Model = c("Model A", "Model B", "Model C"),
+  Name = c("Joint", "Focused", "Separate"),
+  Formula = c(
+    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + [biomarker]:Rx"
+  ),
+  Description = c(
+    "All biomarkers and all treatment interactions",
+    "Per-strategy formulas: CRP/TMB_BRAF with both interactions",
+    "One biomarker and its interaction per model"
+  )
+)
+
+knitr::kable(model_structure_df,
+             col.names = c("Model", "Name", "Formula Pattern", "Description"),
+             align = c("l", "l", "l", "l"),
+             booktabs = TRUE,
+             caption = "Model Structures for Survival Analysis") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::column_spec(3, width = "5cm") %>%
+  kableExtra::column_spec(4, width = "4cm")
+```
+
+```{r pagebreak-1, results='asis'}
+cat("\\newpage\n")
+```
+
+# Deterministic Cost-Effectiveness Results
+
+## Multi-Model Comparison: Base Case vs. Biosimilar
+
+```{r biosim-det-comparison, include=FALSE}
+# Get strategy names from PSA object
+strategies_list <- base_case_results[[model_labels[1]]]$psa_obj$strategies
+
+# Strategy display names
+strategy_display <- c("control" = "Standard of Care", "crp" = "CRP-guided",
+                      "tlr" = "TLR-guided", "tmb_braf" = "TMB/BRAF-guided")
+
+# Initialize comparison data frame
+comparison_df <- data.frame(
+  Strategy = strategy_display[strategies_list]
+)
+
+# Build columns for each available model
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+  short_label <- short_labels[i]
+
+  # Base case
+  base_psa <- base_case_results[[model_label]]$psa_obj
+  base_summary <- summary(base_psa, calc_sds = FALSE)
+
+  comparison_df[[paste0("Cost_Base_", short_label)]] <- base_summary$meanCost
+  comparison_df[[paste0("QALY_Base_", short_label)]] <- base_summary$meanEffect
+
+  # Calculate ICERs
+  base_icer <- dampack::calculate_icers(
+    cost = base_summary$meanCost,
+    effect = base_summary$meanEffect,
+    strategies = strategies_list
+  )
+  comparison_df[[paste0("ICER_Base_", short_label)]] <- base_icer$ICER
+
+  # Biosimilar scenario
+  biosim_psa <- biosim_results[[model_label]]$psa_obj
+  biosim_summary <- summary(biosim_psa, calc_sds = FALSE)
+
+  comparison_df[[paste0("Cost_Biosim_", short_label)]] <- biosim_summary$meanCost
+  comparison_df[[paste0("QALY_Biosim_", short_label)]] <- biosim_summary$meanEffect
+
+  # Calculate ICERs
+  biosim_icer <- dampack::calculate_icers(
+    cost = biosim_summary$meanCost,
+    effect = biosim_summary$meanEffect,
+    strategies = strategies_list
+  )
+  comparison_df[[paste0("ICER_Biosim_", short_label)]] <- biosim_icer$ICER
+}
+```
+
+```{r biosim-tables, results='asis'}
+# Generate ICER table for each available model structure
+for (i in seq_along(model_labels)) {
+  short_label <- short_labels[i]
+  model_name <- model_names[i]
+
+  cat("###", model_name, "\n\n")
+
+  model_df <- data.frame(
+    Strategy = comparison_df$Strategy,
+    Cost_Base = comparison_df[[paste0("Cost_Base_", short_label)]],
+    QALY_Base = comparison_df[[paste0("QALY_Base_", short_label)]],
+    ICER_Base = comparison_df[[paste0("ICER_Base_", short_label)]],
+    Cost_Biosim = comparison_df[[paste0("Cost_Biosim_", short_label)]],
+    QALY_Biosim = comparison_df[[paste0("QALY_Biosim_", short_label)]],
+    ICER_Biosim = comparison_df[[paste0("ICER_Biosim_", short_label)]]
+  )
+
+  # Format for display
+  display_df <- model_df
+  display_df$Cost_Base <- scales::dollar(display_df$Cost_Base, prefix = "EUR ", accuracy = 1, big.mark = ",")
+  display_df$QALY_Base <- sprintf("%.3f", display_df$QALY_Base)
+  display_df$ICER_Base <- ifelse(is.na(display_df$ICER_Base) | is.infinite(display_df$ICER_Base),
+                                  "--",
+                                  scales::dollar(display_df$ICER_Base, prefix = "EUR ", accuracy = 1, big.mark = ","))
+  display_df$Cost_Biosim <- scales::dollar(display_df$Cost_Biosim, prefix = "EUR ", accuracy = 1, big.mark = ",")
+  display_df$QALY_Biosim <- sprintf("%.3f", display_df$QALY_Biosim)
+  display_df$ICER_Biosim <- ifelse(is.na(display_df$ICER_Biosim) | is.infinite(display_df$ICER_Biosim),
+                                    "--",
+                                    scales::dollar(display_df$ICER_Biosim, prefix = "EUR ", accuracy = 1, big.mark = ","))
+
+  tbl <- knitr::kable(display_df,
+               col.names = c("Strategy",
+                            "Cost", "QALY", "ICER",
+                            "Cost", "QALY", "ICER"),
+               align = c("l", "r", "r", "r", "r", "r", "r"),
+               booktabs = TRUE,
+               caption = paste0(model_name, " - Base Case vs. Biosimilar Scenario")) %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+    kableExtra::add_header_above(c(" " = 1, "Base Case" = 3, "Biosimilar Scenario" = 3))
+
+  print(tbl)
+  cat("\n\n")
+}
+```
+
+```{r pagebreak-2, results='asis'}
+cat("\\newpage\n")
+```
+
+# Probabilistic Sensitivity Analysis
+
+## Cost-Effectiveness Planes: Biosimilar Scenario
+
+```{r biosim-ce-planes, results='asis', fig.width=8, fig.height=6}
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+  model_name <- model_names[i]
+
+  cat("###", model_name, "\n\n")
+
+  psa_plot <- plot(biosim_results[[model_label]]$psa_obj,
+                   frontier = TRUE,
+                   points = TRUE,
+                   alpha = 0.4,
+                   txtsize = 11,
+                   currency = "EUR",
+                   effect_units = "QALYs")
+  print(psa_plot)
+  cat("\n\n")
+}
+```
+
+```{r pagebreak-3, results='asis'}
+cat("\\newpage\n")
+```
+
+## Cost-Effectiveness Acceptability Curves (CEAC)
+
+```{r biosim-ceac-setup, include=FALSE}
+# Define WTP range
+c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
+
+# Create CEAC objects for base case and biosimilar (for each available model)
+ceac_base <- list()
+ceac_biosim <- list()
+
+for (model_label in model_labels) {
+  ceac_base[[model_label]] <- ceac(c_wtp, base_case_results[[model_label]]$psa_obj)
+  ceac_biosim[[model_label]] <- ceac(c_wtp, biosim_results[[model_label]]$psa_obj)
+}
+```
+
+```{r biosim-ceac-plots, results='asis', fig.width=8, fig.height=6}
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+  model_name <- model_names[i]
+
+  cat("###", model_name, "\n\n")
+
+  cat("**Base Case:**\n\n")
+  ceac_plot_base <- plot(ceac_base[[model_label]], frontier = TRUE, currency = "EUR", txtsize = 11)
+  print(ceac_plot_base)
+  cat("\n\n")
+
+  cat("**Biosimilar Scenario:**\n\n")
+  ceac_plot_biosim <- plot(ceac_biosim[[model_label]], frontier = TRUE, currency = "EUR", txtsize = 11)
+  print(ceac_plot_biosim)
+  cat("\n\n")
+}
+```
+
+```{r pagebreak-4, results='asis'}
+cat("\\newpage\n")
+```
+
+# Summary of Key Findings
+
+## Cost-Effectiveness at EUR 51,000 WTP Threshold
+
+```{r biosim-summary-stats, include=FALSE}
+# Calculate probability cost-effective at EUR 51,000 for each model and scenario
+wtp_threshold <- 51000
+
+# dampack::ceac() returns long-format data frame: WTP, Strategy, Proportion, On_Frontier
+# Extract per-strategy probabilities at a specific WTP
+get_prob_at_wtp <- function(ceac_obj, wtp) {
+  # Find closest WTP value
+  closest_wtp <- ceac_obj$WTP[which.min(abs(unique(ceac_obj$WTP) - wtp))]
+  ceac_at_wtp <- ceac_obj[ceac_obj$WTP == closest_wtp, ]
+  probs <- setNames(ceac_at_wtp$Proportion, ceac_at_wtp$Strategy)
+  return(probs)
+}
+
+# Extract probabilities for each available model
+prob_base <- list()
+prob_biosim <- list()
+
+for (model_label in model_labels) {
+  prob_base[[model_label]] <- get_prob_at_wtp(ceac_base[[model_label]], wtp_threshold)
+  prob_biosim[[model_label]] <- get_prob_at_wtp(ceac_biosim[[model_label]], wtp_threshold)
+}
+
+# Create summary table
+summary_rows <- list()
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+  model_name <- model_names[i]
+  strats <- names(prob_base[[model_label]])
+
+  for (s in strats) {
+    summary_rows[[length(summary_rows) + 1]] <- data.frame(
+      Model = model_name,
+      Strategy = strategy_display[s],
+      Prob_Base = prob_base[[model_label]][s],
+      Prob_Biosim = prob_biosim[[model_label]][s],
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+summary_table <- do.call(rbind, summary_rows)
+rownames(summary_table) <- NULL
+
+# Format as percentages
+summary_table$Prob_Base_pct <- sprintf("%.1f%%", summary_table$Prob_Base * 100)
+summary_table$Prob_Biosim_pct <- sprintf("%.1f%%", summary_table$Prob_Biosim * 100)
+summary_table$Change <- sprintf("%+.1f pp", (summary_table$Prob_Biosim - summary_table$Prob_Base) * 100)
+```
+
+```{r biosim-summary-table}
+display_summary <- summary_table[, c("Model", "Strategy", "Prob_Base_pct", "Prob_Biosim_pct", "Change")]
+
+knitr::kable(display_summary,
+             col.names = c("Model", "Strategy", "Base Case", "Biosimilar", "Change"),
+             align = c("l", "l", "r", "r", "r"),
+             booktabs = TRUE,
+             caption = "Probability of Cost-Effectiveness at EUR 51,000 WTP Threshold") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::add_header_above(c(" " = 2, "Probability Cost-Effective" = 2, " " = 1)) %>%
+  kableExtra::collapse_rows(columns = 1, latex_hline = "major")
+```
+
+## Key Observations
+
+```{r biosim-text-summary, results='asis'}
+for (i in seq_along(model_labels)) {
+  model_label <- model_labels[i]
+  model_name <- model_names[i]
+
+  pb <- prob_base[[model_label]]
+  pbio <- prob_biosim[[model_label]]
+
+  optimal_base <- names(pb)[which.max(pb)]
+  optimal_biosim <- names(pbio)[which.max(pbio)]
+
+  cat("**", model_name, ":**\n\n", sep = "")
+  cat("- Base case optimal strategy:", strategy_display[optimal_base],
+      "(", sprintf("%.1f%%", max(pb) * 100), "probability)\n")
+  cat("- Biosimilar optimal strategy:", strategy_display[optimal_biosim],
+      "(", sprintf("%.1f%%", max(pbio) * 100), "probability)\n\n")
+}
+```
+
+## Impact of Biosimilar Pricing
+
+The 67% reduction in nivolumab cost (from EUR 13,923 to EUR 4,641 per administration) represents a substantial price decrease. However, the impact on cost-effectiveness depends on several factors:
+
+1. **Direct cost savings**: Only biomarker-positive patients receive nivolumab, so cost savings are proportional to biomarker prevalence
+2. **Testing costs**: Biomarker strategies incur additional testing costs (EUR 2,000 for TMB/BRAF NGS testing)
+3. **Clinical effectiveness**: The biosimilar pricing scenario does not change clinical outcomes (QALYs), so any improvement in cost-effectiveness is purely through cost reduction
+
+The results demonstrate whether the biosimilar price reduction is sufficient to make biomarker-guided strategies cost-effective at the EUR 51,000 willingness-to-pay threshold.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0
