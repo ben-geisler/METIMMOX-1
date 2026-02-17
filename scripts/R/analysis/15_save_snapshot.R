@@ -81,13 +81,19 @@ Sys.setenv(SNAPSHOT_STATUS = snapshot_status)
 # ============================================================================
 cat("=== Running Setup Scripts ===\n")
 
-cat("\n[1/3] Running 02_setup_and_global_variables.R...\n")
+cat("\n[1/5] Running 02_setup_and_global_variables.R...\n")
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 
-cat("[2/3] Running 03_biomarker_strategies.R...\n")
+cat("[2/5] Running 03_biomarker_strategies.R...\n")
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 
-cat("[3/3] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
+cat("[3/5] Running 06_parametric_survival_analysis.R...\n")
+source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+
+cat("[4/5] Running 07_basecase_input_parameters.R...\n")
+source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+
+cat("[5/5] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
 source(here::here("scripts/R/analysis/08_sampling.R"))
 
 # Save WTP for NMB calculation (survives re-sourcing)
