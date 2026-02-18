@@ -1470,7 +1470,7 @@ if (nrow(evppi_all_scenarios) > 0) {
           "Population-level EVPPI (EUR millions) for key parameters across scenarios and model structures. ",
           "Based on ", annual_incidence_norway, " patients/year over ",
           research_horizon_years, " years, discounted at ",
-          discount_rate_research * 100, "%."),
+          discount_rate_research * 100, "\\%."),
         booktabs = TRUE,
         align = c("l", "l", rep("r", length(model_cols)))) %>%
     kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
