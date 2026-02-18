@@ -135,6 +135,7 @@ source("scripts/R/analysis/08_sampling.R")
 # Model execution
 source("scripts/R/analysis/09_traces.R")
 source("scripts/R/analysis/10_basecase_analysis.R")
+source("scripts/R/analysis/10b_enriched_population_analysis.R")  # Optional: enriched population CEA
 
 # Sensitivity analyses
 source("scripts/R/analysis/11_DSA.R")  # Deterministic sensitivity analysis
@@ -143,6 +144,7 @@ source("scripts/R/analysis/13_EVPPIs.R")  # Expected value of perfect partial in
 
 # Extended analyses (optional)
 source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+source("scripts/R/analysis/14b_scenario_preview.R")  # Optional: quick scenario preview (500 iterations)
 source("scripts/R/analysis/15_save_snapshot.R")    # Save results for impact assessment
 ```
 
@@ -172,6 +174,8 @@ quarto render scripts/QMD/report/OWSA.qmd
 quarto render scripts/QMD/report/EVPPIs.qmd
 quarto render scripts/QMD/report/input_parameters.qmd
 quarto render scripts/QMD/report/scenario_effect.qmd
+quarto render scripts/QMD/report/biosimilar_scenario.qmd
+quarto render scripts/QMD/report/enriched_population.qmd
 
 # Render all reports at once
 quarto render scripts/QMD/report/
@@ -196,10 +200,12 @@ source("scripts/R/analysis/07_basecase_input_parameters.R")
 source("scripts/R/analysis/08_sampling.R")  # Takes time on first run
 source("scripts/R/analysis/09_traces.R")
 source("scripts/R/analysis/10_basecase_analysis.R")
+source("scripts/R/analysis/10b_enriched_population_analysis.R")  # Optional: enriched population CEA
 source("scripts/R/analysis/11_DSA.R")
 source("scripts/R/analysis/12_PSA.R")
 source("scripts/R/analysis/13_EVPPIs.R")
 source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Optional: scenario analysis
+source("scripts/R/analysis/14b_scenario_preview.R")  # Optional: quick scenario preview (500 iterations)
 source("scripts/R/analysis/15_save_snapshot.R")    # Optional: save for comparison
 
 # 2. Render reports (from terminal/command line)
@@ -215,6 +221,8 @@ quarto render scripts/QMD/report/CEA.qmd
 quarto render scripts/QMD/report/OWSA.qmd
 quarto render scripts/QMD/report/EVPPIs.qmd
 quarto render scripts/QMD/report/scenario_effect.qmd
+quarto render scripts/QMD/report/biosimilar_scenario.qmd
+quarto render scripts/QMD/report/enriched_population.qmd
 ```
 
 ## Architecture & Key Concepts
@@ -244,10 +252,13 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `dr` | 0.04 | Discount rate (4%) |
 | `USE_BOTH_MODELS` | 0 | 0=full model only, 1=compare both |
 | `MODEL_STRUCTURE` | 0 | 0=joint (Model A), 1=focused (Model B), 2=separate (Model C) |
+| `annual_incidence_norway` | 1500 | Annual eligible MSS/pMMR mCRC patients in Norway |
+| `research_horizon_years` | 10 | Research value time horizon (years) for population EVPPI |
+| `discount_rate_research` | 0.035 | Discount rate for research benefits (3.5%) |
 
 **Model Structure Options:**
 - **Model A (joint, 0)**: All biomarkers + all treatment interactions: `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
-- **Model B (focused, 1)**: CRP + TMB/BRAF with BOTH interaction terms (TLR EXCLUDED): `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
+- **Model B (focused, 1)**: Per-strategy formulas. CRP and TMB/BRAF strategies share: `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`. TLR strategy uses: `~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`. All three biomarker strategies available.
 - **Model C (separate, 2)**: One biomarker + its interaction only: `~ Age + sex + Rx + [biomarker]:Rx`
 
 **When changed**: Regenerate sampling cache (USE_BOTH_MODELS or MODEL_STRUCTURE change) and PSA cache. Cache filenames encode these settings to prevent mixing results.
@@ -260,7 +271,7 @@ Three biomarkers are evaluated (defined in [03_biomarker_strategies.R](scripts/R
 2. **TLR** (Tumor lesion reduction): Binary variable, cut-off ≥10%
 3. **TMB/BRAF**: Combined biomarker (TMB ≥9 mut/MB OR BRAF mutation)
 
-**Note**: Model B (focused) only uses CRP and TMB/BRAF with both interaction terms; TLR is excluded from Model B but included in Models A and C.
+**Note**: All three biomarker strategies are available in all model structures. Model B uses per-strategy formulas (CRP/TMB_BRAF share one formula, TLR has its own). Model C uses per-biomarker formulas (one biomarker + its interaction per strategy). See `model_configs.R` for the single source of truth.
 
 Each strategy has:
 - **Biomarker-positive subgroup**: Receives experimental treatment (alternating FLOX + nivolumab)
@@ -354,21 +365,26 @@ data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
 
 ### Survival Model Formulas
 
-**Control group** (age- and sex-adjusted):
+**Control group** (age- and sex-adjusted, same across all model structures):
 ```r
 OS:  Surv(OSwk, Death) ~ Age + sex
 PFS: Surv(PFSwk, Progression) ~ Age + sex
 ```
 
-**Biomarker groups** (includes treatment interaction):
-```r
-OS:  Surv(OSwk, Death) ~ Age + sex + Rx + [biomarker]:Rx
-PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + [biomarker]:Rx
-```
+**Biomarker groups** (formulas vary by model structure):
 
-Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
+- **Model A (joint)**: Single shared formula for all strategies: `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+- **Model B (focused)**: Per-strategy formulas:
+  - CRP / TMB_BRAF strategies: `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
+  - TLR strategy: `~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`
+- **Model C (separate)**: Per-biomarker: `~ Age + sex + Rx + [biomarker]:Rx`
+
+See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical formula definitions.
 
 ### Key Functions
+
+**Model Configuration**:
+- **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for model structures, strategies, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_control_formula()`, `uses_per_strategy_formulas()`, `get_model_type_label()`, `get_model_formulas()`.
 
 **Core Model Functions**:
 - **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
@@ -377,7 +393,7 @@ Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
 
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
-- **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions
+- **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions, population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
 - **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
 
 **Survival Modeling Functions**:
@@ -400,8 +416,9 @@ Where `[biomarker]` is one of: `crp`, `tlr`, `tmb_braf`
 The **[multi_model_cea.R](scripts/R/functions/multi_model_cea.R)** file provides functions for comparing cost-effectiveness across Model A/B/C structures:
 
 **Core Functions:**
-- `get_model_configs()` - Returns Model A (joint), B (focused), C (separate) configurations
+- `get_model_configs()` - Returns Model A (joint), B (focused), C (separate) configurations (canonical source is [model_configs.R](scripts/R/functions/model_configs.R))
 - `run_all_basecase_analyses()` - Runs base case for all 3 model structures
+- `run_basecase_for_structure()` - Runs base case for a single model structure (also used by `10b` and `15`)
 - `load_all_psa_caches()` - Loads PSA caches for all models
 - `format_multimodel_comparison_table()` - Creates side-by-side comparison tables
 - `create_multimodel_ceac_plot()` - Multi-model CEAC visualization
@@ -450,7 +467,9 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
   - Scripts 01-03: Core setup and data preparation
   - Scripts 04-05: Supplementary RMarkdown files (not part of main execution pipeline)
   - Scripts 06-13: Main analysis pipeline
+  - Script 10b: Enriched population CEA (optional, runs across all model structures)
   - Scripts 14-15: Extended analyses (scenario EVPPIs, snapshot saving)
+  - Script 14b: Quick scenario preview (500 iterations, Model A only)
 - **Functions directory** (`scripts/R/functions/`): Reusable components that are sourced by analysis scripts
 - **Archive directory** (`scripts/R/archive/`): Deprecated/unused code preserved for reference
 - **Tests directory** (`scripts/R/tests/`): Validation and diagnostic scripts
@@ -504,6 +523,16 @@ Each report has specific dependencies:
 - **Sources**: 02, 03, 06, 07, 08, scenario analysis scripts
 - **Shows**: Alternative scenario results (e.g., different time horizons, discount rates)
 
+**[biosimilar_scenario.qmd](scripts/QMD/report/biosimilar_scenario.qmd)** - Biosimilar Nivolumab Pricing Scenario
+- **Sources**: 02, 03, scenario cache (`scenario_evppi_results.rds` or `scenario_evppi_results_PREVIEW.rds`)
+- **Shows**: ICER comparison for base case vs biosimilar pricing (EUR 13,923 vs EUR 4,641/dose) across Models A/B/C
+- **Note**: Auto-detects full vs preview cache
+
+**[enriched_population.qmd](scripts/QMD/report/enriched_population.qmd)** - Enriched Population Analysis
+- **Sources**: 02, 03, 10b
+- **Shows**: Enriched (biomarker-positive) ICERs vs base case across Models A/B/C
+- **Note**: Not cached; re-runs on each render. Requires sampling cache.
+
 **[biomarker_decomposition.qmd](scripts/QMD/report/biomarker_decomposition.qmd)** - Biomarker Effect Decomposition
 - **Sources**: 02, 03, 06, 07, 08, 10, 12
 - **Shows**: Decomposition of biomarker effects on cost-effectiveness outcomes
@@ -515,7 +544,7 @@ Each report has specific dependencies:
 **Technical Documentation** (in `scripts/QMD/technical_docs/`):
 - **[age_effect_analysis.qmd](scripts/QMD/technical_docs/age_effect_analysis.qmd)**: Age effect on survival outcomes
 - **[all_parametric_survival_models.qmd](scripts/QMD/technical_docs/all_parametric_survival_models.qmd)**: Full survival model diagnostics
-- **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Bug fix impact documentation
+- **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Bug fix impact documentation (v3.0, per-model comparisons with cross-model summary)
 
 **Figure Vignettes** (in `scripts/QMD/vignettes/`):
 - **figure1-4.qmd**: Publication-ready figures
@@ -696,6 +725,13 @@ source("scripts/R/analysis/12_PSA.R")
 **Generation**: Script [14_scenario_EVPPIs.R](scripts/R/analysis/14_scenario_EVPPIs.R)
 **When to regenerate**: Delete cache file when PSA cache is regenerated or scenario definitions change
 
+### 5. Scenario Preview Cache
+
+**Location**: `data/tidy/scenario_evppi_results_PREVIEW.rds`
+**Purpose**: Quick-test scenario results (500 iterations, Model A only)
+**Generation**: Script [14b_scenario_preview.R](scripts/R/analysis/14b_scenario_preview.R)
+**Note**: Used by `biosimilar_scenario.qmd` as fallback when full scenario cache is absent
+
 ### Cache Workflow
 
 1. **First run**: [08_sampling.R](scripts/R/analysis/08_sampling.R) generates sampling cache
@@ -710,8 +746,8 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 ### Components
 
-- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves current model state (ICER results, PSA results, metadata)
-- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Utility functions for snapshot management
+- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves multi-model snapshots (all 3 model structures A/B/C) using `run_basecase_for_structure()` from `multi_model_cea.R`
+- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Utility functions for snapshot management, including `is_multimodel_snapshot()` and `get_snapshot_model_names()`
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots to quantify changes
 - **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Report documenting bug fix impacts
 
