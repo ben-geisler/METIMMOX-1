@@ -1,5 +1,5 @@
 ---
-title: "Figure 1: Overall Survival Strategy Comparison"
+title: "Figure 1: CRP-Guided Strategy Survival Curves"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -40,10 +40,7 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-# Force USE_BOTH_MODELS = 1 to get both gamma and weibullph distributions
-USE_BOTH_MODELS <- 1
-
-# Source analysis scripts in order
+# Source analysis scripts
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
 }))
@@ -52,106 +49,44 @@ suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
 }))
 
-# Override again after 02 potentially reset it
-USE_BOTH_MODELS <- 1
-
 # Source prediction functions
 source(here("scripts/R/functions/prediction_functions.R"))
 
-# Source parametric survival analysis - this creates multi_models and multi_predictions
+# Source parametric survival analysis
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
 }))
+
+# Get treatment level references
+exp_rx <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+crp_prev <- strategies_df$prevalence[strategies_df$id == "crp"]
+
+cat("CRP prevalence:", crp_prev, "\n")
+cat("Treatment levels:", ctrl_rx, "(control),", exp_rx, "(experimental)\n")
 ```
 
-```{r generate-multi-predictions, include=FALSE}
+```{r fit-models, include=FALSE}
 # ===============================================================================
-# Generate multi-model predictions (same as para_models.qmd Phase 3)
+# Fit gamma models for CRP strategy across Model A, B, C
 # ===============================================================================
 
-# Define model formulas
-# NOTE: Model B uses per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction
 model_formulas <- list(
   A = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
   ),
-  # Model B: Per-strategy formulas
-  B_crp = list(
+  B = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
   ),
-  B_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
-  ),
-  B_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
-  ),
-  C_crp = list(
+  C = list(
     os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
     pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
-  ),
-  C_tlr = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr:Rx
-  ),
-  C_tmb = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf:Rx
   )
 )
 
-model_labels_short <- c(
-  "A" = "Model A",
-  "B_crp" = "Model B-CRP",
-  # B_tlr removed - Model B excludes TLR
-  "B_tmb" = "Model B-TMB",
-  "C_crp" = "Model C-CRP",
-  "C_tlr" = "Model C-TLR",
-  "C_tmb" = "Model C-TMB"
-)
-
-distributions <- c("gamma", "weibullph")
-model_types <- names(model_formulas)
-
-# Initialize storage
-multi_models <- list(gamma = list(), weibullph = list())
-multi_predictions <- list(gamma = list(), weibullph = list())
-
-# Fit all models
-for (dist in distributions) {
-  for (mt in model_types) {
-    multi_models[[dist]][[mt]] <- list()
-    for (outcome in c("os", "pfs")) {
-      formula <- model_formulas[[mt]][[outcome]]
-      tryCatch({
-        multi_models[[dist]][[mt]][[outcome]] <- flexsurvreg(
-          formula = formula,
-          data = data_complete,
-          dist = dist
-        )
-      }, error = function(e) {
-        message(paste("Failed to fit", mt, outcome, dist))
-      })
-    }
-  }
-}
-
-# Define which biomarkers each model type can predict
-# NOTE: Model B excludes TLR - only B_crp and B_tmb exist
-model_biomarker_map <- list(
-  A = c("crp", "tlr", "tmb_braf"),
-  B_crp = c("crp"),
-  # B_tlr removed - Model B excludes TLR
-  B_tmb = c("tmb_braf"),
-  C_crp = c("crp"),
-  C_tlr = c("tlr"),
-  C_tmb = c("tmb_braf")
-)
-
-# Helper function for population-averaged predictions
+# Helper for population-averaged predictions
 predict_population_avg <- function(model, newdata, time_points) {
   tryCatch({
     pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
@@ -174,187 +109,323 @@ predict_population_avg <- function(model, newdata, time_points) {
   })
 }
 
-# Get treatment level references
-exp_rx <- levels(data_complete$Rx)[2]
-ctrl_rx <- levels(data_complete$Rx)[1]
+# Fit models and generate base-case predictions
+fitted_models <- list()
+base_predictions <- list()
 
-# Generate predictions
-for (dist in distributions) {
-  for (model_type in model_types) {
-    os_model <- multi_models[[dist]][[model_type]]$os
-    pfs_model <- multi_models[[dist]][[model_type]]$pfs
+for (model_name in names(model_formulas)) {
+  fitted_models[[model_name]] <- list()
+  base_predictions[[model_name]] <- list()
 
-    if (is.null(os_model) || is.null(pfs_model)) next
+  for (outcome in c("os", "pfs")) {
+    formula <- model_formulas[[model_name]][[outcome]]
+    fitted_models[[model_name]][[outcome]] <- tryCatch(
+      flexsurvreg(formula = formula, data = data_complete, dist = "gamma"),
+      error = function(e) { message("Failed to fit ", model_name, " ", outcome); NULL }
+    )
+  }
 
-    multi_predictions[[dist]][[model_type]] <- list()
+  if (is.null(fitted_models[[model_name]]$os) || is.null(fitted_models[[model_name]]$pfs)) next
 
-    # Control predictions
-    control_data <- data_complete
-    control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+  # Control predictions (all patients, control treatment)
+  control_data <- data_complete
+  control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
 
-    control_os <- predict_population_avg(os_model, control_data, time_points)
-    control_pfs <- predict_population_avg(pfs_model, control_data, time_points)
+  for (outcome in c("os", "pfs")) {
+    base_predictions[[model_name]][[paste0("control_", outcome)]] <-
+      predict_population_avg(fitted_models[[model_name]][[outcome]], control_data, time_points)
+  }
 
-    if (!is.null(control_os) && !is.null(control_pfs)) {
-      multi_predictions[[dist]][[model_type]]$control <- list(
-        os = control_os,
-        pfs = control_pfs
-      )
+  # CRP-weighted predictions
+  crp_pos_data <- data_complete[as.numeric(as.character(data_complete$crp)) == 1, ]
+  crp_pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
+
+  crp_neg_data <- data_complete[as.numeric(as.character(data_complete$crp)) == 0, ]
+  crp_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+
+  for (outcome in c("os", "pfs")) {
+    pos_pred <- predict_population_avg(fitted_models[[model_name]][[outcome]], crp_pos_data, time_points)
+    neg_pred <- predict_population_avg(fitted_models[[model_name]][[outcome]], crp_neg_data, time_points)
+
+    if (!is.null(pos_pred) && !is.null(neg_pred)) {
+      base_predictions[[model_name]][[paste0("crp_", outcome)]] <-
+        crp_prev * pos_pred + (1 - crp_prev) * neg_pred
     }
+  }
+}
 
-    # Biomarker-specific predictions
-    biomarkers_to_predict <- model_biomarker_map[[model_type]]
+cat("Base-case predictions generated for models:",
+    paste(names(base_predictions), collapse = ", "), "\n")
+```
 
-    for (biomarker in biomarkers_to_predict) {
-      # Biomarker-positive: experimental treatment
-      pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 1, ]
-      if (nrow(pos_data) > 0) {
-        pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
-        pos_os <- predict_population_avg(os_model, pos_data, time_points)
-        pos_pfs <- predict_population_avg(pfs_model, pos_data, time_points)
+```{r bootstrap-ci, include=FALSE}
+# ===============================================================================
+# Load sampling caches and compute 95% bootstrap CIs
+# ===============================================================================
 
-        if (!is.null(pos_os) && !is.null(pos_pfs)) {
-          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]] <- list(
-            os = pos_os, pfs = pos_pfs
-          )
-        }
-      }
+model_structure_labels <- c(A = "joint", B = "focused", C = "separate")
+n_boot_subset <- 500  # Subset of 5000 for speed
 
-      # Biomarker-negative: control treatment
-      neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker]])) == 0, ]
-      if (nrow(neg_data) > 0) {
-        neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
-        neg_os <- predict_population_avg(os_model, neg_data, time_points)
-        neg_pfs <- predict_population_avg(pfs_model, neg_data, time_points)
+ci_data <- list()
 
-        if (!is.null(neg_os) && !is.null(neg_pfs)) {
-          multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]] <- list(
-            os = neg_os, pfs = neg_pfs
-          )
-        }
-      }
+for (model_name in names(model_structure_labels)) {
+  model_label <- model_structure_labels[model_name]
 
-      # Population-weighted prediction
-      biomarker_prev <- strategies_df$prevalence[strategies_df$id == biomarker]
-      pos_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_pos")]]
-      neg_pred <- multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_neg")]]
+  # Try to find cache file
+  cache_pattern <- here("data", "tidy",
+    paste0("sampling_models_n", n_samples, "_full_", model_label, ".rds"))
 
-      if (length(biomarker_prev) > 0 && !is.null(pos_pred) && !is.null(neg_pred)) {
-        multi_predictions[[dist]][[model_type]][[paste0(biomarker, "_weighted")]] <- list(
-          os = biomarker_prev * pos_pred$os + (1 - biomarker_prev) * neg_pred$os,
-          pfs = biomarker_prev * pos_pred$pfs + (1 - biomarker_prev) * neg_pred$pfs
+  if (!file.exists(cache_pattern)) {
+    cat("Sampling cache not found for", model_label, "- skipping bootstrap CI\n")
+    next
+  }
+
+  cat("Loading sampling cache for", model_label, "...\n")
+  sampling_models_cache <- readRDS(cache_pattern)
+
+  n_available <- min(n_boot_subset, sampling_models_cache$crp$n_samples)
+  boot_indices <- sample(seq_len(sampling_models_cache$crp$n_samples), n_available)
+
+  ci_data[[model_name]] <- list()
+
+  for (outcome in c("os", "pfs")) {
+    # Storage for bootstrap predictions
+    control_boot <- matrix(NA, nrow = length(time_points), ncol = n_available)
+    crp_boot <- matrix(NA, nrow = length(time_points), ncol = n_available)
+
+    for (j in seq_along(boot_indices)) {
+      idx <- boot_indices[j]
+
+      # Control predictions from control sampling model
+      ctrl_model <- sampling_models_cache$control$samples[[idx]][[outcome]]$model
+      if (!is.null(ctrl_model)) {
+        ctrl_data_tmp <- data_complete
+        ctrl_data_tmp$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+        ctrl_pred <- tryCatch(
+          predict_population_avg(ctrl_model, ctrl_data_tmp, time_points),
+          error = function(e) NULL
         )
+        if (!is.null(ctrl_pred)) control_boot[, j] <- ctrl_pred
       }
+
+      # CRP-weighted predictions from CRP sampling model
+      crp_model <- sampling_models_cache$crp$samples[[idx]][[outcome]]$model
+      if (!is.null(crp_model)) {
+        crp_pos_tmp <- data_complete[as.numeric(as.character(data_complete$crp)) == 1, ]
+        crp_pos_tmp$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
+        crp_neg_tmp <- data_complete[as.numeric(as.character(data_complete$crp)) == 0, ]
+        crp_neg_tmp$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+
+        pos_pred <- tryCatch(
+          predict_population_avg(crp_model, crp_pos_tmp, time_points),
+          error = function(e) NULL
+        )
+        neg_pred <- tryCatch(
+          predict_population_avg(crp_model, crp_neg_tmp, time_points),
+          error = function(e) NULL
+        )
+
+        if (!is.null(pos_pred) && !is.null(neg_pred)) {
+          crp_boot[, j] <- crp_prev * pos_pred + (1 - crp_prev) * neg_pred
+        }
+      }
+
+      if (j %% 100 == 0) cat("  ", model_name, outcome, ":", j, "/", n_available, "\n")
     }
+
+    # Compute percentile CIs
+    ci_data[[model_name]][[paste0("control_", outcome, "_lower")]] <-
+      apply(control_boot, 1, quantile, probs = 0.025, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("control_", outcome, "_upper")]] <-
+      apply(control_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("crp_", outcome, "_lower")]] <-
+      apply(crp_boot, 1, quantile, probs = 0.025, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("crp_", outcome, "_upper")]] <-
+      apply(crp_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
   }
+
+  # Free memory
+  rm(sampling_models_cache)
+  gc()
+
+  cat("Bootstrap CIs computed for", model_name, "\n")
 }
+
+has_ci <- length(ci_data) > 0
+cat("Bootstrap CI available:", has_ci, "\n")
 ```
 
-```{r create-os-plots, include=FALSE}
-create_os_plot <- function(biomarker, model_types_subset, color_scheme,
-                           strategy_prefix, factor_levels) {
-  strategy_data <- data.frame()
+```{r km-data, include=FALSE}
+# ===============================================================================
+# Compute Kaplan-Meier curves from observed data
+# ===============================================================================
 
-  # Control (from Model A - same for all)
-  for (dist in c("gamma", "weibullph")) {
-    ctrl_pred <- multi_predictions[[dist]][["A"]]$control
-    if (!is.null(ctrl_pred)) {
-      strategy_data <- rbind(strategy_data, data.frame(
-        time = time_points,
-        os = ctrl_pred$os,
-        strategy = "Control",
-        distribution = dist
-      ))
+# Control arm KM (all patients in control arm)
+data_control <- data_complete[data_complete$Rx == ctrl_rx, ]
+
+km_control_os <- survfit(Surv(OSwk, Death) ~ 1, data = data_control)
+km_control_pfs <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_control)
+
+# CRP-guided strategy KM: CRP+ patients from experimental arm + CRP- from control arm
+# This is the observed analog of biomarker-guided treatment assignment
+data_crp_guided <- rbind(
+  data_complete[as.numeric(as.character(data_complete$crp)) == 1 &
+                data_complete$Rx == exp_rx, ],
+  data_complete[as.numeric(as.character(data_complete$crp)) == 0 &
+                data_complete$Rx == ctrl_rx, ]
+)
+
+km_crp_os <- survfit(Surv(OSwk, Death) ~ 1, data = data_crp_guided)
+km_crp_pfs <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_crp_guided)
+
+# Helper to extract KM data for ggplot
+extract_km_data <- function(km_fit) {
+  data.frame(
+    time = km_fit$time,
+    surv = km_fit$surv,
+    stringsAsFactors = FALSE
+  )
+}
+
+km_data_list <- list(
+  control_os = extract_km_data(km_control_os),
+  control_pfs = extract_km_data(km_control_pfs),
+  crp_os = extract_km_data(km_crp_os),
+  crp_pfs = extract_km_data(km_crp_pfs)
+)
+
+cat("KM curves computed. Control arm:", nrow(data_control), "patients.",
+    "CRP-guided:", nrow(data_crp_guided), "patients.\n")
+```
+
+```{r create-panels, include=FALSE}
+# ===============================================================================
+# Build individual panels: 3 models x 2 outcomes
+# ===============================================================================
+
+model_display <- c(A = "Model A", B = "Model B", C = "Model C")
+strategy_colors <- c("Control" = "gray50", "CRP Strategy" = "#E69F00")
+
+create_survival_panel <- function(model_name, outcome, show_legend = FALSE) {
+  outcome_label <- if (outcome == "os") "Overall Survival" else "Progression-Free Survival"
+  km_ctrl_key <- paste0("control_", outcome)
+  km_crp_key <- paste0("crp_", outcome)
+  pred_ctrl_key <- paste0("control_", outcome)
+  pred_crp_key <- paste0("crp_", outcome)
+
+  # Build plot data: parametric base-case curves
+  plot_df <- data.frame()
+
+  ctrl_pred <- base_predictions[[model_name]][[pred_ctrl_key]]
+  crp_pred <- base_predictions[[model_name]][[pred_crp_key]]
+
+  if (!is.null(ctrl_pred)) {
+    plot_df <- rbind(plot_df, data.frame(
+      time = time_points, surv = ctrl_pred, group = "Control"))
+  }
+  if (!is.null(crp_pred)) {
+    plot_df <- rbind(plot_df, data.frame(
+      time = time_points, surv = crp_pred, group = "CRP Strategy"))
+  }
+
+  if (nrow(plot_df) == 0) return(NULL)
+
+  p <- ggplot()
+
+  # Layer 1: Bootstrap CI ribbon (if available)
+  if (model_name %in% names(ci_data)) {
+    ci <- ci_data[[model_name]]
+
+    ctrl_lower <- ci[[paste0("control_", outcome, "_lower")]]
+    ctrl_upper <- ci[[paste0("control_", outcome, "_upper")]]
+    crp_lower <- ci[[paste0("crp_", outcome, "_lower")]]
+    crp_upper <- ci[[paste0("crp_", outcome, "_upper")]]
+
+    if (!is.null(ctrl_lower) && !all(is.na(ctrl_lower))) {
+      ci_ctrl_df <- data.frame(time = time_points, lower = ctrl_lower, upper = ctrl_upper)
+      p <- p + geom_ribbon(data = ci_ctrl_df, aes(x = time, ymin = lower, ymax = upper),
+                           fill = "gray50", alpha = 0.15)
+    }
+    if (!is.null(crp_lower) && !all(is.na(crp_lower))) {
+      ci_crp_df <- data.frame(time = time_points, lower = crp_lower, upper = crp_upper)
+      p <- p + geom_ribbon(data = ci_crp_df, aes(x = time, ymin = lower, ymax = upper),
+                           fill = "#E69F00", alpha = 0.15)
     }
   }
 
-  # Biomarker strategy from each model type
-  weighted_name <- paste0(biomarker, "_weighted")
-  for (model_type in model_types_subset) {
-    for (dist in c("gamma", "weibullph")) {
-      pred <- multi_predictions[[dist]][[model_type]][[weighted_name]]
-      if (!is.null(pred)) {
-        strategy_data <- rbind(strategy_data, data.frame(
-          time = time_points,
-          os = pred$os,
-          strategy = paste(strategy_prefix, "-", model_labels_short[model_type]),
-          distribution = dist
-        ))
-      }
-    }
+  # Layer 2: Parametric base-case curves (solid lines)
+  p <- p +
+    geom_line(data = plot_df, aes(x = time, y = surv, color = group), linewidth = 0.8)
+
+  # Layer 3: KM overlay (step functions)
+  km_ctrl <- km_data_list[[km_ctrl_key]]
+  km_crp <- km_data_list[[km_crp_key]]
+
+  if (!is.null(km_ctrl) && nrow(km_ctrl) > 0) {
+    km_ctrl$group <- "Control"
+    p <- p + geom_step(data = km_ctrl, aes(x = time, y = surv, color = group),
+                       linetype = "dashed", linewidth = 0.4, alpha = 0.7)
+  }
+  if (!is.null(km_crp) && nrow(km_crp) > 0) {
+    km_crp$group <- "CRP Strategy"
+    p <- p + geom_step(data = km_crp, aes(x = time, y = surv, color = group),
+                       linetype = "dashed", linewidth = 0.4, alpha = 0.7)
   }
 
-  strategy_data$strategy <- factor(strategy_data$strategy, levels = factor_levels)
-
-  ggplot(strategy_data, aes(x = time, y = os,
-                             color = strategy, linetype = distribution)) +
-    geom_line(linewidth = 0.8) +
-    scale_color_manual(values = color_scheme, name = "Strategy") +
-    scale_linetype_manual(values = c("gamma" = "solid", "weibullph" = "dashed"),
-                          labels = c("Gamma", "Weibull PH"),
-                          name = "Distribution") +
+  # Formatting
+  p <- p +
+    scale_color_manual(values = strategy_colors, name = NULL) +
     scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
-    scale_x_continuous(breaks = seq(0, max(time_points), by = 104),
-                       labels = function(x) x / 52) +
-    labs(x = "Time (years)", y = "Overall Survival",
-         title = paste(strategy_prefix, "Strategy")) +
-    theme(legend.position = "bottom",
-          legend.box = "vertical",
-          legend.margin = margin(t = 0, b = 0),
-          legend.title = element_text(size = 8),
-          legend.text = element_text(size = 7),
-          plot.title = element_text(size = 11)) +
-    guides(color = guide_legend(order = 1, nrow = 2, byrow = TRUE),
-           linetype = guide_legend(order = 2))
+    scale_x_continuous(
+      breaks = seq(0, max(time_points), by = 104),
+      labels = function(x) x / 52
+    ) +
+    labs(x = "Time (years)", y = outcome_label,
+         title = model_display[model_name]) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold", hjust = 0.5),
+      panel.grid.minor = element_blank()
+    )
+
+  if (show_legend) {
+    p <- p + theme(legend.position = "bottom",
+                   legend.text = element_text(size = 8))
+  } else {
+    p <- p + theme(legend.position = "none")
+  }
+
+  return(p)
 }
 
-p_crp_os <- create_os_plot(
-  biomarker = "crp",
-  model_types_subset = c("A", "B_crp", "C_crp"),
-  color_scheme = c(
-    "Control" = "gray50",
-    "CRP - Model A" = "#E69F00",
-    "CRP - Model B-CRP" = "#56B4E9",
-    "CRP - Model C-CRP" = "#0072B2"
-  ),
-  strategy_prefix = "CRP",
-  factor_levels = c("Control", "CRP - Model A", "CRP - Model B-CRP", "CRP - Model C-CRP")
-)
-
-# NOTE: Model B excludes TLR - only Model A and Model C include TLR
-p_tlr_os <- create_os_plot(
-  biomarker = "tlr",
-  model_types_subset = c("A", "C_tlr"),
-  color_scheme = c(
-    "Control" = "gray50",
-    "TLR - Model A" = "#E69F00",
-    "TLR - Model C-TLR" = "#D55E00"
-  ),
-  strategy_prefix = "TLR",
-  factor_levels = c("Control", "TLR - Model A", "TLR - Model C-TLR")
-)
-
-p_tmb_os <- create_os_plot(
-  biomarker = "tmb_braf",
-  model_types_subset = c("A", "B_tmb", "C_tmb"),
-  color_scheme = c(
-    "Control" = "gray50",
-    "TMB - Model A" = "#E69F00",
-    "TMB - Model B-TMB" = "#F0E442",
-    "TMB - Model C-TMB" = "#CC79A7"
-  ),
-  strategy_prefix = "TMB",
-  factor_levels = c("Control", "TMB - Model A", "TMB - Model B-TMB", "TMB - Model C-TMB")
-)
+# Generate all 6 panels
+panels <- list()
+for (model_name in c("A", "B", "C")) {
+  for (outcome in c("os", "pfs")) {
+    key <- paste0(model_name, "_", outcome)
+    panels[[key]] <- create_survival_panel(model_name, outcome, show_legend = FALSE)
+  }
+}
 ```
 
-```{r combined-figure, fig.width=10, fig.height=10}
-combined_plot <- plot_grid(
-  p_crp_os, p_tlr_os,
-  p_tmb_os, NULL,
-  ncol = 2, nrow = 2,
-  labels = c("A", "B", "C", ""),
+```{r combined-figure, fig.width=12, fig.height=8}
+# Extract a shared legend from one panel
+legend_panel <- create_survival_panel("A", "os", show_legend = TRUE)
+shared_legend <- cowplot::get_legend(legend_panel)
+
+# Assemble 3 columns x 2 rows grid
+plot_grid_main <- plot_grid(
+  panels$A_os, panels$B_os, panels$C_os,
+  panels$A_pfs, panels$B_pfs, panels$C_pfs,
+  ncol = 3, nrow = 2,
+  labels = c("A", "B", "C", "D", "E", "F"),
   label_size = 14
+)
+
+# Add shared legend at bottom
+combined_plot <- plot_grid(
+  plot_grid_main, shared_legend,
+  ncol = 1, rel_heights = c(1, 0.05)
 )
 
 print(combined_plot)
@@ -369,8 +440,8 @@ if (!dir.exists(figs_dir)) {
 ggsave(
   filename = here("figs", "figure1.png"),
   plot = combined_plot,
-  width = 10,
-  height = 10,
+  width = 12,
+  height = 8,
   dpi = 300,
   bg = "white"
 )

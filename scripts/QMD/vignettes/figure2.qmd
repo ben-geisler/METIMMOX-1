@@ -1,5 +1,5 @@
 ---
-title: "Figure 2: Cost-Effectiveness Planes"
+title: "Figure 2: Tornado Diagram"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -25,8 +25,7 @@ knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
-  here, ggplot2, dplyr, scales, cowplot, dampack,
-  flexsurv, survival
+  here, ggplot2, dplyr, scales, flexsurv, survival
 )
 
 theme_set(theme_minimal() +
@@ -40,93 +39,243 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-analysis-scripts, include=FALSE}
-# Source required analysis scripts
+# Source required analysis scripts for Model B (focused)
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
 }))
+
+# Force Model B (focused)
+MODEL_STRUCTURE <- 1
 
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
 }))
 
-# Source helper functions
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/08_sampling.R"))
+}))
+
+# Source model functions
 source(here("scripts/R/functions/model_fun.R"))
 source(here("scripts/R/functions/calculate_outcomes.R"))
-source(here("scripts/R/functions/multi_model_cea.R"))
+source(here("scripts/R/functions/prediction_functions.R"))
 ```
 
-```{r run-basecase-analyses, include=FALSE}
-# Run base case analysis for all three model structures
-cat("Running base case analyses for all model structures...\n")
+```{r run-dsa, include=FALSE}
+# Define DSA parameters for Model B (excludes p_tlr)
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+              "c_test_blood", "c_other_visit", "c_other_baseline",
+              "c_other_follow", "c_other_last", "u_np", "u_p",
+              "p_crp", "p_tmb_braf")
 
-all_model_results <- run_all_basecase_analyses(verbose = TRUE)
-
-cat("\nAll base case analyses complete.\n")
-```
-
-```{r create-ce-planes, include=FALSE}
-# Extract results for each model
-result_A <- all_model_results$Model_A
-result_B <- all_model_results$Model_B
-result_C <- all_model_results$Model_C
-
-# Create CE plane plots using dampack
-# dampack::plot returns ggplot objects that can be customized
-
-ce_plot_A <- plot(result_A$icer_obj,
-                  txtsize = 8,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all") +
-  ggtitle("Model A: Joint") +
-  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
-
-ce_plot_B <- plot(result_B$icer_obj,
-                  txtsize = 8,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all") +
-  ggtitle("Model B: Focused") +
-  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
-
-ce_plot_C <- plot(result_C$icer_obj,
-                  txtsize = 8,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all") +
-  ggtitle("Model C: Separate") +
-  theme(plot.title = element_text(size = 11, face = "bold", hjust = 0.5))
-```
-
-```{r combined-figure, fig.width=10, fig.height=10}
-# Combine into 2x2 grid (3 plots + empty space)
-combined_plot <- plot_grid(
-  ce_plot_A, ce_plot_B,
-  ce_plot_C, NULL,
-  ncol = 2, nrow = 2,
-  labels = c("A", "B", "C", ""),
-  label_size = 14
+# Calculate min/max ranges (+/- 20%)
+dsa_ranges <- data.frame(
+  pars = dsa_pars,
+  min = unlist(l_params_base[dsa_pars]) * (1 - DSA_mult),
+  max = unlist(l_params_base[dsa_pars]) * (1 + DSA_mult),
+  stringsAsFactors = FALSE
 )
 
-print(combined_plot)
+# Cap utility values at 1.0
+for (param in c("u_np", "u_p")) {
+  idx <- which(dsa_ranges$pars == param)
+  if (length(idx) > 0) dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
+}
+
+# Cap prevalence values between 0 and 1
+for (param in c("p_crp", "p_tmb_braf")) {
+  idx <- which(dsa_ranges$pars == param)
+  if (length(idx) > 0) {
+    dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
+    dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
+  }
+}
+
+# Ensure cost parameters are non-negative
+cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+                 "c_test_blood", "c_other_visit", "c_other_baseline",
+                 "c_other_follow", "c_other_last")
+for (param in cost_params) {
+  idx <- which(dsa_ranges$pars == param)
+  if (length(idx) > 0) dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0)
+}
+
+# Run base case
+cat("Running base case...\n")
+base_result <- model_fun(l_params_base)
+base_result$NMB <- base_result$Effect * WTP - base_result$Cost
+base_inmb <- base_result$NMB[base_result$Strategy == "crp"] -
+             base_result$NMB[base_result$Strategy == "control"]
+
+cat("Base case iNMB (CRP vs Control):", round(base_inmb), "EUR\n")
+
+# Run DSA: compute incremental NMB (CRP - Control) for each parameter variation
+tornado_data <- data.frame()
+
+for (i in 1:nrow(dsa_ranges)) {
+  param_name <- dsa_ranges$pars[i]
+  cat("Testing:", param_name, "\n")
+
+  for (val_type in c("min", "max")) {
+    params_varied <- l_params_base
+    params_varied[[param_name]] <- dsa_ranges[[val_type]][i]
+
+    result <- model_fun(params_varied)
+    result$NMB <- result$Effect * WTP - result$Cost
+
+    inmb <- result$NMB[result$Strategy == "crp"] -
+            result$NMB[result$Strategy == "control"]
+
+    tornado_data <- rbind(tornado_data, data.frame(
+      Parameter = param_name,
+      Value = val_type,
+      inmb = inmb,
+      inmb_diff = inmb - base_inmb,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# Assign parameter groups
+group_map <- list(
+  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
+  test_costs = c("c_test_NGS", "c_test_CT", "c_test_blood"),
+  other_costs = c("c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last"),
+  utilities = c("u_np", "u_p"),
+  prevalence = c("p_crp", "p_tmb_braf")
+)
+
+tornado_data$group <- sapply(tornado_data$Parameter, function(p) {
+  for (g in names(group_map)) {
+    if (p %in% group_map[[g]]) return(g)
+  }
+  return("other")
+})
+
+# Pivot to wide format for tornado plot
+tornado_wide <- data.frame()
+for (param in unique(tornado_data$Parameter)) {
+  min_row <- tornado_data[tornado_data$Parameter == param & tornado_data$Value == "min", ]
+  max_row <- tornado_data[tornado_data$Parameter == param & tornado_data$Value == "max", ]
+
+  if (nrow(min_row) > 0 && nrow(max_row) > 0) {
+    tornado_wide <- rbind(tornado_wide, data.frame(
+      Parameter = param,
+      Min_diff = min_row$inmb_diff,
+      Max_diff = max_row$inmb_diff,
+      Range = max(abs(min_row$inmb_diff), abs(max_row$inmb_diff)),
+      group = min_row$group,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# Order by impact
+tornado_wide <- tornado_wide[order(tornado_wide$Range), ]
+tornado_wide$Parameter <- factor(tornado_wide$Parameter, levels = tornado_wide$Parameter)
+
+cat("DSA complete.", nrow(tornado_wide), "parameters tested.\n")
+```
+
+```{r create-tornado, fig.width=9, fig.height=7}
+if (nrow(tornado_wide) > 0) {
+  # Parameter group colors for y-axis labels
+  group_colors <- c(
+    "drug_costs" = "#E41A1C",
+    "test_costs" = "#377EB8",
+    "other_costs" = "#4DAF4A",
+    "utilities" = "#984EA3",
+    "prevalence" = "#FF7F00"
+  )
+
+  label_colors <- group_colors[tornado_wide$group]
+  label_colors[is.na(label_colors)] <- "black"
+
+  # Friendly parameter labels
+  param_labels <- c(
+    "c_drug_nivo" = "Nivolumab cost",
+    "c_drug_FLOX" = "FLOX cost",
+    "c_test_NGS" = "NGS test cost",
+    "c_test_CT" = "CT scan cost",
+    "c_test_blood" = "Blood test cost",
+    "c_other_visit" = "Visit cost",
+    "c_other_baseline" = "Baseline cost",
+    "c_other_follow" = "Follow-up cost",
+    "c_other_last" = "End-of-life cost",
+    "u_np" = "Utility (progression-free)",
+    "u_p" = "Utility (progressed)",
+    "p_crp" = "CRP prevalence",
+    "p_tmb_braf" = "TMB/BRAF prevalence"
+  )
+
+  tornado_wide$Label <- ifelse(
+    tornado_wide$Parameter %in% names(param_labels),
+    param_labels[as.character(tornado_wide$Parameter)],
+    as.character(tornado_wide$Parameter)
+  )
+  tornado_wide$Label <- factor(tornado_wide$Label,
+                               levels = tornado_wide$Label[order(tornado_wide$Range)])
+
+  p_tornado <- ggplot(tornado_wide) +
+    geom_col(aes(x = Label, y = Min_diff),
+             fill = "steelblue", alpha = 0.8, width = 0.7) +
+    geom_col(aes(x = Label, y = Max_diff),
+             fill = "darkred", alpha = 0.8, width = 0.7) +
+    coord_flip() +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    labs(
+      x = NULL,
+      y = "Change in Incremental NMB (EUR)"
+    ) +
+    scale_y_continuous(
+      labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")
+    ) +
+    # Annotate base case iNMB
+    annotate("text",
+      x = 0.5, y = max(abs(c(tornado_wide$Min_diff, tornado_wide$Max_diff))) * 0.6,
+      label = paste0("Base case iNMB = \u20AC", format(round(base_inmb), big.mark = ",")),
+      size = 3, hjust = 0, color = "gray30"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_text(size = 10, color = label_colors),
+      axis.text.x = element_text(size = 10),
+      axis.title = element_text(size = 11),
+      panel.grid.minor = element_blank()
+    )
+
+  print(p_tornado)
+} else {
+  cat("DSA results not available.\n")
+}
 ```
 
 ```{r save-figure, include=FALSE}
-figs_dir <- here("figs")
-if (!dir.exists(figs_dir)) {
-  dir.create(figs_dir, recursive = TRUE)
+if (nrow(tornado_wide) > 0) {
+  figs_dir <- here("figs")
+  if (!dir.exists(figs_dir)) {
+    dir.create(figs_dir, recursive = TRUE)
+  }
+
+  ggsave(
+    filename = here("figs", "figure2.png"),
+    plot = p_tornado,
+    width = 9,
+    height = 7,
+    dpi = 300,
+    bg = "white"
+  )
+
+  cat("Figure saved to:", here("figs", "figure2.png"), "\n")
 }
-
-ggsave(
-  filename = here("figs", "figure2.png"),
-  plot = combined_plot,
-  width = 10,
-  height = 10,
-  dpi = 300,
-  bg = "white"
-)
-
-cat("Figure saved to:", here("figs", "figure2.png"), "\n")
 ```
 
 Figure 2 has been saved to `figs/figure2.png`.

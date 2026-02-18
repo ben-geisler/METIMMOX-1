@@ -1,5 +1,5 @@
 ---
-title: "Figure 3: PSA Cost-Effectiveness Scatter Plots"
+title: "Figure 3: Cost-Effectiveness Plane"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -25,7 +25,7 @@ knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
-  here, ggplot2, dplyr, scales, cowplot
+  here, ggplot2, dplyr, scales
 )
 
 theme_set(theme_minimal() +
@@ -39,116 +39,106 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-# Source helper functions for model configs
-source(here("scripts/R/functions/multi_model_cea.R"))
+# Load PSA cache for Model B (focused)
+cache_file <- here("data", "tidy", "psa_obj_focused.rds")
 
-# Get model configurations
-model_configs <- get_model_configs()
-
-# Load PSA cache files for all model structures
-all_psa_results <- list()
-
-for (model_name in names(model_configs)) {
-  config <- model_configs[[model_name]]
-  model_label <- c("joint", "focused", "separate")[config$structure + 1]
-
-  cache_file <- here("data", "tidy", paste0("psa_obj_", model_label, ".rds"))
-
-  if (file.exists(cache_file)) {
-    all_psa_results[[model_name]] <- readRDS(cache_file)
-    cat("Loaded PSA cache for", model_label, "model\n")
-  } else {
-    warning("PSA cache not found: ", cache_file)
-  }
+if (file.exists(cache_file)) {
+  psa_obj <- readRDS(cache_file)
+  cat("Loaded PSA cache for Model B (focused):",
+      psa_obj$n_sim, "iterations,",
+      length(psa_obj$strategies), "strategies\n")
+  psa_available <- TRUE
+} else {
+  warning("PSA cache not found: ", cache_file,
+          "\nPlease run script 12_PSA.R first.")
+  psa_available <- FALSE
 }
-
-psa_available <- length(all_psa_results) > 0
 ```
 
-```{r build-scatter-data, include=FALSE}
-# Build PSA scatter data for all models
-psa_scatter_data <- data.frame()
+```{r build-incremental-data, include=FALSE}
+scatter_data <- data.frame()
 
 if (psa_available) {
-  for (model_name in names(all_psa_results)) {
-    psa_obj <- all_psa_results[[model_name]]
-    config <- model_configs[[model_name]]
+  cost_df <- as.data.frame(psa_obj$cost)
+  effect_df <- as.data.frame(psa_obj$effect)
 
-    if (is.null(psa_obj)) next
-
-    # Extract cost and effect matrices
-    cost_df <- as.data.frame(psa_obj$cost)
-    effect_df <- as.data.frame(psa_obj$effect)
-
-    for (strategy in psa_obj$strategies) {
-      scatter_df <- data.frame(
-        Cost = cost_df[[strategy]],
-        Effect = effect_df[[strategy]],
-        Strategy = strategy,
-        Model = config$label,
-        stringsAsFactors = FALSE
-      )
-      psa_scatter_data <- rbind(psa_scatter_data, scatter_df)
-    }
+  # Compute incremental cost and effect relative to control
+  for (strategy in setdiff(psa_obj$strategies, "control")) {
+    inc_df <- data.frame(
+      inc_effect = effect_df[[strategy]] - effect_df[["control"]],
+      inc_cost = cost_df[[strategy]] - cost_df[["control"]],
+      Strategy = strategy,
+      stringsAsFactors = FALSE
+    )
+    scatter_data <- rbind(scatter_data, inc_df)
   }
 
-  # Create cleaner strategy labels
+  # Strategy labels
   strategy_labels <- c(
-    "control" = "Control (FLOX only)",
     "crp" = "CRP Strategy",
     "tlr" = "TLR Strategy",
     "tmb_braf" = "TMB/BRAF Strategy"
   )
 
-  psa_scatter_data$Strategy <- factor(
-    psa_scatter_data$Strategy,
+  scatter_data$Strategy <- factor(
+    scatter_data$Strategy,
     levels = names(strategy_labels),
     labels = strategy_labels
-  )
-
-  # Order model facets
-  psa_scatter_data$Model <- factor(
-    psa_scatter_data$Model,
-    levels = c("Model A: Joint", "Model B: Focused", "Model C: Separate")
   )
 }
 ```
 
-```{r create-scatter-plot, fig.width=10, fig.height=8}
-if (nrow(psa_scatter_data) > 0) {
-  # Define colors for strategies
+```{r create-ce-plane, fig.width=9, fig.height=8}
+if (nrow(scatter_data) > 0) {
   strategy_colors <- c(
-    "Control (FLOX only)" = "gray50",
     "CRP Strategy" = "#E69F00",
     "TLR Strategy" = "#009E73",
     "TMB/BRAF Strategy" = "#0072B2"
   )
 
-  p_scatter <- ggplot(psa_scatter_data, aes(x = Effect, y = Cost, color = Strategy)) +
-    geom_point(alpha = 0.3, size = 0.5) +
-    facet_wrap(~Model, ncol = 2) +
-    scale_y_continuous(labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")) +
+  WTP <- 51000
+
+  p_ce <- ggplot(scatter_data, aes(x = inc_effect, y = inc_cost, color = Strategy)) +
+    geom_point(alpha = 0.2, size = 0.5) +
+    # WTP threshold line (y = WTP * x)
+    geom_abline(intercept = 0, slope = WTP, linetype = "dashed",
+                color = "black", linewidth = 0.6) +
+    # Origin reference lines
+    geom_hline(yintercept = 0, color = "gray70", linewidth = 0.3) +
+    geom_vline(xintercept = 0, color = "gray70", linewidth = 0.3) +
+    scale_y_continuous(
+      labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")
+    ) +
+    scale_x_continuous(
+      labels = scales::number_format(accuracy = 0.01)
+    ) +
     scale_color_manual(values = strategy_colors, name = "Strategy") +
     labs(
-      x = "Effectiveness (QALYs)",
-      y = "Total Cost (EUR)"
+      x = "Incremental Effectiveness (QALYs)",
+      y = "Incremental Cost (EUR)"
+    ) +
+    # WTP label
+    annotate("text",
+      x = max(scatter_data$inc_effect, na.rm = TRUE) * 0.65,
+      y = max(scatter_data$inc_effect, na.rm = TRUE) * 0.65 * WTP,
+      label = paste0("WTP = \u20AC", format(WTP, big.mark = ","), "/QALY"),
+      size = 3.2, hjust = 0, vjust = -0.5, color = "black"
     ) +
     theme_minimal() +
     theme(
       legend.position = "bottom",
-      strip.text = element_text(size = 11, face = "bold"),
       panel.grid.minor = element_blank()
     ) +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 3), nrow = 1))
 
-  print(p_scatter)
+  print(p_ce)
 } else {
   cat("PSA results not available. Please run script 12_PSA.R first.\n")
 }
 ```
 
 ```{r save-figure, include=FALSE}
-if (nrow(psa_scatter_data) > 0) {
+if (nrow(scatter_data) > 0) {
   figs_dir <- here("figs")
   if (!dir.exists(figs_dir)) {
     dir.create(figs_dir, recursive = TRUE)
@@ -156,8 +146,8 @@ if (nrow(psa_scatter_data) > 0) {
 
   ggsave(
     filename = here("figs", "figure3.png"),
-    plot = p_scatter,
-    width = 10,
+    plot = p_ce,
+    width = 9,
     height = 8,
     dpi = 300,
     bg = "white"

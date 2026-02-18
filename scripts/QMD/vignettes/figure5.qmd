@@ -1,0 +1,198 @@
+---
+title: "Figure 5: EVPPI by Parameter Group"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, ggplot2, dplyr, scales
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-data, include=FALSE}
+cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+
+if (file.exists(cache_file)) {
+  evppi_cache <- readRDS(cache_file)
+  evppi_all <- evppi_cache$evppi_all_scenarios
+  cat("Loaded scenario EVPPI results:", nrow(evppi_all), "rows\n")
+  cat("Available scenarios:", paste(unique(evppi_all$scenario_id), collapse = ", "), "\n")
+  cat("Available models:", paste(unique(evppi_all$model_label), collapse = ", "), "\n")
+  cat("Available parameters:", paste(unique(evppi_all$parameter), collapse = ", "), "\n")
+  data_available <- TRUE
+} else {
+  warning("Scenario EVPPI cache not found: ", cache_file,
+          "\nPlease run script 14_scenario_EVPPIs.R first.")
+  data_available <- FALSE
+}
+```
+
+```{r build-grouped-data, include=FALSE}
+evppi_grouped <- data.frame()
+
+if (data_available) {
+  # Filter to Model B (focused) and the 3 target scenarios
+  target_scenarios <- c("base", "s1_decreased_nivo", "s2_wtp100k")
+
+  scenario_labels <- c(
+    "base" = "Base case\n(\u20AC51,000/QALY)",
+    "s1_decreased_nivo" = "Biosimilar pricing\n(\u20AC51,000/QALY)",
+    "s2_wtp100k" = "Elevated threshold\n(\u20AC100,000/QALY)"
+  )
+
+  # Map individual parameters to publication groups
+  # Interaction coefficients -> "Biomarker x Treatment interaction"
+  # Prevalence parameters -> "Biomarker prevalence"
+  # Drug costs -> "Drug costs"
+  # Utilities -> "Utilities"
+  interaction_params <- c("b_crp_rx_os", "b_crp_rx_pfs",
+                          "b_tlr_rx_os", "b_tlr_rx_pfs",
+                          "b_tmb_braf_rx_os", "b_tmb_braf_rx_pfs")
+  prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+  drug_cost_params <- c("c_drug_nivo", "c_drug_FLOX")
+  utility_params <- c("u_np", "u_p")
+
+  evppi_filtered <- evppi_all %>%
+    filter(model_label == "focused",
+           scenario_id %in% target_scenarios)
+
+  # Check for [GROUP] entries first, otherwise use individual parameters
+  has_groups <- any(grepl("^\\[GROUP\\]", evppi_filtered$parameter))
+
+  if (has_groups) {
+    # Use [GROUP] entries where available
+    group_mapping <- c(
+      "[GROUP] interaction_crp" = "Biomarker x Treatment interaction",
+      "[GROUP] interaction_tlr" = "Biomarker x Treatment interaction",
+      "[GROUP] interaction_tmb_braf" = "Biomarker x Treatment interaction",
+      "[GROUP] drug_costs" = "Drug costs",
+      "[GROUP] utilities" = "Utilities",
+      "[GROUP] prevalence" = "Biomarker prevalence"
+    )
+
+    evppi_mapped <- evppi_filtered %>%
+      filter(parameter %in% names(group_mapping)) %>%
+      mutate(param_group = group_mapping[parameter])
+  } else {
+    # Fall back to individual parameters
+    evppi_mapped <- evppi_filtered %>%
+      mutate(param_group = case_when(
+        parameter %in% interaction_params ~ "Biomarker x Treatment interaction",
+        parameter %in% prevalence_params ~ "Biomarker prevalence",
+        parameter %in% drug_cost_params ~ "Drug costs",
+        parameter %in% utility_params ~ "Utilities",
+        TRUE ~ NA_character_
+      )) %>%
+      filter(!is.na(param_group))
+  }
+
+  # Aggregate within groups (sum individual EVPPIs)
+  evppi_grouped <- evppi_mapped %>%
+    group_by(param_group, scenario_id) %>%
+    summarise(
+      evppi_pop = sum(evppi_population_millions, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      scenario_label = factor(
+        scenario_labels[scenario_id],
+        levels = scenario_labels
+      )
+    )
+
+  cat("Grouped EVPPI data:", nrow(evppi_grouped), "rows\n")
+  cat("Parameter groups:", paste(unique(evppi_grouped$param_group), collapse = ", "), "\n")
+}
+```
+
+```{r create-evppi-plot, fig.width=9, fig.height=6}
+if (nrow(evppi_grouped) > 0) {
+  # Order parameter groups by total EVPPI (descending)
+  group_order <- evppi_grouped %>%
+    group_by(param_group) %>%
+    summarise(total = sum(evppi_pop), .groups = "drop") %>%
+    arrange(total) %>%
+    pull(param_group)
+
+  evppi_grouped$param_group <- factor(evppi_grouped$param_group, levels = group_order)
+
+  scenario_colors <- c(
+    "Base case\n(\u20AC51,000/QALY)" = "#66C2A5",
+    "Biosimilar pricing\n(\u20AC51,000/QALY)" = "#FC8D62",
+    "Elevated threshold\n(\u20AC100,000/QALY)" = "#8DA0CB"
+  )
+
+  p_evppi <- ggplot(evppi_grouped,
+                    aes(x = param_group, y = evppi_pop, fill = scenario_label)) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    coord_flip() +
+    scale_y_continuous(labels = function(x) paste0("\u20AC", format(x, big.mark = ","), "M")) +
+    scale_fill_manual(values = scenario_colors, name = "Scenario") +
+    labs(
+      x = NULL,
+      y = "Population EVPPI (EUR millions)"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank(),
+      axis.text.y = element_text(size = 10)
+    ) +
+    guides(fill = guide_legend(nrow = 1))
+
+  print(p_evppi)
+} else {
+  cat("EVPPI data not available. Please run script 14_scenario_EVPPIs.R first.\n")
+}
+```
+
+```{r save-figure, include=FALSE}
+if (nrow(evppi_grouped) > 0) {
+  figs_dir <- here("figs")
+  if (!dir.exists(figs_dir)) {
+    dir.create(figs_dir, recursive = TRUE)
+  }
+
+  ggsave(
+    filename = here("figs", "figure5.png"),
+    plot = p_evppi,
+    width = 9,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+
+  cat("Figure saved to:", here("figs", "figure5.png"), "\n")
+}
+```
+
+Figure 5 has been saved to `figs/figure5.png`.

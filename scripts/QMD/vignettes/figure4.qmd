@@ -39,68 +39,73 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-# Load PSA cache files for all model structures
-model_labels <- c("joint", "focused", "separate")
-model_display_labels <- c("Model A: Joint", "Model B: Focused", "Model C: Separate")
+# Panel A: Model B (focused) - base case pricing
+psa_B_file <- here("data", "tidy", "psa_obj_focused.rds")
+# Panel B: Model A (joint) - base case pricing
+psa_A_file <- here("data", "tidy", "psa_obj_joint.rds")
+# Panel C: Model B (focused) - biosimilar pricing (from scenario EVPPI cache)
+scenario_cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
 
-all_psa_results <- list()
+psa_B <- if (file.exists(psa_B_file)) readRDS(psa_B_file) else NULL
+psa_A <- if (file.exists(psa_A_file)) readRDS(psa_A_file) else NULL
 
-for (i in seq_along(model_labels)) {
-  model_label <- model_labels[i]
-  cache_file <- here("data", "tidy", paste0("psa_obj_", model_label, ".rds"))
-
-  if (file.exists(cache_file)) {
-    all_psa_results[[model_label]] <- readRDS(cache_file)
-    cat("Loaded PSA cache for", model_label, "model\n")
-  } else {
-    warning("PSA cache not found: ", cache_file)
-  }
+# Extract biosimilar PSA from scenario cache
+psa_biosim <- NULL
+if (file.exists(scenario_cache_file)) {
+  evppi_cache <- readRDS(scenario_cache_file)
+  psa_biosim <- tryCatch(
+    evppi_cache$all_model_scenario_results$focused$s1_decreased_nivo$psa_obj,
+    error = function(e) {
+      cat("Could not extract biosimilar PSA from scenario cache:", e$message, "\n")
+      NULL
+    }
+  )
 }
 
-psa_available <- length(all_psa_results) > 0
-cat("PSA available:", psa_available, "- Loaded", length(all_psa_results), "models\n")
+panels_loaded <- sum(!is.null(psa_B), !is.null(psa_A), !is.null(psa_biosim))
+cat("Loaded", panels_loaded, "of 3 PSA objects\n")
+if (is.null(psa_B)) cat("  Missing: Model B PSA cache\n")
+if (is.null(psa_A)) cat("  Missing: Model A PSA cache\n")
+if (is.null(psa_biosim)) cat("  Missing: Biosimilar scenario PSA (run 14_scenario_EVPPIs.R)\n")
 ```
 
 ```{r calculate-ceacs, include=FALSE}
-# Calculate CEACs for each model and combine into single data frame
 wtp_range <- seq(0, 100000, by = 2000)
-
 ceac_data <- data.frame()
 
-if (psa_available) {
-  for (i in seq_along(model_labels)) {
-    model_label <- model_labels[i]
-    display_label <- model_display_labels[i]
+# Panel A: Model B
+if (!is.null(psa_B)) {
+  ceac_B <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_B), error = function(e) NULL)
+  if (!is.null(ceac_B)) {
+    ceac_B$Panel <- "A: Model B"
+    ceac_data <- rbind(ceac_data, ceac_B)
+  }
+}
 
-    psa_obj <- all_psa_results[[model_label]]
-    if (is.null(psa_obj)) next
+# Panel B: Model A
+if (!is.null(psa_A)) {
+  ceac_A <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_A), error = function(e) NULL)
+  if (!is.null(ceac_A)) {
+    ceac_A$Panel <- "B: Model A"
+    ceac_data <- rbind(ceac_data, ceac_A)
+  }
+}
 
-    # Calculate CEAC using dampack
-    ceac_obj <- tryCatch({
-      dampack::ceac(wtp = wtp_range, psa = psa_obj)
-    }, error = function(e) {
-      cat("CEAC calculation failed for", model_label, ":", e$message, "\n")
-      NULL
-    })
-
-    if (is.null(ceac_obj)) next
-
-    # ceac_obj is a data frame with columns: WTP, Strategy, Proportion, On_Frontier
-    # Add model label and combine
-    ceac_obj$Model <- display_label
-    ceac_data <- rbind(ceac_data, ceac_obj)
+# Panel C: Model B (Biosimilar)
+if (!is.null(psa_biosim)) {
+  ceac_biosim <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_biosim), error = function(e) NULL)
+  if (!is.null(ceac_biosim)) {
+    ceac_biosim$Panel <- "C: Biosimilar pricing (Model B)"
+    ceac_data <- rbind(ceac_data, ceac_biosim)
   }
 }
 
 cat("CEAC data rows:", nrow(ceac_data), "\n")
-if (nrow(ceac_data) > 0) {
-  cat("CEAC columns:", paste(names(ceac_data), collapse = ", "), "\n")
-}
 ```
 
 ```{r create-ceac-plot, fig.width=10, fig.height=12}
 if (nrow(ceac_data) > 0) {
-  # Create cleaner strategy labels
+  # Strategy labels
   strategy_labels <- c(
     "control" = "Control (FLOX only)",
     "crp" = "CRP Strategy",
@@ -114,13 +119,12 @@ if (nrow(ceac_data) > 0) {
     labels = strategy_labels
   )
 
-  # Order model facets
-  ceac_data$Model <- factor(
-    ceac_data$Model,
-    levels = c("Model A: Joint", "Model B: Focused", "Model C: Separate")
+  # Order panels: A (Model B), B (Model A), C (Biosimilar)
+  ceac_data$Panel <- factor(
+    ceac_data$Panel,
+    levels = c("A: Model B", "B: Model A", "C: Biosimilar pricing (Model B)")
   )
 
-  # Define colors for strategies
   strategy_colors <- c(
     "Control (FLOX only)" = "gray50",
     "CRP Strategy" = "#E69F00",
@@ -128,13 +132,14 @@ if (nrow(ceac_data) > 0) {
     "TMB/BRAF Strategy" = "#0072B2"
   )
 
-  # Create the CEAC plot with three panels (one per model)
   ceac_plot <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
     geom_line(linewidth = 0.8) +
-    facet_wrap(~Model, ncol = 1) +
+    facet_wrap(~Panel, ncol = 1) +
     geom_vline(xintercept = 51000, linetype = "dotted", color = "gray40", linewidth = 0.5) +
     scale_x_continuous(
-      labels = scales::label_currency(prefix = "\u20AC", scale = 0.001, suffix = "K", big.mark = ","),
+      labels = scales::label_currency(
+        prefix = "\u20AC", scale = 0.001, suffix = "K", big.mark = ","
+      ),
       breaks = seq(0, 100000, by = 20000)
     ) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
@@ -153,7 +158,7 @@ if (nrow(ceac_data) > 0) {
 
   print(ceac_plot)
 } else {
-  cat("No CEAC data available. Please run script 12_PSA.R first to generate PSA results.\n")
+  cat("No CEAC data available. Please run scripts 12_PSA.R and 14_scenario_EVPPIs.R first.\n")
 }
 ```
 
