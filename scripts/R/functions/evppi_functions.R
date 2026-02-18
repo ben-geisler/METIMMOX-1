@@ -97,7 +97,19 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       param_combinations <- data.frame(param_grids[[1]])
       colnames(param_combinations) <- param_names[1]
     } else {
-      param_combinations <- expand.grid(param_grids)
+      # For multi-parameter groups, expand.grid creates n_grid^d points which is
+      # computationally infeasible (e.g., 500^4 = 62.5 billion for 4 params).
+      # Instead, use a random subsample of the actual PSA parameter combinations
+      # which naturally cover the joint distribution.
+      max_combos <- n_grid  # Cap at n_grid evaluation points
+      all_param_values <- psa_params[complete_rows, param_names, drop = FALSE]
+      if (nrow(all_param_values) > max_combos) {
+        sample_idx <- sample(nrow(all_param_values), max_combos)
+        param_combinations <- all_param_values[sample_idx, , drop = FALSE]
+      } else {
+        param_combinations <- all_param_values
+      }
+      rownames(param_combinations) <- NULL
     }
     
     # Calculate expected NMB for each parameter combination

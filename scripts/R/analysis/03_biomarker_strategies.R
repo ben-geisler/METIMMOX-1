@@ -95,6 +95,8 @@ rm(list = setdiff(ls(), c(
   "p_crp", "p_tlr", "p_tmb_braf",
   # Other essential variables from 02_setup_and_global_variables.R
   "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr",
+  # Population parameters for EVPPI scaling
+  "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
   # Model configuration switches
   "USE_BOTH_MODELS", "MODEL_STRUCTURE",
   # Model config helper functions

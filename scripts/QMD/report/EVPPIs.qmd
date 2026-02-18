@@ -278,6 +278,25 @@ if (needs_generation) {
          "Check the error messages above for details.")
   }
 
+  # Add population-level EVPPI columns before saving
+  if (nrow(all_model_evppi_results) > 0) {
+    all_model_evppi_results <- all_model_evppi_results %>%
+      mutate(
+        evppi_population_millions = calculate_population_evppi(
+          evppi,
+          annual_incidence = annual_incidence_norway,
+          research_horizon = research_horizon_years,
+          discount_rate = discount_rate_research
+        ),
+        evpi_population_millions = calculate_population_evppi(
+          evpi,
+          annual_incidence = annual_incidence_norway,
+          research_horizon = research_horizon_years,
+          discount_rate = discount_rate_research
+        )
+      )
+  }
+
   # Save cache
   evppi_cache <- list(
     all_scenario_results = all_model_scenario_results[[1]],
@@ -693,7 +712,7 @@ for (col in names(base_evppi_pop_display)) {
 
 kable(base_evppi_pop_display,
       col.names = col_names_pop,
-      caption = paste0("Population-level EVPPI results by model structure - Base Case (millions of EUR over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "%, ranked by average importance)"),
+      caption = paste0("Population-level EVPPI results by model structure - Base Case (millions of EUR over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "\\%, ranked by average importance)"),
       booktabs = TRUE,
       align = c("l", rep("r", length(col_names_pop) - 1))) %>%
   kable_styling(latex_options = c("striped", "hold_position", "scale_down"),
@@ -755,21 +774,23 @@ top_param_pop <- base_pop_summary$parameter[1]
 top_value_pop <- base_pop_summary$max_pop_evppi[1]
 
 # Get utility parameters specifically
-utility_pop_evppi <- base_pop_summary %>%
+utility_pop_values <- base_pop_summary %>%
   filter(grepl("^u_|utilities", parameter)) %>%
-  pull(max_pop_evppi) %>%
-  max(na.rm = TRUE)
+  pull(max_pop_evppi)
+utility_pop_evppi <- if (length(utility_pop_values) > 0) max(utility_pop_values, na.rm = TRUE) else NA_real_
 
 cat("### Population-Level Research Value\n\n")
 cat("**Per-Patient Level:** Utility parameters (u_np, u_p) show the highest per-patient EVPPI, ranging from approximately EUR800-1,100 in the base case, while cost parameters show lower EVPPI (typically <EUR200), reflecting less uncertainty in cost estimates.\n\n")
 
-cat("**Population Level:** Scaling to the Norwegian eligible population (", annual_incidence_norway, " patients/year over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "%), utility parameter uncertainty translates to **EUR", sprintf("%.1f", utility_pop_evppi), " million** in potential research value. ", sep = "")
+if (!is.na(utility_pop_evppi) && is.finite(utility_pop_evppi) && utility_pop_evppi > 0) {
+  cat("**Population Level:** Scaling to the Norwegian eligible population (", annual_incidence_norway, " patients/year over ", research_horizon_years, " years, discounted at ", discount_rate_research * 100, "%), utility parameter uncertainty translates to **EUR", sprintf("%.1f", utility_pop_evppi), " million** in potential research value. ", sep = "")
 
-cat("This population-level value provides context for research investment decisions. For example, a study to reduce uncertainty in utility values (e.g., a large-scale quality-of-life measurement study in this patient population) could be justified if its cost is substantially less than EUR", sprintf("%.1f", utility_pop_evppi), " million.\n\n", sep = "")
+  cat("This population-level value provides context for research investment decisions. For example, a study to reduce uncertainty in utility values (e.g., a large-scale quality-of-life measurement study in this patient population) could be justified if its cost is substantially less than EUR", sprintf("%.1f", utility_pop_evppi), " million.\n\n", sep = "")
+}
 
 nivo_pop_evppi <- base_pop_summary$max_pop_evppi[base_pop_summary$parameter == "c_drug_nivo"]
-if (length(nivo_pop_evppi) > 0 && !is.na(nivo_pop_evppi)) {
-  cat("Cost parameters, while showing lower per-patient EVPPI, still represent substantial population-level values (EUR", sprintf("%.1f", nivo_pop_evppi), " million for nivolumab cost), particularly relevant for market access negotiations and price negotiations.\n\n", sep = "")
+if (length(nivo_pop_evppi) > 0 && !is.na(nivo_pop_evppi[1]) && is.finite(nivo_pop_evppi[1]) && nivo_pop_evppi[1] > 0) {
+  cat("Cost parameters, while showing lower per-patient EVPPI, still represent substantial population-level values (EUR", sprintf("%.1f", nivo_pop_evppi[1]), " million for nivolumab cost), particularly relevant for market access negotiations and price negotiations.\n\n", sep = "")
 }
 ```
 
