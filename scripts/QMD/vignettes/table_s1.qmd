@@ -1,0 +1,111 @@
+---
+title: "Table S1: Baseline Patient Characteristics"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra, tableone
+)
+```
+
+```{r load-data, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+                                               "tmb_braf", "OSwk", "Death",
+                                               "PFSwk", "Progression")]), ]
+
+cat("Patients with complete data:", nrow(data_complete), "\n")
+cat("Treatment arms:", paste(levels(data_complete$Rx), collapse = ", "), "\n")
+```
+
+```{r build-table, include=FALSE}
+# Prepare variables for tableone
+table_data <- data_complete %>%
+  mutate(
+    `Treatment Arm` = Rx,
+    `Age (years)` = Age,
+    Sex = ifelse(as.numeric(as.character(sex)) == 1, "Male", "Female"),
+    `CRP-positive (<5 mg/L)` = ifelse(as.numeric(as.character(crp)) == 1, "Yes", "No"),
+    `TLR-positive (>=10%)` = ifelse(as.numeric(as.character(tlr)) == 1, "Yes", "No"),
+    `TMB/BRAF-positive` = ifelse(as.numeric(as.character(tmb_braf)) == 1, "Yes", "No"),
+    `OS (weeks)` = OSwk,
+    `Death event` = factor(Death, levels = c(0, 1), labels = c("No", "Yes")),
+    `PFS (weeks)` = PFSwk,
+    `Progression event` = factor(Progression, levels = c(0, 1), labels = c("No", "Yes"))
+  )
+
+vars <- c("Age (years)", "Sex",
+          "CRP-positive (<5 mg/L)", "TLR-positive (>=10%)", "TMB/BRAF-positive",
+          "OS (weeks)", "Death event", "PFS (weeks)", "Progression event")
+
+cat_vars <- c("Sex", "CRP-positive (<5 mg/L)", "TLR-positive (>=10%)",
+              "TMB/BRAF-positive", "Death event", "Progression event")
+
+tab1 <- CreateTableOne(
+  vars = vars,
+  strata = "Treatment Arm",
+  data = table_data,
+  factorVars = cat_vars,
+  addOverall = TRUE
+)
+
+tab1_df <- print(tab1, showAllLevels = TRUE, quote = FALSE,
+                 noSpaces = TRUE, printToggle = FALSE)
+```
+
+```{r display-table}
+kable(tab1_df,
+      caption = "Table S1: Baseline patient characteristics by treatment arm",
+      format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Data from METIMMOX trial (NCT03388190). n=65 patients with complete biomarker data.",
+      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
+      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L); TLR-positive (>=10% reduction at first assessment); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E)."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+write.csv(tab1_df, file = here("tables", "table_s1.csv"))
+cat("Table saved to:", here("tables", "table_s1.csv"), "\n")
+```
+
+Table S1 has been saved to `tables/table_s1.csv`.

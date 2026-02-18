@@ -1,0 +1,241 @@
+---
+title: "Table S6: Biomarker-Enriched Population Results"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra, scales, dampack,
+  flexsurv, survival
+)
+```
+
+```{r load-analysis, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+source(here("scripts/R/functions/model_fun.R"))
+source(here("scripts/R/functions/calculate_outcomes.R"))
+source(here("scripts/R/functions/prediction_functions.R"))
+source(here("scripts/R/functions/multi_model_cea.R"))
+```
+
+```{r run-enriched-analysis, include=FALSE}
+# Run enriched population analysis for all model structures
+# For each biomarker, compare experimental treatment vs control
+# within the biomarker-positive subgroup only
+
+model_configs_list <- list(
+  list(structure = 0, label = "Model A"),
+  list(structure = 1, label = "Model B"),
+  list(structure = 2, label = "Model C")
+)
+
+biomarker_labels <- c(
+  crp = "CRP-positive",
+  tlr = "TLR-positive",
+  tmb_braf = "TMB/BRAF-positive"
+)
+
+enriched_results <- data.frame()
+
+for (mc in model_configs_list) {
+  MODEL_STRUCTURE <<- mc$structure
+
+  suppressMessages(suppressWarnings({
+    source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+    source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  }))
+
+  for (biomarker in names(biomarker_labels)) {
+    # Get enriched population predictions from the predictions object
+    if (!is.null(predictions[[biomarker]]$biomarker_positive)) {
+      bm_pos_os <- predictions[[biomarker]]$biomarker_positive$os
+      bm_pos_pfs <- predictions[[biomarker]]$biomarker_positive$pfs
+    } else {
+      next
+    }
+
+    # Control predictions for these patients
+    ctrl_os <- predictions$control$os
+    ctrl_pfs <- predictions$control$pfs
+
+    # Run model for experimental treatment (enriched: only biomarker+ patients)
+    params_exp <- l_params_base
+    params_exp$p_os <- list(control_OS = ctrl_os)
+    params_exp$p_pfs <- list(control_PFS = ctrl_pfs)
+
+    # We need to compute outcomes for:
+    # 1. Biomarker+ patients on experimental treatment
+    # 2. Biomarker+ patients on control
+
+    # Compute QALYs and costs directly from survival curves
+    dr_costs <- l_params_base$dr_costs
+    dr_effects <- l_params_base$dr_effects
+    th <- l_params_base$time_horizon
+
+    v_dw_c <- 1 / (1 + dr_costs)^(seq(0, th) / 52)
+    v_dw_e <- 1 / (1 + dr_effects)^(seq(0, th) / 52)
+
+    # Enriched experimental arm (biomarker+ on experimental treatment)
+    exp_pf <- bm_pos_pfs
+    exp_os <- bm_pos_os
+    exp_p <- pmax(exp_os - exp_pf, 0)
+    exp_d <- 1 - exp_os
+
+    # Undiscounted QALYs
+    exp_qaly_raw <- sum(exp_pf * l_params_base$u_np + exp_p * l_params_base$u_p) * l_params_base$cl
+    # Discounted QALYs
+    exp_qaly <- sum((exp_pf * l_params_base$u_np + exp_p * l_params_base$u_p) * v_dw_e) * l_params_base$cl
+
+    # Costs for experimental arm
+    exp_cost <- sum((
+      l_params_base$l_nivo * l_params_base$c_drug_nivo +
+      l_params_base$l_FLOX_exp * l_params_base$c_drug_FLOX +
+      l_params_base$l_CT * l_params_base$c_test_CT +
+      l_params_base$l_blood * l_params_base$c_test_blood +
+      l_params_base$l_visit * l_params_base$c_other_visit
+    ) * exp_pf * v_dw_c) * l_params_base$cl +
+      l_params_base$c_other_baseline + l_params_base$c_other_last
+
+    # Add biomarker test costs
+    if (biomarker == "tmb_braf") {
+      exp_cost <- exp_cost + l_params_base$c_test_NGS
+    } else {
+      exp_cost <- exp_cost + l_params_base$c_test_blood
+    }
+
+    # Enriched control arm (biomarker+ on control treatment)
+    ctrl_pf <- ctrl_pfs
+    ctrl_p <- pmax(ctrl_os - ctrl_pf, 0)
+    ctrl_d_state <- 1 - ctrl_os
+
+    ctrl_qaly <- sum((ctrl_pf * l_params_base$u_np + ctrl_p * l_params_base$u_p) * v_dw_e) * l_params_base$cl
+
+    ctrl_cost <- sum((
+      l_params_base$l_FLOX_control * l_params_base$c_drug_FLOX +
+      l_params_base$l_CT * l_params_base$c_test_CT +
+      l_params_base$l_blood * l_params_base$c_test_blood +
+      l_params_base$l_visit * l_params_base$c_other_visit
+    ) * ctrl_pf * v_dw_c) * l_params_base$cl +
+      l_params_base$c_other_baseline + l_params_base$c_other_last
+
+    # Incremental analysis
+    inc_cost <- exp_cost - ctrl_cost
+    inc_qaly <- exp_qaly - ctrl_qaly
+    icer <- if (inc_qaly > 0) inc_cost / inc_qaly else NA
+
+    enriched_results <- rbind(enriched_results, data.frame(
+      Model = mc$label,
+      Biomarker = biomarker_labels[biomarker],
+      Treatment = "Experimental",
+      Cost = exp_cost,
+      QALYs = exp_qaly,
+      stringsAsFactors = FALSE
+    ))
+
+    enriched_results <- rbind(enriched_results, data.frame(
+      Model = mc$label,
+      Biomarker = biomarker_labels[biomarker],
+      Treatment = "Control (FLOX)",
+      Cost = ctrl_cost,
+      QALYs = ctrl_qaly,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+cat("Enriched population results:", nrow(enriched_results), "rows\n")
+```
+
+```{r build-display-table, include=FALSE}
+# Compute incremental results and ICERs
+display_data <- enriched_results %>%
+  group_by(Model, Biomarker) %>%
+  summarise(
+    Exp_Cost = Cost[Treatment == "Experimental"],
+    Ctrl_Cost = Cost[Treatment == "Control (FLOX)"],
+    Exp_QALY = QALYs[Treatment == "Experimental"],
+    Ctrl_QALY = QALYs[Treatment == "Control (FLOX)"],
+    Inc_Cost = Exp_Cost - Ctrl_Cost,
+    Inc_QALY = Exp_QALY - Ctrl_QALY,
+    ICER = ifelse(Inc_QALY > 0, Inc_Cost / Inc_QALY, NA),
+    Status = ifelse(Inc_QALY <= 0 & Inc_Cost > 0, "Dominated",
+             ifelse(Inc_QALY > 0, sprintf("\u20AC%s/QALY", format(round(ICER), big.mark = ",")),
+                    "Dominant")),
+    .groups = "drop"
+  )
+```
+
+```{r display-table}
+display_fmt <- display_data %>%
+  mutate(
+    `Control Cost` = sprintf("\u20AC%s", format(round(Ctrl_Cost), big.mark = ",")),
+    `Control QALYs` = sprintf("%.2f", Ctrl_QALY),
+    `Experimental Cost` = sprintf("\u20AC%s", format(round(Exp_Cost), big.mark = ",")),
+    `Experimental QALYs` = sprintf("%.2f", Exp_QALY),
+    `Inc. Cost` = sprintf("\u20AC%s", format(round(Inc_Cost), big.mark = ",")),
+    `Inc. QALYs` = sprintf("%.3f", Inc_QALY),
+    ICER = Status
+  ) %>%
+  select(Model, Biomarker,
+         `Control Cost`, `Control QALYs`,
+         `Experimental Cost`, `Experimental QALYs`,
+         `Inc. Cost`, `Inc. QALYs`, ICER)
+
+kable(display_fmt,
+      caption = "Table S6: Full cost-effectiveness results for biomarker-enriched populations across all model specifications",
+      format = "html",
+      align = c("l", "l", rep("r", 7))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  pack_rows(index = table(display_fmt$Model)) %>%
+  footnote(
+    general = c(
+      "Enriched population analysis restricts cohort to biomarker-positive patients only.",
+      "Compares experimental treatment (FLOX + nivolumab) vs. standard care (FLOX) within each biomarker-positive subgroup.",
+      "Dominated = more costly and less effective. This is a ceiling analysis: no testing costs are included.",
+      "Costs and QALYs discounted at 4% per year.",
+      "Model A: All biomarkers + all interactions. Model B: CRP and TMB/BRAF with both interactions (TLR excluded as covariate). Model C: Single biomarker per model."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+write.csv(display_data, file = here("tables", "table_s6.csv"), row.names = FALSE)
+cat("Table saved to:", here("tables", "table_s6.csv"), "\n")
+```
+
+Table S6 has been saved to `tables/table_s6.csv`.

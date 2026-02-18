@@ -1,0 +1,248 @@
+---
+title: "Figure S1: KM Curves vs Parametric Fits by Biomarker Subgroup"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, ggplot2, dplyr, scales, cowplot,
+  flexsurv, survival
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-data, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+source(here("scripts/R/functions/prediction_functions.R"))
+
+# Fit Model A (joint) gamma models
+MODEL_STRUCTURE <- 0
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
+
+# Get treatment levels
+exp_rx <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+```
+
+```{r fit-subgroup-models, include=FALSE}
+# Define biomarker subgroups for visualization
+biomarker_defs <- list(
+  list(
+    name = "CRP-positive",
+    var = "crp",
+    pos_val = 1,
+    color = "#E69F00"
+  ),
+  list(
+    name = "CRP-negative",
+    var = "crp",
+    pos_val = 0,
+    color = "#56B4E9"
+  ),
+  list(
+    name = "TLR-positive",
+    var = "tlr",
+    pos_val = 1,
+    color = "#009E73"
+  ),
+  list(
+    name = "TLR-negative",
+    var = "tlr",
+    pos_val = 0,
+    color = "#F0E442"
+  ),
+  list(
+    name = "TMB/BRAF-positive",
+    var = "tmb_braf",
+    pos_val = 1,
+    color = "#0072B2"
+  ),
+  list(
+    name = "TMB/BRAF-negative",
+    var = "tmb_braf",
+    pos_val = 0,
+    color = "#D55E00"
+  )
+)
+
+# Use Model A joint gamma model for predictions
+os_model <- models$best_fit$os
+pfs_model <- models$best_fit$pfs
+
+# Helper for population-averaged predictions
+predict_pop_avg <- function(model, newdata, time_pts) {
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_pts)
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) return(rowMeans(surv_probs, na.rm = TRUE))
+      else return(surv_probs)
+    }
+    return(NULL)
+  }, error = function(e) NULL)
+}
+
+# Extract KM data helper
+extract_km_data <- function(km_fit) {
+  data.frame(time = km_fit$time, surv = km_fit$surv, stringsAsFactors = FALSE)
+}
+```
+
+```{r create-panels, include=FALSE}
+panels <- list()
+
+for (bm_def in biomarker_defs) {
+  # Subset data for this biomarker subgroup
+  bm_mask <- as.numeric(as.character(data_complete[[bm_def$var]])) == bm_def$pos_val
+  subgroup_data <- data_complete[bm_mask, ]
+
+  if (nrow(subgroup_data) < 3) next
+
+  for (outcome in c("os", "pfs")) {
+    panel_key <- paste0(bm_def$name, "_", outcome)
+    outcome_label <- if (outcome == "os") "Overall Survival" else "Progression-Free Survival"
+
+    # Kaplan-Meier for this subgroup
+    if (outcome == "os") {
+      km_fit <- survfit(Surv(OSwk, Death) ~ 1, data = subgroup_data)
+    } else {
+      km_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = subgroup_data)
+    }
+    km_df <- extract_km_data(km_fit)
+
+    # Parametric prediction for this subgroup (using Model A)
+    model_obj <- if (outcome == "os") os_model else pfs_model
+    # Predict with actual treatment assignment
+    param_pred <- predict_pop_avg(model_obj, subgroup_data, time_points)
+
+    if (is.null(param_pred)) next
+
+    pred_df <- data.frame(time = time_points, surv = param_pred)
+
+    p <- ggplot() +
+      geom_step(data = km_df, aes(x = time, y = surv),
+                color = "black", linewidth = 0.6, alpha = 0.7) +
+      geom_line(data = pred_df, aes(x = time, y = surv),
+                color = bm_def$color, linewidth = 0.8) +
+      scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+      scale_x_continuous(
+        breaks = seq(0, max(time_points), by = 104),
+        labels = function(x) x / 52
+      ) +
+      labs(x = "Time (years)", y = outcome_label,
+           title = paste0(bm_def$name, " (n=", nrow(subgroup_data), ")")) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(size = 9, face = "bold", hjust = 0.5),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = 8),
+        axis.text = element_text(size = 7)
+      )
+
+    panels[[panel_key]] <- p
+  }
+}
+
+cat("Generated", length(panels), "panels\n")
+```
+
+```{r combined-figure, fig.width=14, fig.height=12}
+# Arrange panels: 6 subgroups x 2 outcomes = 12 panels
+# Layout: 6 rows (one per subgroup) x 2 columns (OS, PFS)
+
+panel_order <- c()
+for (bm_def in biomarker_defs) {
+  for (outcome in c("os", "pfs")) {
+    panel_order <- c(panel_order, paste0(bm_def$name, "_", outcome))
+  }
+}
+
+# Filter to available panels
+available_panels <- panel_order[panel_order %in% names(panels)]
+panel_list <- panels[available_panels]
+
+if (length(panel_list) > 0) {
+  combined_plot <- plot_grid(
+    plotlist = panel_list,
+    ncol = 2,
+    labels = LETTERS[1:length(panel_list)],
+    label_size = 10
+  )
+
+  # Add legend annotation
+  legend_text <- "Black step: Kaplan-Meier observed data. Colored line: Gamma parametric fit (Model A)."
+
+  combined_plot <- plot_grid(
+    combined_plot,
+    ggplot() + annotate("text", x = 0.5, y = 0.5, label = legend_text,
+                        size = 3.5, hjust = 0.5) + theme_void(),
+    ncol = 1, rel_heights = c(1, 0.03)
+  )
+
+  print(combined_plot)
+}
+```
+
+```{r save-figure, include=FALSE}
+if (length(panel_list) > 0) {
+  figs_dir <- here("figs")
+  if (!dir.exists(figs_dir)) {
+    dir.create(figs_dir, recursive = TRUE)
+  }
+
+  ggsave(
+    filename = here("figs", "figure_s1.png"),
+    plot = combined_plot,
+    width = 14,
+    height = 12,
+    dpi = 300,
+    bg = "white"
+  )
+
+  cat("Figure saved to:", here("figs", "figure_s1.png"), "\n")
+}
+```
+
+Figure S1 has been saved to `figs/figure_s1.png`.

@@ -1,0 +1,157 @@
+---
+title: "Table S5: Full Cost-Effectiveness Results (Models A and C)"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra, scales, dampack,
+  flexsurv, survival
+)
+```
+
+```{r load-analysis, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+source(here("scripts/R/functions/model_fun.R"))
+source(here("scripts/R/functions/calculate_outcomes.R"))
+source(here("scripts/R/functions/multi_model_cea.R"))
+```
+
+```{r run-basecase-all-models, include=FALSE}
+# Run base case analysis for all three model structures
+all_results <- run_all_basecase_analyses(verbose = TRUE)
+```
+
+```{r build-cea-tables, include=FALSE}
+# Strategy display labels
+strategy_labels <- c(
+  "control" = "Standard care (FLOX)",
+  "crp" = "CRP-guided",
+  "tmb_braf" = "TMB/BRAF-guided",
+  "tlr" = "TLR-guided"
+)
+
+build_cea_table <- function(result, model_label) {
+  base_results <- result$base_results
+  icer_obj <- result$icer_obj
+  icer_df <- as.data.frame(icer_obj)
+
+  # Calculate LYs (undiscounted life-years from model traces)
+  # Use Effect (discounted QALYs) as primary outcome, Cost for costs
+  cea_df <- icer_df %>%
+    mutate(
+      Model = model_label,
+      Strategy_Label = strategy_labels[Strategy],
+      Cost_fmt = sprintf("\u20AC%s", format(round(Cost), big.mark = ",")),
+      QALY_fmt = sprintf("%.2f", Effect),
+      Inc_Cost = ifelse(is.na(Inc_Cost), "-", sprintf("\u20AC%s", format(round(Inc_Cost), big.mark = ","))),
+      Inc_Effect = ifelse(is.na(Inc_Effect), "-", sprintf("%.2f", Inc_Effect)),
+      ICER_display = case_when(
+        Status %in% c("D", "ED") ~ "Dominated",
+        is.na(ICER) & Status == "ND" ~ "Reference",
+        !is.na(ICER) ~ sprintf("\u20AC%s", format(round(ICER), big.mark = ",")),
+        TRUE ~ "-"
+      ),
+      Status_display = case_when(
+        Status == "ND" & is.na(ICER) ~ "Reference",
+        Status == "ND" ~ "Non-dominated",
+        Status == "D" ~ "Dominated",
+        Status == "ED" ~ "Ext. dominated",
+        TRUE ~ Status
+      )
+    ) %>%
+    select(Model, Strategy_Label, Cost_fmt, QALY_fmt, Inc_Cost, Inc_Effect,
+           ICER_display, Status_display)
+
+  return(cea_df)
+}
+
+# Build tables for Models A and C
+cea_A <- build_cea_table(all_results$Model_A, "Model A (Joint)")
+cea_C <- build_cea_table(all_results$Model_C, "Model C (Separate)")
+
+combined_cea <- rbind(cea_A, cea_C)
+```
+
+## Model A: Joint Specification
+
+```{r display-model-a}
+kable(cea_A %>% select(-Model),
+      caption = "Model A (Joint): Full cost-effectiveness results, overall MSS population",
+      format = "html",
+      col.names = c("Strategy", "Cost", "QALYs", "Inc. Cost", "Inc. QALYs",
+                     "ICER", "Status"),
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12)
+```
+
+## Model C: Separate Specification
+
+```{r display-model-c}
+kable(cea_C %>% select(-Model),
+      caption = "Model C (Separate): Full cost-effectiveness results, overall MSS population",
+      format = "html",
+      col.names = c("Strategy", "Cost", "QALYs", "Inc. Cost", "Inc. QALYs",
+                     "ICER", "Status"),
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Costs and QALYs discounted at 4% per year. Norwegian healthcare perspective.",
+      "Model A: All three biomarkers as main effects and all treatment-biomarker interactions.",
+      "Model C: One biomarker and its treatment interaction per model (separate models for each strategy).",
+      "ICER = incremental cost-effectiveness ratio vs. next non-dominated alternative.",
+      "Dominated = more costly and less effective than comparator.",
+      paste0("WTP threshold: \u20AC", format(WTP, big.mark = ","), "/QALY.")
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+# Save raw numeric data
+save_data <- rbind(
+  as.data.frame(all_results$Model_A$icer_obj) %>% mutate(Model = "A"),
+  as.data.frame(all_results$Model_C$icer_obj) %>% mutate(Model = "C")
+)
+write.csv(save_data, file = here("tables", "table_s5.csv"), row.names = FALSE)
+cat("Table saved to:", here("tables", "table_s5.csv"), "\n")
+```
+
+Table S5 has been saved to `tables/table_s5.csv`.

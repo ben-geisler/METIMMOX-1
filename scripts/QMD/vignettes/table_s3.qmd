@@ -1,0 +1,171 @@
+---
+title: "Table S3: Parametric Distribution Selection"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra, flexsurv, survival
+)
+```
+
+```{r load-data, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+# Force Model A (joint) for distribution selection
+MODEL_STRUCTURE <- 0
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
+```
+
+```{r extract-ic-tables, include=FALSE}
+# Extract AIC/BIC tables from fitted models
+# Model A uses "full" structure
+os_ic <- models$full$os_ic
+pfs_ic <- models$full$pfs_ic
+
+# Add rank columns
+os_ic <- os_ic %>%
+  filter(!is.na(AIC)) %>%
+  arrange(AIC) %>%
+  mutate(
+    AIC_rank = rank(AIC),
+    BIC_rank = rank(BIC),
+    delta_AIC = AIC - min(AIC),
+    delta_BIC = BIC - min(BIC)
+  )
+
+pfs_ic <- pfs_ic %>%
+  filter(!is.na(AIC)) %>%
+  arrange(AIC) %>%
+  mutate(
+    AIC_rank = rank(AIC),
+    BIC_rank = rank(BIC),
+    delta_AIC = AIC - min(AIC),
+    delta_BIC = BIC - min(BIC)
+  )
+
+cat("OS distributions fitted:", nrow(os_ic), "\n")
+cat("PFS distributions fitted:", nrow(pfs_ic), "\n")
+cat("Best OS distribution:", os_ic$Distribution[1], "(AIC:", round(os_ic$AIC[1], 2), ")\n")
+cat("Best PFS distribution:", pfs_ic$Distribution[1], "(AIC:", round(pfs_ic$AIC[1], 2), ")\n")
+```
+
+## Overall Survival
+
+```{r display-os-table}
+os_display <- os_ic %>%
+  mutate(
+    AIC = sprintf("%.2f", AIC),
+    BIC = sprintf("%.2f", BIC),
+    delta_AIC = sprintf("%.2f", delta_AIC),
+    delta_BIC = sprintf("%.2f", delta_BIC)
+  ) %>%
+  select(Distribution, AIC, delta_AIC, BIC, delta_BIC, AIC_rank)
+
+kable(os_display,
+      caption = "Overall survival: parametric distribution comparison (Model A)",
+      format = "html",
+      col.names = c("Distribution", "AIC", "Delta AIC", "BIC", "Delta BIC", "AIC Rank"),
+      align = c("l", rep("r", 5))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  row_spec(1, bold = TRUE, background = "#e8f5e9")
+```
+
+## Progression-Free Survival
+
+```{r display-pfs-table}
+pfs_display <- pfs_ic %>%
+  mutate(
+    AIC = sprintf("%.2f", AIC),
+    BIC = sprintf("%.2f", BIC),
+    delta_AIC = sprintf("%.2f", delta_AIC),
+    delta_BIC = sprintf("%.2f", delta_BIC)
+  ) %>%
+  select(Distribution, AIC, delta_AIC, BIC, delta_BIC, AIC_rank)
+
+kable(pfs_display,
+      caption = "Progression-free survival: parametric distribution comparison (Model A)",
+      format = "html",
+      col.names = c("Distribution", "AIC", "Delta AIC", "BIC", "Delta BIC", "AIC Rank"),
+      align = c("l", rep("r", 5))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  row_spec(1, bold = TRUE, background = "#e8f5e9")
+```
+
+```{r combined-summary}
+summary_df <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  `Best distribution` = c(os_ic$Distribution[1], pfs_ic$Distribution[1]),
+  AIC = c(os_ic$AIC[1], pfs_ic$AIC[1]),
+  `Second best` = c(os_ic$Distribution[2], pfs_ic$Distribution[2]),
+  `Delta AIC` = c(os_ic$delta_AIC[2], pfs_ic$delta_AIC[2]),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+kable(summary_df,
+      caption = "Table S3: Summary of parametric distribution selection",
+      format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Models fitted to Model A (joint) specification: Surv ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx.",
+      "Gamma distribution selected for both endpoints based on lowest AIC, BIC concordance, and clinical plausibility of extrapolations.",
+      "Delta AIC/BIC = difference from best-fitting model. Distributions with Delta AIC >10 have essentially no empirical support.",
+      "Candidate distributions: exponential, Weibull, Weibull PH, log-logistic, log-normal, gamma, Gompertz, generalized gamma, generalized F."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+combined_ic <- rbind(
+  os_ic %>% mutate(Endpoint = "OS"),
+  pfs_ic %>% mutate(Endpoint = "PFS")
+)
+
+write.csv(combined_ic, file = here("tables", "table_s3.csv"), row.names = FALSE)
+cat("Table saved to:", here("tables", "table_s3.csv"), "\n")
+```
+
+Table S3 has been saved to `tables/table_s3.csv`.

@@ -1,0 +1,158 @@
+---
+title: "Figure S3: Cost-Effectiveness Planes for All Model Specifications"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, ggplot2, dplyr, scales, cowplot
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-data, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+# Load PSA caches for all three models
+psa_files <- list(
+  A = here("data", "tidy", "psa_obj_joint.rds"),
+  B = here("data", "tidy", "psa_obj_focused.rds"),
+  C = here("data", "tidy", "psa_obj_separate.rds")
+)
+
+psa_objs <- list()
+for (model_name in names(psa_files)) {
+  if (file.exists(psa_files[[model_name]])) {
+    psa_objs[[model_name]] <- readRDS(psa_files[[model_name]])
+    cat("Loaded PSA cache for Model", model_name, "\n")
+  } else {
+    cat("Missing PSA cache for Model", model_name, "\n")
+  }
+}
+```
+
+```{r build-scatter-data, include=FALSE}
+strategy_labels <- c(
+  "crp" = "CRP Strategy",
+  "tlr" = "TLR Strategy",
+  "tmb_braf" = "TMB/BRAF Strategy"
+)
+
+strategy_colors <- c(
+  "CRP Strategy" = "#E69F00",
+  "TLR Strategy" = "#009E73",
+  "TMB/BRAF Strategy" = "#0072B2"
+)
+
+model_labels <- c(A = "Model A (Joint)", B = "Model B (Focused)", C = "Model C (Separate)")
+
+scatter_all <- data.frame()
+
+for (model_name in names(psa_objs)) {
+  psa_obj <- psa_objs[[model_name]]
+  cost_df <- as.data.frame(psa_obj$cost)
+  effect_df <- as.data.frame(psa_obj$effect)
+
+  for (strategy in setdiff(psa_obj$strategies, "control")) {
+    if (!strategy %in% names(cost_df)) next
+
+    inc_df <- data.frame(
+      inc_effect = effect_df[[strategy]] - effect_df[["control"]],
+      inc_cost = cost_df[[strategy]] - cost_df[["control"]],
+      Strategy = strategy_labels[strategy],
+      Model = model_labels[model_name],
+      stringsAsFactors = FALSE
+    )
+    scatter_all <- rbind(scatter_all, inc_df)
+  }
+}
+
+scatter_all$Strategy <- factor(scatter_all$Strategy, levels = strategy_labels)
+scatter_all$Model <- factor(scatter_all$Model, levels = model_labels)
+
+cat("Scatter data:", nrow(scatter_all), "points\n")
+```
+
+```{r create-ce-planes, fig.width=14, fig.height=5}
+if (nrow(scatter_all) > 0) {
+  p_planes <- ggplot(scatter_all, aes(x = inc_effect, y = inc_cost, color = Strategy)) +
+    geom_point(alpha = 0.15, size = 0.3) +
+    facet_wrap(~Model, ncol = 3, scales = "free") +
+    geom_abline(intercept = 0, slope = WTP, linetype = "dashed",
+                color = "black", linewidth = 0.5) +
+    geom_hline(yintercept = 0, color = "gray70", linewidth = 0.3) +
+    geom_vline(xintercept = 0, color = "gray70", linewidth = 0.3) +
+    scale_y_continuous(
+      labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")
+    ) +
+    scale_x_continuous(
+      labels = scales::number_format(accuracy = 0.01)
+    ) +
+    scale_color_manual(values = strategy_colors, name = "Strategy") +
+    labs(
+      x = "Incremental Effectiveness (QALYs)",
+      y = "Incremental Cost (EUR)"
+    ) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 11, face = "bold"),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    ) +
+    guides(color = guide_legend(override.aes = list(alpha = 1, size = 3), nrow = 1))
+
+  print(p_planes)
+}
+```
+
+```{r save-figure, include=FALSE}
+if (nrow(scatter_all) > 0) {
+  figs_dir <- here("figs")
+  if (!dir.exists(figs_dir)) {
+    dir.create(figs_dir, recursive = TRUE)
+  }
+
+  ggsave(
+    filename = here("figs", "figure_s3.png"),
+    plot = p_planes,
+    width = 14,
+    height = 5,
+    dpi = 300,
+    bg = "white"
+  )
+
+  cat("Figure saved to:", here("figs", "figure_s3.png"), "\n")
+}
+```
+
+Figure S3 has been saved to `figs/figure_s3.png`.
