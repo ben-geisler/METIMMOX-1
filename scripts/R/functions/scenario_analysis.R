@@ -115,9 +115,12 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
 #' @param scenario_row Single row from scenarios data frame
 #' @param psa_obj Pre-computed PSA object
 #' @param psa_params Pre-computed PSA parameter samples
-#' @param evppi_params Parameters to analyze for EVPPI
+#' @param evppi_params Parameters to analyze for EVPPI (should be fully
+#'   assembled by caller, including prevalence and interaction params)
+#' @param param_groups Optional named list of parameter groups for joint EVPPI
 #' @return List with PSA object, PSA params, EVPPI results, and scenario info
-run_scenario_evppi <- function(scenario_row, psa_obj, psa_params, evppi_params) {
+run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
+                               evppi_params, param_groups = NULL) {
 
   cat("\n", rep("=", 80), "\n", sep = "")
   cat("Running EVPPI for Scenario:", scenario_row$scenario_name, "\n")
@@ -126,24 +129,13 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params, evppi_params) 
   cat("  (PSA results reused from cost group)\n")
   cat(rep("=", 80), "\n\n", sep = "")
 
-  # Augment evppi_params with interaction parameters if available
-  augmented_evppi_params <- evppi_params
-  if (exists("get_interaction_evppi_params")) {
-    interaction_params <- get_interaction_evppi_params()
-    interaction_params <- intersect(
-      interaction_params, colnames(psa_params)
-    )
-    if (length(interaction_params) > 0) {
-      augmented_evppi_params <- c(evppi_params, interaction_params)
-    }
-  }
-
   # Run EVPPI analysis with this scenario's WTP
   evppi_results <- run_evppi_analysis(
     psa_obj = psa_obj,
     psa_params = psa_params,
     wtp = scenario_row$wtp,
-    evppi_params = augmented_evppi_params
+    evppi_params = evppi_params,
+    param_groups = param_groups
   )
 
   # Add scenario information to results
@@ -176,10 +168,12 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params, evppi_params) 
 #' @param cl Cluster for parallel processing
 #' @param n_sim Number of simulations
 #' @param evppi_params Parameters to analyze for EVPPI
+#' @param param_groups Optional named list of parameter groups for joint EVPPI
 #' @return List with PSA object and EVPPI results
 run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
                                   param_distributions, strategies,
-                                  time_horizon, cl, n_sim, evppi_params) {
+                                  time_horizon, cl, n_sim, evppi_params,
+                                  param_groups = NULL) {
 
   # Run PSA for this scenario's cost configuration
   psa_result <- run_scenario_psa(
@@ -197,7 +191,8 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
     scenario_row = scenario_row,
     psa_obj = psa_result$psa_obj,
     psa_params = psa_result$psa_params,
-    evppi_params = evppi_params
+    evppi_params = evppi_params,
+    param_groups = param_groups
   ))
 }
 
@@ -216,10 +211,11 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
 #' @param cl Cluster for parallel processing
 #' @param n_sim Number of simulations
 #' @param evppi_params Parameters to analyze for EVPPI
+#' @param param_groups Optional named list of parameter groups for joint EVPPI
 #' @return List with all scenario results
 run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
                               param_distributions, strategies, time_horizon,
-                              cl, n_sim, evppi_params) {
+                              cl, n_sim, evppi_params, param_groups = NULL) {
 
   all_results <- list()
 
@@ -259,7 +255,8 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
         scenario_row = cost_group[j, ],
         psa_obj = psa_result$psa_obj,
         psa_params = psa_result$psa_params,
-        evppi_params = evppi_params
+        evppi_params = evppi_params,
+        param_groups = param_groups
       )
 
       all_results[[cost_group$scenario_id[j]]] <- scenario_results

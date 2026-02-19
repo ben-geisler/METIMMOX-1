@@ -74,22 +74,16 @@ print(scenarios)
 cat("\n")
 
 # ===============================================================================
-# DEFINE PARAMETERS FOR EVPPI ANALYSIS
+# DEFINE BASE PARAMETERS FOR EVPPI ANALYSIS
 # ===============================================================================
+# Cost and utility parameters are common across all model structures.
+# Prevalence, interaction params, and param_groups are model-structure-dependent
+# and are assembled inside the model loop below.
 
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
-                  "c_test_CT", "u_np", "u_p", "c_other_last",
-                  "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
-
-# Add interaction parameters if extraction function is available
-if (exists("get_interaction_evppi_params")) {
-  interaction_params <- get_interaction_evppi_params()
-  if (length(interaction_params) > 0) {
-    evppi_params <- c(evppi_params, interaction_params)
-    cat("Scenario EVPPI includes", length(interaction_params),
-        "interaction parameters\n")
-  }
-}
+evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
+                       "c_test_CT", "u_np", "u_p", "c_other_last",
+                       "c_test_blood", "c_other_visit", "c_other_baseline",
+                       "c_other_follow")
 
 # ===============================================================================
 # RUN SCENARIOS FOR EACH MODEL STRUCTURE
@@ -133,6 +127,48 @@ for (m_idx in seq_along(model_structures_to_run)) {
   # Update base nivolumab cost from current parameters
   base_c_drug_nivo <- l_params_base$c_drug_nivo
 
+  # Assemble full evppi_params for this model structure
+  # (matches the logic in 13_EVPPIs.R)
+  evppi_params <- c(evppi_params_base, "p_crp", "p_tmb_braf")
+  if (current_model_structure != 1) {
+    # Model B (focused) excludes TLR; Models A and C include it
+    evppi_params <- c(evppi_params, "p_tlr")
+  }
+
+  # Add interaction parameters if available
+  if (exists("get_interaction_evppi_params")) {
+    interaction_evppi_params <- get_interaction_evppi_params(
+      current_model_structure
+    )
+    if (length(interaction_evppi_params) > 0) {
+      evppi_params <- c(evppi_params, interaction_evppi_params)
+      cat("Scenario EVPPI includes", length(interaction_evppi_params),
+          "interaction parameters\n")
+    }
+  }
+
+  # Build parameter groups for joint EVPPI analysis
+  # (matches the definitions in 08_sampling.R + 13_EVPPIs.R)
+  scenario_param_groups <- list(
+    drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
+    test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
+    other_costs = c("c_other_visit", "c_other_baseline",
+                    "c_other_follow", "c_other_last"),
+    all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT",
+                  "c_test_blood", "c_test_NGS", "c_other_visit",
+                  "c_other_baseline", "c_other_follow", "c_other_last"),
+    utilities = c("u_np", "u_p"),
+    prevalence = c("p_crp", "p_tlr", "p_tmb_braf")
+  )
+
+  # Add interaction parameter groups if available
+  if (exists("add_interaction_param_groups")) {
+    scenario_param_groups <- add_interaction_param_groups(
+      scenario_param_groups, current_model_structure
+    )
+    cat("Total param_groups:", length(scenario_param_groups), "\n")
+  }
+
   cat("\n=== RUNNING ALL SCENARIOS FOR", current_model_name, "===\n\n")
 
   # run_all_scenarios groups scenarios by unique cost configurations,
@@ -146,7 +182,8 @@ for (m_idx in seq_along(model_structures_to_run)) {
     time_horizon = time_horizon,
     cl = cl,
     n_sim = n_sim,
-    evppi_params = evppi_params
+    evppi_params = evppi_params,
+    param_groups = scenario_param_groups
   )
 
   # Store results for this model
