@@ -135,9 +135,11 @@ for (m_idx in seq_along(model_structures_to_run)) {
 
   cat("\n=== RUNNING ALL SCENARIOS FOR", current_model_name, "===\n\n")
 
+  # run_all_scenarios groups scenarios by unique cost configurations,
+  # runs PSA once per group, then computes EVPPI at each WTP level.
+  # For 6 scenarios (3 WTP x 2 nivo costs), this runs 2 PSA instead of 6.
   all_scenario_results <- run_all_scenarios(
     scenarios = scenarios,
-    psa_params = NULL,  # Will be generated fresh for each scenario
     l_params_base = l_params_base,
     param_distributions = param_distributions,
     strategies = strategies,
