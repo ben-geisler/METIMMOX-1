@@ -132,14 +132,13 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
           cost_matrix[i, strat] <- sim_results$Cost[strat_row]
           effect_matrix[i, strat] <- sim_results$Effect[strat_row]
         } else {
-          # If strategy not found, use mean or base case
-          if (i > 1) {
-            cost_matrix[i, strat] <- mean(cost_matrix[1:(i-1), strat], na.rm = TRUE)
-            effect_matrix[i, strat] <- mean(effect_matrix[1:(i-1), strat], na.rm = TRUE)
-          } else {
-            # For first simulation, use NA and fix later
-            cost_matrix[i, strat] <- NA
-            effect_matrix[i, strat] <- NA
+          # If strategy not found, flag for replacement rather than silently
+          # using running mean which would introduce bias
+          warning("Strategy '", strat, "' not found in sim ", i, " results - flagging for replacement")
+          cost_matrix[i, strat] <- NA
+          effect_matrix[i, strat] <- NA
+          if (!(i %in% fallback_iterations)) {
+            fallback_iterations <<- c(fallback_iterations, i)
           }
         }
       }

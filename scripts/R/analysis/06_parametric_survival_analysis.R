@@ -179,14 +179,69 @@ for (structure_name in names(model_formulas)) {
 }
 
 # ===============================================================================
+# DEDICATED CONTROL MODEL FITTING (for Models B/C)
+# ===============================================================================
+# For Models B/C, we fit a dedicated control model using the control formula
+# (~ Age + sex) to avoid arbitrary biomarker model selection for control
+# predictions. This model is fitted with all distributions and the best
+# is selected by AIC, consistent with the biomarker model selection.
+# ===============================================================================
+
+is_biomarker_specific <- uses_per_strategy_formulas()
+
+if (is_biomarker_specific) {
+  cat("\nFitting dedicated control models (for Models B/C control predictions)...\n")
+
+  control_os_formula_fit <- get_control_formula("os")
+  control_pfs_formula_fit <- get_control_formula("pfs")
+
+  # Fit control OS models
+  control_os_results <- fit_all_direct(
+    fit_data = data_complete,
+    fit_formula = control_os_formula_fit,
+    fit_dists = distributions_to_test
+  )
+
+  # Fit control PFS models
+  control_pfs_results <- fit_all_direct(
+    fit_data = data_complete,
+    fit_formula = control_pfs_formula_fit,
+    fit_dists = distributions_to_test
+  )
+
+  # Store in models object
+  models$control_dedicated <- list(
+    os = control_os_results$fitted_models,
+    pfs = control_pfs_results$fitted_models,
+    os_ic = extract_ic_single(control_os_results),
+    pfs_ic = extract_ic_single(control_pfs_results)
+  )
+
+  # Select best control model by AIC
+  best_ctrl_os <- find_best_model(models$control_dedicated$os_ic, criterion = "AIC")
+  best_ctrl_pfs <- find_best_model(models$control_dedicated$pfs_ic, criterion = "AIC")
+
+  if (!is.null(best_ctrl_os)) {
+    models$best_fit$control_os <- models$control_dedicated$os[[best_ctrl_os$distribution]]
+    models$best_fit$control_os_distribution <- best_ctrl_os$distribution
+    cat("Best control OS model:", best_ctrl_os$distribution,
+        "(AIC:", round(best_ctrl_os$criterion_value, 2), ")\n")
+  }
+  if (!is.null(best_ctrl_pfs)) {
+    models$best_fit$control_pfs <- models$control_dedicated$pfs[[best_ctrl_pfs$distribution]]
+    models$best_fit$control_pfs_distribution <- best_ctrl_pfs$distribution
+    cat("Best control PFS model:", best_ctrl_pfs$distribution,
+        "(AIC:", round(best_ctrl_pfs$criterion_value, 2), ")\n")
+  }
+}
+
+# ===============================================================================
 # GLOBAL BEST MODEL SELECTION
 # ===============================================================================
 # For Model A (joint): Select globally best OS and PFS models across structures
 # For Models B/C (focused/separate): Select best model for EACH biomarker
 # ===============================================================================
 
-# Check if this is a biomarker-specific model structure (Models B/C)
-is_biomarker_specific <- uses_per_strategy_formulas()
 biomarker_names <- get_biomarkers()
 
 if (is_biomarker_specific) {
@@ -318,12 +373,19 @@ if (is_biomarker_specific) {
   }))
 
   if (all_biomarkers_fitted) {
+    # Build dedicated control models list if available
+    ctrl_models <- NULL
+    if (!is.null(models$best_fit$control_os) && !is.null(models$best_fit$control_pfs)) {
+      ctrl_models <- list(os = models$best_fit$control_os, pfs = models$best_fit$control_pfs)
+    }
+
     # Generate predictions using biomarker-specific models
     predictions <- generate_population_averaged_predictions_multimodel(
       biomarker_models = models$best_fit,
       strategies_df = strategies_df,
       data_complete = data_complete,
-      time_points = time_points
+      time_points = time_points,
+      control_models = ctrl_models
     )
   } else {
     predictions <- list()

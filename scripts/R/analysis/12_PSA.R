@@ -173,8 +173,14 @@ print(psa_summary)
 psa_summary_c95ci <- summary(psa_obj, calc_sds = TRUE)
 print(psa_summary_c95ci)
 
-# Calculate ICERs using the correct arguments
-cea_psa <- calculate_icers_psa(psa_obj, uncertainty = TRUE)
+# Calculate ICERs from mean PSA costs and effects
+mean_costs <- colMeans(psa_obj$cost, na.rm = TRUE)
+mean_effects <- colMeans(psa_obj$effect, na.rm = TRUE)
+cea_psa <- calculate_icers(
+  cost = mean_costs,
+  effect = mean_effects,
+  strategies = psa_obj$strategies
+)
 print(cea_psa)
 
 # ICE scatter plot

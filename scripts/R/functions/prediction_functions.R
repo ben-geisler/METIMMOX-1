@@ -210,7 +210,8 @@ generate_population_averaged_predictions <- function(models, strategies_df,
 generate_population_averaged_predictions_multimodel <- function(biomarker_models,
                                                                   strategies_df,
                                                                   data_complete,
-                                                                  time_points) {
+                                                                  time_points,
+                                                                  control_models = NULL) {
 
   # Extract treatment level references
   exp_rx <- levels(data_complete$Rx)[2]  # Experimental treatment
@@ -222,16 +223,19 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
   # -------------------------------------------------------------------------
   # CONTROL STRATEGY: All patients receive standard of care
   # -------------------------------------------------------------------------
-  # For control strategy, we use the CRP model (arbitrary choice, but consistent)
-  # Since all patients receive control treatment (Rx=0), the biomarker:Rx
-  # interaction term has no effect, so any biomarker model gives similar results.
+  # Uses dedicated control model (~ Age + sex) when available. Falls back to
+  # CRP model if no dedicated control model is provided.
   # -------------------------------------------------------------------------
 
-  cat("Generating population-averaged predictions for control strategy (using CRP model)...\n")
-
-  # Use CRP model for control predictions
-  control_model_os <- biomarker_models$crp$os
-  control_model_pfs <- biomarker_models$crp$pfs
+  if (!is.null(control_models) && !is.null(control_models$os) && !is.null(control_models$pfs)) {
+    cat("Generating population-averaged predictions for control strategy (using dedicated control model)...\n")
+    control_model_os <- control_models$os
+    control_model_pfs <- control_models$pfs
+  } else {
+    cat("Generating population-averaged predictions for control strategy (using CRP model as fallback)...\n")
+    control_model_os <- biomarker_models$crp$os
+    control_model_pfs <- biomarker_models$crp$pfs
+  }
 
   # Create dataset with all patients assigned to control treatment
   control_data <- data_complete

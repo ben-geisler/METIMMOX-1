@@ -178,11 +178,38 @@ for (strat in strategies) {
 cat("\nRunning survival model structural sensitivity analysis...\n")
 
 # Check if models object exists (from 06_parametric_survival_analysis.R)
-if (exists("models") && !is.null(models$full$os)) {
+is_biomarker_specific_dsa <- exists("MODEL_STRUCTURE") && MODEL_STRUCTURE %in% c(1, 2)
 
-  # Get list of successfully fitted distributions
-  distributions_tested <- names(models$full$os)
-  distributions_tested <- distributions_tested[!sapply(models$full$os[distributions_tested], is.null)]
+# Determine if we have the necessary models
+has_models <- FALSE
+if (exists("models")) {
+  if (!is_biomarker_specific_dsa && !is.null(models$full$os)) {
+    has_models <- TRUE
+  } else if (is_biomarker_specific_dsa) {
+    # For Models B/C, check that at least one biomarker has fitted models
+    first_bm <- get_biomarkers()[1]
+    if (!is.null(models[[first_bm]]$os)) {
+      has_models <- TRUE
+    }
+  }
+}
+
+if (has_models) {
+
+  # Get list of distributions to test
+  if (!is_biomarker_specific_dsa) {
+    # Model A: distributions from the shared model
+    distributions_tested <- names(models$full$os)
+    distributions_tested <- distributions_tested[!sapply(models$full$os[distributions_tested], is.null)]
+  } else {
+    # Models B/C: use intersection of distributions available across all biomarkers
+    biomarkers_for_dsa <- get_biomarkers()
+    all_dist_sets <- lapply(biomarkers_for_dsa, function(bm) {
+      dists <- names(models[[bm]]$os)
+      dists[!sapply(models[[bm]]$os[dists], is.null)]
+    })
+    distributions_tested <- Reduce(intersect, all_dist_sets)
+  }
 
   cat("Distributions to test:", paste(distributions_tested, collapse = ", "), "\n")
 
@@ -192,26 +219,48 @@ if (exists("models") && !is.null(models$full$os)) {
   for (dist in distributions_tested) {
     cat("  Testing distribution:", dist, "\n")
 
-    # Create models object with this distribution (same for OS and PFS)
-    test_models <- list(
-      os = models$full$os[[dist]],
-      pfs = models$full$pfs[[dist]]
-    )
-
-    # Skip if either model is NULL
-    if (is.null(test_models$os) || is.null(test_models$pfs)) {
-      cat("    Skipping - model not available for both OS and PFS\n")
-      next
-    }
-
     tryCatch({
-      # Generate predictions using population averaging
-      test_predictions <- generate_population_averaged_predictions(
-        models = test_models,
-        strategies_df = strategies_df,
-        data_complete = data_complete,
-        time_points = time_points
-      )
+      if (!is_biomarker_specific_dsa) {
+        # Model A: single shared model per distribution
+        test_models <- list(
+          os = models$full$os[[dist]],
+          pfs = models$full$pfs[[dist]]
+        )
+
+        if (is.null(test_models$os) || is.null(test_models$pfs)) {
+          cat("    Skipping - model not available for both OS and PFS\n")
+          next
+        }
+
+        test_predictions <- generate_population_averaged_predictions(
+          models = test_models,
+          strategies_df = strategies_df,
+          data_complete = data_complete,
+          time_points = time_points
+        )
+      } else {
+        # Models B/C: per-biomarker models
+        biomarker_models_test <- list()
+        skip_dist <- FALSE
+        for (bm in biomarkers_for_dsa) {
+          bm_os <- models[[bm]]$os[[dist]]
+          bm_pfs <- models[[bm]]$pfs[[dist]]
+          if (is.null(bm_os) || is.null(bm_pfs)) {
+            cat("    Skipping - model not available for", bm, "OS and PFS\n")
+            skip_dist <- TRUE
+            break
+          }
+          biomarker_models_test[[bm]] <- list(os = bm_os, pfs = bm_pfs)
+        }
+        if (skip_dist) next
+
+        test_predictions <- generate_population_averaged_predictions_multimodel(
+          biomarker_models = biomarker_models_test,
+          strategies_df = strategies_df,
+          data_complete = data_complete,
+          time_points = time_points
+        )
+      }
 
       # Build parameter list with new predictions
       test_params <- l_params_base
@@ -221,8 +270,7 @@ if (exists("models") && !is.null(models$full$os)) {
       test_params$p_pfs$control_PFS <- test_predictions$control$pfs
 
       # Update biomarker strategy survival curves
-      # Model B (focused) only uses CRP and TMB/BRAF; Models A and C use all three
-      biomarkers_to_loop <- if (exists("MODEL_STRUCTURE") && MODEL_STRUCTURE == 1) biomarkers_model_b else biomarkers
+      biomarkers_to_loop <- get_biomarkers()
       for (biomarker in biomarkers_to_loop) {
         test_params$p_os[[paste0(biomarker, "_pos_OS")]] <- test_predictions[[biomarker]]$biomarker_positive$os
         test_params$p_os[[paste0(biomarker, "_neg_OS")]] <- test_predictions[[biomarker]]$biomarker_negative$os
@@ -250,7 +298,12 @@ if (exists("models") && !is.null(models$full$os)) {
     rownames(model_sensitivity_df) <- NULL
 
     # Identify best-fit distribution (used in base case)
-    best_dist <- models$best_fit$os_distribution
+    if (!is_biomarker_specific_dsa) {
+      best_dist <- models$best_fit$os_distribution
+    } else {
+      # For Models B/C, use the first biomarker's best distribution as reference
+      best_dist <- models$best_fit[[get_biomarkers()[1]]]$os_distribution
+    }
     cat("\nBase case distribution:", best_dist, "\n")
 
     # For each strategy, find min and max NMB across distributions
@@ -335,7 +388,8 @@ if (exists("models") && !is.null(models$full$os)) {
   }
 
 } else {
-  cat("Warning: models object not found. Run 06_parametric_survival_analysis.R first.\n")
+  cat("Warning: Required fitted models not found for current MODEL_STRUCTURE.\n")
+  cat("Run 06_parametric_survival_analysis.R first.\n")
   cat("Skipping survival model structural sensitivity analysis.\n")
   model_sensitivity_df <- NULL
   model_impact_summary <- NULL

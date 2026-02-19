@@ -117,28 +117,24 @@ create_biomarker_formula <- function(outcome, biomarker) {
 # ===============================================================================
 
 sample_correlated_survival <- function(formula_os, formula_pfs, data,
-                                       dist = "weibull", n_samples = n_samples) {
-  
-  # Get the best-fitting distribution from parametric analysis if available
-  if (exists("models") && !is.null(models$best_fit$os_distribution)) {
-    dist <- models$best_fit$os_distribution
-    cat("Using distribution from parametric analysis:", dist, "\n")
-  }
-  
+                                       dist_os = "weibull", dist_pfs = "weibull",
+                                       n_samples = n_samples) {
+
   n_patients <- nrow(data)
   sampled_models <- vector("list", n_samples)
   n_failed <- 0
 
   cat("Generating", n_samples, "correlated resampled models for", n_patients, "patients...\n")
+  cat("Using OS distribution:", dist_os, "| PFS distribution:", dist_pfs, "\n")
   cat("This preserves PFS-OS correlation by fitting both models to the same resampled data\n")
-  
+
   # Fit original models for reference
-  original_os <- flexsurvreg(formula_os, data = data, dist = dist)
-  original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist)
-  
+  original_os <- flexsurvreg(formula_os, data = data, dist = dist_os)
+  original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist_pfs)
+
   # Set up progress reporting
   start_time <- Sys.time()
-  
+
   for (i in 1:n_samples) {
     # Resample patients with replacement (non-parametric resampling)
     resample_idx <- sample(1:n_patients, size = n_patients, replace = TRUE)
@@ -147,19 +143,19 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
     # Fit BOTH models to the SAME resampled dataset
     # This is critical: PFS and OS share the same patient cohort
     tryCatch({
-      os_model <- flexsurvreg(formula_os, data = resampled_data, dist = dist)
-      pfs_model <- flexsurvreg(formula_pfs, data = resampled_data, dist = dist)
+      os_model <- flexsurvreg(formula_os, data = resampled_data, dist = dist_os)
+      pfs_model <- flexsurvreg(formula_pfs, data = resampled_data, dist = dist_pfs)
 
       sampled_models[[i]] <- list(
         os = list(
           model = os_model,
           coefficients = os_model$coefficients,
-          dist = dist
+          dist = dist_os
         ),
         pfs = list(
           model = pfs_model,
           coefficients = pfs_model$coefficients,
-          dist = dist
+          dist = dist_pfs
         ),
         resample_idx = resample_idx  # Store for reproducibility/debugging
       )
@@ -170,12 +166,12 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
         os = list(
           model = original_os,
           coefficients = original_os$coefficients,
-          dist = dist
+          dist = dist_os
         ),
         pfs = list(
           model = original_pfs,
           coefficients = original_pfs$coefficients,
-          dist = dist
+          dist = dist_pfs
         ),
         failed = TRUE
       )
@@ -202,9 +198,65 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
     original_pfs = original_pfs,
     n_samples = n_samples,
     n_failed = n_failed,
-    dist = dist,
+    dist_os = dist_os,
+    dist_pfs = dist_pfs,
     creation_time = Sys.time()
   ))
+}
+
+# ===============================================================================
+# DISTRIBUTION RESOLUTION HELPER
+# ===============================================================================
+# Resolves the AIC-best parametric distributions from the models object.
+# Supports both Model A (global best) and Models B/C (per-biomarker best).
+# Returns a list with $os and $pfs distribution names.
+# ===============================================================================
+
+resolve_best_distributions <- function(biomarker = NULL) {
+  default_dist <- "weibull"
+
+  if (!exists("models", envir = .GlobalEnv)) {
+    cat("WARNING: 'models' object not found. Using default distribution:", default_dist, "\n")
+    return(list(os = default_dist, pfs = default_dist))
+  }
+
+  m <- get("models", envir = .GlobalEnv)
+  is_biomarker_specific <- uses_per_strategy_formulas()
+
+  if (is_biomarker_specific && !is.null(biomarker)) {
+    # Models B/C: per-biomarker distributions
+    os_dist <- m$best_fit[[biomarker]]$os_distribution
+    pfs_dist <- m$best_fit[[biomarker]]$pfs_distribution
+
+    if (is.null(os_dist)) {
+      cat("WARNING: No OS distribution for biomarker '", biomarker,
+          "'. Using default:", default_dist, "\n")
+      os_dist <- default_dist
+    }
+    if (is.null(pfs_dist)) {
+      cat("WARNING: No PFS distribution for biomarker '", biomarker,
+          "'. Using default:", default_dist, "\n")
+      pfs_dist <- default_dist
+    }
+  } else {
+    # Model A: global best distributions
+    os_dist <- m$best_fit$os_distribution
+    pfs_dist <- m$best_fit$pfs_distribution
+
+    if (is.null(os_dist)) {
+      cat("WARNING: No global best OS distribution found. Using default:", default_dist, "\n")
+      os_dist <- default_dist
+    }
+    if (is.null(pfs_dist)) {
+      cat("WARNING: No global best PFS distribution found. Using default:", default_dist, "\n")
+      pfs_dist <- default_dist
+    }
+  }
+
+  cat("Resolved distributions - OS:", os_dist, "| PFS:", pfs_dist,
+      if (!is.null(biomarker)) paste0(" (biomarker: ", biomarker, ")") else "(control/global)",
+      "\n")
+  return(list(os = os_dist, pfs = pfs_dist))
 }
 
 # ===============================================================================
@@ -260,11 +312,19 @@ if (is.null(sampling_models)) {
   cat("Results will be cached to:", cache_file, "\n\n")
 
   # Sample control models with age and sex adjustments
+  # For control, use global best distributions (Model A) or CRP distributions (Models B/C)
   cat("\nSampling control strategy...\n")
+  control_dists <- if (uses_per_strategy_formulas()) {
+    resolve_best_distributions(biomarker = "crp")  # Use CRP model dists for control
+  } else {
+    resolve_best_distributions(biomarker = NULL)    # Use global best dists
+  }
   sampling_models$control <- sample_correlated_survival(
     formula_os = control_os_formula,
     formula_pfs = control_pfs_formula,
     data = data_control,
+    dist_os = control_dists$os,
+    dist_pfs = control_dists$pfs,
     n_samples = n_samples
   )
 
@@ -278,10 +338,15 @@ if (is.null(sampling_models)) {
     os_formula <- create_biomarker_formula("os", biomarker)
     pfs_formula <- create_biomarker_formula("pfs", biomarker)
 
+    # Resolve AIC-best distributions for this biomarker
+    bm_dists <- resolve_best_distributions(biomarker = biomarker)
+
     sampling_models[[biomarker]] <- sample_correlated_survival(
       formula_os = os_formula,
       formula_pfs = pfs_formula,
       data = data,
+      dist_os = bm_dists$os,
+      dist_pfs = bm_dists$pfs,
       n_samples = n_samples
     )
   }

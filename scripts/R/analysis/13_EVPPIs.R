@@ -119,6 +119,11 @@ if (interaction_params_available) {
       "interaction coefficients\n")
 }
 
+# Verify param_groups exists (defined in 08_sampling.R)
+if (!exists("param_groups")) {
+  stop("'param_groups' not found. Run 08_sampling.R first to define parameter groups.")
+}
+
 # Add interaction parameter groups (if available)
 if (interaction_params_available) {
   param_groups <- add_interaction_param_groups(
@@ -128,7 +133,7 @@ if (interaction_params_available) {
   cat("Total param_groups:", length(param_groups), "\n")
 }
 
-# Run EVPPI analysis (param_groups defined in 08_sampling.R)
+# Run EVPPI analysis
 evppi_results <- run_evppi_analysis(
   psa_obj = psa_obj,
   psa_params = psa_params,

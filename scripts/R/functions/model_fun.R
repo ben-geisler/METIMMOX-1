@@ -97,6 +97,13 @@ validate_model_params <- function(params, time_horizon) {
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
+  # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
+  #   - n_samples: Number of resampled models (from 02_setup_and_global_variables.R)
+  #   - sampling_models: Resampled survival models (from 08_sampling.R)
+  #   - data_complete: Full analysis cohort (from 06_parametric_survival_analysis.R)
+  #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
+  # These must exist in the global environment before calling model_fun in PSA mode.
+
   # Get strategies and biomarkers from central config
   # All models now include all three biomarker strategies (CRP, TLR, TMB/BRAF)
   if (exists("get_strategies")) {
@@ -143,21 +150,33 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
     }
 
+    # Check if any resampled models for this sim_idx are failed (using originals)
+    # This helps track iterations where resampled model fitting failed and the
+    # original model was substituted, which reduces uncertainty estimation
+    control_failed <- isTRUE(sampling_models$control$samples[[sim_idx]]$failed)
+    biomarker_failed <- any(sapply(biomarkers_to_run, function(bm) {
+      isTRUE(sampling_models[[bm]]$samples[[sim_idx]]$failed)
+    }))
+    if (control_failed || biomarker_failed) {
+      fallback_used <- TRUE
+    }
+
     # -----------------------------------------------------------------------
-    # CONTROL STRATEGY: Population-averaged predictions over ORIGINAL population
+    # CONTROL STRATEGY: Population-averaged predictions over FULL population
     # -----------------------------------------------------------------------
     # Uses generate_psa_control_predictions() to predict for ALL patients in
-    # the original control arm, then averages. This matches the methodology
-    # used for biomarker strategies (Issue #97).
+    # data_complete (both arms), matching the base case methodology which
+    # also averages over the full population. The control model only uses
+    # Age + sex, so treatment arm assignment is irrelevant.
 
     tryCatch({
-      # Use population averaging over ORIGINAL control population
-      # This matches the approach used for biomarker strategies
+      # Use population averaging over FULL population (data_complete)
+      # to match base case which also uses data_complete for control predictions
       os_control <- generate_psa_control_predictions(
         sampling_model_list = sampling_models$control,
         outcome = "os",
         sample_idx = sim_idx,
-        data_control_original = data_control,
+        data_control_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 
@@ -165,7 +184,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         sampling_model_list = sampling_models$control,
         outcome = "pfs",
         sample_idx = sim_idx,
-        data_control_original = data_control,
+        data_control_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 
@@ -262,16 +281,27 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   }
   
   # Create discount factors over time
+  expected_length <- time_horizon + 1
   v_dw_c <- 1 / (1 + params$dr_costs)^(seq(0, time_horizon) / 52)
   v_dw_e <- 1 / (1 + params$dr_effects)^(seq(0, time_horizon) / 52)
-  
+
+  # Helper to validate survival curve length
+  validate_curve_length <- function(curve, name) {
+    if (length(curve) != expected_length) {
+      stop("Survival curve '", name, "' has length ", length(curve),
+           " but expected ", expected_length, " (time_horizon + 1)")
+    }
+  }
+
   # =========================================================================
   # CONTROL STRATEGY
   # =========================================================================
-  
+
   # Get control survival curves (either base case or from resampling)
   os_control <- params$p_os[["control_OS"]]
   pfs_control <- params$p_pfs[["control_PFS"]]
+  validate_curve_length(os_control, "control_OS")
+  validate_curve_length(pfs_control, "control_PFS")
 
   # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
   # Without this, state occupancy can sum to >1 when curves cross
@@ -341,6 +371,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker positive survival curves
     os_pos <- params$p_os[[paste0(biomarker, "_pos_OS")]]
     pfs_pos <- params$p_pfs[[paste0(biomarker, "_pos_PFS")]]
+    validate_curve_length(os_pos, paste0(biomarker, "_pos_OS"))
+    validate_curve_length(pfs_pos, paste0(biomarker, "_pos_PFS"))
 
     # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
     if (any(pfs_pos > os_pos)) {
@@ -368,6 +400,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker negative survival curves
     os_neg <- params$p_os[[paste0(biomarker, "_neg_OS")]]
     pfs_neg <- params$p_pfs[[paste0(biomarker, "_neg_PFS")]]
+    validate_curve_length(os_neg, paste0(biomarker, "_neg_OS"))
+    validate_curve_length(pfs_neg, paste0(biomarker, "_neg_PFS"))
 
     # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
     if (any(pfs_neg > os_neg)) {

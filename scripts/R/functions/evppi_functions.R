@@ -21,11 +21,14 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
   n_strategies <- ncol(cost_matrix)
   
   # Remove any rows with missing values
+  # IMPORTANT: Filter psa_params alongside cost/effect matrices to maintain
+  # consistent row alignment for kNN distance calculations
   complete_rows <- complete.cases(cost_matrix) & complete.cases(effect_matrix)
   if (sum(complete_rows) < n_sim) {
     cat("  Warning: Removing", n_sim - sum(complete_rows), "incomplete simulations\n")
     cost_matrix <- cost_matrix[complete_rows, , drop = FALSE]
     effect_matrix <- effect_matrix[complete_rows, , drop = FALSE]
+    psa_params <- psa_params[complete_rows, , drop = FALSE]
     n_sim <- nrow(cost_matrix)
   }
   
@@ -64,7 +67,6 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
     }
     
     param_values <- psa_params[[param_name]]
-    param_values <- param_values[complete_rows]  # Use same subset
     param_values <- param_values[!is.na(param_values)]
     
     if (length(unique(param_values)) < 5) {
@@ -84,9 +86,8 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
     param_grids <- list()
     for (param_name in param_names) {
       param_values <- psa_params[[param_name]]
-      param_values <- param_values[complete_rows]
       param_values <- param_values[!is.na(param_values)]
-      
+
       # Use quantiles for grid points (500 points from 0.001 to 0.999)
       quantiles <- seq(0.001, 0.999, length.out = n_grid)
       param_grids[[param_name]] <- quantile(param_values, quantiles)
@@ -102,7 +103,7 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       # Instead, use a random subsample of the actual PSA parameter combinations
       # which naturally cover the joint distribution.
       max_combos <- n_grid  # Cap at n_grid evaluation points
-      all_param_values <- psa_params[complete_rows, param_names, drop = FALSE]
+      all_param_values <- psa_params[, param_names, drop = FALSE]
       if (nrow(all_param_values) > max_combos) {
         sample_idx <- sample(nrow(all_param_values), max_combos)
         param_combinations <- all_param_values[sample_idx, , drop = FALSE]
@@ -119,13 +120,13 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       param_values_combo <- as.numeric(param_combinations[i, ])
       
       # Find closest simulations (using Euclidean distance)
+      # psa_params is already filtered by complete_rows, so nrow matches nmb_matrix
       distances <- rep(0, nrow(psa_params))
-      
+
       for (j in seq_along(param_names)) {
         param_name <- param_names[j]
         target_value <- param_values_combo[j]
         param_col <- psa_params[[param_name]]
-        param_col <- param_col[complete_rows]
         
         # Standardize by parameter range to avoid scale issues
         param_range <- max(param_col, na.rm = TRUE) - min(param_col, na.rm = TRUE)
