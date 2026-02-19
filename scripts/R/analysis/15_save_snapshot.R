@@ -105,6 +105,7 @@ Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
 cat("\n=== Loading Helper Functions ===\n")
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
+source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/multi_model_cea.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
 
@@ -163,14 +164,73 @@ for (i in seq_along(model_labels)) {
     )
     nmb <- nmb[order(-nmb$NMB), ]
 
-    # Load PSA cache
+    # Load PSA cache, or generate if not available
     psa_obj <- load_psa_cache_for_structure(ms)
     psa_summary <- NULL
+
+    if (is.null(psa_obj)) {
+      cat("  PSA cache not found for", label, "- generating PSA...\n")
+
+      # Load sampling cache for this model structure
+      sampling_cache_file <- here::here(
+        "data", "tidy",
+        paste0("sampling_models_n", n_samples, "_",
+               ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
+               label, ".rds")
+      )
+      if (file.exists(sampling_cache_file)) {
+        sampling_models <- readRDS(sampling_cache_file)
+        cat("  Loaded sampling cache:", sampling_cache_file, "\n")
+      } else {
+        cat("  ERROR: Sampling cache not found:", sampling_cache_file, "\n")
+        cat("  Cannot generate PSA without sampling models.\n")
+        cat("  Run 08_sampling.R first.\n")
+        # Continue without PSA for this model
+        models_results[[label]] <- list(
+          base_results = br,
+          icer_obj = as.data.frame(io),
+          nmb_at_wtp = nmb,
+          psa_summary = NULL
+        )
+        cat("  Done:", label, "(without PSA)\n")
+        next
+      }
+
+      # Generate PSA (same pattern as 12_PSA.R)
+      psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
+      psa_results <- run_psa_analysis(
+        psa_params = psa_params_gen,
+        l_params_base = l_params_base,
+        param_distributions = param_distributions,
+        strategies = strategies,
+        time_horizon = time_horizon,
+        cl = cl,
+        n_sim = n_sim
+      )
+      psa_obj <- dampack::make_psa_obj(
+        cost = as.data.frame(psa_results$cost),
+        effect = as.data.frame(psa_results$effect),
+        strategies = strategies,
+        currency = "EUR"
+      )
+
+      # Save to cache for future use
+      cache_file_obj <- here::here("data", "tidy",
+                                   paste0("psa_obj_", label, ".rds"))
+      cache_file_params <- here::here("data", "tidy",
+                                      paste0("psa_params_", label, ".rds"))
+      tryCatch({
+        saveRDS(psa_obj, cache_file_obj)
+        saveRDS(psa_params_gen, cache_file_params)
+        cat("  PSA cache saved to:", cache_file_obj, "\n")
+      }, error = function(e) {
+        cat("  Warning: Failed to save PSA cache:", e$message, "\n")
+      })
+    }
+
     if (!is.null(psa_obj)) {
       psa_summary <- compute_psa_summary(psa_obj)
       psa_objects[[label]] <- psa_obj
-    } else {
-      cat("  WARNING: PSA cache not found for", label, "- skipping PSA\n")
     }
 
     models_results[[label]] <- list(

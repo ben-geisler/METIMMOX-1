@@ -112,18 +112,6 @@ for (m_idx in seq_along(model_structures_to_run)) {
     source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
   }))
 
-  # Check for existing PSA cache
-  psa_cache_file <- here::here("data", "tidy", paste0("psa_obj_", current_model_label, ".rds"))
-
-  if (file.exists(psa_cache_file)) {
-    cat("Loading PSA cache from:", psa_cache_file, "\n")
-    psa_obj_cached <- readRDS(psa_cache_file)
-  } else {
-    cat("WARNING: PSA cache not found for", current_model_label, "model.\n")
-    cat("Please run 12_PSA.R with RUN_ALL_MODELS = TRUE first.\n")
-    next
-  }
-
   # Update base nivolumab cost from current parameters
   base_c_drug_nivo <- l_params_base$c_drug_nivo
 
