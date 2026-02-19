@@ -124,8 +124,8 @@ source(here("scripts/R/functions/prediction_functions.R"))
 model_formulas <- list(
   # Model A: Joint (All-in-One) - all biomarkers + all interactions
   A = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
   ),
 
   # Model B: Focused - Per-strategy formulas
@@ -581,7 +581,7 @@ formula_table <- data.frame(
     "Single-biomarker"
   ),
   `Formula` = c(
-    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + crp + tmb_braf + tlr:Rx",
     "Age + sex + Rx + crp:Rx",
@@ -864,7 +864,7 @@ display_coef_table <- function(coef_df, caption_text) {
 
 ## Model A (Joint) Coefficients
 
-Model A includes all three biomarker interactions: `Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+Model A includes all three biomarker interactions: `Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx`
 
 ```{r model-a-coefs, results='asis'}
 if (exists("multi_models") && !is.null(multi_models$gamma$A)) {

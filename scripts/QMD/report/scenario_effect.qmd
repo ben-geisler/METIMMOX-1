@@ -158,7 +158,7 @@ model_structures <- list(
     value = 0,
     name = "Joint (All-in-One)",
     label = "joint",
-    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    formula = "~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     desc = "All biomarkers and all treatment interactions in a single model"
   ),
   B = list(
@@ -296,7 +296,7 @@ model_structure_df <- data.frame(
   Model = c("Model A", "Model B", "Model C"),
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
-    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),

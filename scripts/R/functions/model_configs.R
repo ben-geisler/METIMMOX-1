@@ -60,8 +60,8 @@ get_model_configs <- function() {
       # Single formula used for all biomarker strategies
       formulas = list(
         shared = list(
-          os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-          pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+          os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx,
+          pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
         )
       ),
       control_formulas = list(

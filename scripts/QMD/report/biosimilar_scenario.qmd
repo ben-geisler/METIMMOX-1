@@ -181,7 +181,7 @@ model_structure_df <- data.frame(
   Model = c("Model A", "Model B", "Model C"),
   Name = c("Joint", "Focused", "Separate"),
   Formula = c(
-    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
