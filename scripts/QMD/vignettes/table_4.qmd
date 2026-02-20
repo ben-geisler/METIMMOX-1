@@ -1,0 +1,137 @@
+---
+title: "Table 4: Base-Case Cost-Effectiveness Results (Model B)"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra, scales, dampack,
+  flexsurv, survival
+)
+```
+
+```{r load-analysis, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+source(here("scripts/R/functions/model_fun.R"))
+source(here("scripts/R/functions/calculate_outcomes.R"))
+source(here("scripts/R/functions/multi_model_cea.R"))
+```
+
+```{r run-model-b, include=FALSE}
+# Run base case for Model B (focused specification)
+result_B <- run_basecase_for_structure(1, verbose = TRUE)
+
+# Re-run with traces to compute LYs
+trace_result <- model_fun(l_params_base, determpsa = "det", return_traces = TRUE)
+traces <- trace_result$traces
+
+# Compute discount factors for effects
+v_dw_e <- 1 / (1 + dr)^(seq(0, time_horizon) / 52)
+
+# Compute discounted LYs for each strategy from traces
+ly_values <- sapply(names(traces), function(strat) {
+  tr <- traces[[strat]]
+  os <- tr$p_pf + tr$p_p  # alive = progression-free + progressed
+  sum(os * v_dw_e * cl)
+})
+```
+
+```{r build-cea-table, include=FALSE}
+strategy_labels <- c(
+  "control" = "Standard care",
+  "crp" = "CRP-guided",
+  "tmb_braf" = "TMB/BRAF-guided",
+  "tlr" = "TLR-guided*"
+)
+
+icer_df <- as.data.frame(result_B$icer_obj)
+
+# Add LYs column
+icer_df$LYs <- ly_values[match(icer_df$Strategy, names(ly_values))]
+
+# Build display table
+display_df <- icer_df %>%
+  mutate(
+    Strategy_Label = strategy_labels[Strategy],
+    Cost_fmt = sprintf("\u20AC%s", format(round(Cost), big.mark = ",")),
+    LY_fmt = sprintf("%.2f", LYs),
+    QALY_fmt = sprintf("%.2f", Effect),
+    Inc_Cost_fmt = ifelse(is.na(Inc_Cost), "\u2014",
+                          sprintf("\u20AC%s", format(round(Inc_Cost), big.mark = ","))),
+    Inc_QALY_fmt = ifelse(is.na(Inc_Effect), "\u2014",
+                          sprintf("%.2f", Inc_Effect)),
+    ICER_fmt = case_when(
+      Status %in% c("D", "ED") ~ "Dominated",
+      is.na(ICER) & Status == "ND" ~ "\u2014",
+      !is.na(ICER) ~ sprintf("\u20AC%s", format(round(ICER), big.mark = ",")),
+      TRUE ~ "\u2014"
+    )
+  ) %>%
+  select(Strategy_Label, Cost_fmt, LY_fmt, QALY_fmt,
+         Inc_Cost_fmt, Inc_QALY_fmt, ICER_fmt)
+```
+
+```{r display-table}
+kable(display_df,
+      caption = "Table 4: Base-case cost-effectiveness results: overall MSS population (Model B)",
+      format = "html",
+      col.names = c("Strategy", "Cost (\u20AC)", "LYs", "QALYs",
+                     "\u0394 Cost (\u20AC)", "\u0394 QALYs", "ICER"),
+      align = c("l", rep("r", 6))) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Costs and QALYs discounted at 4% per year. LYs = life-years. QALYs = quality-adjusted life-years.",
+      "ICER = incremental cost-effectiveness ratio (\u20AC per QALY gained) versus next non-dominated alternative.",
+      "Dominated = more costly and less effective than comparator.",
+      "*TLR-guided evaluated under Models A and C only."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+# Save raw numeric data
+save_data <- icer_df %>%
+  select(Strategy, Cost, LYs, Effect, Inc_Cost, Inc_Effect, ICER, Status)
+names(save_data)[names(save_data) == "Effect"] <- "QALYs"
+
+write.csv(save_data, file = here("tables", "table_4.csv"), row.names = FALSE)
+cat("Table saved to:", here("tables", "table_4.csv"), "\n")
+```
+
+Table 4 has been saved to `tables/table_4.csv`.
