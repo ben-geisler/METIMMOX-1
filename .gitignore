@@ -28,7 +28,6 @@ data/output/*
 # Note: Since data/tidy/ is ignored above, these cache files are already excluded
 
 # Specific file types
-*.csv
 *.xlsx
 *.rds
 *.dta
