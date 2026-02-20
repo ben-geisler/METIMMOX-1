@@ -1,0 +1,192 @@
+---
+title: "Table 1: Model Input Parameters"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, dplyr, knitr, kableExtra
+)
+```
+
+```{r load-data, include=FALSE}
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
+```
+
+```{r build-table, include=FALSE}
+# Compute prevalence 95% CIs (exact binomial)
+n_patients <- nrow(data_complete)
+
+prev_ci <- function(p, n) {
+  ci <- binom.test(round(p * n), n)$conf.int
+  sprintf("%.2f\u2013%.2f", ci[1], ci[2])
+}
+
+# Build the table data frame
+table_1 <- data.frame(
+  Category = c(
+    rep("Biomarker prevalences", 3),
+    rep("Health-state utilities", 2),
+    rep("Treatment costs (\u20AC)", 3),
+    rep("Other costs (\u20AC)", 2),
+    rep("Structural parameters", 2)
+  ),
+  Parameter = c(
+    "CRP-positive",
+    "TLR-positive",
+    "TMB/BRAF-positive",
+    "Progression-free",
+    "Post-progression",
+    "Nivolumab per cycle",
+    "FLOX per cycle",
+    "NGS testing",
+    "Monitoring per cycle",
+    "End-of-life",
+    "Discount rate",
+    "Time horizon"
+  ),
+  Base_case = c(
+    sprintf("%.3f", l_params_base$p_crp),
+    sprintf("%.3f", l_params_base$p_tlr),
+    sprintf("%.3f", l_params_base$p_tmb_braf),
+    sprintf("%.2f", l_params_base$u_np),
+    sprintf("%.2f", l_params_base$u_p),
+    sprintf("\u20AC%s", format(round(l_params_base$c_drug_nivo), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_drug_FLOX), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_test_NGS), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_test_CT), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_other_last), big.mark = ",")),
+    "4%",
+    "10 years"
+  ),
+  Range = c(
+    prev_ci(l_params_base$p_crp, n_patients),
+    prev_ci(l_params_base$p_tlr, n_patients),
+    prev_ci(l_params_base$p_tmb_braf, n_patients),
+    sprintf("%.2f\u2013%.2f",
+            l_params_base$u_np * (1 - DSA_mult),
+            min(l_params_base$u_np * (1 + DSA_mult), 1.0)),
+    sprintf("%.2f\u2013%.2f",
+            l_params_base$u_p * (1 - DSA_mult),
+            min(l_params_base$u_p * (1 + DSA_mult), 1.0)),
+    sprintf("%s\u2013%s",
+            format(round(l_params_base$c_drug_nivo * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_drug_nivo * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
+            format(round(l_params_base$c_drug_FLOX * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_drug_FLOX * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
+            format(round(l_params_base$c_test_NGS * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_test_NGS * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
+            format(round(l_params_base$c_test_CT * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_test_CT * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
+            format(round(l_params_base$c_other_last * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_other_last * (1 + DSA_mult)), big.mark = ",")),
+    "0\u20138%",
+    "5\u201320 yr"
+  ),
+  Distribution = c(
+    "Beta", "Beta", "Beta",
+    "Beta", "Beta",
+    "Gamma", "Gamma", "Gamma",
+    "Gamma", "Gamma",
+    "Fixed", "Fixed"
+  ),
+  Source = c(
+    "METIMMOX", "METIMMOX", "METIMMOX",
+    "METIMMOX EQ-5D", "METIMMOX EQ-5D",
+    "NoMA", "NoMA", "Local",
+    "Ref 27", "Ref 28",
+    "NoMA guidelines", ""
+  ),
+  Notes = c(
+    sprintf("95%% CI: %.1f\u2013%.1f%%",
+            binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[1] * 100,
+            binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[2] * 100),
+    sprintf("Model A/C only; 95%% CI: %.1f\u2013%.1f%%",
+            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[1] * 100,
+            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[2] * 100),
+    sprintf("95%% CI: %.1f\u2013%.1f%%",
+            binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[1] * 100,
+            binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[2] * 100),
+    "Danish tariff",
+    "Danish tariff",
+    "40% discount",
+    "",
+    "TMB/BRAF only",
+    "CT scans",
+    "",
+    "",
+    ""
+  ),
+  stringsAsFactors = FALSE
+)
+```
+
+```{r display-table}
+kable(table_1 %>% select(-Category),
+      caption = "Table 1: Model input parameters",
+      format = "html",
+      col.names = c("Parameter", "Base case", "Range", "Distribution", "Source", "Notes"),
+      align = c("l", "r", "r", "l", "l", "l")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  pack_rows(index = table(table_1$Category)[unique(table_1$Category)]) %>%
+  footnote(
+    general = c(
+      "NoMA = Norwegian Medicines Agency. NGS = next-generation sequencing.",
+      "Costs in 2023 euros. Ranges for costs and utilities represent +/-20% variation for DSA.",
+      "Prevalence ranges based on 95% exact binomial confidence intervals."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+write.csv(table_1 %>% select(-Category), file = here("tables", "table_1.csv"), row.names = FALSE)
+cat("Table saved to:", here("tables", "table_1.csv"), "\n")
+```
+
+Table 1 has been saved to `tables/table_1.csv`.
