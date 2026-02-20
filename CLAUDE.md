@@ -257,7 +257,7 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `discount_rate_research` | 0.035 | Discount rate for research benefits (3.5%) |
 
 **Model Structure Options:**
-- **Model A (joint, 0)**: All biomarkers + all treatment interactions: `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+- **Model A (joint, 0)**: All biomarkers + all treatment interactions: `~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx`
 - **Model B (focused, 1)**: Per-strategy formulas. CRP and TMB/BRAF strategies share: `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`. TLR strategy uses: `~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`. All three biomarker strategies available.
 - **Model C (separate, 2)**: One biomarker + its interaction only: `~ Age + sex + Rx + [biomarker]:Rx`
 
@@ -373,7 +373,7 @@ PFS: Surv(PFSwk, Progression) ~ Age + sex
 
 **Biomarker groups** (formulas vary by model structure):
 
-- **Model A (joint)**: Single shared formula for all strategies: `~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+- **Model A (joint)**: Single shared formula for all strategies: `~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx`
 - **Model B (focused)**: Per-strategy formulas:
   - CRP / TMB_BRAF strategies: `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`
   - TLR strategy: `~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`

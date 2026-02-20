@@ -144,7 +144,7 @@ kable(summary_df,
                 font_size = 12) %>%
   footnote(
     general = c(
-      "Models fitted to Model A (joint) specification: Surv ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx.",
+      "Models fitted to Model A (joint) specification: Surv ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx.",
       "Gamma distribution selected for both endpoints based on lowest AIC, BIC concordance, and clinical plausibility of extrapolations.",
       "Delta AIC/BIC = difference from best-fitting model. Distributions with Delta AIC >10 have essentially no empirical support.",
       "Candidate distributions: exponential, Weibull, Weibull PH, log-logistic, log-normal, gamma, Gompertz, generalized gamma, generalized F."

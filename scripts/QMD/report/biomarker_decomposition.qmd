@@ -100,8 +100,8 @@ source(here("scripts/R/functions/prediction_functions.R"))
 model_formulas <- list(
   # Model A: Joint (All-in-One) - all biomarkers + all interactions
   A = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
   ),
 
   # Model B: Focused - Per-strategy formulas

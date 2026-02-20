@@ -5,7 +5,7 @@
 # where each model only includes the interaction term for that biomarker.
 #
 # Purpose: Compare clinical outcomes between:
-#   - All-in-One model: ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx
+#   - All-in-One model: ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
 #   - Separate models: ~ Age + sex + Rx + [biomarker]:Rx (one per biomarker)
 #
 # All models use the gamma distribution (selected by AIC in the primary analysis).

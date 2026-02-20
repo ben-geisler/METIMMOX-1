@@ -106,7 +106,7 @@ model_structures <- list(
     value = 0,
     name = "Joint (All-in-One)",
     label = "joint",
-    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    formula = "~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     desc = "All biomarkers and all treatment interactions in a single model"
   ),
   B = list(
@@ -486,7 +486,7 @@ run_dsa_for_model <- function(target_structure, verbose = TRUE) {
     value = 0,
     name = "Joint (All-in-One)",
     label = "joint",
-    formula = "~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    formula = "~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     desc = "All biomarkers and all treatment interactions in a single model"
   ),
   B = list(
@@ -878,7 +878,7 @@ model_status_df <- data.frame(
   Model = c("A", "B", "C"),
   Name = c("Joint (All-in-One)", "Focused", "Separate"),
   Formula = c(
-    "Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx",
+    "Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
     "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
     "Age + sex + Rx + [biomarker]:Rx"
   ),
@@ -1317,7 +1317,7 @@ create_model_impact_table <- function(model_letter, top_n = 3) {
 
 Model A uses a **joint survival model** with all three biomarkers and all treatment-biomarker interactions included in a single model.
 
-**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp:Rx + tlr:Rx + tmb_braf:Rx`
+**Formula:** `Surv(time, event) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx`
 
 ```{r model-a-check, results='asis'}
 if (is.null(all_dsa_results[["A"]])) {
