@@ -123,15 +123,17 @@ run_all_basecase_analyses <- function(verbose = TRUE) {
 #' @param model_structure Integer (0, 1, or 2) indicating model structure
 #' @param n_samples Number of samples (for cache filename)
 #' @param use_both_models USE_BOTH_MODELS setting (for cache filename)
+#' @param util_label Utility source label (defaults to global utility_source_label)
 #' @return PSA object or NULL if not found
 load_psa_cache_for_structure <- function(model_structure,
                                           n_samples = 5000,
-                                          use_both_models = 0) {
+                                          use_both_models = 0,
+                                          util_label = utility_source_label) {
 
   model_label <- c("joint", "focused", "separate")[model_structure + 1]
 
   cache_file <- here::here("data", "tidy",
-                           paste0("psa_obj_", model_label, ".rds"))
+                           paste0("psa_obj_", model_label, "_", util_label, ".rds"))
 
   if (file.exists(cache_file)) {
     psa_obj <- readRDS(cache_file)
@@ -497,7 +499,8 @@ create_psa_summary_table <- function(all_psa_results, wtp = 51000) {
 load_scenario_evppi_results <- function(results_file = NULL) {
 
   if (is.null(results_file)) {
-    results_file <- here::here("data/tidy/scenario_evppi_results.rds")
+    util_label <- if (exists("utility_source_label")) utility_source_label else "ipd"
+    results_file <- here::here("data/tidy", paste0("scenario_evppi_results_", util_label, ".rds"))
   }
 
   if (!file.exists(results_file)) {

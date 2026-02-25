@@ -118,7 +118,7 @@ for (label in model_labels) {
 # Check for missing PSA caches
 missing_psa_caches <- character()
 for (label in model_labels) {
-  cache_file <- here::here("data", "tidy", paste0("psa_obj_", label, ".rds"))
+  cache_file <- here::here("data", "tidy", paste0("psa_obj_", label, "_", utility_source_label, ".rds"))
   if (!file.exists(cache_file)) {
     missing_psa_caches <- c(missing_psa_caches, label)
   }

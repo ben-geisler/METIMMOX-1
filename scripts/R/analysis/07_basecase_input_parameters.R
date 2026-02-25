@@ -63,9 +63,11 @@ l_params_base <- list(
   dr_costs = dr,
   dr_effects = dr,
   
-  # Utilities
-  u_np =  0.9077, # utility in non-progressed state
-  u_p =  0.9005,  # utility in progressed state
+  # Utilities - determined by UTILITY_SOURCE switch (set in 02_setup_and_global_variables.R)
+  # IPD-derived: u_np = 0.9077, u_p = 0.9005 (from METIMMOX trial)
+  # CORRECT trial: u_np = 0.73, u_p = 0.59 (Gourzoulidis et al. 2018)
+  u_np = if (UTILITY_SOURCE == 0) 0.9077 else 0.73,
+  u_p  = if (UTILITY_SOURCE == 0) 0.9005 else 0.59,
   
   # Drug costs
   c_drug_nivo = 13923,   # cost of nivolumab per administration

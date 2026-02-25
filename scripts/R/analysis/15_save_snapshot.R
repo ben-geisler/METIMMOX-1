@@ -216,9 +216,9 @@ for (i in seq_along(model_labels)) {
 
       # Save to cache for future use
       cache_file_obj <- here::here("data", "tidy",
-                                   paste0("psa_obj_", label, ".rds"))
+                                   paste0("psa_obj_", label, "_", utility_source_label, ".rds"))
       cache_file_params <- here::here("data", "tidy",
-                                      paste0("psa_params_", label, ".rds"))
+                                      paste0("psa_params_", label, "_", utility_source_label, ".rds"))
       tryCatch({
         saveRDS(psa_obj, cache_file_obj)
         saveRDS(psa_params_gen, cache_file_params)

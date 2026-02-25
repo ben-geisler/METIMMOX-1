@@ -91,8 +91,8 @@ for (func_file in helper_functions) {
 
 ```{r biosim-load-cache, include=FALSE}
 # Load scenario analysis results (try full cache first, then preview)
-cache_file <- here("data/tidy/scenario_evppi_results.rds")
-preview_cache_file <- here("data/tidy/scenario_evppi_results_PREVIEW.rds")
+cache_file <- here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+preview_cache_file <- here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
 
 if (file.exists(cache_file)) {
   cat("Loading full scenario analysis results from cache...\n")

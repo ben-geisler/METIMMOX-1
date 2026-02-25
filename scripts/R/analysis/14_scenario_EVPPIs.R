@@ -315,10 +315,11 @@ evppi_cache <- list(
   scenarios = scenarios
 )
 
-saveRDS(evppi_cache, file = here::here("data/tidy/scenario_evppi_results.rds"))
+scenario_evppi_cache_file <- here::here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+saveRDS(evppi_cache, file = scenario_evppi_cache_file)
 
 cat("\n=== ANALYSIS COMPLETE ===\n")
-cat("Results saved to: data/tidy/scenario_evppi_results.rds\n")
+cat("Results saved to:", scenario_evppi_cache_file, "\n")
 cat("\nSaved objects (in list):\n")
 cat("  - all_scenario_results: Results for primary model (backward compatibility)\n")
 cat("  - all_model_scenario_results: Results for all model structures\n")

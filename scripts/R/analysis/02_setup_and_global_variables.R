@@ -63,6 +63,18 @@ USE_BOTH_MODELS <- 0
 ## Cache filenames will include this setting for safety.
 MODEL_STRUCTURE <- 0  # Default: joint model (current base case behavior)
 
+## Utility source switch
+## Controls which health state utility values are used as base case
+## Options:
+##   0 = "ipd"      - IPD-derived from METIMMOX trial (u_np = 0.9077, u_p = 0.9005)
+##   1 = "correct"  - EQ-5D from CORRECT trial (u_np = 0.73, u_p = 0.59)
+##                     (Grothey et al. Lancet 2013, cited by Gourzoulidis et al. J Comp Effect Res 2018)
+##
+## IMPORTANT: When changed, PSA and EVPPI caches must be regenerated.
+## Sampling cache (survival models) is NOT affected.
+UTILITY_SOURCE <- 0  # Default: IPD-derived utilities
+utility_source_label <- c("ipd", "correct")[UTILITY_SOURCE + 1]
+
 # ===============================================================================
 # SOURCE MODEL CONFIGURATIONS (Single Source of Truth)
 # ===============================================================================

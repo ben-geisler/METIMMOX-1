@@ -252,6 +252,7 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `dr` | 0.04 | Discount rate (4%) |
 | `USE_BOTH_MODELS` | 0 | 0=full model only, 1=compare both |
 | `MODEL_STRUCTURE` | 0 | 0=joint (Model A), 1=focused (Model B), 2=separate (Model C) |
+| `UTILITY_SOURCE` | 0 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59) |
 | `annual_incidence_norway` | 1500 | Annual eligible MSS/pMMR mCRC patients in Norway |
 | `research_horizon_years` | 10 | Research value time horizon (years) for population EVPPI |
 | `discount_rate_research` | 0.035 | Discount rate for research benefits (3.5%) |
@@ -261,7 +262,7 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 - **Model B (focused, 1)**: Per-strategy formulas. CRP and TMB/BRAF strategies share: `~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`. TLR strategy uses: `~ Age + sex + Rx + crp + tmb_braf + tlr:Rx`. All three biomarker strategies available.
 - **Model C (separate, 2)**: One biomarker + its interaction only: `~ Age + sex + Rx + [biomarker]:Rx`
 
-**When changed**: Regenerate sampling cache (USE_BOTH_MODELS or MODEL_STRUCTURE change) and PSA cache. Cache filenames encode these settings to prevent mixing results.
+**When changed**: Regenerate sampling cache (USE_BOTH_MODELS or MODEL_STRUCTURE change) and PSA cache. When UTILITY_SOURCE is changed, only PSA and EVPPI caches need regeneration (sampling cache is unaffected). Cache filenames encode MODEL_STRUCTURE and UTILITY_SOURCE settings to prevent mixing results.
 
 ### Biomarker Strategies
 
@@ -691,36 +692,37 @@ source("scripts/R/analysis/08_sampling.R")
 
 ### 2. PSA Cache (Analysis Results)
 
-**Location**: `data/tidy/psa_obj_{joint|focused|separate}.rds` and `psa_params_{joint|focused|separate}.rds`
+**Location**: `data/tidy/psa_obj_{joint|focused|separate}_{ipd|correct}.rds` and `psa_params_{...}_{ipd|correct}.rds`
 **Purpose**: Cached PSA simulation results (5000 runs)
 **Generation**: Script [12_PSA.R](scripts/R/analysis/12_PSA.R) (~20-60 minutes first run)
 **Size**: ~660 KB total
 **When to regenerate**: Delete cache files when:
 - Model structure changes ([model_fun.R](scripts/R/functions/model_fun.R) or [calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R))
 - **Prediction methodology changes** (e.g., issues #69, #70 fixes to survival curve generation)
-- Base parameters change (costs, utilities, time horizon, discount rates)
+- Base parameters change (costs, time horizon, discount rates)
+- **UTILITY_SOURCE changes** (cache filenames encode utility source to prevent mixing)
 - **Sampling cache is regenerated** (PSA depends on specific resampled models - always regenerate PSA after regenerating sampling cache)
 - Parameter distributions change (distributional assumptions, means, SDs, correlations)
 
 **To regenerate**:
 ```r
-# Delete PSA cache files (example for joint model structure)
-file.remove(here("data", "tidy", "psa_obj_joint.rds"))
-file.remove(here("data", "tidy", "psa_params_joint.rds"))
+# Delete PSA cache files (example for joint model structure, IPD utilities)
+file.remove(here("data", "tidy", "psa_obj_joint_ipd.rds"))
+file.remove(here("data", "tidy", "psa_params_joint_ipd.rds"))
 # Re-run 12_PSA.R
 source("scripts/R/analysis/12_PSA.R")
 ```
 
 ### 3. EVPPI Cache
 
-**Location**: `data/tidy/evppi_results.RData`
+**Location**: `data/tidy/evppi_results_{ipd|correct}.RData`
 **Purpose**: Cached EVPPI results for parameter groups
 **Generation**: Script [13_EVPPIs.R](scripts/R/analysis/13_EVPPIs.R)
 **When to regenerate**: Delete cache file when PSA cache is regenerated or EVPPI parameter groupings change
 
 ### 4. Scenario EVPPI Cache
 
-**Location**: `data/tidy/scenario_evppi_results.RData`
+**Location**: `data/tidy/scenario_evppi_results_{ipd|correct}.rds`
 **Purpose**: Cached scenario-based EVPPI analysis results
 **Generation**: Script [14_scenario_EVPPIs.R](scripts/R/analysis/14_scenario_EVPPIs.R)
 **When to regenerate**: Delete cache file when PSA cache is regenerated or scenario definitions change

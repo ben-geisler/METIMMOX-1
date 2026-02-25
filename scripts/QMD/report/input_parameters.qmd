@@ -44,8 +44,8 @@ model_structure_labels <- c("joint", "focused", "separate")
 MODEL_STRUCTURE <- 0  # Must match setting in 02_setup_and_global_variables.R
 current_model_label <- model_structure_labels[MODEL_STRUCTURE + 1]
 
-psa_results_path <- here("data/tidy", paste0("psa_obj_", current_model_label, ".rds"))
-psa_params_path <- here("data/tidy", paste0("psa_params_", current_model_label, ".rds"))
+psa_results_path <- here("data/tidy", paste0("psa_obj_", current_model_label, "_", utility_source_label, ".rds"))
+psa_params_path <- here("data/tidy", paste0("psa_params_", current_model_label, "_", utility_source_label, ".rds"))
 
 # Try to load PSA object and parameters
 psa_obj <- NULL

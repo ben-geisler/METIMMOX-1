@@ -73,9 +73,9 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
-# Define cache file paths with model structure label
-cache_file_obj <- here("data", "tidy", paste0("psa_obj_", model_structure_label, ".rds"))
-cache_file_params <- here("data", "tidy", paste0("psa_params_", model_structure_label, ".rds"))
+# Define cache file paths with model structure and utility source labels
+cache_file_obj <- here("data", "tidy", paste0("psa_obj_", model_structure_label, "_", utility_source_label, ".rds"))
+cache_file_params <- here("data", "tidy", paste0("psa_params_", model_structure_label, "_", utility_source_label, ".rds"))
 
 # Check if PSA cache exists and is valid
 psa_cached <- FALSE

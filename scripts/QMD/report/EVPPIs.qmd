@@ -89,7 +89,7 @@ model_configs <- get_model_configs()
 # This includes auto-generating sampling and PSA caches if needed.
 # ===============================================================================
 
-results_file <- here::here("data/tidy/scenario_evppi_results.rds")
+results_file <- here::here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
 needs_generation <- FALSE
 
 # Check if cache exists
@@ -169,9 +169,9 @@ if (needs_generation) {
     # Step 2: Check/Generate PSA Cache
     # =========================================================================
     psa_cache_file <- here::here("data", "tidy",
-                                  paste0("psa_obj_", current_model_label, ".rds"))
+                                  paste0("psa_obj_", current_model_label, "_", utility_source_label, ".rds"))
     psa_params_file <- here::here("data", "tidy",
-                                   paste0("psa_params_", current_model_label, ".rds"))
+                                   paste0("psa_params_", current_model_label, "_", utility_source_label, ".rds"))
 
     if (!file.exists(psa_cache_file)) {
       cat("\nPSA cache not found for", current_model_label, "\n")

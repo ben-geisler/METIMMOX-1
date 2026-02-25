@@ -222,5 +222,6 @@ if (nrow(evppi_results) > 0) {
 }
 
 # Save results
-save(evppi_results, evpi_manual, file = here::here("data/tidy/evppi_results.RData"))
-cat("\nEVPPI analysis complete. Results saved to data/tidy/evppi_results.RData\n")
+evppi_cache_file <- here::here("data/tidy", paste0("evppi_results_", utility_source_label, ".RData"))
+save(evppi_results, evpi_manual, file = evppi_cache_file)
+cat("\nEVPPI analysis complete. Results saved to", evppi_cache_file, "\n")
