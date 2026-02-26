@@ -72,7 +72,7 @@ MODEL_STRUCTURE <- 0  # Default: joint model (current base case behavior)
 ##
 ## IMPORTANT: When changed, PSA and EVPPI caches must be regenerated.
 ## Sampling cache (survival models) is NOT affected.
-UTILITY_SOURCE <- 0  # Default: IPD-derived utilities
+UTILITY_SOURCE <- 1  # Default: CORRECT trial utilities (Gourzoulidis et al. 2018)
 utility_source_label <- c("ipd", "correct")[UTILITY_SOURCE + 1]
 
 # ===============================================================================
