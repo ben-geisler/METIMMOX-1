@@ -98,7 +98,7 @@ rm(list = setdiff(ls(), c(
   # Population parameters for EVPPI scaling
   "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
   # Model configuration switches
-  "USE_BOTH_MODELS", "MODEL_STRUCTURE",
+  "USE_BOTH_MODELS", "MODEL_STRUCTURE", "UTILITY_SOURCE", "utility_source_label",
   # Model config helper functions
   "get_strategies", "get_biomarkers", "get_model_configs", "get_current_model_config",
   "get_strategy_formula", "get_control_formula", "get_model_type_label",
