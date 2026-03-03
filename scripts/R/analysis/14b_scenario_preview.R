@@ -162,16 +162,14 @@ evppi_cache_preview <- list(
   scenarios = scenarios_preview
 )
 
-# Save to preview cache file
-preview_cache_file <- here::here("data/tidy/scenario_evppi_results_PREVIEW.rds")
+# Save to preview cache file (utility-source-aware name, matching 14_scenario_EVPPIs.R)
+preview_cache_file <- here::here("data/tidy",
+                                 paste0("scenario_evppi_results_", utility_source_label,
+                                        "_PREVIEW.rds"))
 saveRDS(evppi_cache_preview, file = preview_cache_file)
 
 cat("\n=== PREVIEW COMPLETE ===\n")
 cat("Results saved to:", preview_cache_file, "\n")
-cat("\nTo use this preview in biosimilar_scenario.qmd, temporarily change:\n")
-cat("  cache_file <- here('data/tidy/scenario_evppi_results.rds')\n")
-cat("to:\n")
-cat("  cache_file <- here('data/tidy/scenario_evppi_results_PREVIEW.rds')\n\n")
 
 cat("Summary:\n")
 cat("- PSA iterations:", n_sim_preview, "(10% of full analysis)\n")

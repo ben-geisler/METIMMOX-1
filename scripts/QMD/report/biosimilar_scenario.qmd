@@ -87,12 +87,19 @@ for (func_file in helper_functions) {
     suppressMessages(suppressWarnings(source(here(func_file))))
   }
 }
+
+# Source analysis setup script to define global variables (e.g. utility_source_label)
+suppressMessages(suppressWarnings(
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+))
 ```
 
 ```{r biosim-load-cache, include=FALSE}
-# Load scenario analysis results (try full cache first, then preview)
-cache_file <- here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+# Load scenario analysis results (try full cache first, then preview, then legacy names)
+cache_file         <- here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
 preview_cache_file <- here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+legacy_cache_file  <- here("data/tidy", "scenario_evppi_results.rds")
+legacy_preview_file <- here("data/tidy", "scenario_evppi_results_PREVIEW.rds")
 
 if (file.exists(cache_file)) {
   cat("Loading full scenario analysis results from cache...\n")
@@ -100,6 +107,12 @@ if (file.exists(cache_file)) {
 } else if (file.exists(preview_cache_file)) {
   cat("Full cache not found. Loading PREVIEW results (reduced iterations)...\n")
   evppi_cache <- readRDS(preview_cache_file)
+} else if (file.exists(legacy_cache_file)) {
+  cat("Loading legacy full cache (no utility label)...\n")
+  evppi_cache <- readRDS(legacy_cache_file)
+} else if (file.exists(legacy_preview_file)) {
+  cat("Loading legacy PREVIEW cache (no utility label)...\n")
+  evppi_cache <- readRDS(legacy_preview_file)
 } else {
   stop("No scenario analysis cache found. Please run script 14 (14_scenario_EVPPIs.R) or 14b_scenario_preview.R first.")
 }
