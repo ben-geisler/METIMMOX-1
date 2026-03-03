@@ -148,6 +148,23 @@ if (nrow(evppi_all_scenarios_preview) > 0) {
   evppi_all_scenarios_preview$model_structure <- 0
   evppi_all_scenarios_preview$model_label <- "joint"
   evppi_all_scenarios_preview$model_name <- "Model A: Joint"
+
+  # Add population-level EVPPI (matches 14_scenario_EVPPIs.R)
+  evppi_all_scenarios_preview <- evppi_all_scenarios_preview %>%
+    mutate(
+      evppi_population_millions = calculate_population_evppi(
+        evppi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      ),
+      evpi_population_millions = calculate_population_evppi(
+        evpi,
+        annual_incidence = annual_incidence_norway,
+        research_horizon = research_horizon_years,
+        discount_rate = discount_rate_research
+      )
+    )
 }
 
 # Create multi-model structure for compatibility

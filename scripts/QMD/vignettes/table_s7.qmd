@@ -34,11 +34,11 @@ suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
 }))
 
-# Load scenario EVPPI cache (try standard name first, then PREVIEW)
-cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
-if (!file.exists(cache_file)) {
-  cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
-}
+# Load scenario EVPPI cache (try label-aware name first, then legacy names)
+cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
 
 if (file.exists(cache_file)) {
   evppi_cache <- readRDS(cache_file)

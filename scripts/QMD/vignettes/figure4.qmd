@@ -28,6 +28,11 @@ pacman::p_load(
   here, ggplot2, dplyr, scales, dampack
 )
 
+# Source setup script to define utility_source_label and global variables
+suppressMessages(suppressWarnings(
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+))
+
 theme_set(theme_minimal() +
   theme(
     plot.title = element_text(size = 12, face = "bold"),
@@ -39,12 +44,17 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-# Panel A: Model B (focused) - base case pricing
-psa_B_file <- here("data", "tidy", "psa_obj_focused.rds")
+# Panel A: Model B (focused) - base case pricing (try label-aware name first)
+psa_B_file <- here("data", "tidy", paste0("psa_obj_focused_", utility_source_label, ".rds"))
+if (!file.exists(psa_B_file)) psa_B_file <- here("data", "tidy", "psa_obj_focused.rds")
 # Panel B: Model A (joint) - base case pricing
-psa_A_file <- here("data", "tidy", "psa_obj_joint.rds")
+psa_A_file <- here("data", "tidy", paste0("psa_obj_joint_", utility_source_label, ".rds"))
+if (!file.exists(psa_A_file)) psa_A_file <- here("data", "tidy", "psa_obj_joint.rds")
 # Panel C: Model B (focused) - biosimilar pricing (from scenario EVPPI cache)
-scenario_cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+scenario_cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
 
 psa_B <- if (file.exists(psa_B_file)) readRDS(psa_B_file) else NULL
 psa_A <- if (file.exists(psa_A_file)) readRDS(psa_A_file) else NULL

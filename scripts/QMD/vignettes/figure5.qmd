@@ -28,6 +28,11 @@ pacman::p_load(
   here, ggplot2, dplyr, scales
 )
 
+# Source setup script to define utility_source_label and global variables
+suppressMessages(suppressWarnings(
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+))
+
 theme_set(theme_minimal() +
   theme(
     plot.title = element_text(size = 12, face = "bold"),
@@ -39,7 +44,10 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
+if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
 
 if (file.exists(cache_file)) {
   evppi_cache <- readRDS(cache_file)
@@ -80,6 +88,13 @@ if (data_available) {
   prevalence_params <- c("p_crp", "p_tlr", "p_tmb_braf")
   drug_cost_params <- c("c_drug_nivo", "c_drug_FLOX")
   utility_params <- c("u_np", "u_p")
+
+  # Compute population EVPPI if missing from cache
+  if (!"evppi_population_millions" %in% names(evppi_all)) {
+    discounted_pop <- annual_incidence_norway *
+      sum(1 / (1 + discount_rate_research)^(0:(research_horizon_years - 1)))
+    evppi_all$evppi_population_millions <- evppi_all$evppi * discounted_pop / 1e6
+  }
 
   evppi_filtered <- evppi_all %>%
     filter(model_label == "focused",
