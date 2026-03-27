@@ -19,6 +19,8 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
+  gfm:
+    toc: true
 execute:
   echo: false
   warning: false

@@ -1,0 +1,243 @@
+---
+title: "Causal DAG"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  gfm:
+    toc: true
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 9
+    fig-height: 7
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup}
+#| include: false
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, knitr, kableExtra, dagitty, ggdag, ggplot2, dplyr)
+
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+# Introduction
+
+This report presents the directed acyclic graph (DAG) for the METIMMOX-1 cost-effectiveness analysis. The DAG encodes the assumed causal structure between patient characteristics, biomarkers, treatment, intermediate outcomes, and survival endpoints. It was specified in DAGitty format and visualised using the **ggdag** package in R.
+
+Three node types are distinguished:
+
+- **Exposure** (T): the randomised treatment (alternating FLOX + nivolumab vs FLOX alone)
+- **Outcomes** (PFS, OS): the clinical endpoints of interest
+- **Latent** (U): unmeasured patient characteristics that act as common causes of biomarkers and/or survival
+
+# Node Definitions
+
+```{r node-table}
+node_defs <- data.frame(
+  Node = c("Age", "Sex", "U", "TMB_BRAF", "CRP", "T",
+           "TxTMB", "ETS", "PFS", "OS"),
+  Label = c("Age", "Sex", "U", "TMB/BRAF", "CRP", "T",
+            "T x TMB", "ETS", "PFS", "OS"),
+  Type = c("Covariate", "Covariate", "Latent",
+           "Biomarker", "Biomarker", "Exposure",
+           "Effect modifier", "Mediator", "Outcome", "Outcome"),
+  Description = c(
+    "Patient age at baseline",
+    "Patient sex",
+    "Unmeasured prognostic factors (latent)",
+    "Combined biomarker: TMB >= 9 mut/MB or BRAF mutation",
+    "C-reactive protein (positive: CRP < 5 mg/L)",
+    "Treatment: alternating FLOX + nivolumab vs FLOX alone",
+    "Interaction between treatment and TMB/BRAF status",
+    "Early tumour shrinkage (radiological response)",
+    "Progression-free survival",
+    "Overall survival"
+  )
+)
+
+tbl <- kable(node_defs,
+             col.names = c("Node", "Display", "Type", "Description"),
+             caption = "DAG node definitions",
+             booktabs = TRUE)
+if (knitr::is_latex_output()) {
+  tbl |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+} else {
+  tbl
+}
+```
+
+# Causal Structure
+
+```{r dag-define}
+#| include: false
+
+dag <- dagitty('dag {
+bb="0,0,1,1"
+Age [pos="0.100,0.100"]
+Sex [pos="0.280,0.100"]
+U [latent,pos="0.750,0.080"]
+TMB_BRAF [pos="0.200,0.380"]
+CRP [pos="0.720,0.320"]
+T [exposure,pos="0.050,0.680"]
+TxTMB [pos="0.350,0.560"]
+ETS [pos="0.560,0.560"]
+PFS [outcome,pos="0.720,0.760"]
+OS [outcome,pos="0.900,0.920"]
+
+Age -> TMB_BRAF
+Age -> OS
+Sex -> TMB_BRAF
+U -> TMB_BRAF
+U -> CRP
+U -> PFS
+U -> OS
+TMB_BRAF -> PFS
+TMB_BRAF -> OS
+TMB_BRAF -> ETS
+TMB_BRAF -> TxTMB
+CRP -> PFS
+CRP -> OS
+CRP -> ETS
+T -> PFS
+T -> OS
+T -> ETS
+T -> TxTMB
+TxTMB -> PFS
+TxTMB -> OS
+ETS -> PFS
+PFS -> OS
+}')
+```
+
+```{r dag-plot}
+#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Arrows denote assumed causal effects. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; ETS = Early Tumour Shrinkage; U = Unmeasured confounders."
+#| fig-width: 9
+#| fig-height: 7
+
+tidy_dag <- tidy_dagitty(dag)
+
+# DAGitty uses y-down coordinates; flip to ggplot2 y-up convention
+tidy_dag$data <- tidy_dag$data |>
+  mutate(
+    y    = 1 - y,
+    yend = if_else(is.na(yend), NA_real_, 1 - yend)
+  )
+
+# Colour palette
+pal <- c(
+  "exposure" = "#2166ac",
+  "outcome"  = "#b2182b",
+  "latent"   = "#1b7837"
+)
+
+ggdag_status(tidy_dag, node_size = 24, text_size = 3.0, text_col = "white") +
+  theme_dag() +
+  scale_color_manual(
+    name     = "Node type",
+    values   = pal,
+    na.value = "grey55",
+    breaks   = c("exposure", "latent", "outcome"),
+    labels   = c("exposure" = "Exposure (T)",
+                 "latent"   = "Latent (U)",
+                 "outcome"  = "Outcome (PFS, OS)")
+  ) +
+  scale_fill_manual(
+    name     = "Node type",
+    values   = pal,
+    na.value = "grey55",
+    breaks   = c("exposure", "latent", "outcome"),
+    labels   = c("exposure" = "Exposure (T)",
+                 "latent"   = "Latent (U)",
+                 "outcome"  = "Outcome (PFS, OS)")
+  ) +
+  theme(
+    legend.position   = "bottom",
+    legend.text       = element_text(size = 10),
+    legend.title      = element_text(size = 10, face = "bold"),
+    plot.margin       = margin(10, 10, 10, 10)
+  )
+```
+
+# Causal Analysis
+
+Because T is a randomised exposure with no parents in the DAG, there are no backdoor paths from T to PFS or OS. The sections below confirm this using dagitty's formal algorithms and list the implied conditional independencies encoded by the DAG.
+
+## Adjustment Sets
+
+```{r adjustment-sets}
+#| results: asis
+
+report_adj <- function(exposure, outcome) {
+  adj <- adjustmentSets(dag, exposure = exposure, outcome = outcome,
+                        type = "minimal")
+  if (length(adj) == 0) {
+    cat(sprintf(
+      "**%s -> %s:** No adjustment required (randomised exposure; no open backdoor paths).\n\n",
+      exposure, outcome
+    ))
+  } else {
+    sets <- sapply(adj, function(s) {
+      if (length(s) == 0) "{}" else paste0("{", paste(s, collapse = ", "), "}")
+    })
+    cat(sprintf("**%s -> %s:** Minimal adjustment sets: %s\n\n",
+                exposure, outcome, paste(sets, collapse = "; ")))
+  }
+}
+
+report_adj("T", "PFS")
+report_adj("T", "OS")
+```
+
+## Implied Conditional Independencies
+
+```{r independencies}
+indep <- impliedConditionalIndependencies(dag)
+
+if (length(indep) == 0) {
+  cat("The DAG implies no testable conditional independencies (saturated structure).\n")
+} else {
+  fmt_ci <- function(s) {
+    z <- s$Z
+    if (length(z) == 0) {
+      sprintf("%s _||_ %s", s$X, s$Y)
+    } else {
+      sprintf("%s _||_ %s  |  {%s}", s$X, s$Y, paste(sort(z), collapse = ", "))
+    }
+  }
+  indep_df <- data.frame(Statement = sapply(indep, fmt_ci))
+  tbl2 <- kable(indep_df,
+               col.names = "Implied conditional independence  (X _||_ Y | {Z})",
+               caption   = "Conditional independencies implied by the causal DAG",
+               booktabs  = TRUE)
+  if (knitr::is_latex_output()) {
+    tbl2 |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+  } else {
+    tbl2
+  }
+}
+```
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0

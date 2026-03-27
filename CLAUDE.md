@@ -163,7 +163,7 @@ pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape
 
 ### Rendering Quarto Reports
 
-The project includes comprehensive Quarto reports in `scripts/QMD/report/` that generate publication-ready PDF outputs:
+The project includes comprehensive Quarto reports in `scripts/QMD/report/` that generate both PDF and GFM (GitHub-Flavored Markdown) outputs. Each render produces a `.pdf` and a `.md` file in the same directory. Claude Code can read the `.md` files directly (e.g., `scripts/QMD/report/clinical_effectiveness.md`).
 
 ```bash
 # Render individual reports (from project root)
