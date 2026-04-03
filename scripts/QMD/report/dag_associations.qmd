@@ -1,0 +1,763 @@
+---
+title: "DAG Association Tests"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  gfm:
+    toc: true
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup}
+#| include: false
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, knitr, kableExtra, dplyr, dagitty, survival, coxphf, logistf, coin)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
+suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
+
+data$sex_num <- as.numeric(as.character(data$sex))
+data$T_num <- as.numeric(data$Rx == "Experimental arm")
+data$TxTMB <- data$T_num * data$tmb_braf
+data$tmb_braf_fac <- factor(data$tmb_braf)
+data$TxTMB_fac <- factor(data$TxTMB)
+data$T_fac <- factor(data$T_num)
+data$sex_fac <- factor(data$sex_num)
+data$crp_fac <- factor(data$crp)
+
+data_tlr <- data[!is.na(data$tlr), ]
+data_main <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tmb_braf",
+                                          "T_num", "TxTMB", "OSwk", "Death",
+                                          "PFSwk", "Progression")]), ]
+
+n_source <- nrow(data)
+n_main <- nrow(data_main)
+n_tlr <- nrow(data_tlr)
+
+event_summary <- data.frame(
+  Dataset = c("Source dataset after scripts 02 and 03",
+              "Main complete-case dataset for survival and interaction models",
+              "TLR subset with observed tlr"),
+  N = c(n_source, n_main, n_tlr),
+  Deaths = c(sum(data$Death, na.rm = TRUE),
+             sum(data_main$Death, na.rm = TRUE),
+             sum(data_tlr$Death, na.rm = TRUE)),
+  Progressions = c(sum(data$Progression, na.rm = TRUE),
+                   sum(data_main$Progression, na.rm = TRUE),
+                   sum(data_tlr$Progression, na.rm = TRUE))
+)
+```
+
+```{r dag-define}
+#| include: false
+
+dag <- dagitty('dag {
+bb="0,0,1,1"
+Age [pos="0.100,0.100"]
+Sex [pos="0.280,0.100"]
+U [latent,pos="0.750,0.080"]
+TMB_BRAF [pos="0.200,0.380"]
+CRP [pos="0.720,0.320"]
+T [exposure,pos="0.050,0.680"]
+TxTMB [pos="0.350,0.560"]
+TLR [pos="0.560,0.560"]
+PFS [outcome,pos="0.720,0.760"]
+OS [outcome,pos="0.900,0.920"]
+
+Age -> TMB_BRAF
+Age -> OS
+Sex -> TMB_BRAF
+U -> TMB_BRAF
+U -> CRP
+U -> PFS
+U -> OS
+TMB_BRAF -> PFS
+TMB_BRAF -> OS
+TMB_BRAF -> TLR
+TMB_BRAF -> TxTMB
+CRP -> PFS
+CRP -> OS
+CRP -> TLR
+T -> PFS
+T -> OS
+T -> TLR
+T -> TxTMB
+TxTMB -> PFS
+TxTMB -> OS
+TLR -> PFS
+PFS -> OS
+}')
+```
+
+```{r helpers}
+#| include: false
+complete_data <- function(df, vars) {
+  df[complete.cases(df[, vars, drop = FALSE]), , drop = FALSE]
+}
+
+fmt_num <- function(x, digits = 2) {
+  ifelse(is.na(x), "--", formatC(x, digits = digits, format = "f"))
+}
+
+fmt_p <- function(x) {
+  ifelse(is.na(x), "--",
+         ifelse(x < 0.001, "<0.001", formatC(x, digits = 3, format = "f")))
+}
+
+fmt_hr <- function(hr, lower, upper) {
+  if (any(is.na(c(hr, lower, upper)))) {
+    return("--")
+  }
+  sprintf("%.2f (95%% CI %.2f to %.2f)", hr, lower, upper)
+}
+
+fmt_or <- function(or, lower, upper) {
+  if (any(is.na(c(or, lower, upper)))) {
+    return("--")
+  }
+  sprintf("%.2f (95%% CI %.2f to %.2f)", or, lower, upper)
+}
+
+format_ci_statement <- function(ci_obj) {
+  z <- ci_obj$Z
+  if (length(z) == 0) {
+    sprintf("%s _||_ %s", ci_obj$X, ci_obj$Y)
+  } else {
+    sprintf("%s _||_ %s | {%s}", ci_obj$X, ci_obj$Y, paste(sort(z), collapse = ", "))
+  }
+}
+
+render_table <- function(df, caption, font_size = 9,
+                         landscape_pdf = FALSE, scale_down = TRUE) {
+  align_string <- paste(rep("l", ncol(df)), collapse = "")
+  tbl <- kable(df, caption = caption, booktabs = knitr::is_latex_output(),
+               align = align_string)
+  if (knitr::is_latex_output()) {
+    latex_options <- c("hold_position")
+    if (scale_down) {
+      latex_options <- c(latex_options, "scale_down")
+    }
+    tbl <- tbl |>
+      kable_styling(latex_options = latex_options, font_size = font_size)
+    if (landscape_pdf) {
+      tbl <- tbl |>
+        landscape()
+    }
+  }
+  tbl
+}
+
+run_wilcox_test <- function(df, group_var, value_var, item, test_label, group_labels) {
+  dat <- complete_data(df, c(group_var, value_var))
+  dat[[group_var]] <- factor(dat[[group_var]])
+  wt <- wilcox.test(dat[[value_var]] ~ dat[[group_var]], exact = FALSE)
+  medians <- tapply(dat[[value_var]], dat[[group_var]], median, na.rm = TRUE)
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = paste0("Median ", value_var, ": ",
+                    group_labels[1], "=", fmt_num(unname(medians[1]), 1),
+                    ", ", group_labels[2], "=", fmt_num(unname(medians[2]), 1)),
+    p_value = unname(wt$p.value)
+  )
+}
+
+run_fisher_test <- function(df, x_var, y_var, item, test_label) {
+  dat <- complete_data(df, c(x_var, y_var))
+  ft <- fisher.test(table(dat[[x_var]], dat[[y_var]]))
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = fmt_or(unname(ft$estimate), ft$conf.int[1], ft$conf.int[2]),
+    p_value = unname(ft$p.value)
+  )
+}
+
+run_mh_test <- function(df, x_var, y_var, strata_var, item, test_label) {
+  dat <- complete_data(df, c(x_var, y_var, strata_var))
+  mh <- mantelhaen.test(table(dat[[x_var]], dat[[y_var]], dat[[strata_var]]))
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = fmt_or(unname(mh$estimate), mh$conf.int[1], mh$conf.int[2]),
+    p_value = unname(mh$p.value)
+  )
+}
+
+run_firth_cox_test <- function(df, formula, term, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  fit <- coxphf(formula = formula, data = dat, firth = TRUE, pl = TRUE,
+                maxit = 100, maxstep = 0.1)
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = fmt_hr(exp(unname(fit$coefficients[term])),
+                    unname(fit$ci.lower[term]),
+                    unname(fit$ci.upper[term])),
+    p_value = unname(fit$prob[term])
+  )
+}
+
+run_firth_logistic_test <- function(df, formula, term, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  fit <- logistf(formula = formula, data = dat, firth = TRUE, pl = TRUE)
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = fmt_or(exp(unname(fit$coefficients[term])),
+                    exp(unname(fit$ci.lower[term])),
+                    exp(unname(fit$ci.upper[term]))),
+    p_value = unname(fit$prob[term])
+  )
+}
+
+run_permutation_test <- function(df, formula, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  perm <- independence_test(formula, data = dat,
+                            distribution = approximate(nresample = 9999))
+
+  tibble::tibble(
+    Item = item,
+    Test = test_label,
+    N = nrow(dat),
+    Effect = paste0("Standardized Z = ",
+                    fmt_num(as.numeric(statistic(perm, type = "standardized")), 2)),
+    p_value = as.numeric(pvalue(perm))
+  )
+}
+
+edge_support_label <- function(p_value) {
+  ifelse(is.na(p_value), "Not estimable",
+         ifelse(p_value < 0.05, "Association detected (p < 0.05)",
+                "No association detected (p >= 0.05)"))
+}
+
+ci_support_label <- function(p_value, randomization_check) {
+  ifelse(is.na(p_value), "Not estimable",
+         ifelse(p_value < 0.05,
+                ifelse(randomization_check,
+                       "Possible randomization imbalance",
+                       "CI contradicted by data"),
+                ifelse(randomization_check,
+                       "Compatible with randomization balance",
+                       "Compatible with DAG-implied CI")))
+}
+
+ci_from_dag <- impliedConditionalIndependencies(dag)
+ci_statements_from_dag <- vapply(ci_from_dag, format_ci_statement, character(1))
+
+expected_ci_statements <- c(
+  "Age _||_ CRP",
+  "Age _||_ TLR | {CRP, TMB_BRAF}",
+  "Age _||_ Sex",
+  "Age _||_ T",
+  "Age _||_ TxTMB | {TMB_BRAF}",
+  "CRP _||_ Sex",
+  "CRP _||_ T",
+  "CRP _||_ TxTMB | {TMB_BRAF}",
+  "Sex _||_ TLR | {CRP, TMB_BRAF}",
+  "TLR _||_ TxTMB | {T, TMB_BRAF}",
+  "Sex _||_ T",
+  "Sex _||_ TxTMB | {TMB_BRAF}",
+  "T _||_ TMB_BRAF"
+)
+
+if (!setequal(ci_statements_from_dag, expected_ci_statements)) {
+  stop("Observed DAG-implied conditional independencies do not match the planned test set.")
+}
+```
+
+```{r run-tests}
+#| include: false
+edge_results <- dplyr::bind_rows(
+  run_wilcox_test(
+    df = data,
+    group_var = "tmb_braf",
+    value_var = "Age",
+    item = "Age -> TMB_BRAF",
+    test_label = "Wilcoxon rank-sum",
+    group_labels = c("TMB/BRAF=0", "TMB/BRAF=1")
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ Age,
+    term = "Age",
+    item = "Age -> OS",
+    test_label = "Firth Cox"
+  ),
+  run_fisher_test(
+    df = data,
+    x_var = "sex_num",
+    y_var = "tmb_braf",
+    item = "Sex -> TMB_BRAF",
+    test_label = "Fisher's exact"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(PFSwk, Progression) ~ tmb_braf,
+    term = "tmb_braf",
+    item = "TMB_BRAF -> PFS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ tmb_braf,
+    term = "tmb_braf",
+    item = "TMB_BRAF -> OS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ tmb_braf,
+    term = "tmb_braf",
+    item = "TMB_BRAF -> TLR",
+    test_label = "Firth logistic"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(PFSwk, Progression) ~ crp,
+    term = "crp",
+    item = "CRP -> PFS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ crp,
+    term = "crp",
+    item = "CRP -> OS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ crp,
+    term = "crp",
+    item = "CRP -> TLR",
+    test_label = "Firth logistic"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(PFSwk, Progression) ~ T_num,
+    term = "T_num",
+    item = "T -> PFS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ T_num,
+    term = "T_num",
+    item = "T -> OS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ T_num,
+    term = "T_num",
+    item = "T -> TLR",
+    test_label = "Firth logistic"
+  ),
+  run_firth_cox_test(
+    df = data_tlr,
+    formula = Surv(PFSwk, Progression) ~ tlr,
+    term = "tlr",
+    item = "TLR -> PFS",
+    test_label = "Firth Cox (TLR subset)"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ PFSwk,
+    term = "PFSwk",
+    item = "PFS -> OS",
+    test_label = "Firth Cox"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(PFSwk, Progression) ~ T_num + tmb_braf + T_num:tmb_braf,
+    term = "T_num:tmb_braf",
+    item = "TxTMB -> PFS",
+    test_label = "Firth Cox interaction"
+  ),
+  run_firth_cox_test(
+    df = data_main,
+    formula = Surv(OSwk, Death) ~ T_num + tmb_braf + T_num:tmb_braf,
+    term = "T_num:tmb_braf",
+    item = "TxTMB -> OS",
+    test_label = "Firth Cox interaction"
+  )
+) |>
+  mutate(
+    Conclusion = edge_support_label(p_value)
+  )
+
+ci_results <- dplyr::bind_rows(
+  run_wilcox_test(
+    df = data,
+    group_var = "crp",
+    value_var = "Age",
+    item = "Age _||_ CRP",
+    test_label = "Wilcoxon rank-sum",
+    group_labels = c("CRP=0", "CRP=1")
+  ),
+  run_wilcox_test(
+    df = data,
+    group_var = "sex_num",
+    value_var = "Age",
+    item = "Age _||_ Sex",
+    test_label = "Wilcoxon rank-sum",
+    group_labels = c("Sex=0", "Sex=1")
+  ),
+  run_wilcox_test(
+    df = data,
+    group_var = "T_num",
+    value_var = "Age",
+    item = "Age _||_ T",
+    test_label = "Wilcoxon rank-sum (randomization check)",
+    group_labels = c("T=0", "T=1")
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ crp + tmb_braf + Age,
+    term = "Age",
+    item = "Age _||_ TLR | {CRP, TMB_BRAF}",
+    test_label = "Firth logistic"
+  ),
+  run_permutation_test(
+    df = data,
+    formula = Age ~ TxTMB_fac | tmb_braf_fac,
+    item = "Age _||_ TxTMB | {TMB_BRAF}",
+    test_label = "Conditional permutation test"
+  ),
+  run_fisher_test(
+    df = data,
+    x_var = "crp",
+    y_var = "sex_num",
+    item = "CRP _||_ Sex",
+    test_label = "Fisher's exact"
+  ),
+  run_fisher_test(
+    df = data,
+    x_var = "crp",
+    y_var = "T_num",
+    item = "CRP _||_ T",
+    test_label = "Fisher's exact (randomization check)"
+  ),
+  run_mh_test(
+    df = data,
+    x_var = "crp",
+    y_var = "TxTMB",
+    strata_var = "tmb_braf",
+    item = "CRP _||_ TxTMB | {TMB_BRAF}",
+    test_label = "Mantel-Haenszel"
+  ),
+  run_fisher_test(
+    df = data,
+    x_var = "sex_num",
+    y_var = "T_num",
+    item = "Sex _||_ T",
+    test_label = "Fisher's exact (randomization check)"
+  ),
+  run_mh_test(
+    df = data,
+    x_var = "sex_num",
+    y_var = "TxTMB",
+    strata_var = "tmb_braf",
+    item = "Sex _||_ TxTMB | {TMB_BRAF}",
+    test_label = "Mantel-Haenszel"
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ crp + tmb_braf + sex_num,
+    term = "sex_num",
+    item = "Sex _||_ TLR | {CRP, TMB_BRAF}",
+    test_label = "Firth logistic"
+  ),
+  run_firth_logistic_test(
+    df = data_tlr,
+    formula = tlr ~ T_num + tmb_braf + TxTMB,
+    term = "TxTMB",
+    item = "TLR _||_ TxTMB | {T, TMB_BRAF}",
+    test_label = "Firth logistic"
+  ),
+  run_fisher_test(
+    df = data,
+    x_var = "T_num",
+    y_var = "tmb_braf",
+    item = "T _||_ TMB_BRAF",
+    test_label = "Fisher's exact (randomization check)"
+  )
+) |>
+  mutate(
+    Randomization_Check = Item %in% c(
+      "Age _||_ T",
+      "CRP _||_ T",
+      "Sex _||_ T",
+      "T _||_ TMB_BRAF"
+    ),
+    Conclusion = ci_support_label(p_value, Randomization_Check)
+  )
+
+edge_summary_table <- edge_results |>
+  mutate(
+    `p-value` = fmt_p(p_value)
+  ) |>
+  select(Edge = Item, Test, N, Effect, `p-value`, Conclusion)
+
+ci_summary_table <- ci_results |>
+  mutate(
+    `p-value` = fmt_p(p_value),
+    `Randomization check` = ifelse(Randomization_Check, "Yes", "No")
+  ) |>
+  select(`CI statement` = Item, Test, N, Effect, `p-value`,
+         `Randomization check`, Conclusion)
+
+consolidated_summary_table <- bind_rows(
+  edge_results |>
+    transmute(
+      Domain = "Direct edge",
+      Item,
+      Effect,
+      `p-value` = fmt_p(p_value),
+      Conclusion
+    ),
+  ci_results |>
+    transmute(
+      Domain = "Conditional independence",
+      Item,
+      Effect,
+      `p-value` = fmt_p(p_value),
+      Conclusion
+    )
+)
+
+supported_edges <- edge_results |>
+  filter(p_value < 0.05) |>
+  pull(Item)
+
+ci_violations <- ci_results |>
+  filter(p_value < 0.05) |>
+  pull(Item)
+
+randomization_checks <- ci_results |>
+  filter(Randomization_Check) |>
+  mutate(`p-value` = fmt_p(p_value)) |>
+  select(Item, `p-value`, Conclusion)
+```
+
+# Introduction
+
+This report provides the empirical companion to `dag.qmd`. The DAG encodes the assumed causal structure for METIMMOX-1; this document asks whether the observable parts of that structure are broadly compatible with the data available in the repository.
+
+The emphasis is deliberately modest. These tests do not prove causal direction, and failure to reject a conditional independence does not verify the DAG. Instead, the report checks whether the observable arrows imply associations in the expected places and whether the DAG-implied conditional independencies look plausible in the observed sample.
+
+# Methods
+
+## Data and Variables
+
+Only scripts `02_setup_and_global_variables.R` and `03_biomarker_strategies.R` were sourced. No survival-model fitting scripts were run.
+
+The available repository extract contains `r n_source` patients after scripts 02 and 03. The main complete-case dataset used for non-TLR survival and interaction models contains `r n_main` patients. TLR in the DAG corresponds to `tlr` in the data, and the TLR subset with observed `tlr` contains `r n_tlr` patients.
+
+Patients without follow-up CT assessment have `tlr = NA` and were excluded from TLR analyses. Those analyses therefore rely on a missing-at-random assumption conditional on the observed covariates included in each model.
+
+```{r data-summary}
+render_table(
+  event_summary,
+  caption = "Analysis datasets used in the DAG association report"
+)
+```
+
+For the interaction node, `T` was coded as `T_num = 1` for the experimental arm and `0` for control, and `TxTMB` was defined as `T_num * tmb_braf`.
+
+## Statistical Tests
+
+Each observable edge was tested using the prespecified method from the plan:
+
+- Wilcoxon rank-sum for continuous-versus-binary comparisons
+- Fisher's exact test for 2 x 2 tables
+- Mantel-Haenszel tests for binary associations conditional on `tmb_braf`
+- Firth-corrected Cox regression (`coxphf`) for time-to-event endpoints
+- Firth-corrected logistic regression (`logistf`) for TLR models
+- A conditional permutation test (`coin::independence_test`) for `Age _||_ TxTMB | {TMB_BRAF}`
+
+The two arrows into `TxTMB` (`T -> TxTMB` and `TMB_BRAF -> TxTMB`) are definitional because `TxTMB` is a constructed interaction node. The four edges from the latent node `U` are not empirically testable and are noted only in prose.
+
+## Multiple Testing
+
+No multiplicity correction was applied in this version of the report. All statistical summaries therefore use raw p-values only, and the findings should be interpreted as exploratory rather than confirmatory.
+
+# Direct Edge Tests
+
+## Covariate edges (Age/Sex -> TMB_BRAF)
+
+Age and sex are the only baseline covariates with direct arrows into `TMB_BRAF`. The age association was tested with a Wilcoxon rank-sum test and the sex association with Fisher's exact test.
+
+## Latent edges (U -> *)
+
+The DAG includes four latent edges: `U -> TMB_BRAF`, `U -> CRP`, `U -> PFS`, and `U -> OS`. Because `U` is unobserved, these edges are not testable in the trial data and are therefore not assigned p-values.
+
+## Biomarker edges (TMB_BRAF, CRP -> PFS, OS, TLR)
+
+Direct biomarker effects on `PFS` and `OS` were tested with univariable Firth Cox models in `data_main`. Direct effects on `TLR` were tested in the `tlr` subset using Firth logistic regression.
+
+## Treatment edges (T -> PFS, OS, TLR)
+
+Treatment effects were evaluated with `T_num` as a binary predictor, preserving the randomised-arm coding from the trial extract.
+
+## Interaction edges (TxTMB -> PFS, OS)
+
+The `TxTMB` node was tested using the interaction coefficient from `Surv(...) ~ T_num + tmb_braf + T_num:tmb_braf` for both `PFS` and `OS`. These are the same interaction-scale questions emphasized in `clinical_effectiveness.qmd`, but used here as DAG edge checks rather than biomarker-model comparisons.
+
+## Mediator edge (TLR -> PFS)
+
+The `TLR -> PFS` edge was estimated in patients with observed `tlr`. This is a subset analysis because TLR is undefined when no follow-up scan is available.
+
+## Outcome chain (PFS -> OS)
+
+The `PFS -> OS` edge was represented by a Firth Cox model for `OS` with `PFSwk` entered as a continuous predictor.
+
+## Edge summary table
+
+```{r edge-summary}
+render_table(
+  edge_summary_table,
+  caption = "Direct edge tests",
+  font_size = 8,
+  landscape_pdf = TRUE,
+  scale_down = FALSE
+)
+```
+
+# Conditional Independence Tests
+
+## Randomisation balance (marginal CIs involving T)
+
+The four CI statements involving `T` double as randomisation checks. If any of them were significant, that would suggest baseline imbalance in this realized sample rather than a structural failure of the DAG.
+
+```{r randomization-checks}
+render_table(
+  randomization_checks,
+  caption = "Randomization balance checks implied by the DAG"
+)
+```
+
+One randomization-balance check, `CRP _||_ T`, was significant on the raw scale (`p = 0.023`). The other three randomization checks remained non-significant.
+
+## Structural CIs (conditional)
+
+The DAG implies `r length(ci_statements_from_dag)` observable conditional independencies after excluding the latent node `U`. These were tested using the prespecified conditional models or stratified tests.
+
+## CI summary table
+
+```{r ci-summary}
+render_table(
+  ci_summary_table,
+  caption = "Conditional-independence tests",
+  font_size = 8,
+  landscape_pdf = TRUE,
+  scale_down = FALSE
+)
+```
+
+# Consolidated Summary Table
+
+```{r consolidated-summary}
+render_table(
+  consolidated_summary_table,
+  caption = "Consolidated summary of direct edge and conditional-independence tests",
+  font_size = 8,
+  landscape_pdf = TRUE,
+  scale_down = FALSE
+)
+```
+
+# Discussion
+
+```{r discussion-text, results='asis'}
+edge_n_sig <- sum(edge_results$p_value < 0.05, na.rm = TRUE)
+ci_n_fail <- sum(ci_results$p_value < 0.05, na.rm = TRUE)
+ci_n_ok <- sum(ci_results$p_value >= 0.05, na.rm = TRUE)
+
+p_crp_tlr <- fmt_p(edge_results$p_value[edge_results$Item == "CRP -> TLR"])
+p_t_tlr <- fmt_p(edge_results$p_value[edge_results$Item == "T -> TLR"])
+p_crp_t <- fmt_p(ci_results$p_value[ci_results$Item == "CRP _||_ T"])
+p_crp_txtmb <- fmt_p(ci_results$p_value[ci_results$Item == "CRP _||_ TxTMB | {TMB_BRAF}"])
+
+if (length(supported_edges) == 0) {
+  supported_edge_text <- "No direct edge reached p < 0.05."
+} else {
+  supported_edge_text <- paste0(
+    "Direct edges with p < 0.05: ",
+    paste(supported_edges, collapse = "; "),
+    "."
+  )
+}
+
+if (length(ci_violations) == 0) {
+  ci_violation_text <- "No DAG-implied conditional independence was contradicted at p < 0.05."
+} else {
+  ci_violation_text <- paste0(
+    "Conditional independencies contradicted by the data at p < 0.05: ",
+    paste(ci_violations, collapse = "; "),
+    "."
+  )
+}
+
+cat(paste0(
+  "The direct-edge analysis found ", edge_n_sig,
+  " of 16 tested edges with p < 0.05. ",
+  supported_edge_text,
+  " The strongest supported pattern sits along the prognostic and disease-course portion of the DAG: low CRP was associated with lower hazards for both PFS and OS, TMB_BRAF was associated with lower PFS hazard, TLR was strongly associated with subsequent PFS, and longer PFS was tightly linked to longer OS. In other words, the data support the idea that baseline biomarkers and intermediate disease response are more informative than age or sex for the downstream survival relationships represented here.", "\n\n",
+  "Treatment-related edges were still mixed. T -> PFS, T -> OS, and both TxTMB interaction terms remained non-significant, so the report still does not provide strong evidence for treatment effect modification through the TMB/BRAF interaction node. However, the raw-p analysis now shows p < 0.05 for both CRP -> TLR (p = ", p_crp_tlr, ") and T -> TLR (p = ", p_t_tlr, "), which suggests that tumour lesion reduction may be one route through which baseline inflammation and treatment assignment connect to later outcomes.", "\n\n",
+  "Among the 13 conditional-independence tests, ", ci_n_ok,
+  " were compatible with the DAG at p >= 0.05 and ", ci_n_fail,
+  " were contradicted by the data. ", ci_violation_text,
+  " In practice, both violated statements involve CRP: CRP _||_ T had p = ", p_crp_t, ", suggesting possible baseline imbalance by treatment arm, and CRP _||_ TxTMB | {TMB_BRAF} had p = ", p_crp_txtmb, ", suggesting residual dependence around the CRP-treatment-interaction part of the graph. That makes CRP the main place where the current DAG looks least secure in this dataset.", "\n\n",
+  "Interpretation should remain cautious. The latent node U is unobserved, TLR analyses depend on non-missing follow-up imaging, the available repository extract is modest in size, and several tests are necessarily low-power. These checks therefore speak to empirical compatibility, not causal proof."
+))
+```
+
+# Conclusion
+
+This report adds a data-facing complement to the causal DAG by testing its observable edges and implied conditional independencies in the METIMMOX-1 repository extract. Overall, the empirical signal is stronger for prognostic and disease-course relationships than for treatment-effect-modification relationships: CRP, TMB_BRAF, TLR, and PFS show the clearest links to later outcomes, while the direct treatment and TxTMB interaction edges remain uncertain in this small sample.
+
+Taken together, the observed data support the core survival pathway (`TLR -> PFS -> OS`) and several biomarker-survival links, but they also surface two CRP-related tensions with the assumed graph. The most defensible takeaway is therefore that the DAG captures much of the prognostic structure in the data, while the CRP-related balance and interaction structure may need refinement or stronger justification in future versions.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0

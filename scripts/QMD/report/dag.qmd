@@ -54,9 +54,9 @@ Three node types are distinguished:
 ```{r node-table}
 node_defs <- data.frame(
   Node = c("Age", "Sex", "U", "TMB_BRAF", "CRP", "T",
-           "TxTMB", "ETS", "PFS", "OS"),
+           "TxTMB", "TLR", "PFS", "OS"),
   Label = c("Age", "Sex", "U", "TMB/BRAF", "CRP", "T",
-            "T x TMB", "ETS", "PFS", "OS"),
+            "T x TMB", "TLR", "PFS", "OS"),
   Type = c("Covariate", "Covariate", "Latent",
            "Biomarker", "Biomarker", "Exposure",
            "Effect modifier", "Mediator", "Outcome", "Outcome"),
@@ -68,7 +68,7 @@ node_defs <- data.frame(
     "C-reactive protein (positive: CRP < 5 mg/L)",
     "Treatment: alternating FLOX + nivolumab vs FLOX alone",
     "Interaction between treatment and TMB/BRAF status",
-    "Early tumour shrinkage (radiological response)",
+    "Tumour lesion reduction (radiological response)",
     "Progression-free survival",
     "Overall survival"
   )
@@ -99,7 +99,7 @@ TMB_BRAF [pos="0.200,0.380"]
 CRP [pos="0.720,0.320"]
 T [exposure,pos="0.050,0.680"]
 TxTMB [pos="0.350,0.560"]
-ETS [pos="0.560,0.560"]
+TLR [pos="0.560,0.560"]
 PFS [outcome,pos="0.720,0.760"]
 OS [outcome,pos="0.900,0.920"]
 
@@ -112,24 +112,24 @@ U -> PFS
 U -> OS
 TMB_BRAF -> PFS
 TMB_BRAF -> OS
-TMB_BRAF -> ETS
+TMB_BRAF -> TLR
 TMB_BRAF -> TxTMB
 CRP -> PFS
 CRP -> OS
-CRP -> ETS
+CRP -> TLR
 T -> PFS
 T -> OS
-T -> ETS
+T -> TLR
 T -> TxTMB
 TxTMB -> PFS
 TxTMB -> OS
-ETS -> PFS
+TLR -> PFS
 PFS -> OS
 }')
 ```
 
 ```{r dag-plot}
-#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Arrows denote assumed causal effects. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; ETS = Early Tumour Shrinkage; U = Unmeasured confounders."
+#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF on PFS and OS. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; TLR = Tumour Lesion Reduction; U = Unmeasured confounders."
 #| fig-width: 9
 #| fig-height: 7
 
@@ -139,7 +139,8 @@ tidy_dag <- tidy_dagitty(dag)
 tidy_dag$data <- tidy_dag$data |>
   mutate(
     y    = 1 - y,
-    yend = if_else(is.na(yend), NA_real_, 1 - yend)
+    yend = if_else(is.na(yend), NA_real_, 1 - yend),
+    hyp  = !is.na(to) & name == "TxTMB" & to %in% c("PFS", "OS")
   )
 
 # Colour palette
@@ -149,32 +150,61 @@ pal <- c(
   "latent"   = "#1b7837"
 )
 
-ggdag_status(tidy_dag, node_size = 24, text_size = 3.0, text_col = "white") +
-  theme_dag() +
-  scale_color_manual(
-    name     = "Node type",
-    values   = pal,
-    na.value = "grey55",
-    breaks   = c("exposure", "latent", "outcome"),
-    labels   = c("exposure" = "Exposure (T)",
-                 "latent"   = "Latent (U)",
-                 "outcome"  = "Outcome (PFS, OS)")
-  ) +
-  scale_fill_manual(
-    name     = "Node type",
-    values   = pal,
-    na.value = "grey55",
-    breaks   = c("exposure", "latent", "outcome"),
-    labels   = c("exposure" = "Exposure (T)",
-                 "latent"   = "Latent (U)",
-                 "outcome"  = "Outcome (PFS, OS)")
-  ) +
-  theme(
-    legend.position   = "bottom",
-    legend.text       = element_text(size = 10),
-    legend.title      = element_text(size = 10, face = "bold"),
-    plot.margin       = margin(10, 10, 10, 10)
-  )
+plot_dag <- function(tidy_dag_obj, caption_pal) {
+  node_data <- node_status(tidy_dag_obj)$data |>
+    distinct(name, x, y, status)
+
+  ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+    # Solid edges represent established causal relationships in the DAG.
+    geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), !hyp)
+    ) +
+    # Dashed edges highlight hypothesised interaction effects.
+    geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), hyp),
+      edge_linetype = "dashed"
+    ) +
+    geom_dag_node(
+      data = node_data,
+      mapping = aes(x = x, y = y, colour = status, fill = status),
+      size = 24,
+      inherit.aes = FALSE
+    ) +
+    geom_dag_text(
+      data = node_data,
+      mapping = aes(x = x, y = y, label = name),
+      colour = "white",
+      size = 3.0,
+      inherit.aes = FALSE
+    ) +
+    theme_dag() +
+    scale_color_manual(
+      name     = "Node type",
+      values   = caption_pal,
+      na.value = "grey55",
+      breaks   = c("exposure", "latent", "outcome"),
+      labels   = c("exposure" = "Exposure (T)",
+                   "latent"   = "Latent (U)",
+                   "outcome"  = "Outcome (PFS, OS)")
+    ) +
+    scale_fill_manual(
+      name     = "Node type",
+      values   = caption_pal,
+      na.value = "grey55",
+      breaks   = c("exposure", "latent", "outcome"),
+      labels   = c("exposure" = "Exposure (T)",
+                   "latent"   = "Latent (U)",
+                   "outcome"  = "Outcome (PFS, OS)")
+    ) +
+    theme(
+      legend.position   = "bottom",
+      legend.text       = element_text(size = 10),
+      legend.title      = element_text(size = 10, face = "bold"),
+      plot.margin       = margin(10, 10, 10, 10)
+    )
+}
+
+plot_dag(tidy_dag, pal)
 ```
 
 # Causal Analysis
@@ -186,8 +216,8 @@ Because T is a randomised exposure with no parents in the DAG, there are no back
 ```{r adjustment-sets}
 #| results: asis
 
-report_adj <- function(exposure, outcome) {
-  adj <- adjustmentSets(dag, exposure = exposure, outcome = outcome,
+report_adj <- function(dag_obj, exposure, outcome) {
+  adj <- adjustmentSets(dag_obj, exposure = exposure, outcome = outcome,
                         type = "minimal")
   if (length(adj) == 0) {
     cat(sprintf(
@@ -203,8 +233,8 @@ report_adj <- function(exposure, outcome) {
   }
 }
 
-report_adj("T", "PFS")
-report_adj("T", "OS")
+report_adj(dag, "T", "PFS")
+report_adj(dag, "T", "OS")
 ```
 
 ## Implied Conditional Independencies
@@ -236,8 +266,115 @@ if (length(indep) == 0) {
 }
 ```
 
+# Sensitivity Analysis: Excluding Age/Sex → TMB/BRAF
+
+This sensitivity DAG removes the `Age -> TMB_BRAF` and `Sex -> TMB_BRAF` edges while keeping the remainder of the structure identical to the primary specification. The primary DAG retains these arrows on biological grounds; this sensitivity analysis shows the downstream implications of omitting them.
+
+```{r dag-sens-define}
+#| include: false
+
+dag_sens <- dagitty('dag {
+bb="0,0,1,1"
+Age [pos="0.100,0.100"]
+Sex [pos="0.280,0.100"]
+U [latent,pos="0.750,0.080"]
+TMB_BRAF [pos="0.200,0.380"]
+CRP [pos="0.720,0.320"]
+T [exposure,pos="0.050,0.680"]
+TxTMB [pos="0.350,0.560"]
+TLR [pos="0.560,0.560"]
+PFS [outcome,pos="0.720,0.760"]
+OS [outcome,pos="0.900,0.920"]
+
+Age -> OS
+U -> TMB_BRAF
+U -> CRP
+U -> PFS
+U -> OS
+TMB_BRAF -> PFS
+TMB_BRAF -> OS
+TMB_BRAF -> TLR
+TMB_BRAF -> TxTMB
+CRP -> PFS
+CRP -> OS
+CRP -> TLR
+T -> PFS
+T -> OS
+T -> TLR
+T -> TxTMB
+TxTMB -> PFS
+TxTMB -> OS
+TLR -> PFS
+PFS -> OS
+}')
+```
+
+## Sensitivity DAG
+
+```{r dag-sens-plot}
+#| fig-cap: "Sensitivity DAG for the METIMMOX-1 analysis, excluding the Age -> TMB_BRAF and Sex -> TMB_BRAF edges while retaining all other assumed causal relationships. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF on PFS and OS."
+#| fig-width: 9
+#| fig-height: 7
+
+tidy_dag_sens <- tidy_dagitty(dag_sens)
+
+# DAGitty uses y-down coordinates; flip to ggplot2 y-up convention
+tidy_dag_sens$data <- tidy_dag_sens$data |>
+  mutate(
+    y    = 1 - y,
+    yend = if_else(is.na(yend), NA_real_, 1 - yend),
+    hyp  = !is.na(to) & name == "TxTMB" & to %in% c("PFS", "OS")
+  )
+
+plot_dag(tidy_dag_sens, pal)
+```
+
+## Sensitivity Causal Analysis
+
+The treatment node remains randomised in the sensitivity DAG, so the formal adjustment recommendations for `T -> PFS` and `T -> OS` are unchanged. The main difference is in the implied conditional independencies, which now reflect the omission of direct Age/Sex effects on TMB/BRAF status.
+
+### Adjustment Sets
+
+```{r adjustment-sets-sens}
+#| results: asis
+
+report_adj(dag_sens, "T", "PFS")
+report_adj(dag_sens, "T", "OS")
+```
+
+### Implied Conditional Independencies
+
+```{r independencies-sens}
+indep_sens <- impliedConditionalIndependencies(dag_sens)
+
+if (length(indep_sens) == 0) {
+  cat("The sensitivity DAG implies no testable conditional independencies (saturated structure).\n")
+} else {
+  fmt_ci <- function(s) {
+    z <- s$Z
+    if (length(z) == 0) {
+      sprintf("%s _||_ %s", s$X, s$Y)
+    } else {
+      sprintf("%s _||_ %s  |  {%s}", s$X, s$Y, paste(sort(z), collapse = ", "))
+    }
+  }
+  indep_sens_df <- data.frame(Statement = sapply(indep_sens, fmt_ci))
+  tbl3 <- kable(
+    indep_sens_df,
+    col.names = "Implied conditional independence  (X _||_ Y | {Z})",
+    caption   = "Conditional independencies implied by the sensitivity DAG",
+    booktabs  = TRUE
+  )
+  if (knitr::is_latex_output()) {
+    tbl3 |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+  } else {
+    tbl3
+  }
+}
+```
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 1.2
