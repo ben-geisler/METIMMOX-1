@@ -551,6 +551,12 @@ Each report has specific dependencies:
 - **figure1-4.qmd**: Publication-ready figures
 - **suppl_figure_pfs_plots.qmd**: Supplementary PFS figures
 
+**Clinical effectiveness vignettes** (in `scripts/QMD/vignettes/`): Files for the clinical effectiveness paper use the prefix `clin_effect_` followed by the paper figure/table label. Each vignette is self-contained (HTML, `embed-resources: true`) and saves its output to `figs/` (figures, via `ggsave`) or `tables/` (CSV, via `write.csv`). Naming examples:
+- `clin_effect_figure1.qmd` → `figs/clin_effect_figure1.png` (simplified DAG)
+- `clin_effect_figure_s1.qmd` → `figs/clin_effect_figure_s1.png` (full DAG)
+- `clin_effect_figure_s2.qmd` → `figs/clin_effect_figure_s2.png` (sensitivity DAG)
+- `clin_effect_table_s1.qmd` → `tables/clin_effect_table_s1.csv` (DAG association consolidated summary)
+
 ### Quarto Report Structure Pattern
 
 All reports follow a consistent pattern:

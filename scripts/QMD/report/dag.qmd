@@ -34,7 +34,7 @@ execute:
 #| include: false
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here, knitr, kableExtra, dagitty, ggdag, ggplot2, dplyr)
+p_load(here, knitr, kableExtra, dagitty, ggdag, ggplot2, dplyr, ggtext)
 
 knitr::opts_knit$set(root.dir = here::here())
 ```
@@ -54,12 +54,12 @@ Three node types are distinguished:
 ```{r node-table}
 node_defs <- data.frame(
   Node = c("Age", "Sex", "U", "TMB_BRAF", "CRP", "T",
-           "TxTMB", "TLR", "PFS", "OS"),
+           "TxTMB", "TxCRP", "TLR", "PFS", "OS"),
   Label = c("Age", "Sex", "U", "TMB/BRAF", "CRP", "T",
-            "T x TMB", "TLR", "PFS", "OS"),
+            "T x TMB", "T x CRP", "TLR", "PFS", "OS"),
   Type = c("Covariate", "Covariate", "Latent",
            "Biomarker", "Biomarker", "Exposure",
-           "Effect modifier", "Mediator", "Outcome", "Outcome"),
+           "Effect modifier", "Effect modifier", "Mediator", "Outcome", "Outcome"),
   Description = c(
     "Patient age at baseline",
     "Patient sex",
@@ -68,6 +68,7 @@ node_defs <- data.frame(
     "C-reactive protein (positive: CRP < 5 mg/L)",
     "Treatment: alternating FLOX + nivolumab vs FLOX alone",
     "Interaction between treatment and TMB/BRAF status",
+    "Interaction between treatment and CRP status",
     "Tumour lesion reduction (radiological response)",
     "Progression-free survival",
     "Overall survival"
@@ -99,6 +100,7 @@ TMB_BRAF [pos="0.200,0.380"]
 CRP [pos="0.720,0.320"]
 T [exposure,pos="0.050,0.680"]
 TxTMB [pos="0.350,0.560"]
+TxCRP [pos="0.760,0.560"]
 TLR [pos="0.560,0.560"]
 PFS [outcome,pos="0.720,0.760"]
 OS [outcome,pos="0.900,0.920"]
@@ -117,19 +119,23 @@ TMB_BRAF -> TxTMB
 CRP -> PFS
 CRP -> OS
 CRP -> TLR
+CRP -> TxCRP
 T -> PFS
 T -> OS
 T -> TLR
 T -> TxTMB
+T -> TxCRP
 TxTMB -> PFS
 TxTMB -> OS
+TxCRP -> PFS
+TxCRP -> OS
 TLR -> PFS
 PFS -> OS
 }')
 ```
 
 ```{r dag-plot}
-#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF on PFS and OS. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; TLR = Tumour Lesion Reduction; U = Unmeasured confounders."
+#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF and T x CRP on PFS and OS. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; TxCRP = Treatment x CRP interaction; TLR = Tumour Lesion Reduction; U = Unmeasured confounders."
 #| fig-width: 9
 #| fig-height: 7
 
@@ -140,7 +146,7 @@ tidy_dag$data <- tidy_dag$data |>
   mutate(
     y    = 1 - y,
     yend = if_else(is.na(yend), NA_real_, 1 - yend),
-    hyp  = !is.na(to) & name == "TxTMB" & to %in% c("PFS", "OS")
+    hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
   )
 
 # Colour palette
@@ -153,6 +159,10 @@ pal <- c(
 plot_dag <- function(tidy_dag_obj, caption_pal) {
   node_data <- node_status(tidy_dag_obj)$data |>
     distinct(name, x, y, status)
+  x_range <- range(node_data$x, na.rm = TRUE)
+  y_range <- range(node_data$y, na.rm = TRUE)
+  x_pad <- diff(x_range) * 0.10
+  y_pad <- diff(y_range) * 0.10
 
   ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
     # Solid edges represent established causal relationships in the DAG.
@@ -176,6 +186,11 @@ plot_dag <- function(tidy_dag_obj, caption_pal) {
       colour = "white",
       size = 3.0,
       inherit.aes = FALSE
+    ) +
+    coord_equal(
+      xlim = c(x_range[1] - x_pad, x_range[2] + x_pad),
+      ylim = c(y_range[1] - y_pad, y_range[2] + y_pad),
+      clip = "off"
     ) +
     theme_dag() +
     scale_color_manual(
@@ -282,6 +297,7 @@ TMB_BRAF [pos="0.200,0.380"]
 CRP [pos="0.720,0.320"]
 T [exposure,pos="0.050,0.680"]
 TxTMB [pos="0.350,0.560"]
+TxCRP [pos="0.760,0.560"]
 TLR [pos="0.560,0.560"]
 PFS [outcome,pos="0.720,0.760"]
 OS [outcome,pos="0.900,0.920"]
@@ -298,12 +314,16 @@ TMB_BRAF -> TxTMB
 CRP -> PFS
 CRP -> OS
 CRP -> TLR
+CRP -> TxCRP
 T -> PFS
 T -> OS
 T -> TLR
 T -> TxTMB
+T -> TxCRP
 TxTMB -> PFS
 TxTMB -> OS
+TxCRP -> PFS
+TxCRP -> OS
 TLR -> PFS
 PFS -> OS
 }')
@@ -312,7 +332,7 @@ PFS -> OS
 ## Sensitivity DAG
 
 ```{r dag-sens-plot}
-#| fig-cap: "Sensitivity DAG for the METIMMOX-1 analysis, excluding the Age -> TMB_BRAF and Sex -> TMB_BRAF edges while retaining all other assumed causal relationships. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF on PFS and OS."
+#| fig-cap: "Sensitivity DAG for the METIMMOX-1 analysis, excluding the Age -> TMB_BRAF and Sex -> TMB_BRAF edges while retaining all other assumed causal relationships. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF and T x CRP on PFS and OS."
 #| fig-width: 9
 #| fig-height: 7
 
@@ -323,7 +343,7 @@ tidy_dag_sens$data <- tidy_dag_sens$data |>
   mutate(
     y    = 1 - y,
     yend = if_else(is.na(yend), NA_real_, 1 - yend),
-    hyp  = !is.na(to) & name == "TxTMB" & to %in% c("PFS", "OS")
+    hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
   )
 
 plot_dag(tidy_dag_sens, pal)
@@ -373,8 +393,110 @@ if (length(indep_sens) == 0) {
 }
 ```
 
+# Simplified DAG
+
+The following DAG presents the same causal assumptions in a condensed form intended for a clinical audience. The interaction terms (T × TMB/BRAF and T × CRP) and the latent common-cause node (U) have been omitted; their roles are described in the text. Dashed arrows from T to PFS and OS indicate that the magnitude of the treatment effect on survival outcomes is hypothesised to be modified by TMB/BRAF and CRP status — the central question addressed by the biomarker analysis.
+
+```{r dag-simple-define}
+#| include: false
+
+dag_simple <- dagitty('dag {
+bb="0,0,1,1"
+Demo     [pos="0.280,0.100"]
+TMB_BRAF [pos="0.150,0.400"]
+CRP      [pos="0.150,0.750"]
+T        [exposure,pos="0.050,0.575"]
+Survival [outcome,pos="0.750,0.575"]
+
+Demo -> TMB_BRAF
+Demo -> Survival
+TMB_BRAF -> Survival
+CRP -> Survival
+T -> Survival
+}')
+```
+
+```{r dag-simple-plot}
+#| fig-cap: "Figure 3. Simplified causal DAG for METIMMOX-1. Solid arrows denote assumed causal effects. The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction and latent-variable nodes are shown in the full DAG. Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
+#| fig-width: 9
+#| fig-height: 6
+
+tidy_dag_simple <- tidy_dagitty(dag_simple)
+tidy_dag_simple$data <- tidy_dag_simple$data |>
+  mutate(
+    y    = 1 - y,
+    yend = if_else(is.na(yend), NA_real_, 1 - yend),
+    hyp  = !is.na(to) & name == "T" & to == "Survival"
+  )
+
+pal_simple <- c("exposure" = "#2166ac", "outcome" = "#b2182b", "covariate" = "grey55")
+
+node_data_s <- node_status(tidy_dag_simple)$data |>
+  distinct(name, x, y, status) |>
+  mutate(
+    status = if_else(is.na(status), "covariate", status),
+    label  = case_when(
+      name == "Demo"     ~ "Age/<br>Sex",
+      name == "Survival" ~ "PFS/<br>OS",
+      name == "TMB_BRAF" ~ "TMB/<br><i>BRAF</i>",
+      TRUE               ~ name
+    )
+  )
+x_range_s <- range(node_data_s$x, na.rm = TRUE)
+y_range_s <- range(node_data_s$y, na.rm = TRUE)
+
+ggplot(tidy_dag_simple$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_edges_link(
+    data = function(d) dplyr::filter(d, !is.na(to), !hyp)
+  ) +
+  geom_dag_edges_link(
+    data = function(d) dplyr::filter(d, !is.na(to), hyp),
+    edge_linetype = "dashed"
+  ) +
+  geom_dag_node(
+    data = node_data_s,
+    mapping = aes(x = x, y = y, colour = status, fill = status),
+    size = 24, inherit.aes = FALSE
+  ) +
+  ggtext::geom_richtext(
+    data = node_data_s,
+    mapping = aes(x = x, y = y, label = label),
+    colour = "white", size = 3.5,
+    fill = NA, label.color = NA,
+    label.padding = grid::unit(c(0, 0, 0, 0), "pt"),
+    inherit.aes = FALSE
+  ) +
+  coord_equal(
+    xlim = c(x_range_s[1] - diff(x_range_s) * 0.10, x_range_s[2] + diff(x_range_s) * 0.10),
+    ylim = c(y_range_s[1] - diff(y_range_s) * 0.10, y_range_s[2] + diff(y_range_s) * 0.10),
+    clip = "off"
+  ) +
+  theme_dag() +
+  scale_color_manual(
+    name   = NULL,
+    values = pal_simple,
+    breaks = c("exposure", "outcome", "covariate"),
+    labels = c("exposure"  = "Treatment",
+               "outcome"   = "Outcome",
+               "covariate" = "Covariates and biomarkers")
+  ) +
+  scale_fill_manual(
+    name   = NULL,
+    values = pal_simple,
+    breaks = c("exposure", "outcome", "covariate"),
+    labels = c("exposure"  = "Treatment",
+               "outcome"   = "Outcome",
+               "covariate" = "Covariates and biomarkers")
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.text     = element_text(size = 10),
+    plot.margin     = margin(10, 10, 10, 10)
+  )
+```
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.2
+**Report version:** 2.2

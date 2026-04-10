@@ -1,6 +1,6 @@
 # Causal DAG
 Ben Geisler
-2026-04-03
+2026-04-10
 
 - [Introduction](#introduction)
 - [Node Definitions](#node-definitions)
@@ -16,6 +16,7 @@ Ben Geisler
     - [Adjustment Sets](#adjustment-sets-1)
     - [Implied Conditional
       Independencies](#implied-conditional-independencies-1)
+- [Simplified DAG](#simplified-dag)
 
 # Introduction
 
@@ -44,6 +45,7 @@ Three node types are distinguished:
 | CRP | CRP | Biomarker | C-reactive protein (positive: CRP \< 5 mg/L) |
 | T | T | Exposure | Treatment: alternating FLOX + nivolumab vs FLOX alone |
 | TxTMB | T x TMB | Effect modifier | Interaction between treatment and TMB/BRAF status |
+| TxCRP | T x CRP | Effect modifier | Interaction between treatment and CRP status |
 | TLR | TLR | Mediator | Tumour lesion reduction (radiological response) |
 | PFS | PFS | Outcome | Progression-free survival |
 | OS | OS | Outcome | Overall survival |
@@ -56,10 +58,10 @@ DAG node definitions
 blue = exposure (T), red = outcomes (PFS, OS), green = latent variable
 (U), grey = covariates and intermediate variables. Solid arrows denote
 assumed causal effects; dashed arrows indicate the hypothesised
-interaction effects of T x TMB/BRAF on PFS and OS. Node abbreviations: T
-= Treatment; TxTMB = Treatment x TMB/BRAF interaction; TLR = Tumour
-Lesion Reduction; U = Unmeasured
-confounders.](dag_files/figure-commonmark/dag-plot-1.png)
+interaction effects of T x TMB/BRAF and T x CRP on PFS and OS. Node
+abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction;
+TxCRP = Treatment x CRP interaction; TLR = Tumour Lesion Reduction; U =
+Unmeasured confounders.](dag_files/figure-commonmark/dag-plot-1.png)
 
 # Causal Analysis
 
@@ -82,15 +84,21 @@ independencies encoded by the DAG.
 | Age \_\|\|\_ Sex                                       |
 | Age \_\|\|\_ T                                         |
 | Age \_\|\|\_ TLR \| {CRP, TMB_BRAF}                    |
+| Age \_\|\|\_ TxCRP                                     |
 | Age \_\|\|\_ TxTMB \| {TMB_BRAF}                       |
 | CRP \_\|\|\_ Sex                                       |
 | CRP \_\|\|\_ T                                         |
 | CRP \_\|\|\_ TxTMB \| {TMB_BRAF}                       |
 | Sex \_\|\|\_ T                                         |
 | Sex \_\|\|\_ TLR \| {CRP, TMB_BRAF}                    |
+| Sex \_\|\|\_ TxCRP                                     |
 | Sex \_\|\|\_ TxTMB \| {TMB_BRAF}                       |
 | T \_\|\|\_ TMB_BRAF                                    |
+| TLR \_\|\|\_ TxCRP \| {CRP, T}                         |
 | TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF}                    |
+| TMB_BRAF \_\|\|\_ TxCRP \| {CRP}                       |
+| TxCRP \_\|\|\_ TxTMB \| {T, TMB_BRAF}                  |
+| TxCRP \_\|\|\_ TxTMB \| {CRP, T}                       |
 
 Conditional independencies implied by the causal DAG
 
@@ -107,8 +115,8 @@ implications of omitting them.
 ![Sensitivity DAG for the METIMMOX-1 analysis, excluding the Age -\>
 TMB_BRAF and Sex -\> TMB_BRAF edges while retaining all other assumed
 causal relationships. Solid arrows denote assumed causal effects; dashed
-arrows indicate the hypothesised interaction effects of T x TMB/BRAF on
-PFS and OS.](dag_files/figure-commonmark/dag-sens-plot-1.png)
+arrows indicate the hypothesised interaction effects of T x TMB/BRAF and
+T x CRP on PFS and OS.](dag_files/figure-commonmark/dag-sens-plot-1.png)
 
 ## Sensitivity Causal Analysis
 
@@ -134,6 +142,7 @@ on TMB/BRAF status.
 | Age \_\|\|\_ T                                         |
 | Age \_\|\|\_ TLR                                       |
 | Age \_\|\|\_ TMB_BRAF                                  |
+| Age \_\|\|\_ TxCRP                                     |
 | Age \_\|\|\_ TxTMB                                     |
 | CRP \_\|\|\_ Sex                                       |
 | CRP \_\|\|\_ T                                         |
@@ -143,14 +152,38 @@ on TMB/BRAF status.
 | Sex \_\|\|\_ T                                         |
 | Sex \_\|\|\_ TLR                                       |
 | Sex \_\|\|\_ TMB_BRAF                                  |
+| Sex \_\|\|\_ TxCRP                                     |
 | Sex \_\|\|\_ TxTMB                                     |
 | T \_\|\|\_ TMB_BRAF                                    |
+| TLR \_\|\|\_ TxCRP \| {CRP, T}                         |
 | TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF}                    |
+| TMB_BRAF \_\|\|\_ TxCRP \| {CRP}                       |
+| TxCRP \_\|\|\_ TxTMB \| {T, TMB_BRAF}                  |
+| TxCRP \_\|\|\_ TxTMB \| {CRP, T}                       |
 
 Conditional independencies implied by the sensitivity DAG
 
+# Simplified DAG
+
+The following DAG presents the same causal assumptions in a condensed
+form intended for a clinical audience. The interaction terms (T ×
+TMB/BRAF and T × CRP) and the latent common-cause node (U) have been
+omitted; their roles are described in the text. Dashed arrows from T to
+PFS and OS indicate that the magnitude of the treatment effect on
+survival outcomes is hypothesised to be modified by TMB/BRAF and CRP
+status — the central question addressed by the biomarker analysis.
+
+![Simplified causal DAG for METIMMOX-1. Node colour: blue = exposure
+(T), red = outcome (PFS/OS), grey = covariates and biomarkers. Solid
+arrows denote assumed causal effects. The dashed arrow from T to PFS/OS
+indicates that the treatment effect on survival is hypothesised to be
+modified by TMB/BRAF and CRP status. Interaction and latent-variable
+nodes are shown in the full DAG above. Node abbreviations: T =
+Treatment; Demo = Demographics (Age, Sex); PFS/OS = Progression-free and
+overall survival.](dag_files/figure-commonmark/dag-simple-plot-1.png)
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-04-03  
+**Report completed on:** 2026-04-10  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.2
+**Report version:** 2.1

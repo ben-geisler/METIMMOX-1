@@ -1,0 +1,224 @@
+---
+title: "Table S1 (Clinical Effectiveness): DAG Association Tests — Consolidated Summary"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(here, dplyr, knitr, kableExtra, dagitty, survival, coxphf, logistf, coin)
+
+suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
+suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
+
+data$sex_num <- as.numeric(as.character(data$sex))
+data$T_num   <- as.numeric(data$Rx == "Experimental arm")
+data$TxTMB   <- data$T_num * data$tmb_braf
+data$tmb_braf_fac <- factor(data$tmb_braf)
+data$TxTMB_fac    <- factor(data$TxTMB)
+data$T_fac    <- factor(data$T_num)
+data$sex_fac  <- factor(data$sex_num)
+data$crp_fac  <- factor(data$crp)
+
+data_tlr  <- data[!is.na(data$tlr), ]
+data_main <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tmb_braf",
+                                          "T_num", "TxTMB", "OSwk", "Death",
+                                          "PFSwk", "Progression")]), ]
+```
+
+```{r helpers, include=FALSE}
+complete_data <- function(df, vars) df[complete.cases(df[, vars, drop = FALSE]), , drop = FALSE]
+
+fmt_num <- function(x, digits = 2) ifelse(is.na(x), "--", formatC(x, digits = digits, format = "f"))
+fmt_p   <- function(x) ifelse(is.na(x), "--", ifelse(x < 0.001, "<0.001", formatC(x, digits = 3, format = "f")))
+fmt_hr  <- function(hr, lower, upper) {
+  if (any(is.na(c(hr, lower, upper)))) return("--")
+  sprintf("%.2f (95%% CI %.2f to %.2f)", hr, lower, upper)
+}
+fmt_or  <- function(or, lower, upper) {
+  if (any(is.na(c(or, lower, upper)))) return("--")
+  sprintf("%.2f (95%% CI %.2f to %.2f)", or, lower, upper)
+}
+
+run_wilcox_test <- function(df, group_var, value_var, item, test_label, group_labels) {
+  dat <- complete_data(df, c(group_var, value_var))
+  dat[[group_var]] <- factor(dat[[group_var]])
+  wt <- wilcox.test(dat[[value_var]] ~ dat[[group_var]], exact = FALSE)
+  medians <- tapply(dat[[value_var]], dat[[group_var]], median, na.rm = TRUE)
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = paste0("Median ", value_var, ": ",
+      group_labels[1], "=", fmt_num(unname(medians[1]), 1),
+      ", ", group_labels[2], "=", fmt_num(unname(medians[2]), 1)),
+    p_value = unname(wt$p.value))
+}
+
+run_fisher_test <- function(df, x_var, y_var, item, test_label) {
+  dat <- complete_data(df, c(x_var, y_var))
+  ft <- fisher.test(table(dat[[x_var]], dat[[y_var]]))
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = fmt_or(unname(ft$estimate), ft$conf.int[1], ft$conf.int[2]),
+    p_value = unname(ft$p.value))
+}
+
+run_mh_test <- function(df, x_var, y_var, strata_var, item, test_label) {
+  dat <- complete_data(df, c(x_var, y_var, strata_var))
+  mh <- mantelhaen.test(table(dat[[x_var]], dat[[y_var]], dat[[strata_var]]))
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = fmt_or(unname(mh$estimate), mh$conf.int[1], mh$conf.int[2]),
+    p_value = unname(mh$p.value))
+}
+
+run_firth_cox_test <- function(df, formula, term, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  fit <- coxphf(formula = formula, data = dat, firth = TRUE, pl = TRUE,
+                maxit = 100, maxstep = 0.1)
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = fmt_hr(exp(unname(fit$coefficients[term])),
+                    unname(fit$ci.lower[term]), unname(fit$ci.upper[term])),
+    p_value = unname(fit$prob[term]))
+}
+
+run_firth_logistic_test <- function(df, formula, term, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  fit <- logistf(formula = formula, data = dat, firth = TRUE, pl = TRUE)
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = fmt_or(exp(unname(fit$coefficients[term])),
+                    exp(unname(fit$ci.lower[term])), exp(unname(fit$ci.upper[term]))),
+    p_value = unname(fit$prob[term]))
+}
+
+run_permutation_test <- function(df, formula, item, test_label) {
+  dat <- complete_data(df, all.vars(formula))
+  perm <- independence_test(formula, data = dat,
+                            distribution = approximate(nresample = 9999))
+  tibble::tibble(Item = item, Test = test_label, N = nrow(dat),
+    Effect = paste0("Standardized Z = ",
+                    fmt_num(as.numeric(statistic(perm, type = "standardized")), 2)),
+    p_value = as.numeric(pvalue(perm)))
+}
+
+edge_support_label <- function(p_value) {
+  ifelse(is.na(p_value), "Not estimable",
+         ifelse(p_value < 0.05, "Association detected (p < 0.05)",
+                "No association detected (p >= 0.05)"))
+}
+
+ci_support_label <- function(p_value, randomization_check) {
+  ifelse(is.na(p_value), "Not estimable",
+         ifelse(p_value < 0.05,
+                ifelse(randomization_check, "Possible randomization imbalance", "CI contradicted by data"),
+                ifelse(randomization_check, "Compatible with randomization balance", "Compatible with DAG-implied CI")))
+}
+```
+
+```{r run-tests, include=FALSE}
+edge_results <- dplyr::bind_rows(
+  run_wilcox_test(data, "tmb_braf", "Age", "Age -> TMB_BRAF", "Wilcoxon rank-sum",
+                  c("TMB/BRAF=0", "TMB/BRAF=1")),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ Age, "Age", "Age -> OS", "Firth Cox"),
+  run_fisher_test(data, "sex_num", "tmb_braf", "Sex -> TMB_BRAF", "Fisher's exact"),
+  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ tmb_braf, "tmb_braf",
+                     "TMB_BRAF -> PFS", "Firth Cox"),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ tmb_braf, "tmb_braf",
+                     "TMB_BRAF -> OS", "Firth Cox"),
+  run_firth_logistic_test(data_tlr, tlr ~ tmb_braf, "tmb_braf",
+                          "TMB_BRAF -> TLR", "Firth logistic"),
+  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ crp, "crp",
+                     "CRP -> PFS", "Firth Cox"),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ crp, "crp",
+                     "CRP -> OS", "Firth Cox"),
+  run_firth_logistic_test(data_tlr, tlr ~ crp, "crp", "CRP -> TLR", "Firth logistic"),
+  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ T_num, "T_num",
+                     "T -> PFS", "Firth Cox"),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ T_num, "T_num",
+                     "T -> OS", "Firth Cox"),
+  run_firth_logistic_test(data_tlr, tlr ~ T_num, "T_num", "T -> TLR", "Firth logistic"),
+  run_firth_cox_test(data_tlr, Surv(PFSwk, Progression) ~ tlr, "tlr",
+                     "TLR -> PFS", "Firth Cox (TLR subset)"),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ PFSwk, "PFSwk",
+                     "PFS -> OS", "Firth Cox"),
+  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ T_num + tmb_braf + T_num:tmb_braf,
+                     "T_num:tmb_braf", "TxTMB -> PFS", "Firth Cox interaction"),
+  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ T_num + tmb_braf + T_num:tmb_braf,
+                     "T_num:tmb_braf", "TxTMB -> OS", "Firth Cox interaction")
+) |> mutate(Conclusion = edge_support_label(p_value))
+
+ci_results <- dplyr::bind_rows(
+  run_wilcox_test(data, "crp", "Age", "Age _||_ CRP", "Wilcoxon rank-sum",
+                  c("CRP=0", "CRP=1")),
+  run_wilcox_test(data, "sex_num", "Age", "Age _||_ Sex", "Wilcoxon rank-sum",
+                  c("Sex=0", "Sex=1")),
+  run_wilcox_test(data, "T_num", "Age", "Age _||_ T",
+                  "Wilcoxon rank-sum (randomization check)", c("T=0", "T=1")),
+  run_firth_logistic_test(data_tlr, tlr ~ crp + tmb_braf + Age, "Age",
+                          "Age _||_ TLR | {CRP, TMB_BRAF}", "Firth logistic"),
+  run_permutation_test(data, Age ~ TxTMB_fac | tmb_braf_fac,
+                       "Age _||_ TxTMB | {TMB_BRAF}", "Conditional permutation test"),
+  run_fisher_test(data, "crp", "sex_num", "CRP _||_ Sex", "Fisher's exact"),
+  run_fisher_test(data, "crp", "T_num", "CRP _||_ T",
+                  "Fisher's exact (randomization check)"),
+  run_mh_test(data, "crp", "TxTMB", "tmb_braf", "CRP _||_ TxTMB | {TMB_BRAF}",
+              "Mantel-Haenszel"),
+  run_fisher_test(data, "sex_num", "T_num", "Sex _||_ T",
+                  "Fisher's exact (randomization check)"),
+  run_mh_test(data, "sex_num", "TxTMB", "tmb_braf", "Sex _||_ TxTMB | {TMB_BRAF}",
+              "Mantel-Haenszel"),
+  run_firth_logistic_test(data_tlr, tlr ~ crp + tmb_braf + sex_num, "sex_num",
+                          "Sex _||_ TLR | {CRP, TMB_BRAF}", "Firth logistic"),
+  run_firth_logistic_test(data_tlr, tlr ~ T_num + tmb_braf + TxTMB, "TxTMB",
+                          "TLR _||_ TxTMB | {T, TMB_BRAF}", "Firth logistic"),
+  run_fisher_test(data, "T_num", "tmb_braf", "T _||_ TMB_BRAF",
+                  "Fisher's exact (randomization check)")
+) |> mutate(
+  Randomization_Check = Item %in% c("Age _||_ T", "CRP _||_ T", "Sex _||_ T", "T _||_ TMB_BRAF"),
+  Conclusion = ci_support_label(p_value, Randomization_Check)
+)
+
+consolidated_summary_table <- bind_rows(
+  edge_results |>
+    transmute(Domain = "Direct edge", Item, Effect, `p-value` = fmt_p(p_value), Conclusion),
+  ci_results |>
+    transmute(Domain = "Conditional independence", Item, Effect,
+              `p-value` = fmt_p(p_value), Conclusion)
+)
+```
+
+```{r display-table}
+kable(consolidated_summary_table,
+      caption = "Consolidated summary of direct edge and conditional-independence tests",
+      format = "html") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  pack_rows("Direct edges", 1, nrow(edge_results)) |>
+  pack_rows("Conditional independence", nrow(edge_results) + 1, nrow(consolidated_summary_table)) |>
+  footnote(
+    general = c(
+      "Data from METIMMOX trial (NCT03388190). Scripts 02 and 03 sourced.",
+      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
+      "Firth-corrected Cox and logistic regression used throughout. Fisher's exact for 2x2 tables.",
+      "Randomization balance checks: Age||T, CRP||T, Sex||T, T||TMB_BRAF. No multiplicity correction applied."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-csv, include=FALSE}
+tables_dir <- here("tables")
+if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+write.csv(consolidated_summary_table, file = here("tables", "clin_effect_table_s1.csv"),
+          row.names = FALSE)
+cat("Saved to:", here("tables", "clin_effect_table_s1.csv"), "\n")
+```
+
+Table saved to `tables/clin_effect_table_s1.csv`.

@@ -1,0 +1,161 @@
+---
+title: "Figure S1 (Clinical Effectiveness): Full Causal DAG"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = "center", dpi = 300
+)
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(here, ggplot2, dplyr, dagitty, ggdag)
+```
+
+```{r dag-define, include=FALSE}
+dag <- dagitty('dag {
+bb="0,0,1,1"
+Age [pos="0.100,0.100"]
+Sex [pos="0.280,0.100"]
+U [latent,pos="0.750,0.080"]
+TMB_BRAF [pos="0.200,0.380"]
+CRP [pos="0.720,0.320"]
+T [exposure,pos="0.050,0.680"]
+TxTMB [pos="0.350,0.560"]
+TxCRP [pos="0.760,0.560"]
+TLR [pos="0.560,0.560"]
+PFS [outcome,pos="0.720,0.760"]
+OS [outcome,pos="0.900,0.920"]
+
+Age -> TMB_BRAF
+Age -> OS
+Sex -> TMB_BRAF
+U -> TMB_BRAF
+U -> CRP
+U -> PFS
+U -> OS
+TMB_BRAF -> PFS
+TMB_BRAF -> OS
+TMB_BRAF -> TLR
+TMB_BRAF -> TxTMB
+CRP -> PFS
+CRP -> OS
+CRP -> TLR
+CRP -> TxCRP
+T -> PFS
+T -> OS
+T -> TLR
+T -> TxTMB
+T -> TxCRP
+TxTMB -> PFS
+TxTMB -> OS
+TxCRP -> PFS
+TxCRP -> OS
+TLR -> PFS
+PFS -> OS
+}')
+```
+
+```{r dag-plot, fig.width=9, fig.height=7}
+#| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF and T x CRP on PFS and OS. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; TxCRP = Treatment x CRP interaction; TLR = Tumour Lesion Reduction; U = Unmeasured confounders."
+
+tidy_dag <- tidy_dagitty(dag)
+tidy_dag$data <- tidy_dag$data |>
+  mutate(
+    y    = 1 - y,
+    yend = if_else(is.na(yend), NA_real_, 1 - yend),
+    hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
+  )
+
+pal <- c(
+  "exposure" = "#2166ac",
+  "outcome"  = "#b2182b",
+  "latent"   = "#1b7837"
+)
+
+plot_dag <- function(tidy_dag_obj, caption_pal) {
+  node_data <- node_status(tidy_dag_obj)$data |>
+    distinct(name, x, y, status)
+  x_range <- range(node_data$x, na.rm = TRUE)
+  y_range <- range(node_data$y, na.rm = TRUE)
+  x_pad <- diff(x_range) * 0.10
+  y_pad <- diff(y_range) * 0.10
+
+  ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+    geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), !hyp)
+    ) +
+    geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), hyp),
+      edge_linetype = "dashed"
+    ) +
+    geom_dag_node(
+      data = node_data,
+      mapping = aes(x = x, y = y, colour = status, fill = status),
+      size = 24, inherit.aes = FALSE
+    ) +
+    geom_dag_text(
+      data = node_data,
+      mapping = aes(x = x, y = y, label = name),
+      colour = "white", size = 3.0, inherit.aes = FALSE
+    ) +
+    coord_equal(
+      xlim = c(x_range[1] - x_pad, x_range[2] + x_pad),
+      ylim = c(y_range[1] - y_pad, y_range[2] + y_pad),
+      clip = "off"
+    ) +
+    theme_dag() +
+    scale_color_manual(
+      name     = "Node type",
+      values   = caption_pal,
+      na.value = "grey55",
+      breaks   = c("exposure", "latent", "outcome"),
+      labels   = c("exposure" = "Exposure (T)",
+                   "latent"   = "Latent (U)",
+                   "outcome"  = "Outcome (PFS, OS)")
+    ) +
+    scale_fill_manual(
+      name     = "Node type",
+      values   = caption_pal,
+      na.value = "grey55",
+      breaks   = c("exposure", "latent", "outcome"),
+      labels   = c("exposure" = "Exposure (T)",
+                   "latent"   = "Latent (U)",
+                   "outcome"  = "Outcome (PFS, OS)")
+    ) +
+    theme(
+      legend.position   = "bottom",
+      legend.text       = element_text(size = 10),
+      legend.title      = element_text(size = 10, face = "bold"),
+      plot.margin       = margin(10, 10, 10, 10)
+    )
+}
+
+p <- plot_dag(tidy_dag, pal)
+print(p)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+
+ggsave(
+  filename = here("figs", "clin_effect_figure_s1.png"),
+  plot = p,
+  width = 9, height = 7, dpi = 300, bg = "white"
+)
+cat("Figure saved to:", here("figs", "clin_effect_figure_s1.png"), "\n")
+```
+
+Figure saved to `figs/clin_effect_figure_s1.png`.

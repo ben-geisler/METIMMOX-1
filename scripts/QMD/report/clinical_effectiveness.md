@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-03-27
+2026-04-04
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -8,7 +8,6 @@ Ben Geisler
   - [Firth-Corrected Cox Regression](#firth-corrected-cox-regression)
   - [Ridge Regression Sensitivity
     Analysis](#ridge-regression-sensitivity-analysis)
-  - [Multiple Testing Correction](#multiple-testing-correction)
 - [Data Preparation](#data-preparation)
   - [Sample Characteristics](#sample-characteristics)
   - [Biomarker Correlations](#biomarker-correlations)
@@ -17,20 +16,26 @@ Ben Geisler
   - [Log-Log Survival Plots](#log-log-survival-plots)
 - [Primary Analysis: Firth-Corrected Cox
   Models](#primary-analysis-firth-corrected-cox-models)
-  - [Model Type A: All-in-One Model](#model-type-a-all-in-one-model)
-    - [Overall Survival (Model A)](#overall-survival-model-a)
-    - [Progression-Free Survival (Model
-      A)](#progression-free-survival-model-a)
-  - [Model B: Focused Models](#model-b-focused-models)
-    - [Full Coefficient Tables](#full-coefficient-tables)
-  - [Model C: Single-Biomarker Models](#model-c-single-biomarker-models)
-    - [Full Coefficient Tables](#full-coefficient-tables-1)
-- [Model Comparison](#model-comparison)
-  - [Summary: Interaction HRs Across Model
-    Types](#summary-interaction-hrs-across-model-types)
-  - [Forest Plots](#forest-plots)
+  - [Unified Model Results](#unified-model-results)
+    - [Overall Survival](#overall-survival)
+    - [Progression-Free Survival](#progression-free-survival)
+  - [Forest Plot](#forest-plot)
 - [Sensitivity Analysis: Ridge
   Regression](#sensitivity-analysis-ridge-regression)
+- [TLR as a Post-Treatment Response
+  Measure](#tlr-as-a-post-treatment-response-measure)
+  - [TLR Prevalence by Treatment Arm](#tlr-prevalence-by-treatment-arm)
+  - [Kaplan-Meier Curves Stratified by
+    TLR](#kaplan-meier-curves-stratified-by-tlr)
+  - [Unadjusted Prognostic Association
+    (Descriptive)](#unadjusted-prognostic-association-descriptive)
+- [Discussion](#discussion)
+  - [Primary interaction results](#primary-interaction-results)
+  - [Proportional hazards and
+    TMB/BRAF](#proportional-hazards-and-tmbbraf)
+  - [Ridge regression sensitivity](#ridge-regression-sensitivity)
+  - [TLR as a post-treatment
+    response](#tlr-as-a-post-treatment-response)
 - [Summary](#summary)
 
 # Overview
@@ -41,22 +46,31 @@ immunotherapy candidates in metastatic MSS/pMMR colorectal cancer.
 
 The analysis uses **Firth-corrected Cox proportional hazards
 regression** with profile likelihood confidence intervals to assess
-treatment effect heterogeneity across three candidate biomarkers:
+treatment effect heterogeneity across two pre-treatment biomarkers
+identified by the causal DAG analysis:
 
-- **CRP** (C-reactive protein): Low CRP (\<5 mg/L) at baseline
-- **TLR** (Tumor Lesion Reduction): Early response (≥10% reduction at
-  first CT scan)
+- **CRP** (C-reactive protein): Low CRP (\<5 mg/L) at baseline — a
+  pre-treatment prognostic and potentially predictive marker
 - **TMB/BRAF**: High tumor mutational burden (≥9 mut/MB) or BRAF
-  mutation
+  mutation — a pre-treatment genomic marker
 
-We compare three model structures to assess the robustness of
-treatment-biomarker interactions:
+**Model specification is motivated by the causal DAG** (see `dag.qmd`
+and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized
+with no parents, so no confounding adjustment is needed for causal
+identification; Age and Sex are included as precision covariates. TLR
+(Tumor Lesion Reduction) is encoded as a post-randomization intermediate
+variable (T → TLR → PFS): it is not a pre-treatment baseline
+characteristic and conditioning on it as a covariate would block part of
+the treatment effect pathway. TLR is therefore excluded from the primary
+survival models and examined separately as a descriptive endpoint.
 
-- **Model A**: All-in-one model with all biomarkers and interactions
-- **Model B**: Focused models with per-strategy formulas: CRP/TMB_BRAF
-  with both interactions, TLR with TLR-only interaction
-- **Model C**: Single-biomarker models with one biomarker and its
-  interaction
+The **unified DAG-informed model** is:
+
+$$\text{Surv}(\text{time}, \text{event}) \sim \text{Age} + \text{sex} + \text{Rx} + \text{CRP} + \text{TMB/BRAF} + \text{CRP} \times \text{Rx} + \text{TMB/BRAF} \times \text{Rx}$$
+
+Ridge regression (L2-penalized Cox) is applied as a sensitivity analysis
+to assess the stability of the interaction estimates under shrinkage.
+TLR is reported in a separate exploratory section.
 
 # Methodological Notes
 
@@ -138,16 +152,6 @@ CV-selected lambda reflects how much regularization is needed for
 reasonable out-of-sample prediction given the sample size and
 collinearity structure.
 
-## Multiple Testing Correction
-
-We apply the **Benjamini-Hochberg (BH) procedure** to control the false
-discovery rate (FDR) on the primary Firth analysis:
-
-- 6 interaction tests: 3 biomarkers × 2 outcomes (OS, PFS)
-- Both raw PLRT p-values and BH-adjusted q-values are reported
-- The Ridge sensitivity analysis does not require separate multiplicity
-  correction
-
 # Data Preparation
 
 ## Sample Characteristics
@@ -187,167 +191,198 @@ lines suggest time-varying effects.
 
 # Primary Analysis: Firth-Corrected Cox Models
 
-## Model Type A: All-in-One Model
+## Unified Model Results
 
-This model includes all three biomarkers as main effects and all three
-treatment-biomarker interactions simultaneously.
+The unified DAG-informed model includes CRP and TMB/BRAF as
+pre-treatment biomarkers with their treatment interactions, adjusted for
+Age and Sex.
 
 **Formula:**
-`Surv(time, event) ~ Age + sex + Rx + crp + tlr + tmb_braf + crp:Rx + tlr:Rx + tmb_braf:Rx`
+`Surv(time, event) ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx`
 
-### Overall Survival (Model A)
+### Overall Survival
 
-### Progression-Free Survival (Model A)
-
-
-
-## Model B: Focused Models
-
-These models use per-strategy formulas. CRP and TMB/BRAF strategies
-share a formula with both interaction terms (`crp:Rx` and `tmb_braf:Rx`)
-while adjusting for each other as main effects. TLR uses a separate
-formula with only the TLR-treatment interaction (`tlr:Rx`), adjusting
-for CRP and TMB/BRAF as main effects.
-
-**Note:** Model B uses per-strategy formulas. CRP and TMB/BRAF
-strategies share a formula with both interaction terms (`crp:Rx` and
-`tmb_braf:Rx`). TLR uses a separate formula with only `tlr:Rx`,
-adjusting for CRP and TMB/BRAF as main effects.
+### Progression-Free Survival
 
 
 
-### Full Coefficient Tables
-
-
-
-## Model C: Single-Biomarker Models
-
-These models include only ONE biomarker and its treatment interaction.
-This is the simplest specification but does not control for other
-biomarkers.
-
-**Note:** Each row represents a separate model with only that biomarker
-and its interaction (no other biomarkers included).
-
-
-
-### Full Coefficient Tables
-
-
-
-# Model Comparison
-
-## Summary: Interaction HRs Across Model Types
-
-
-
-## Forest Plots
+## Forest Plot
 
 <img
-src="clinical_effectiveness_files/figure-commonmark/forest-plot-os-1.png"
-style="width:100.0%" data-fig-align="center" />
-
-<img
-src="clinical_effectiveness_files/figure-commonmark/forest-plot-pfs-1.png"
+src="clinical_effectiveness_files/figure-commonmark/forest-plot-1.png"
 style="width:100.0%" data-fig-align="center" />
 
 **Interpretation:** HR \< 1 indicates that biomarker-positive patients
 derive greater benefit from experimental treatment (reduced hazard of
-death/progression). The dashed vertical line at HR = 1 represents no
-differential treatment effect by biomarker status.
+death/progression). The dashed line at HR = 1 represents no differential
+treatment effect.
 
 
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (alpha = 0) shrinks coefficients toward zero but does
-not eliminate any, providing a sensitivity analysis for the stability of
-our interaction estimates.
+Ridge regression (L2-penalized Cox, alpha = 0) shrinks all coefficients
+toward zero but does not eliminate any, providing a sensitivity check
+for the stability of the interaction estimates. The same unified model
+formula is used; only the main effects (CRP and TMB/BRAF) are penalized.
 
-**Interpretation:** Ridge regression applies an L2 penalty that shrinks
-all coefficients toward zero (HR toward 1.0), providing a sensitivity
-analysis for estimate stability across three model structures:
+**Interpretation:** Firth provides the best unbiased point estimate
+given the sample size and data structure. Ridge applies L2 shrinkage
+toward zero (HR toward 1.0). Comparing the two methods reveals estimate
+stability: if Firth and Ridge agree closely, the estimate is robust; if
+Ridge substantially shrinks the interaction toward null, the effect is
+sensitive to regularization in this sample.
 
-- **Model A (All-in-One)**: Ridge regularizes all three biomarker main
-  effects simultaneously while estimating all three interactions. This
-  tests whether interaction estimates are stable when accounting for
-  multicollinearity among biomarkers.
+
 
-- **Model B (Focused)**: Ridge regularizes biomarker main effects using
-  per-strategy formulas. CRP and TMB/BRAF share a formula with both
-  interaction terms; TLR uses a separate formula with only `tlr:Rx`.
-  Comparing Model B Ridge to Model A Ridge reveals whether
-  regularization effects differ with fewer interaction terms competing
-  for variance.
+# TLR as a Post-Treatment Response Measure
 
-- **Model C (Single-Biomarker)**: Ridge regularizes only one biomarker
-  term per model. Since there is minimal multicollinearity to address,
-  Model C Ridge estimates should be closest to their Firth counterparts.
-  Substantial shrinkage here would indicate instability in the
-  biomarker-treatment relationship itself, not confounding.
+**Causal DAG status:** The DAG encodes TLR (Tumor Lesion Reduction) as a
+**post-randomization intermediate** (T → TLR → PFS). This means:
 
-**Key patterns to examine**: (1) Consistent shrinkage across all three
-models suggests the interaction estimate is inherently unstable; (2)
-Shrinkage only in Model A suggests multicollinearity with other
-biomarkers; (3) Similar Firth and Ridge estimates across all models
-supports robustness.
+1.  TLR is measured after treatment has started (requires at least one
+    CT imaging cycle), so it cannot inform pre-treatment patient
+    selection.
+2.  Including TLR as a covariate in a survival model alongside treatment
+    would condition on a post-randomization variable, blocking part of
+    the treatment-effect pathway (collider/mediator bias).
+3.  The strong TLR → PFS association observed in the DAG association
+    tests (HR 0.18, p \< 0.001) reflects a tautological relationship
+    between radiological response and progression — tumors that respond
+    to treatment have longer PFS by definition.
+
+TLR is therefore reported here as a **descriptive endpoint only**, not
+as a baseline predictive biomarker. Its potential use as a clinical
+decision tool (e.g., stopping treatment in non-responders) would require
+a separate causal mediation analysis, which is beyond the scope of this
+report.
+
+## TLR Prevalence by Treatment Arm
+
+## Kaplan-Meier Curves Stratified by TLR
+
+<img src="clinical_effectiveness_files/figure-commonmark/km-tlr-1.png"
+style="width:100.0%" data-fig-align="center" />
+
+**Note:** These curves are purely descriptive and stratify by a
+post-treatment response variable. The observed difference in survival by
+TLR status reflects treatment response, not a pre-treatment patient
+characteristic.
+
+## Unadjusted Prognostic Association (Descriptive)
+
+
+
+# Discussion
+
+## Primary interaction results
+
+Neither biomarker-treatment interaction reached conventional
+significance in the unified model. For **overall survival**, CRP × Rx
+yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = 0.73) and TMB/BRAF × Rx HR
+0.93 (0.30–2.85, p = 0.89) — point estimates close to null with very
+wide confidence intervals. For **progression-free survival**, the CRP ×
+Rx interaction showed a more directionally suggestive effect (HR 0.33,
+0.07–2.15, p = 0.22): CRP-positive patients in the experimental arm had
+roughly one-third the hazard of progression relative to CRP-positive
+controls, though the CI spans more than an order of magnitude and the
+coxphf algorithm reported convergence difficulties for the TMB/BRAF × Rx
+PFS term (see footnote to Table 5). These results are consistent with
+the trial being underpowered to detect treatment-effect heterogeneity (n
+= 65, 48 progressions, 56 deaths): even a moderate subgroup effect (HR
+~0.5) would require far larger samples for reliable estimation.
+
+The PFS pattern is worth noting as a hypothesis-generating finding. The
+CRP direction (HR 0.33) is consistent with the DAG association test
+showing CRP → PFS (HR 0.40, p = 0.004) and the biological hypothesis
+that low CRP (reflecting lower systemic inflammation) identifies
+patients more likely to respond to immunotherapy. However, the OS CRP
+interaction estimate (HR 0.78) is considerably closer to null,
+suggesting that any PFS benefit does not clearly translate to an OS
+benefit in this dataset.
+
+## Proportional hazards and TMB/BRAF
+
+The PH assumption was well supported in overall survival (Schoenfeld
+global p = 0.40). In progression-free survival, however, the global test
+was significant (p = 0.007), driven mainly by TMB/BRAF — both the main
+effect (p = 0.021) and the TMB/BRAF × Rx interaction (p = 0.045)
+violated the PH assumption. This indicates that the hazard ratio for
+TMB/BRAF (and its modification by treatment) is not constant over time
+in PFS, which may reflect different kinetics of early vs late events in
+TMB/BRAF-positive tumours. The PFS TMB/BRAF × Rx interaction estimate
+(HR 0.60) should therefore be interpreted with caution; a time-varying
+Cox model or landmark analysis would be more appropriate for that
+specific question.
+
+## Ridge regression sensitivity
+
+For OS, Ridge shrinks the CRP × Rx estimate substantially toward null
+(Firth HR 0.78 → Ridge HR 0.39), suggesting the OS estimate is sensitive
+to regularization and should be treated as imprecise. The TMB/BRAF × Rx
+OS estimate shows minimal shrinkage (0.93 → 0.87), consistent with a
+near-null interaction. For PFS, the CRP × Rx estimate is essentially
+unchanged by Ridge (Firth 0.33 → Ridge 0.32), indicating that the
+directional PFS finding is robust to regularization — the data support
+it even when the model is penalized for large coefficients. TMB/BRAF ×
+Rx PFS shows moderate shrinkage (0.60 → 0.45).
+
+## TLR as a post-treatment response
+
+TLR is strongly associated with both survival outcomes (OS HR 0.35, 95%
+CI 0.20–0.61; PFS HR 0.17, 0.09–0.32) in unadjusted analysis.
+Descriptively, however, a noteworthy imbalance exists: TLR-positive
+status is more common in the control arm (76%) than the experimental arm
+(53%). This is surprising if TLR captures treatment response (one would
+expect higher response rates with immunotherapy, or at least parity).
+Possible explanations include small-sample randomization imbalance, a
+timing artefact (TLR measured at a fixed CT which may occur during
+different treatment phases across arms), or genuine heterogeneity in the
+patient mix. The imbalance reinforces the caution against interpreting
+the strong TLR-survival association as evidence of a TLR-based treatment
+effect: much of the TLR survival difference could be confounded by
+unmeasured baseline prognosis. A formal causal mediation analysis would
+be needed to separate the direct treatment effect from the indirect path
+through TLR.
 
 
 
 # Summary
 
-This analysis evaluated treatment effect heterogeneity across three
-candidate predictive biomarkers (CRP, TLR, TMB/BRAF) using
-Firth-corrected Cox regression with profile likelihood confidence
-intervals and penalized likelihood ratio tests.
+**Study:** METIMMOX-1 biomarker subgroup analysis. N = 65 complete
+cases, 56 OS events, 48 PFS events.
 
-**Key Findings:**
+**Methods:** Unified Firth-corrected Cox model motivated by the causal
+DAG: `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx`.
+TLR excluded as a post-randomization mediator (T → TLR → PFS). Profile
+likelihood CIs, PLRT for interaction testing. Ridge regression (L2
+penalty on main effects) as sensitivity analysis.
 
-1.  **Model Robustness:** Treatment-biomarker interaction estimates were
-    compared across three model specifications (all-in-one, focused,
-    single-biomarker) to assess sensitivity to model structure.
+**Proportional hazards:** No violations in OS (global p = 0.40). In PFS,
+the TMB/BRAF main effect (p = 0.021) and TMB/BRAF × Rx interaction (p =
+0.045) violate the PH assumption; PFS TMB/BRAF estimates should be
+interpreted with caution.
 
-2.  **Multiple Testing:** Benjamini-Hochberg correction was applied to
-    control the false discovery rate across the 6 primary interaction
-    tests (3 biomarkers × 2 outcomes).
+**Interaction estimates:**
 
-3.  **Proportional Hazards:** The PH assumption was assessed using
-    Schoenfeld residual tests and log-log survival plots. For overall
-    survival, no significant PH violations were detected. For
-    progression-free survival, significant violations were observed for
-    TMB/BRAF main effect (p = 0.004) and TMB/BRAF × Rx interaction (p =
-    0.009), with the global test also significant (p = 0.004). These
-    findings suggest time-varying effects for TMB/BRAF-related terms in
-    PFS models, warranting caution in interpretation. The log-log plots
-    show some crossing of survival curves for the treatment comparison,
-    consistent with potential non-proportional hazards.
+| Interaction   | OS HR (95% CI)   | PLRT p | PFS HR (95% CI)  | PLRT p |
+|---------------|------------------|--------|------------------|--------|
+| CRP × Rx      | 0.78 (0.21–3.61) | 0.73   | 0.33 (0.07–2.15) | 0.22   |
+| TMB/BRAF × Rx | 0.93 (0.30–2.85) | 0.89   | 0.60 (0.16–2.28) | —      |
 
-4.  **Sensitivity Analysis (Ridge Regression):** Ridge regression was
-    applied to all three model structures (A, B, C) to assess estimate
-    stability. This comprehensive comparison reveals whether shrinkage
-    patterns are consistent across model specifications or driven by
-    specific modeling choices:
+No interaction is statistically significant. CRP × Rx PFS (HR 0.33) is
+the most directionally consistent finding and is robust to Ridge
+regularization (Ridge HR 0.32). TMB/BRAF OS shows near-null interaction
+(Ridge HR 0.87 ≈ Firth); TMB/BRAF PFS violated PH.
 
-    - Consistent shrinkage across all three models suggests inherent
-      instability in the interaction estimate
-    - Shrinkage only in Model A (all-in-one) suggests multicollinearity
-      with other biomarkers
-    - Model C (single-biomarker) provides the most direct
-      biomarker-treatment estimate with minimal confounding
-
-    Both methods answer different questions: Firth provides the best
-    point estimate given the data structure, while Ridge prioritizes
-    predictive stability. Comparing patterns across models helps
-    distinguish true effect instability from model-specific artifacts.
-
-**Methodological Note:** The use of Firth-corrected Cox regression
-addresses potential monotone likelihood issues and small sample bias.
-Profile likelihood-based confidence intervals and penalized likelihood
-ratio tests are more appropriate than Wald-based methods in this
-setting.
+**TLR (descriptive):** OS HR 0.35 (0.20–0.61); PFS HR 0.17 (0.09–0.32).
+TLR-positive prevalence: control 76%, experimental 53% — a directional
+imbalance that complicates causal interpretation. TLR is a
+post-treatment mediator and requires causal mediation analysis for valid
+inference.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-03-27  
+**Report completed on:** 2026-04-04  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 2.3
+**Report version:** 3.0
