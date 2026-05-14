@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-04-04
+2026-05-14
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -383,6 +383,6 @@ inference.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-04-04  
+**Report completed on:** 2026-05-14  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.0

@@ -371,35 +371,92 @@ Ridge regression is not replacing the Firth estimates—it provides a reality ch
 ## Sample Characteristics
 
 ```{r table-sample}
-sample_df <- data.frame(
-  Characteristic = c("Total patients (complete cases)",
-                     "Control arm (FLOX alone)",
-                     "Experimental arm (alternating FLOX/nivolumab)",
-                     "",
-                     "Deaths (OS events)",
-                     "Progressions (PFS events)",
-                     "",
-                     "CRP-positive (low CRP)",
-                     "TLR-positive (early response)",
-                     "TMB/BRAF-positive"),
-  Value = c(n_total,
-            paste0(n_control, " (", round(100*n_control/n_total, 1), "%)"),
-            paste0(n_experimental, " (", round(100*n_experimental/n_total, 1), "%)"),
-            "",
-            paste0(n_deaths, " (", round(100*n_deaths/n_total, 1), "%)"),
-            paste0(n_progressions, " (", round(100*n_progressions/n_total, 1), "%)"),
-            "",
-            paste0(sum(data_complete$crp_num), " (", round(100*prev_crp, 1), "%)"),
-            paste0(sum(data_complete$tlr_num), " (", round(100*prev_tlr, 1), "%)"),
-            paste0(sum(data_complete$tmb_braf_num), " (", round(100*prev_tmb_braf, 1), "%)"))
+# Helper: format n (%) with subgroup denominator
+fmt_n_pct <- function(n, total, digits = 1) {
+  if (is.na(n) || total == 0) return("--")
+  sprintf(paste0("%d (%.", digits, "f%%)"), n, 100 * n / total)
+}
+
+# Helper: format mean (SD)
+fmt_mean_sd <- function(x, digits = 1) {
+  if (length(x) == 0 || all(is.na(x))) return("--")
+  sprintf(paste0("%.", digits, "f (%.", digits, "f)"),
+          mean(x, na.rm = TRUE), sd(x, na.rm = TRUE))
+}
+
+# Compute the column of statistics for a given subgroup
+build_col <- function(df) {
+  n <- nrow(df)
+  sex_levels   <- levels(data_complete$sex)
+  rx_levels    <- levels(data_complete$Rx)
+  n_female     <- sum(df$sex == sex_levels[length(sex_levels)])  # last level (typically Female)
+  n_male       <- sum(df$sex == sex_levels[1])
+  n_ctrl       <- sum(df$Rx == rx_levels[1])
+  n_exp        <- sum(df$Rx == rx_levels[2])
+  c(
+    as.character(n),
+    fmt_mean_sd(df$Age),
+    fmt_n_pct(n_male,   n),
+    fmt_n_pct(n_female, n),
+    fmt_n_pct(n_ctrl,   n),
+    fmt_n_pct(n_exp,    n),
+    fmt_n_pct(sum(df$Death),       n),
+    fmt_n_pct(sum(df$Progression), n),
+    fmt_n_pct(sum(df$crp_num),      n),
+    fmt_n_pct(sum(df$tlr_num),      n),
+    fmt_n_pct(sum(df$tmb_braf_num), n)
+  )
+}
+
+# Build subgroup data frames
+sub_overall <- data_complete
+sub_crp_pos <- data_complete[data_complete$crp_num      == 1, ]
+sub_crp_neg <- data_complete[data_complete$crp_num      == 0, ]
+sub_tlr_pos <- data_complete[data_complete$tlr_num      == 1, ]
+sub_tlr_neg <- data_complete[data_complete$tlr_num      == 0, ]
+sub_tmb_pos <- data_complete[data_complete$tmb_braf_num == 1, ]
+sub_tmb_neg <- data_complete[data_complete$tmb_braf_num == 0, ]
+
+table1_df <- data.frame(
+  Characteristic = c(
+    "Patients, n",
+    "Age, mean (SD)",
+    "Male",
+    "Female",
+    "Control (FLOX alone)",
+    "Experimental (FLOX/nivolumab)",
+    "Deaths (OS events)",
+    "Progressions (PFS events)",
+    "CRP-positive (low CRP)",
+    "TLR-positive (early response)",
+    "TMB/BRAF-positive"
+  ),
+  Overall = build_col(sub_overall),
+  CRP_pos = build_col(sub_crp_pos),
+  CRP_neg = build_col(sub_crp_neg),
+  TLR_pos = build_col(sub_tlr_pos),
+  TLR_neg = build_col(sub_tlr_neg),
+  TMB_pos = build_col(sub_tmb_pos),
+  TMB_neg = build_col(sub_tmb_neg),
+  stringsAsFactors = FALSE
 )
 
-sample_df %>%
-  kable(col.names = c("Characteristic", "N (%)"),
-        caption = "Sample Characteristics",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  row_spec(c(4, 7), bold = FALSE, extra_css = "border-bottom: none;")
+table1_df %>%
+  kable(col.names = c("Characteristic", "Overall",
+                      "Positive", "Negative",
+                      "Positive", "Negative",
+                      "Positive", "Negative"),
+        caption = "Sample Characteristics by Biomarker Status",
+        booktabs = TRUE, format = "latex", align = c("l", rep("c", 7))) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  add_header_above(c(" " = 2, "CRP" = 2, "TLR" = 2, "TMB/BRAF" = 2),
+                   bold = TRUE) %>%
+  pack_rows("Demographics",          2, 4,  bold = TRUE, italic = FALSE) %>%
+  pack_rows("Treatment arm",         5, 6,  bold = TRUE, italic = FALSE) %>%
+  pack_rows("Outcome events",        7, 8,  bold = TRUE, italic = FALSE) %>%
+  pack_rows("Biomarker prevalence",  9, 11, bold = TRUE, italic = FALSE) %>%
+  footnote(general = "Percentages within each column use the column subgroup as denominator. CRP/TLR/TMB-BRAF rows in the corresponding subgroup column equal 100% by definition.",
+           footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
 ## Biomarker Correlations
