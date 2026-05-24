@@ -93,7 +93,7 @@ fit_firth_cox <- function(formula, data, label = "model") {
       data = data,
       firth = TRUE,
       pl = TRUE,        # Profile likelihood CIs
-      maxit = 100,
+      maxit = 500,      # 100 was too tight for the TMB/BRAF:Rx PFS PLRT (converges at iter ~102)
       maxstep = 0.1
     )
   }, error = function(e) {
@@ -124,29 +124,6 @@ extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
 
   rownames(results) <- NULL
   results
-}
-
-#' Penalized Likelihood Ratio Test for specific interaction term
-test_interaction_plrt <- function(formula_full, data, interaction_term) {
-  test_formula <- as.formula(paste("~", interaction_term))
-
-  tryCatch({
-    result <- coxphftest(
-      formula = formula_full,
-      data = data,
-      test = test_formula,
-      firth = TRUE
-    )
-    list(
-      term = interaction_term,
-      loglik_full = result$loglik[2],
-      loglik_restricted = result$loglik[1],
-      df = result$df,
-      p_value = result$prob
-    )
-  }, error = function(e) {
-    list(term = interaction_term, p_value = NA)
-  })
 }
 
 #' Apply Benjamini-Hochberg FDR correction
@@ -557,18 +534,6 @@ model_os  <- fit_firth_cox(formula_os,  data_complete, "Unified OS")
 model_pfs <- fit_firth_cox(formula_pfs, data_complete, "Unified PFS")
 ```
 
-```{r plrt-tests, include=FALSE}
-# =============================================================================
-# PENALIZED LIKELIHOOD RATIO TESTS FOR INTERACTIONS (unified model)
-# =============================================================================
-
-plrt_crp_os  <- test_interaction_plrt(formula_os,  data_complete, "crp_num:Rx")
-plrt_tmb_os  <- test_interaction_plrt(formula_os,  data_complete, "tmb_braf_num:Rx")
-
-plrt_crp_pfs <- test_interaction_plrt(formula_pfs, data_complete, "crp_num:Rx")
-plrt_tmb_pfs <- test_interaction_plrt(formula_pfs, data_complete, "tmb_braf_num:Rx")
-```
-
 ```{r extract-results, include=FALSE}
 # =============================================================================
 # EXTRACT RESULTS FROM UNIFIED MODEL
@@ -576,6 +541,20 @@ plrt_tmb_pfs <- test_interaction_plrt(formula_pfs, data_complete, "tmb_braf_num:
 
 results_os  <- extract_coxphf_results(model_os)
 results_pfs <- extract_coxphf_results(model_pfs)
+
+# Convenience scalars for inline references in narrative.
+# coxphf$prob (carried as P_Value) is the per-coefficient PLRT p-value.
+get_pvalue_by_term <- function(results_df, pattern) {
+  if (is.null(results_df)) return(NA_real_)
+  idx <- grep(pattern, results_df$Term)
+  if (length(idx) == 0) return(NA_real_)
+  results_df$P_Value[idx[1]]
+}
+
+p_crp_os  <- get_pvalue_by_term(results_os,  "crp_num.*Rx|Rx.*crp_num")
+p_tmb_os  <- get_pvalue_by_term(results_os,  "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+p_crp_pfs <- get_pvalue_by_term(results_pfs, "crp_num.*Rx|Rx.*crp_num")
+p_tmb_pfs <- get_pvalue_by_term(results_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 ```
 
 ## Unified Model Results
@@ -588,18 +567,10 @@ The unified DAG-informed model includes CRP and TMB/BRAF as pre-treatment biomar
 
 ```{r table-os}
 if (!is.null(results_os)) {
-  results_os$PLRT_p <- NA
-
-  crp_idx <- grep("crp_num.*Rx|Rx.*crp_num", results_os$Term)
-  tmb_idx <- grep("tmb_braf_num.*Rx|Rx.*tmb_braf_num", results_os$Term)
-
-  if (length(crp_idx) > 0) results_os$PLRT_p[crp_idx] <- plrt_crp_os$p_value
-  if (length(tmb_idx) > 0) results_os$PLRT_p[tmb_idx] <- plrt_tmb_os$p_value
-
   display_os <- results_os %>%
     mutate(
       HR_CI  = format_hr_ci(HR, CI_Lower, CI_Upper),
-      PLRT_p = format_pvalue(PLRT_p)
+      PLRT_p = format_pvalue(P_Value)
     ) %>%
     select(Term, HR_CI, PLRT_p)
 
@@ -617,18 +588,10 @@ if (!is.null(results_os)) {
 
 ```{r table-pfs}
 if (!is.null(results_pfs)) {
-  results_pfs$PLRT_p <- NA
-
-  crp_idx <- grep("crp_num.*Rx|Rx.*crp_num", results_pfs$Term)
-  tmb_idx <- grep("tmb_braf_num.*Rx|Rx.*tmb_braf_num", results_pfs$Term)
-
-  if (length(crp_idx) > 0) results_pfs$PLRT_p[crp_idx] <- plrt_crp_pfs$p_value
-  if (length(tmb_idx) > 0) results_pfs$PLRT_p[tmb_idx] <- plrt_tmb_pfs$p_value
-
   display_pfs <- results_pfs %>%
     mutate(
       HR_CI  = format_hr_ci(HR, CI_Lower, CI_Upper),
-      PLRT_p = format_pvalue(PLRT_p)
+      PLRT_p = format_pvalue(P_Value)
     ) %>%
     select(Term, HR_CI, PLRT_p)
 
@@ -783,9 +746,8 @@ data.frame(
         caption = "Progression-Free Survival: Firth vs Ridge Regression",
         booktabs = TRUE, format = "latex") %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(alphabet = c("coxphf convergence not attained for TMB/BRAF x Rx; interpret with caution.",
-                        "Ridge applies L2 shrinkage to main effects only."),
-           footnote_as_chunk = FALSE)
+  footnote(general = "Ridge applies L2 shrinkage to main effects only.",
+           footnote_as_chunk = TRUE)
 ```
 
 **Interpretation:** Firth provides the best unbiased point estimate given the sample size and data structure. Ridge applies L2 shrinkage toward zero (HR toward 1.0). Comparing the two methods reveals estimate stability: if Firth and Ridge agree closely, the estimate is robust; if Ridge substantially shrinks the interaction toward null, the effect is sensitive to regularization in this sample.
@@ -877,25 +839,22 @@ formula_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_bra
 model_tlr_os  <- fit_firth_cox(formula_tlr_os,  data_complete, "TLR OS")
 model_tlr_pfs <- fit_firth_cox(formula_tlr_pfs, data_complete, "TLR PFS")
 
-plrt_tlr_os  <- test_interaction_plrt(formula_tlr_os,  data_complete, "tlr_num:Rx")
-plrt_tlr_pfs <- test_interaction_plrt(formula_tlr_pfs, data_complete, "tlr_num:Rx")
-
 results_tlr_os  <- extract_coxphf_results(model_tlr_os)
 results_tlr_pfs <- extract_coxphf_results(model_tlr_pfs)
+
+# PLRT p-values for the TLR x Rx interaction (for narrative)
+p_tlr_os  <- get_pvalue_by_term(results_tlr_os,  "tlr_num.*Rx|Rx.*tlr_num")
+p_tlr_pfs <- get_pvalue_by_term(results_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
 ```
 
 ### Overall Survival
 
 ```{r table-tlr-firth-os}
 if (!is.null(results_tlr_os)) {
-  results_tlr_os$PLRT_p <- NA
-  tlr_idx <- grep("tlr_num.*Rx|Rx.*tlr_num", results_tlr_os$Term)
-  if (length(tlr_idx) > 0) results_tlr_os$PLRT_p[tlr_idx] <- plrt_tlr_os$p_value
-
   display_tlr_os <- results_tlr_os %>%
     mutate(
       HR_CI  = format_hr_ci(HR, CI_Lower, CI_Upper),
-      PLRT_p = format_pvalue(PLRT_p)
+      PLRT_p = format_pvalue(P_Value)
     ) %>%
     select(Term, HR_CI, PLRT_p)
 
@@ -913,14 +872,10 @@ if (!is.null(results_tlr_os)) {
 
 ```{r table-tlr-firth-pfs}
 if (!is.null(results_tlr_pfs)) {
-  results_tlr_pfs$PLRT_p <- NA
-  tlr_idx <- grep("tlr_num.*Rx|Rx.*tlr_num", results_tlr_pfs$Term)
-  if (length(tlr_idx) > 0) results_tlr_pfs$PLRT_p[tlr_idx] <- plrt_tlr_pfs$p_value
-
   display_tlr_pfs <- results_tlr_pfs %>%
     mutate(
       HR_CI  = format_hr_ci(HR, CI_Lower, CI_Upper),
-      PLRT_p = format_pvalue(PLRT_p)
+      PLRT_p = format_pvalue(P_Value)
     ) %>%
     select(Term, HR_CI, PLRT_p)
 
@@ -1012,7 +967,7 @@ data.frame(
 
 ## Primary interaction results
 
-Neither biomarker-treatment interaction reached conventional significance in the unified model. For **overall survival**, CRP × Rx yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = 0.73) and TMB/BRAF × Rx HR 0.93 (0.30–2.85, p = 0.89) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction showed a more directionally suggestive effect (HR 0.33, 0.07–2.15, p = 0.22): CRP-positive patients in the experimental arm had roughly one-third the hazard of progression relative to CRP-positive controls, though the CI spans more than an order of magnitude and the coxphf algorithm reported convergence difficulties for the TMB/BRAF × Rx PFS term (see footnote to Table 5). These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` progressions, `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
+Neither biomarker-treatment interaction reached conventional significance in the unified model. For **overall survival**, CRP × Rx yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR 0.93 (0.30–2.85, p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction showed a more directionally suggestive effect (HR 0.33, 0.07–2.15, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had roughly one-third the hazard of progression relative to CRP-positive controls, though the CI spans more than an order of magnitude. These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` progressions, `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR 0.33) is consistent with the DAG association test showing CRP → PFS (HR 0.40, p = 0.004) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR 0.78) is considerably closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
 
@@ -1026,7 +981,7 @@ For OS, Ridge shrinks the CRP × Rx estimate substantially toward null (Firth HR
 
 ## TLR responder analysis (exploratory)
 
-The exploratory responder model — `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the differential treatment effect between TLR-positive and TLR-negative subgroups while adjusting for the pre-treatment biomarkers as prognostic main effects. The Firth-estimated TLR × Rx HR was `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for overall survival and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for progression-free survival. The OS estimate sits **above 1.0**, which directionally implies the (TLR-positive vs TLR-negative) hazard contrast is *worse* on the experimental arm than on the control arm — the opposite of a "TLR-positive predicts immunotherapy benefit" pattern. PFS is closer to null. Ridge shrinkage of the TLR terms gives `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS) and `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS): ridge moves the OS estimate modestly toward null but preserves the directional pattern, and barely changes the PFS estimate. PLRT p-values are very high (`r format_pvalue(plrt_tlr_os$p_value)` OS, `r format_pvalue(plrt_tlr_pfs$p_value)` PFS); this reflects the wide profile-likelihood CIs combined with the known behaviour of penalized likelihood ratio tests when the interaction term is highly correlated with its main effect (here, `tlr_num:Rx` is structurally zero wherever `tlr_num` is zero). The high p-values should therefore not be over-interpreted as a separate "no signal" finding beyond what the CI already conveys.
+The exploratory responder model — `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the differential treatment effect between TLR-positive and TLR-negative subgroups while adjusting for the pre-treatment biomarkers as prognostic main effects. The Firth-estimated TLR × Rx HR was `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for overall survival and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for progression-free survival. The OS estimate sits **above 1.0**, which directionally implies the (TLR-positive vs TLR-negative) hazard contrast is *worse* on the experimental arm than on the control arm — the opposite of a "TLR-positive predicts immunotherapy benefit" pattern. PFS is closer to null. Ridge shrinkage of the TLR terms gives `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS) and `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS): ridge moves the OS estimate modestly toward null but preserves the directional pattern, and barely changes the PFS estimate. PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance, consistent with the wide profile-likelihood CIs in this small sample.
 
 The directional pattern is consistent with the descriptive imbalance: TLR-positive prevalence is `r tlr_by_arm$pct_tlr_pos[1]`% in the control arm and `r tlr_by_arm$pct_tlr_pos[2]`% in the experimental arm. If TLR cleanly captured immunotherapy response one would expect higher TLR-positivity in the experimental arm, not lower. The observed prevalence pattern, together with the OS direction (HR > 1) of the TLR × Rx interaction, is more consistent with TLR acting as a **prognostic** marker (identifying chemotherapy-responsive disease, which is more prevalent in the control arm by chance or by timing) than as a predictive marker for immunotherapy benefit. Possible explanations for the imbalance include small-sample randomization imbalance, a timing artefact (TLR measured at a fixed CT that may occur during different treatment phases across arms), or genuine heterogeneity in the patient mix. Because TLR is itself influenced by treatment, the TLR × Rx interaction is a responder-stratified contrast — useful for hypothesis generation, but not a causal predictive-biomarker estimate. Clinical decision support would require a formal causal mediation or landmark analysis.
 
@@ -1044,15 +999,15 @@ The directional pattern is consistent with the descriptive imbalance: TLR-positi
 
 | Interaction | OS HR (95% CI) | PLRT p | PFS HR (95% CI) | PLRT p |
 |-------------|----------------|--------|-----------------|--------|
-| CRP × Rx    | 0.78 (0.21–3.61) | 0.73 | 0.33 (0.07–2.15) | 0.22 |
-| TMB/BRAF × Rx | 0.93 (0.30–2.85) | 0.89 | 0.60 (0.16–2.28) | — |
+| CRP × Rx    | 0.78 (0.21–3.61) | `r format_pvalue(p_crp_os)` | 0.33 (0.07–2.15) | `r format_pvalue(p_crp_pfs)` |
+| TMB/BRAF × Rx | 0.93 (0.30–2.85) | `r format_pvalue(p_tmb_os)` | 0.60 (0.16–2.28) | `r format_pvalue(p_tmb_pfs)` |
 
 No interaction is statistically significant. CRP × Rx PFS (HR 0.33) is the most directionally consistent finding and is robust to Ridge regularization (Ridge HR 0.32). TMB/BRAF OS shows near-null interaction (Ridge HR 0.87 ≈ Firth); TMB/BRAF PFS violated PH.
 
-**TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values near 1.0 for both outcomes reflect wide profile-likelihood CIs together with collinearity between the interaction and main-effect terms, not a separate "no signal" finding. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
+**TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.1
+**Report version:** 3.2

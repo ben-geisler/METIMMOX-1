@@ -316,18 +316,17 @@ landmark or formal causal-mediation analyses in future work.
 
 Neither biomarker-treatment interaction reached conventional
 significance in the unified model. For **overall survival**, CRP × Rx
-yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = 0.73) and TMB/BRAF × Rx HR
-0.93 (0.30–2.85, p = 0.89) — point estimates close to null with very
+yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = 0.728) and TMB/BRAF × Rx HR
+0.93 (0.30–2.85, p = 0.893) — point estimates close to null with very
 wide confidence intervals. For **progression-free survival**, the CRP ×
 Rx interaction showed a more directionally suggestive effect (HR 0.33,
-0.07–2.15, p = 0.22): CRP-positive patients in the experimental arm had
+0.07–2.15, p = 0.224): CRP-positive patients in the experimental arm had
 roughly one-third the hazard of progression relative to CRP-positive
-controls, though the CI spans more than an order of magnitude and the
-coxphf algorithm reported convergence difficulties for the TMB/BRAF × Rx
-PFS term (see footnote to Table 5). These results are consistent with
-the trial being underpowered to detect treatment-effect heterogeneity (n
-= 65, 48 progressions, 56 deaths): even a moderate subgroup effect (HR
-~0.5) would require far larger samples for reliable estimation.
+controls, though the CI spans more than an order of magnitude. These
+results are consistent with the trial being underpowered to detect
+treatment-effect heterogeneity (n = 65, 48 progressions, 56 deaths):
+even a moderate subgroup effect (HR ~0.5) would require far larger
+samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The
 CRP direction (HR 0.33) is consistent with the DAG association test
@@ -379,13 +378,9 @@ experimental arm than on the control arm — the opposite of a
 null. Ridge shrinkage of the TLR terms gives 2.12 (SE: 0.58) (OS) and
 0.68 (SE: 0.64) (PFS): ridge moves the OS estimate modestly toward null
 but preserves the directional pattern, and barely changes the PFS
-estimate. PLRT p-values are very high (1.000 OS, 1.000 PFS); this
-reflects the wide profile-likelihood CIs combined with the known
-behaviour of penalized likelihood ratio tests when the interaction term
-is highly correlated with its main effect (here, `tlr_num:Rx` is
-structurally zero wherever `tlr_num` is zero). The high p-values should
-therefore not be over-interpreted as a separate “no signal” finding
-beyond what the CI already conveys.
+estimate. PLRT p-values (0.135 OS, 0.660 PFS) do not reach conventional
+significance, consistent with the wide profile-likelihood CIs in this
+small sample.
 
 The directional pattern is consistent with the descriptive imbalance:
 TLR-positive prevalence is 75.9% in the control arm and 52.8% in the
@@ -433,8 +428,8 @@ interpreted with caution.
 
 | Interaction   | OS HR (95% CI)   | PLRT p | PFS HR (95% CI)  | PLRT p |
 |---------------|------------------|--------|------------------|--------|
-| CRP × Rx      | 0.78 (0.21–3.61) | 0.73   | 0.33 (0.07–2.15) | 0.22   |
-| TMB/BRAF × Rx | 0.93 (0.30–2.85) | 0.89   | 0.60 (0.16–2.28) | —      |
+| CRP × Rx      | 0.78 (0.21–3.61) | 0.728  | 0.33 (0.07–2.15) | 0.224  |
+| TMB/BRAF × Rx | 0.93 (0.30–2.85) | 0.893  | 0.60 (0.16–2.28) | 0.447  |
 
 No interaction is statistically significant. CRP × Rx PFS (HR 0.33) is
 the most directionally consistent finding and is robust to Ridge
@@ -443,20 +438,19 @@ regularization (Ridge HR 0.32). TMB/BRAF OS shows near-null interaction
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR 2.47
 (0.75-7.75) for OS and 0.75 (0.20-2.66) for PFS. Ridge-penalized TLR
-terms: 2.12 (SE: 0.58) (OS), 0.68 (SE: 0.64) (PFS). PLRT p-values near
-1.0 for both outcomes reflect wide profile-likelihood CIs together with
-collinearity between the interaction and main-effect terms, not a
-separate “no signal” finding. TLR-positive prevalence: control 75.9%,
-experimental 52.8% — markedly higher TLR-positivity in the control arm.
-The OS direction (HR \> 1) of TLR × Rx, combined with the prevalence
-pattern, is more consistent with TLR acting as a prognostic marker for
-chemo-responsive disease than as a predictive marker for immunotherapy
-benefit. Because TLR is post-randomization, this is a
-responder-stratified, hypothesis-generating contrast rather than a
-causal predictive-biomarker estimate.
+terms: 2.12 (SE: 0.58) (OS), 0.68 (SE: 0.64) (PFS). PLRT p-values (0.135
+OS, 0.660 PFS) do not reach conventional significance in this small
+sample. TLR-positive prevalence: control 75.9%, experimental 52.8% —
+markedly higher TLR-positivity in the control arm. The OS direction (HR
+\> 1) of TLR × Rx, combined with the prevalence pattern, is more
+consistent with TLR acting as a prognostic marker for chemo-responsive
+disease than as a predictive marker for immunotherapy benefit. Because
+TLR is post-randomization, this is a responder-stratified,
+hypothesis-generating contrast rather than a causal predictive-biomarker
+estimate.
 
 ------------------------------------------------------------------------
 
 **Report completed on:** 2026-05-24  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.1
+**Report version:** 3.2
