@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-05-14
+2026-05-24
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -22,20 +22,25 @@ Ben Geisler
   - [Forest Plot](#forest-plot)
 - [Sensitivity Analysis: Ridge
   Regression](#sensitivity-analysis-ridge-regression)
-- [TLR as a Post-Treatment Response
-  Measure](#tlr-as-a-post-treatment-response-measure)
-  - [TLR Prevalence by Treatment Arm](#tlr-prevalence-by-treatment-arm)
-  - [Kaplan-Meier Curves Stratified by
-    TLR](#kaplan-meier-curves-stratified-by-tlr)
-  - [Unadjusted Prognostic Association
-    (Descriptive)](#unadjusted-prognostic-association-descriptive)
+- [Exploratory: TLR as a Predictive Biomarker (Responder
+  Analysis)](#exploratory-tlr-as-a-predictive-biomarker-responder-analysis)
+  - [Descriptive Context](#descriptive-context)
+    - [TLR Prevalence by Treatment
+      Arm](#tlr-prevalence-by-treatment-arm)
+    - [Kaplan-Meier Curves Stratified by
+      TLR](#kaplan-meier-curves-stratified-by-tlr)
+  - [Firth-Corrected Cox Model](#firth-corrected-cox-model)
+    - [Overall Survival](#overall-survival-1)
+    - [Progression-Free Survival](#progression-free-survival-1)
+  - [Ridge Sensitivity Analysis (TLR Terms
+    Penalized)](#ridge-sensitivity-analysis-tlr-terms-penalized)
 - [Discussion](#discussion)
   - [Primary interaction results](#primary-interaction-results)
   - [Proportional hazards and
     TMB/BRAF](#proportional-hazards-and-tmbbraf)
   - [Ridge regression sensitivity](#ridge-regression-sensitivity)
-  - [TLR as a post-treatment
-    response](#tlr-as-a-post-treatment-response)
+  - [TLR responder analysis
+    (exploratory)](#tlr-responder-analysis-exploratory)
 - [Summary](#summary)
 
 # Overview
@@ -235,31 +240,37 @@ sensitive to regularization in this sample.
 
 
 
-# TLR as a Post-Treatment Response Measure
+# Exploratory: TLR as a Predictive Biomarker (Responder Analysis)
 
-**Causal DAG status:** The DAG encodes TLR (Tumor Lesion Reduction) as a
-**post-randomization intermediate** (T → TLR → PFS). This means:
+This section presents an **exploratory responder analysis** that
+includes TLR (Tumor Lesion Reduction) as an effect modifier in a Cox
+model with the same structural form as the primary analysis. Because TLR
+is measured post-randomization (at the first on-treatment CT scan), this
+is not a pre-treatment patient-selection analysis: TLR status is itself
+influenced by treatment, and the resulting TLR x Rx interaction is
+informative only as a hypothesis-generating, responder-stratified
+contrast. It cannot be used to guide treatment decisions at baseline.
+The primary causal-DAG-informed analysis remains the inferential anchor
+for predictive biomarker claims.
 
-1.  TLR is measured after treatment has started (requires at least one
-    CT imaging cycle), so it cannot inform pre-treatment patient
-    selection.
-2.  Including TLR as a covariate in a survival model alongside treatment
-    would condition on a post-randomization variable, blocking part of
-    the treatment-effect pathway (collider/mediator bias).
-3.  The strong TLR → PFS association observed in the DAG association
-    tests (HR 0.18, p \< 0.001) reflects a tautological relationship
-    between radiological response and progression — tumors that respond
-    to treatment have longer PFS by definition.
+The model adjusts for the pre-treatment biomarkers **CRP** and
+**TMB/BRAF** as prognostic main effects (their treatment interactions
+belong to the primary analysis and are not re-estimated here). In the
+ridge sensitivity model, CRP and TMB/BRAF remain **unpenalized**
+(well-established prognostic adjustment covariates), while the **TLR
+main effect and TLR x Rx interaction are penalized**. These are the
+post-randomization terms whose stability we want to stress-test against
+the small effective sample size and the partially tautological TLR-PFS
+association.
 
-TLR is therefore reported here as a **descriptive endpoint only**, not
-as a baseline predictive biomarker. Its potential use as a clinical
-decision tool (e.g., stopping treatment in non-responders) would require
-a separate causal mediation analysis, which is beyond the scope of this
-report.
+**Formula:**
+`Surv(time, event) ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx`
 
-## TLR Prevalence by Treatment Arm
+## Descriptive Context
 
-## Kaplan-Meier Curves Stratified by TLR
+### TLR Prevalence by Treatment Arm
+
+### Kaplan-Meier Curves Stratified by TLR
 
 <img src="clinical_effectiveness_files/figure-commonmark/km-tlr-1.png"
 style="width:100.0%" data-fig-align="center" />
@@ -269,7 +280,33 @@ post-treatment response variable. The observed difference in survival by
 TLR status reflects treatment response, not a pre-treatment patient
 characteristic.
 
-## Unadjusted Prognostic Association (Descriptive)
+
+
+## Firth-Corrected Cox Model
+
+### Overall Survival
+
+### Progression-Free Survival
+
+
+
+## Ridge Sensitivity Analysis (TLR Terms Penalized)
+
+Ridge regression is applied here with a targeted penalty: only the TLR
+main effect and the TLR x Rx interaction are L2-shrunk. CRP, TMB/BRAF,
+Age, sex, and Rx are estimated without penalty, since they enter the
+model as adjustment covariates whose effects are not the inferential
+target.
+
+**Interpretation:** The Firth HR is the best unbiased point estimate of
+the TLR x Rx interaction under penalized maximum likelihood. The ridge
+HR applies L2 shrinkage targeted at the TLR terms; if the ridge estimate
+is substantially closer to HR = 1.0 than the Firth estimate, the
+responder-stratified interaction is sensitive to regularization,
+consistent with a small-sample, partly tautological signal. Findings
+here are exploratory and should not be used for pre-treatment patient
+selection, since TLR is not measurable at baseline. They may motivate
+landmark or formal causal-mediation analyses in future work.
 
 
 
@@ -327,23 +364,46 @@ directional PFS finding is robust to regularization — the data support
 it even when the model is penalized for large coefficients. TMB/BRAF ×
 Rx PFS shows moderate shrinkage (0.60 → 0.45).
 
-## TLR as a post-treatment response
+## TLR responder analysis (exploratory)
 
-TLR is strongly associated with both survival outcomes (OS HR 0.35, 95%
-CI 0.20–0.61; PFS HR 0.17, 0.09–0.32) in unadjusted analysis.
-Descriptively, however, a noteworthy imbalance exists: TLR-positive
-status is more common in the control arm (76%) than the experimental arm
-(53%). This is surprising if TLR captures treatment response (one would
-expect higher response rates with immunotherapy, or at least parity).
-Possible explanations include small-sample randomization imbalance, a
-timing artefact (TLR measured at a fixed CT which may occur during
-different treatment phases across arms), or genuine heterogeneity in the
-patient mix. The imbalance reinforces the caution against interpreting
-the strong TLR-survival association as evidence of a TLR-based treatment
-effect: much of the TLR survival difference could be confounded by
-unmeasured baseline prognosis. A formal causal mediation analysis would
-be needed to separate the direct treatment effect from the indirect path
-through TLR.
+The exploratory responder model —
+`Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the
+differential treatment effect between TLR-positive and TLR-negative
+subgroups while adjusting for the pre-treatment biomarkers as prognostic
+main effects. The Firth-estimated TLR × Rx HR was 2.47 (0.75-7.75) for
+overall survival and 0.75 (0.20-2.66) for progression-free survival. The
+OS estimate sits **above 1.0**, which directionally implies the
+(TLR-positive vs TLR-negative) hazard contrast is *worse* on the
+experimental arm than on the control arm — the opposite of a
+“TLR-positive predicts immunotherapy benefit” pattern. PFS is closer to
+null. Ridge shrinkage of the TLR terms gives 2.12 (SE: 0.58) (OS) and
+0.68 (SE: 0.64) (PFS): ridge moves the OS estimate modestly toward null
+but preserves the directional pattern, and barely changes the PFS
+estimate. PLRT p-values are very high (1.000 OS, 1.000 PFS); this
+reflects the wide profile-likelihood CIs combined with the known
+behaviour of penalized likelihood ratio tests when the interaction term
+is highly correlated with its main effect (here, `tlr_num:Rx` is
+structurally zero wherever `tlr_num` is zero). The high p-values should
+therefore not be over-interpreted as a separate “no signal” finding
+beyond what the CI already conveys.
+
+The directional pattern is consistent with the descriptive imbalance:
+TLR-positive prevalence is 75.9% in the control arm and 52.8% in the
+experimental arm. If TLR cleanly captured immunotherapy response one
+would expect higher TLR-positivity in the experimental arm, not lower.
+The observed prevalence pattern, together with the OS direction (HR
+\> 1) of the TLR × Rx interaction, is more consistent with TLR acting as
+a **prognostic** marker (identifying chemotherapy-responsive disease,
+which is more prevalent in the control arm by chance or by timing) than
+as a predictive marker for immunotherapy benefit. Possible explanations
+for the imbalance include small-sample randomization imbalance, a timing
+artefact (TLR measured at a fixed CT that may occur during different
+treatment phases across arms), or genuine heterogeneity in the patient
+mix. Because TLR is itself influenced by treatment, the TLR × Rx
+interaction is a responder-stratified contrast — useful for hypothesis
+generation, but not a causal predictive-biomarker estimate. Clinical
+decision support would require a formal causal mediation or landmark
+analysis.
 
 
 
@@ -352,11 +412,17 @@ through TLR.
 **Study:** METIMMOX-1 biomarker subgroup analysis. N = 65 complete
 cases, 56 OS events, 48 PFS events.
 
-**Methods:** Unified Firth-corrected Cox model motivated by the causal
-DAG: `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx`.
-TLR excluded as a post-randomization mediator (T → TLR → PFS). Profile
-likelihood CIs, PLRT for interaction testing. Ridge regression (L2
-penalty on main effects) as sensitivity analysis.
+**Methods:** Two Firth-corrected Cox analyses are presented. **Primary
+(DAG-informed):**
+`Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` —
+pre-treatment biomarkers as effect modifiers; TLR omitted because it is
+post-randomization. **Exploratory responder analysis:**
+`Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and
+its treatment interaction, with CRP and TMB/BRAF retained as prognostic
+main-effect adjustments. Profile likelihood CIs, PLRT for interaction
+testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects
+in the primary model and the TLR terms (main effect + TLR:Rx) in the
+exploratory model.
 
 **Proportional hazards:** No violations in OS (global p = 0.40). In PFS,
 the TMB/BRAF main effect (p = 0.021) and TMB/BRAF × Rx interaction (p =
@@ -375,14 +441,22 @@ the most directionally consistent finding and is robust to Ridge
 regularization (Ridge HR 0.32). TMB/BRAF OS shows near-null interaction
 (Ridge HR 0.87 ≈ Firth); TMB/BRAF PFS violated PH.
 
-**TLR (descriptive):** OS HR 0.35 (0.20–0.61); PFS HR 0.17 (0.09–0.32).
-TLR-positive prevalence: control 76%, experimental 53% — a directional
-imbalance that complicates causal interpretation. TLR is a
-post-treatment mediator and requires causal mediation analysis for valid
-inference.
+**TLR responder analysis (exploratory):** Firth TLR × Rx HR 2.47
+(0.75-7.75) for OS and 0.75 (0.20-2.66) for PFS. Ridge-penalized TLR
+terms: 2.12 (SE: 0.58) (OS), 0.68 (SE: 0.64) (PFS). PLRT p-values near
+1.0 for both outcomes reflect wide profile-likelihood CIs together with
+collinearity between the interaction and main-effect terms, not a
+separate “no signal” finding. TLR-positive prevalence: control 75.9%,
+experimental 52.8% — markedly higher TLR-positivity in the control arm.
+The OS direction (HR \> 1) of TLR × Rx, combined with the prevalence
+pattern, is more consistent with TLR acting as a prognostic marker for
+chemo-responsive disease than as a predictive marker for immunotherapy
+benefit. Because TLR is post-randomization, this is a
+responder-stratified, hypothesis-generating contrast rather than a
+causal predictive-biomarker estimate.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-05-14  
+**Report completed on:** 2026-05-24  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.0
+**Report version:** 3.1
