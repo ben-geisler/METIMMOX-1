@@ -923,39 +923,115 @@ tryCatch({
   )
 }, error = function(e) { ridge_tlr_pfs_ok <<- FALSE; ridge_tlr_pfs <<- NULL })
 
-ridge_tlr_os_int  <- if (!is.null(ridge_tlr_os))  extract_ridge_interaction(ridge_tlr_os,  "tlr_x_rx")  else list(HR = NA, SE = NA)
-ridge_tlr_pfs_int <- if (!is.null(ridge_tlr_pfs)) extract_ridge_interaction(ridge_tlr_pfs, "tlr_x_rx") else list(HR = NA, SE = NA)
+ridge_tlr_os_int  <- if (!is.null(ridge_tlr_os))  extract_ridge_interaction(ridge_tlr_os,  "tlr_x_rx\\)")  else list(HR = NA, SE = NA)
+ridge_tlr_pfs_int <- if (!is.null(ridge_tlr_pfs)) extract_ridge_interaction(ridge_tlr_pfs, "tlr_x_rx\\)") else list(HR = NA, SE = NA)
 
-# Firth TLR x Rx HRs for the comparison tables
+# Firth TLR x Rx HRs for the in-text inline summary
 tlr_firth_os  <- get_interaction_hr(results_tlr_os,  "tlr_num.*Rx|Rx.*tlr_num")
 tlr_firth_pfs <- get_interaction_hr(results_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
+
+# Extract all ridge coefficients into a tidy data frame
+extract_all_ridge_coefs <- function(model) {
+  if (is.null(model)) return(NULL)
+  ct <- summary(model)$coefficients
+  data.frame(
+    Term = rownames(ct),
+    HR = exp(ct[, "coef"]),
+    SE = ct[, "se(coef)"],
+    stringsAsFactors = FALSE
+  )
+}
+
+ridge_tlr_os_coefs  <- extract_all_ridge_coefs(ridge_tlr_os)
+ridge_tlr_pfs_coefs <- extract_all_ridge_coefs(ridge_tlr_pfs)
+
+# Build the full-coefficient Firth vs Ridge comparison.
+# Firth coefficient names: Age, sex<level>, Rx<level>, crp_num, tmb_braf_num,
+#   tlr_num, Rx<level>:tlr_num
+# Ridge coefficient names: Age, sex<level>, Rx<level>, crp_num, tmb_braf_num,
+#   ridge(tlr_num), ridge(tlr_x_rx)
+# Ridge patterns use the closing ")" to disambiguate the TLR main effect
+# from the TLR x Rx interaction.
+build_tlr_comparison <- function(firth_results, ridge_coefs) {
+  row_specs <- list(
+    list(label = "TLR x Rx",
+         firth_pat = "tlr_num.*Rx|Rx.*tlr_num",
+         ridge_pat = "tlr_x_rx\\)"),
+    list(label = "TLR (main effect)",
+         firth_pat = "^tlr_num$",
+         ridge_pat = "tlr_num\\)"),
+    list(label = "Age",
+         firth_pat = "^Age$",
+         ridge_pat = "^Age$"),
+    list(label = "Sex",
+         firth_pat = "^sex",
+         ridge_pat = "^sex"),
+    list(label = "Rx (Experimental)",
+         firth_pat = "^Rx[A-Za-z]",
+         ridge_pat = "^Rx[A-Za-z]"),
+    list(label = "CRP",
+         firth_pat = "^crp_num$",
+         ridge_pat = "^crp_num$"),
+    list(label = "TMB/BRAF",
+         firth_pat = "^tmb_braf_num$",
+         ridge_pat = "^tmb_braf_num$")
+  )
+
+  do.call(rbind, lapply(row_specs, function(rs) {
+    firth_cell <- "--"
+    ridge_cell <- "--"
+
+    if (!is.null(firth_results)) {
+      f_idx <- grep(rs$firth_pat, firth_results$Term)
+      if (length(f_idx) > 0) {
+        firth_cell <- format_hr_ci(
+          firth_results$HR[f_idx[1]],
+          firth_results$CI_Lower[f_idx[1]],
+          firth_results$CI_Upper[f_idx[1]]
+        )
+      }
+    }
+
+    if (!is.null(ridge_coefs)) {
+      r_idx <- grep(rs$ridge_pat, ridge_coefs$Term)
+      if (length(r_idx) > 0) {
+        ridge_cell <- format_ridge_hr(
+          ridge_coefs$HR[r_idx[1]],
+          ridge_coefs$SE[r_idx[1]]
+        )
+      }
+    }
+
+    data.frame(Term = rs$label, Firth = firth_cell, Ridge = ridge_cell,
+               stringsAsFactors = FALSE)
+  }))
+}
+
+tlr_comparison_os  <- build_tlr_comparison(results_tlr_os,  ridge_tlr_os_coefs)
+tlr_comparison_pfs <- build_tlr_comparison(results_tlr_pfs, ridge_tlr_pfs_coefs)
 ```
 
 ```{r table-tlr-ridge-os}
-data.frame(
-  Interaction = "TLR x Rx",
-  Firth = format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper),
-  Ridge = format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)
-) %>%
-  kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
-        caption = "TLR Responder Model - Overall Survival: Firth vs Ridge",
+tlr_comparison_os %>%
+  kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
+        caption = "TLR Responder Model - Overall Survival: Firth vs Ridge, all coefficients",
         booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Ridge: L2 shrinkage on TLR main effect and TLR x Rx interaction; CRP and TMB/BRAF unpenalized.",
+  kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
+  pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+  pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_os), bold = TRUE) %>%
+  footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
            footnote_as_chunk = TRUE)
 ```
 
 ```{r table-tlr-ridge-pfs}
-data.frame(
-  Interaction = "TLR x Rx",
-  Firth = format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper),
-  Ridge = format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)
-) %>%
-  kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
-        caption = "TLR Responder Model - Progression-Free Survival: Firth vs Ridge",
+tlr_comparison_pfs %>%
+  kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
+        caption = "TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
         booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Ridge: L2 shrinkage on TLR main effect and TLR x Rx interaction; CRP and TMB/BRAF unpenalized.",
+  kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
+  pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+  pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_pfs), bold = TRUE) %>%
+  footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
            footnote_as_chunk = TRUE)
 ```
 
