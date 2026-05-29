@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-05-25
+2026-05-29
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -16,6 +16,7 @@ Ben Geisler
   - [Log-Log Survival Plots](#log-log-survival-plots)
 - [Primary Analysis: Firth-Corrected Cox
   Models](#primary-analysis-firth-corrected-cox-models)
+  - [Standard Cox vs Firth](#standard-cox-vs-firth)
   - [Unified Model Results](#unified-model-results)
     - [Overall Survival](#overall-survival)
     - [Progression-Free Survival](#progression-free-survival)
@@ -29,6 +30,7 @@ Ben Geisler
       Arm](#tlr-prevalence-by-treatment-arm)
     - [Kaplan-Meier Curves Stratified by
       TLR](#kaplan-meier-curves-stratified-by-tlr)
+  - [Standard Cox vs Firth](#standard-cox-vs-firth-1)
   - [Firth-Corrected Cox Model](#firth-corrected-cox-model)
     - [Overall Survival](#overall-survival-1)
     - [Progression-Free Survival](#progression-free-survival-1)
@@ -196,6 +198,36 @@ lines suggest time-varying effects.
 
 # Primary Analysis: Firth-Corrected Cox Models
 
+## Standard Cox vs Firth
+
+The standard Cox model is the unpenalized maximum-likelihood reference.
+Divergence between standard Cox and Firth estimates flags small-sample
+or near-separation instability that Firth corrects.
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| CRP x Rx          | 0.88 (0.20-3.85)         | 0.78 (0.21-3.61)  |
+| TMB/BRAF x Rx     | 0.95 (0.30-2.97)         | 0.93 (0.30-2.85)  |
+| Rx (Experimental) | 1.69 (0.79-3.63)         | 1.70 (0.81-3.67)  |
+| CRP               | 0.45 (0.13-1.55)         | 0.52 (0.13-1.47)  |
+| TMB/BRAF          | 0.91 (0.40-2.10)         | 0.94 (0.41-2.12)  |
+| Age               | 1.00 (0.97-1.03)         | 1.00 (0.97-1.03)  |
+| Sex               | 1.59 (0.90-2.81)         | 1.58 (0.90-2.79)  |
+
+Unified Model - Overall Survival: Standard Cox vs Firth
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| CRP x Rx          | 0.38 (0.06-2.34)         | 0.33 (0.07-2.15)  |
+| TMB/BRAF x Rx     | 0.61 (0.16-2.38)         | 0.60 (0.16-2.28)  |
+| Rx (Experimental) | 2.04 (0.86-4.81)         | 2.01 (0.89-4.84)  |
+| CRP               | 0.84 (0.18-3.95)         | 1.00 (0.19-3.60)  |
+| TMB/BRAF          | 0.74 (0.27-1.99)         | 0.77 (0.28-2.01)  |
+| Age               | 0.99 (0.95-1.02)         | 0.99 (0.96-1.02)  |
+| Sex               | 1.21 (0.65-2.26)         | 1.20 (0.65-2.26)  |
+
+Unified Model - Progression-Free Survival: Standard Cox vs Firth
+
 ## Unified Model Results
 
 The unified DAG-informed model includes CRP and TMB/BRAF as
@@ -281,6 +313,36 @@ TLR status reflects treatment response, not a pre-treatment patient
 characteristic.
 
 
+
+## Standard Cox vs Firth
+
+The standard Cox model is the unpenalized maximum-likelihood reference.
+Divergence between standard Cox and Firth estimates flags small-sample
+or near-separation instability that Firth corrects.
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| TLR x Rx          | 2.43 (0.74-7.95)         | 2.47 (0.75-7.75)  |
+| TLR (main effect) | 0.21 (0.08-0.54)         | 0.21 (0.08-0.55)  |
+| Rx (Experimental) | 0.60 (0.23-1.55)         | 0.59 (0.24-1.55)  |
+| CRP               | 0.52 (0.25-1.06)         | 0.53 (0.25-1.05)  |
+| TMB/BRAF          | 0.86 (0.48-1.52)         | 0.86 (0.48-1.52)  |
+| Age               | 1.01 (0.98-1.04)         | 1.01 (0.98-1.04)  |
+| Sex               | 1.48 (0.81-2.68)         | 1.47 (0.82-2.67)  |
+
+TLR Responder Model - Overall Survival: Standard Cox vs Firth
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| TLR x Rx          | 0.73 (0.19-2.76)         | 0.75 (0.20-2.66)  |
+| TLR (main effect) | 0.17 (0.06-0.50)         | 0.17 (0.06-0.52)  |
+| Rx (Experimental) | 1.41 (0.46-4.27)         | 1.35 (0.48-4.22)  |
+| CRP               | 0.41 (0.18-0.96)         | 0.43 (0.18-0.96)  |
+| TMB/BRAF          | 0.48 (0.24-0.99)         | 0.50 (0.24-0.99)  |
+| Age               | 1.00 (0.96-1.03)         | 1.00 (0.96-1.03)  |
+| Sex               | 1.23 (0.61-2.47)         | 1.22 (0.62-2.45)  |
+
+TLR Responder Model - Progression-Free Survival: Standard Cox vs Firth
 
 ## Firth-Corrected Cox Model
 
@@ -451,6 +513,6 @@ estimate.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-05-25  
+**Report completed on:** 2026-05-29  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.2

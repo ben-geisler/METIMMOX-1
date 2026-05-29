@@ -126,6 +126,33 @@ extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
   results
 }
 
+#' Extract results from standard Cox model (full table, interactions grouped at top)
+extract_coxph_results <- function(model, reorder_interactions = TRUE) {
+  if (is.null(model)) return(NULL)
+
+  model_summary <- summary(model)
+  coef_table <- model_summary$coefficients
+  conf_table <- model_summary$conf.int
+
+  results <- data.frame(
+    Term = rownames(coef_table),
+    HR = exp(coef(model)),
+    CI_Lower = conf_table[, "lower .95"],
+    CI_Upper = conf_table[, "upper .95"],
+    P_Value = coef_table[, "Pr(>|z|)"],
+    stringsAsFactors = FALSE
+  )
+
+  if (reorder_interactions) {
+    # Put interaction terms at top
+    is_interaction <- grepl(":", results$Term)
+    results <- rbind(results[is_interaction, ], results[!is_interaction, ])
+  }
+
+  rownames(results) <- NULL
+  results
+}
+
 #' Apply Benjamini-Hochberg FDR correction
 apply_bh_correction <- function(p_values) {
   p.adjust(p_values, method = "BH")
@@ -137,6 +164,49 @@ format_hr_ci <- function(hr, ci_lower, ci_upper, digits = 2) {
     if (is.na(h)) return("--")
     sprintf(paste0("%.", digits, "f (%.", digits, "f-%.", digits, "f)"), h, l, u)
   }, hr, ci_lower, ci_upper, USE.NAMES = FALSE)
+}
+
+#' Build a side-by-side standard Cox vs Firth comparison table
+build_std_firth_comparison <- function(std_results, firth_results, row_specs) {
+  format_result_cell <- function(results_df, pattern) {
+    if (is.null(results_df) || is.null(pattern)) return("--")
+    idx <- grep(pattern, results_df$Term)
+    if (length(idx) == 0) return("--")
+    format_hr_ci(
+      results_df$HR[idx[1]],
+      results_df$CI_Lower[idx[1]],
+      results_df$CI_Upper[idx[1]]
+    )
+  }
+
+  do.call(rbind, lapply(row_specs, function(rs) {
+    data.frame(
+      Term = rs$label,
+      Standard_Cox = format_result_cell(std_results, rs$std_pat),
+      Firth = format_result_cell(firth_results, rs$firth_pat),
+      stringsAsFactors = FALSE
+    )
+  }))
+}
+
+#' Render standard Cox vs Firth tables for both PDF and GFM outputs
+render_std_firth_comparison_table <- function(comparison_df, caption,
+                                             first_group_label, first_group_end,
+                                             second_group_label) {
+  table_format <- if (knitr::is_latex_output()) "latex" else "pipe"
+
+  comparison_table <- comparison_df %>%
+    kable(col.names = c("Term", "Standard Cox HR (95% CI)", "Firth HR (95% CI)"),
+          caption = caption, booktabs = TRUE, format = table_format)
+
+  if (knitr::is_latex_output()) {
+    comparison_table %>%
+      kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
+      pack_rows(first_group_label, 1, first_group_end, bold = TRUE) %>%
+      pack_rows(second_group_label, first_group_end + 1, nrow(comparison_df), bold = TRUE)
+  } else {
+    comparison_table
+  }
 }
 
 #' Format p-value for display (vectorized)
@@ -530,6 +600,9 @@ formula_os  <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
 formula_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
                                           crp_num:Rx + tmb_braf_num:Rx
 
+std_os  <- coxph(formula_os,  data = data_complete)
+std_pfs <- coxph(formula_pfs, data = data_complete)
+
 model_os  <- fit_firth_cox(formula_os,  data_complete, "Unified OS")
 model_pfs <- fit_firth_cox(formula_pfs, data_complete, "Unified PFS")
 ```
@@ -541,6 +614,40 @@ model_pfs <- fit_firth_cox(formula_pfs, data_complete, "Unified PFS")
 
 results_os  <- extract_coxphf_results(model_os)
 results_pfs <- extract_coxphf_results(model_pfs)
+
+std_results_os  <- extract_coxph_results(std_os)
+std_results_pfs <- extract_coxph_results(std_pfs)
+
+primary_std_firth_row_specs <- list(
+  list(label = "CRP x Rx",
+       std_pat = "crp_num.*Rx|Rx.*crp_num",
+       firth_pat = "crp_num.*Rx|Rx.*crp_num"),
+  list(label = "TMB/BRAF x Rx",
+       std_pat = "tmb_braf_num.*Rx|Rx.*tmb_braf_num",
+       firth_pat = "tmb_braf_num.*Rx|Rx.*tmb_braf_num"),
+  list(label = "Rx (Experimental)",
+       std_pat = "^Rx[^:]+$",
+       firth_pat = "^Rx[^:]+$"),
+  list(label = "CRP",
+       std_pat = "^crp_num$",
+       firth_pat = "^crp_num$"),
+  list(label = "TMB/BRAF",
+       std_pat = "^tmb_braf_num$",
+       firth_pat = "^tmb_braf_num$"),
+  list(label = "Age",
+       std_pat = "^Age$",
+       firth_pat = "^Age$"),
+  list(label = "Sex",
+       std_pat = "^sex[^:]*$",
+       firth_pat = "^sex[^:]*$")
+)
+
+std_firth_comparison_os <- build_std_firth_comparison(
+  std_results_os, results_os, primary_std_firth_row_specs
+)
+std_firth_comparison_pfs <- build_std_firth_comparison(
+  std_results_pfs, results_pfs, primary_std_firth_row_specs
+)
 
 # Convenience scalars for inline references in narrative.
 # coxphf$prob (carried as P_Value) is the per-coefficient PLRT p-value.
@@ -555,6 +662,30 @@ p_crp_os  <- get_pvalue_by_term(results_os,  "crp_num.*Rx|Rx.*crp_num")
 p_tmb_os  <- get_pvalue_by_term(results_os,  "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 p_crp_pfs <- get_pvalue_by_term(results_pfs, "crp_num.*Rx|Rx.*crp_num")
 p_tmb_pfs <- get_pvalue_by_term(results_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+```
+
+## Standard Cox vs Firth
+
+The standard Cox model is the unpenalized maximum-likelihood reference. Divergence between standard Cox and Firth estimates flags small-sample or near-separation instability that Firth corrects.
+
+```{r table-std-firth-os}
+render_std_firth_comparison_table(
+  std_firth_comparison_os,
+  caption = "Unified Model - Overall Survival: Standard Cox vs Firth",
+  first_group_label = "Treatment x Biomarker Interactions",
+  first_group_end = 2,
+  second_group_label = "Main Effects and Covariates"
+)
+```
+
+```{r table-std-firth-pfs}
+render_std_firth_comparison_table(
+  std_firth_comparison_pfs,
+  caption = "Unified Model - Progression-Free Survival: Standard Cox vs Firth",
+  first_group_label = "Treatment x Biomarker Interactions",
+  first_group_end = 2,
+  second_group_label = "Main Effects and Covariates"
+)
 ```
 
 ## Unified Model Results
@@ -822,8 +953,6 @@ gridExtra::grid.arrange(p_os, p_pfs, ncol = 2)
 
 \newpage
 
-## Firth-Corrected Cox Model
-
 ```{r fit-tlr-firth, include=FALSE}
 # =============================================================================
 # TLR RESPONDER-ANALYSIS FIRTH-COX MODELS
@@ -836,16 +965,79 @@ formula_tlr_os  <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
 formula_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
                                               tlr_num + tlr_num:Rx
 
+std_tlr_os  <- coxph(formula_tlr_os,  data = data_complete)
+std_tlr_pfs <- coxph(formula_tlr_pfs, data = data_complete)
+
 model_tlr_os  <- fit_firth_cox(formula_tlr_os,  data_complete, "TLR OS")
 model_tlr_pfs <- fit_firth_cox(formula_tlr_pfs, data_complete, "TLR PFS")
 
 results_tlr_os  <- extract_coxphf_results(model_tlr_os)
 results_tlr_pfs <- extract_coxphf_results(model_tlr_pfs)
 
+std_results_tlr_os  <- extract_coxph_results(std_tlr_os)
+std_results_tlr_pfs <- extract_coxph_results(std_tlr_pfs)
+
+tlr_std_firth_row_specs <- list(
+  list(label = "TLR x Rx",
+       std_pat = "tlr_num.*Rx|Rx.*tlr_num",
+       firth_pat = "tlr_num.*Rx|Rx.*tlr_num"),
+  list(label = "TLR (main effect)",
+       std_pat = "^tlr_num$",
+       firth_pat = "^tlr_num$"),
+  list(label = "Rx (Experimental)",
+       std_pat = "^Rx[^:]+$",
+       firth_pat = "^Rx[^:]+$"),
+  list(label = "CRP",
+       std_pat = "^crp_num$",
+       firth_pat = "^crp_num$"),
+  list(label = "TMB/BRAF",
+       std_pat = "^tmb_braf_num$",
+       firth_pat = "^tmb_braf_num$"),
+  list(label = "Age",
+       std_pat = "^Age$",
+       firth_pat = "^Age$"),
+  list(label = "Sex",
+       std_pat = "^sex[^:]*$",
+       firth_pat = "^sex[^:]*$")
+)
+
+std_firth_comparison_tlr_os <- build_std_firth_comparison(
+  std_results_tlr_os, results_tlr_os, tlr_std_firth_row_specs
+)
+std_firth_comparison_tlr_pfs <- build_std_firth_comparison(
+  std_results_tlr_pfs, results_tlr_pfs, tlr_std_firth_row_specs
+)
+
 # PLRT p-values for the TLR x Rx interaction (for narrative)
 p_tlr_os  <- get_pvalue_by_term(results_tlr_os,  "tlr_num.*Rx|Rx.*tlr_num")
 p_tlr_pfs <- get_pvalue_by_term(results_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
 ```
+
+## Standard Cox vs Firth
+
+The standard Cox model is the unpenalized maximum-likelihood reference. Divergence between standard Cox and Firth estimates flags small-sample or near-separation instability that Firth corrects.
+
+```{r table-tlr-std-firth-os}
+render_std_firth_comparison_table(
+  std_firth_comparison_tlr_os,
+  caption = "TLR Responder Model - Overall Survival: Standard Cox vs Firth",
+  first_group_label = "TLR Terms",
+  first_group_end = 2,
+  second_group_label = "Adjustment Covariates"
+)
+```
+
+```{r table-tlr-std-firth-pfs}
+render_std_firth_comparison_table(
+  std_firth_comparison_tlr_pfs,
+  caption = "TLR Responder Model - Progression-Free Survival: Standard Cox vs Firth",
+  first_group_label = "TLR Terms",
+  first_group_end = 2,
+  second_group_label = "Adjustment Covariates"
+)
+```
+
+## Firth-Corrected Cox Model
 
 ### Overall Survival
 
