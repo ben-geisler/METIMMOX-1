@@ -49,8 +49,6 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
       test_costs[1] <- test_costs[1] + params$c_test_NGS
     } else if(biomarker == "crp") {
       test_costs[1] <- test_costs[1] + params$c_test_blood  # CRP is a blood test
-    } else if(biomarker == "tlr") {
-      test_costs[1] <- test_costs[1] + params$c_test_CT  # TLR requires CT measurement
     }
   }
   

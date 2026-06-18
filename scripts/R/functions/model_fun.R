@@ -36,12 +36,12 @@
 # ===============================================================================
 
 validate_model_params <- function(params, time_horizon) {
-  # Required scalar parameters - all three biomarker prevalence values always required
+  # Required scalar parameters - economic biomarker prevalence values
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
                         "c_test_blood", "c_test_NGS", "c_other_visit",
                         "c_other_baseline", "c_other_follow", "c_other_last",
-                        "p_crp", "p_tlr", "p_tmb_braf")
+                        "p_crp", "p_tmb_braf")
 
   # Required list parameters
   required_lists <- c("p_os", "p_pfs")
@@ -76,8 +76,7 @@ validate_model_params <- function(params, time_horizon) {
   }
 
   # Validate prevalence parameters are in [0, 1]
-  # All three biomarkers are required in all models
-  prev_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+  prev_params <- c("p_crp", "p_tmb_braf")
   for (p in prev_params) {
     if (params[[p]] < 0 || params[[p]] > 1) {
       stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
@@ -104,15 +103,14 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
   # These must exist in the global environment before calling model_fun in PSA mode.
 
-  # Get strategies and biomarkers from central config
-  # All models now include all three biomarker strategies (CRP, TLR, TMB/BRAF)
+  # Get economic strategies and biomarkers from central config
   if (exists("get_strategies")) {
     strat_names <- get_strategies()
     biomarkers_to_run <- get_biomarkers()
   } else {
     # Fallback for backward compatibility
-    strat_names <- c("control", "crp", "tlr", "tmb_braf")
-    biomarkers_to_run <- c("crp", "tlr", "tmb_braf")
+    strat_names <- c("control", "crp", "tmb_braf")
+    biomarkers_to_run <- c("crp", "tmb_braf")
   }
 
   # Validate input parameters (Issue #47)

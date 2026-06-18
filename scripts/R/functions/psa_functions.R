@@ -58,8 +58,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     control = integer(0),
     crp_pos = integer(0),
     crp_neg = integer(0),
-    tlr_pos = integer(0),
-    tlr_neg = integer(0),
     tmb_braf_pos = integer(0),
     tmb_braf_neg = integer(0)
   )
@@ -105,10 +103,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
             pfs_os_violations$crp_pos <<- c(pfs_os_violations$crp_pos, i)
           } else if (grepl("\\(crp-\\)", msg)) {
             pfs_os_violations$crp_neg <<- c(pfs_os_violations$crp_neg, i)
-          } else if (grepl("\\(tlr\\+\\)", msg)) {
-            pfs_os_violations$tlr_pos <<- c(pfs_os_violations$tlr_pos, i)
-          } else if (grepl("\\(tlr-\\)", msg)) {
-            pfs_os_violations$tlr_neg <<- c(pfs_os_violations$tlr_neg, i)
           } else if (grepl("\\(tmb_braf\\+\\)", msg)) {
             pfs_os_violations$tmb_braf_pos <<- c(pfs_os_violations$tmb_braf_pos, i)
           } else if (grepl("\\(tmb_braf-\\)", msg)) {
@@ -270,8 +264,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       control = "  Control",
       crp_pos = "  CRP+",
       crp_neg = "  CRP-",
-      tlr_pos = "  TLR+",
-      tlr_neg = "  TLR-",
       tmb_braf_pos = "  TMB/BRAF+",
       tmb_braf_neg = "  TMB/BRAF-"
     )

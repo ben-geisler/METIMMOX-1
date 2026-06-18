@@ -79,12 +79,11 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # BIOMARKER-GUIDED STRATEGIES: Treatment assigned by biomarker status
   # -------------------------------------------------------------------------
 
-  # Determine which biomarkers to process
-  # All models now include all three biomarker strategies
+  # Determine which economic biomarkers to process
   biomarkers_to_predict <- if (exists("get_biomarkers")) {
     get_biomarkers()
   } else {
-    c("crp", "tlr", "tmb_braf")  # Fallback
+    c("crp", "tmb_braf")  # Fallback
   }
 
   # Loop through each biomarker strategy
@@ -201,7 +200,6 @@ generate_population_averaged_predictions <- function(models, strategies_df,
 #'
 #' @param biomarker_models Named list with structure:
 #'   - $crp$os, $crp$pfs: CRP-specific fitted models
-#'   - $tlr$os, $tlr$pfs: TLR-specific fitted models
 #'   - $tmb_braf$os, $tmb_braf$pfs: TMB/BRAF-specific fitted models
 #' @param strategies_df Data frame with strategy definitions
 #' @param data_complete Complete data with all covariates
@@ -264,12 +262,11 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
   # BIOMARKER-GUIDED STRATEGIES: Each uses its specific model
   # -------------------------------------------------------------------------
 
-  # Determine which biomarkers to process
-  # All models now include all three biomarker strategies
+  # Determine which economic biomarkers to process
   biomarkers_to_predict <- if (exists("get_biomarkers")) {
     get_biomarkers()
   } else {
-    c("crp", "tlr", "tmb_braf")  # Fallback
+    c("crp", "tmb_braf")  # Fallback
   }
 
   for (biomarker_name in biomarkers_to_predict) {
