@@ -59,7 +59,7 @@ prev_ci <- function(p, n) {
 # Build the table data frame
 table_1 <- data.frame(
   Category = c(
-    rep("Biomarker prevalences", 3),
+    rep("Biomarker prevalences", 2),
     rep("Health-state utilities", 2),
     rep("Treatment costs (\u20AC)", 3),
     rep("Other costs (\u20AC)", 2),
@@ -67,7 +67,6 @@ table_1 <- data.frame(
   ),
   Parameter = c(
     "CRP-positive",
-    "TLR-positive",
     "TMB/BRAF-positive",
     "Progression-free",
     "Post-progression",
@@ -81,7 +80,6 @@ table_1 <- data.frame(
   ),
   Base_case = c(
     sprintf("%.3f", l_params_base$p_crp),
-    sprintf("%.3f", l_params_base$p_tlr),
     sprintf("%.3f", l_params_base$p_tmb_braf),
     sprintf("%.2f", l_params_base$u_np),
     sprintf("%.2f", l_params_base$u_p),
@@ -95,7 +93,6 @@ table_1 <- data.frame(
   ),
   Range = c(
     prev_ci(l_params_base$p_crp, n_patients),
-    prev_ci(l_params_base$p_tlr, n_patients),
     prev_ci(l_params_base$p_tmb_braf, n_patients),
     sprintf("%.2f\u2013%.2f",
             l_params_base$u_np * (1 - DSA_mult),
@@ -122,14 +119,14 @@ table_1 <- data.frame(
     "5\u201320 yr"
   ),
   Distribution = c(
-    "Beta", "Beta", "Beta",
+    "Beta", "Beta",
     "Beta", "Beta",
     "Gamma", "Gamma", "Gamma",
     "Gamma", "Gamma",
     "Fixed", "Fixed"
   ),
   Source = c(
-    "METIMMOX", "METIMMOX", "METIMMOX",
+    "METIMMOX", "METIMMOX",
     "METIMMOX EQ-5D", "METIMMOX EQ-5D",
     "NoMA", "NoMA", "Local",
     "Ref 27", "Ref 28",
@@ -139,9 +136,6 @@ table_1 <- data.frame(
     sprintf("95%% CI: %.1f\u2013%.1f%%",
             binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[1] * 100,
             binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[2] * 100),
-    sprintf("Model A/C only; 95%% CI: %.1f\u2013%.1f%%",
-            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[1] * 100,
-            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[2] * 100),
     sprintf("95%% CI: %.1f\u2013%.1f%%",
             binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[1] * 100,
             binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[2] * 100),

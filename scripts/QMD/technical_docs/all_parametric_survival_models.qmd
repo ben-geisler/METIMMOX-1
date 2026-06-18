@@ -29,457 +29,129 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-# Set global knitr options
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  fig.width = 8,
-  fig.height = 6,
-  dpi = 300,
-  out.width = "100%"
-)
-
-# Set working directory to project root
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", fig.width = 8, fig.height = 6,
+                      dpi = 300, out.width = "100%")
 knitr::opts_knit$set(root.dir = here::here())
 
-# Load required libraries
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, knitr, kableExtra, ggplot2, dplyr,
-  flextable, officer, scales, gridExtra,
-  devtools, readxl, tableone, flexsurv,
-  survival, survminer, tidyverse
-)
+pacman::p_load(here, knitr, kableExtra, dplyr, tidyr, survival, flexsurv)
 
-# Set ggplot theme
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 14, face = "bold"),
-    plot.subtitle = element_text(size = 12),
-    legend.position = "bottom",
-    axis.title = element_text(size = 11),
-    axis.text = element_text(size = 10)
-  ))
-```
+suppressMessages(suppressWarnings({
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+}))
 
-```{r load-analysis, include=FALSE}
-# Load analysis results if not already in environment
-if (!exists("models")) {
-  cat("Loading parametric survival analysis results...\n")
-
-  # Load required scripts in order
-  if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
-  }
-
-  if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
-  }
-
-  if (file.exists(here("scripts/R/analysis/06_parametric_survival_analysis.R"))) {
-    suppressMessages(suppressWarnings(source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))))
-  }
+extract_model_coefs <- function(fit, endpoint, distribution) {
+  if (is.null(fit)) return(NULL)
+  tab <- as.data.frame(fit$res)
+  tab$Parameter <- rownames(tab)
+  rownames(tab) <- NULL
+  tab %>%
+    transmute(
+      Endpoint = endpoint,
+      Distribution = distribution,
+      Parameter,
+      Estimate = est,
+      SE = se,
+      L95 = `L95%`,
+      U95 = `U95%`
+    )
 }
-
-# Define helper function to extract coefficients from a flexsurvreg model
-extract_coefficients <- function(model_obj, dist_name) {
-  if (!inherits(model_obj, "flexsurvreg")) {
-    return(NULL)
-  }
-
-  coef_data <- as.data.frame(model_obj$res.t)
-
-  coef_table <- data.frame(
-    Parameter = rownames(coef_data),
-    Estimate = round(coef_data$est, 4),
-    SE = round(coef_data$se, 4),
-    `exp(Est)` = round(exp(coef_data$est), 4),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-
-  # Clean up parameter names
-  coef_table$Parameter <- gsub("^Age$", "Age (per year)", coef_table$Parameter)
-  coef_table$Parameter <- gsub("^sex1$", "Sex (male vs female)", coef_table$Parameter)
-
-  rownames(coef_table) <- NULL
-  return(coef_table)
-}
-
-# Define distribution display names
-dist_display_names <- c(
-  "exponential" = "Exponential",
-  "weibull" = "Weibull (AFT)",
-  "weibullph" = "Weibull (PH)",
-  "llogis" = "Log-logistic",
-  "lognormal" = "Log-normal",
-  "gamma" = "Gamma",
-  "gompertz" = "Gompertz",
-  "gengamma" = "Generalized Gamma",
-  "genf" = "Generalized F"
-)
 ```
 
 # Overview
 
-This technical document presents the regression coefficients for **all parametric survival models** fitted in the METIMMOX-1 economic evaluation. While the primary analysis uses the best-fitting model (selected by AIC), this document provides full transparency by showing coefficients for all distributions tested.
+This technical appendix lists every fitted parametric distribution for the single joint economic survival model.
 
-## Model Specification
+```{r formula-table}
+formula_df <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  Formula = c(
+    paste(deparse(get_strategy_formula("crp", "os")), collapse = " "),
+    paste(deparse(get_strategy_formula("crp", "pfs")), collapse = " ")
+  ),
+  stringsAsFactors = FALSE
+)
 
-All models use the following covariate structure (full model with age and sex adjustment):
-
-**Overall Survival (OS):**
+knitr::kable(formula_df, booktabs = TRUE, align = c("l", "l"),
+             caption = "Fitted economic survival formulas") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "11cm")
 ```
-Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
+
+# Information Criteria
+
+```{r ic-table}
+ic_table <- bind_rows(
+  models$full$os_ic %>% mutate(Endpoint = "Overall survival"),
+  models$full$pfs_ic %>% mutate(Endpoint = "Progression-free survival")
+) %>%
+  filter(!is.na(AIC)) %>%
+  group_by(Endpoint) %>%
+  arrange(AIC, .by_group = TRUE) %>%
+  mutate(
+    Delta_AIC = AIC - min(AIC),
+    Delta_BIC = BIC - min(BIC)
+  ) %>%
+  ungroup()
+
+knitr::kable(
+  ic_table,
+  booktabs = TRUE,
+  digits = 2,
+  align = "r",
+  caption = "Information criteria for all fitted distributions"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 ```
 
-**Progression-Free Survival (PFS):**
-```
-Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
-```
+# Coefficient Tables
 
-## Distributions Tested
-
-Nine parametric distributions were fitted to each outcome:
-
-1. **Exponential** - Constant hazard rate
-2. **Weibull (AFT)** - Accelerated failure time parameterization
-3. **Weibull (PH)** - Proportional hazards parameterization
-4. **Log-logistic** - Allows for non-monotonic hazard
-5. **Log-normal** - Log-transformed normal distribution for survival times
-6. **Gamma** - Two-parameter distribution, flexible shape
-7. **Gompertz** - Hazard increases exponentially with time
-8. **Generalized Gamma** - Three-parameter family including Weibull, gamma, and log-normal as special cases
-9. **Generalized F** - Four-parameter family, most flexible
-
-\newpage
-
-# Model Selection Summary
-
-## Overall Survival (OS) Models
-
-```{r os-aic-table}
-#| tbl-cap: "Overall Survival model fit comparison (sorted by AIC)"
-
-if (exists("models") && !is.null(models$full$os_ic)) {
-
-  os_ic <- models$full$os_ic %>%
-    arrange(AIC) %>%
-    mutate(
-      AIC = round(AIC, 2),
-      BIC = round(BIC, 2),
-      `Delta AIC` = round(AIC - min(AIC, na.rm = TRUE), 2),
-      Rank = rank(AIC, na.last = "keep")
-    )
-
-  # Mark best model
-  os_ic$Selected <- ""
-  os_ic$Selected[1] <- "***"
-
-  # Add display names
-  os_ic$Distribution <- sapply(os_ic$Distribution, function(d) {
-    if (d %in% names(dist_display_names)) dist_display_names[d] else d
-  })
-
-  if (knitr::is_latex_output()) {
-    kable(os_ic, format = "latex", booktabs = TRUE, escape = FALSE) %>%
-      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
-  } else {
-    kable(os_ic, format = "html") %>%
-      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-  }
-
-} else {
-  cat("OS model comparison not available.\n")
+```{r all-coefficients}
+coef_rows <- list()
+for (dist in names(models$full$os)) {
+  coef_rows[[paste0("os_", dist)]] <- extract_model_coefs(models$full$os[[dist]], "OS", dist)
 }
-```
-
-## Progression-Free Survival (PFS) Models
-
-```{r pfs-aic-table}
-#| tbl-cap: "Progression-Free Survival model fit comparison (sorted by AIC)"
-
-if (exists("models") && !is.null(models$full$pfs_ic)) {
-
-  pfs_ic <- models$full$pfs_ic %>%
-    arrange(AIC) %>%
-    mutate(
-      AIC = round(AIC, 2),
-      BIC = round(BIC, 2),
-      `Delta AIC` = round(AIC - min(AIC, na.rm = TRUE), 2),
-      Rank = rank(AIC, na.last = "keep")
-    )
-
-  # Mark best model
-  pfs_ic$Selected <- ""
-  pfs_ic$Selected[1] <- "***"
-
-  # Add display names
-  pfs_ic$Distribution <- sapply(pfs_ic$Distribution, function(d) {
-    if (d %in% names(dist_display_names)) dist_display_names[d] else d
-  })
-
-  if (knitr::is_latex_output()) {
-    kable(pfs_ic, format = "latex", booktabs = TRUE, escape = FALSE) %>%
-      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
-  } else {
-    kable(pfs_ic, format = "html") %>%
-      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-  }
-
-} else {
-  cat("PFS model comparison not available.\n")
+for (dist in names(models$full$pfs)) {
+  coef_rows[[paste0("pfs_", dist)]] <- extract_model_coefs(models$full$pfs[[dist]], "PFS", dist)
 }
+
+coef_df <- bind_rows(coef_rows) %>%
+  mutate(
+    Estimate = sprintf("%.4f", Estimate),
+    SE = sprintf("%.4f", SE),
+    `95% CI` = sprintf("[%.4f, %.4f]", L95, U95)
+  ) %>%
+  select(Endpoint, Distribution, Parameter, Estimate, SE, `95% CI`)
+
+knitr::kable(
+  coef_df,
+  booktabs = TRUE,
+  align = c("l", "l", "l", "r", "r", "r"),
+  caption = "Coefficient estimates for all fitted parametric models"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 8)
 ```
 
-\newpage
+# Best-Fit Summary
 
-# Overall Survival (OS) Model Coefficients
+```{r best-fit}
+best_fit <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  Distribution = c(models$best_fit$os_distribution, models$best_fit$pfs_distribution),
+  AIC = c(models$best_fit$os_aic, models$best_fit$pfs_aic),
+  stringsAsFactors = FALSE
+)
 
-```{r os-best-model, results='asis'}
-if (exists("models") && !is.null(models$best_fit$os_distribution)) {
-  cat("**Best-fitting distribution:**", models$best_fit$os_distribution,
-      "(AIC:", round(models$best_fit$os_aic, 2), ")\n\n")
-}
+knitr::kable(best_fit, booktabs = TRUE, digits = 2,
+             caption = "Best-fitting parametric distributions by AIC") %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
-
-The following tables present the regression coefficients for each fitted OS model. Parameters include:
-
-- **Distribution-specific parameters** (e.g., shape, scale, rate)
-- **Age** - Effect per year of age
-- **Sex** - Effect of male vs female
-- **Rx** - Main treatment effect (experimental vs control)
-- **Biomarker:Rx interactions** - Treatment effect modification by biomarker status
-
-```{r os-coefficients, results='asis'}
-if (exists("models") && !is.null(models$full$os)) {
-
-  # Get list of fitted OS models
-  os_models <- models$full$os
-
-  # Get best distribution for highlighting
-  best_os_dist <- if (!is.null(models$best_fit$os_distribution)) {
-    models$best_fit$os_distribution
-  } else {
-    ""
-  }
-
-  # Order distributions: best first, then alphabetically
-  dist_names <- names(os_models)
-  dist_names <- dist_names[sapply(os_models[dist_names], function(x) inherits(x, "flexsurvreg"))]
-
-  if (length(dist_names) > 0 && best_os_dist %in% dist_names) {
-    other_dists <- sort(setdiff(dist_names, best_os_dist))
-    dist_names <- c(best_os_dist, other_dists)
-  }
-
-  for (dist in dist_names) {
-    model_obj <- os_models[[dist]]
-
-    if (inherits(model_obj, "flexsurvreg")) {
-
-      # Section header
-      display_name <- if (dist %in% names(dist_display_names)) {
-        dist_display_names[dist]
-      } else {
-        dist
-      }
-
-      if (dist == best_os_dist) {
-        cat("\n## ", display_name, " (Best Fit)\n\n", sep = "")
-      } else {
-        cat("\n## ", display_name, "\n\n", sep = "")
-      }
-
-      # Extract and display coefficients
-      coef_table <- extract_coefficients(model_obj, dist)
-
-      if (!is.null(coef_table) && nrow(coef_table) > 0) {
-
-        if (knitr::is_latex_output()) {
-          print(kable(coef_table, format = "latex", booktabs = TRUE,
-                col.names = c("Parameter", "Estimate", "SE", "exp(Est)"),
-                align = c("l", "r", "r", "r")) %>%
-            kableExtra::kable_styling(font_size = 9,
-                                     latex_options = c("striped", "HOLD_position")))
-        } else {
-          print(kable(coef_table, format = "html",
-                col.names = c("Parameter", "Estimate", "SE", "exp(Est)")) %>%
-            kableExtra::kable_styling(bootstrap_options = c("striped", "hover")))
-        }
-
-        cat("\n\n")
-      } else {
-        cat("Coefficients not available for this model.\n\n")
-      }
-    }
-  }
-
-} else {
-  cat("OS models not available.\n")
-}
-```
-
-\newpage
-
-# Progression-Free Survival (PFS) Model Coefficients
-
-```{r pfs-best-model, results='asis'}
-if (exists("models") && !is.null(models$best_fit$pfs_distribution)) {
-  cat("**Best-fitting distribution:**", models$best_fit$pfs_distribution,
-      "(AIC:", round(models$best_fit$pfs_aic, 2), ")\n\n")
-}
-```
-
-The following tables present the regression coefficients for each fitted PFS model.
-
-```{r pfs-coefficients, results='asis'}
-if (exists("models") && !is.null(models$full$pfs)) {
-
-  # Get list of fitted PFS models
-  pfs_models <- models$full$pfs
-
-  # Get best distribution for highlighting
-  best_pfs_dist <- if (!is.null(models$best_fit$pfs_distribution)) {
-    models$best_fit$pfs_distribution
-  } else {
-    ""
-  }
-
-  # Order distributions: best first, then alphabetically
-  dist_names <- names(pfs_models)
-  dist_names <- dist_names[sapply(pfs_models[dist_names], function(x) inherits(x, "flexsurvreg"))]
-
-  if (length(dist_names) > 0 && best_pfs_dist %in% dist_names) {
-    other_dists <- sort(setdiff(dist_names, best_pfs_dist))
-    dist_names <- c(best_pfs_dist, other_dists)
-  }
-
-  for (dist in dist_names) {
-    model_obj <- pfs_models[[dist]]
-
-    if (inherits(model_obj, "flexsurvreg")) {
-
-      # Section header
-      display_name <- if (dist %in% names(dist_display_names)) {
-        dist_display_names[dist]
-      } else {
-        dist
-      }
-
-      if (dist == best_pfs_dist) {
-        cat("\n## ", display_name, " (Best Fit)\n\n", sep = "")
-      } else {
-        cat("\n## ", display_name, "\n\n", sep = "")
-      }
-
-      # Extract and display coefficients
-      coef_table <- extract_coefficients(model_obj, dist)
-
-      if (!is.null(coef_table) && nrow(coef_table) > 0) {
-
-        if (knitr::is_latex_output()) {
-          print(kable(coef_table, format = "latex", booktabs = TRUE,
-                col.names = c("Parameter", "Estimate", "SE", "exp(Est)"),
-                align = c("l", "r", "r", "r")) %>%
-            kableExtra::kable_styling(font_size = 9,
-                                     latex_options = c("striped", "HOLD_position")))
-        } else {
-          print(kable(coef_table, format = "html",
-                col.names = c("Parameter", "Estimate", "SE", "exp(Est)")) %>%
-            kableExtra::kable_styling(bootstrap_options = c("striped", "hover")))
-        }
-
-        cat("\n\n")
-      } else {
-        cat("Coefficients not available for this model.\n\n")
-      }
-    }
-  }
-
-} else {
-  cat("PFS models not available.\n")
-}
-```
-
-\newpage
-
-# Interpretation Guide
-
-## Distribution-Specific Parameters
-
-Different parametric distributions have different ancillary parameters:
-
-| Distribution | Ancillary Parameters |
-|--------------|---------------------|
-| Exponential | rate |
-| Weibull (AFT) | shape, scale |
-| Weibull (PH) | shape, scale |
-| Log-logistic | shape, scale |
-| Log-normal | meanlog, sdlog |
-| Gamma | shape, rate |
-| Gompertz | shape, rate |
-| Generalized Gamma | mu, sigma, Q |
-| Generalized F | mu, sigma, Q, P |
-
-## Coefficient Interpretation
-
-- **Estimate**: The coefficient on the log scale (for AFT models) or log-hazard scale (for PH models)
-- **SE**: Standard error of the coefficient estimate
-- **exp(Est)**: Exponentiated coefficient
-  - For AFT models: time ratio (values >1 indicate longer survival)
-  - For PH models: hazard ratio (values <1 indicate lower hazard/better survival)
-
-## Biomarker Interaction Terms
-
-The biomarker:Rx interaction terms indicate treatment effect modification:
-
-- **crp1:RxExperimental** - Effect of experimental treatment in CRP-positive patients (relative to CRP-negative)
-- **tlr1:RxExperimental** - Effect of experimental treatment in TLR-positive patients
-- **tmb_braf1:RxExperimental** - Effect of experimental treatment in TMB_BRAF-positive patients
-
-A significant interaction suggests the biomarker predicts differential treatment benefit.
-
-# Summary
-
-This document presents the full set of parametric survival model coefficients for the METIMMOX-1 economic evaluation. The best-fitting models (selected by AIC) are:
-
-```{r summary-table}
-if (exists("models") && !is.null(models$best_fit)) {
-
-  summary_df <- data.frame(
-    Outcome = c("Overall Survival (OS)", "Progression-Free Survival (PFS)"),
-    `Best Distribution` = c(
-      if (!is.null(models$best_fit$os_distribution)) {
-        dist_display_names[models$best_fit$os_distribution]
-      } else "Not available",
-      if (!is.null(models$best_fit$pfs_distribution)) {
-        dist_display_names[models$best_fit$pfs_distribution]
-      } else "Not available"
-    ),
-    AIC = c(
-      if (!is.null(models$best_fit$os_aic)) round(models$best_fit$os_aic, 2) else NA,
-      if (!is.null(models$best_fit$pfs_aic)) round(models$best_fit$pfs_aic, 2) else NA
-    ),
-    check.names = FALSE
-  )
-
-  if (knitr::is_latex_output()) {
-    kable(summary_df, format = "latex", booktabs = TRUE) %>%
-      kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
-  } else {
-    kable(summary_df, format = "html") %>%
-      kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-  }
-}
-```
-
-All model coefficients are provided for transparency and to support sensitivity analyses exploring alternative distributional assumptions.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 4.0

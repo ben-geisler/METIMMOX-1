@@ -1,5 +1,5 @@
 ---
-title: "Figure S4: CEACs for All Model Specifications"
+title: "Figure S4: Cost-Effectiveness Acceptability Curves"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -13,148 +13,64 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales, dampack
-)
+pacman::p_load(here, ggplot2, dplyr, scales, dampack)
 
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    axis.title = element_text(size = 10),
-    axis.text = element_text(size = 9)
-  )
-)
-```
-
-```{r load-data, include=FALSE}
-suppressMessages(suppressWarnings({
+suppressMessages(suppressWarnings(
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-# Load PSA caches for all three models
-psa_files <- list(
-  A = here("data", "tidy", "psa_obj_joint.rds"),
-  B = here("data", "tidy", "psa_obj_focused.rds"),
-  C = here("data", "tidy", "psa_obj_separate.rds")
-)
-
-psa_objs <- list()
-for (model_name in names(psa_files)) {
-  if (file.exists(psa_files[[model_name]])) {
-    psa_objs[[model_name]] <- readRDS(psa_files[[model_name]])
-    cat("Loaded PSA cache for Model", model_name, "\n")
-  }
-}
+))
 ```
 
-```{r calculate-ceacs, include=FALSE}
-wtp_range <- seq(0, 150000, by = 2000)
+```{r data, include=FALSE}
+cache_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
+ceac_data <- if (!is.null(psa_obj)) dampack::ceac(seq(0, 150000, by = 2000), psa_obj) else data.frame()
 
-model_labels <- c(
-  A = "Model A (Joint)",
-  B = "Model B (Focused)",
-  C = "Model C (Separate)"
+strategy_labels <- c(
+  control = "Standard of Care",
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
 )
-
-ceac_data <- data.frame()
-
-for (model_name in names(psa_objs)) {
-  ceac_obj <- tryCatch(
-    dampack::ceac(wtp = wtp_range, psa = psa_objs[[model_name]]),
-    error = function(e) NULL
-  )
-
-  if (!is.null(ceac_obj)) {
-    ceac_obj$Model <- model_labels[model_name]
-    ceac_data <- rbind(ceac_data, ceac_obj)
-  }
-}
-
-cat("CEAC data rows:", nrow(ceac_data), "\n")
 ```
 
-```{r create-ceac-plot, fig.width=10, fig.height=10}
+```{r figure, fig.width=9, fig.height=6}
 if (nrow(ceac_data) > 0) {
-  strategy_labels <- c(
-    "control" = "Control (FLOX only)",
-    "crp" = "CRP Strategy",
-    "tlr" = "TLR Strategy",
-    "tmb_braf" = "TMB/BRAF Strategy"
-  )
-
-  ceac_data$Strategy <- factor(
-    ceac_data$Strategy,
-    levels = names(strategy_labels),
-    labels = strategy_labels
-  )
-
-  ceac_data$Model <- factor(ceac_data$Model, levels = model_labels)
-
-  strategy_colors <- c(
-    "Control (FLOX only)" = "gray50",
-    "CRP Strategy" = "#E69F00",
-    "TLR Strategy" = "#009E73",
-    "TMB/BRAF Strategy" = "#0072B2"
-  )
+  ceac_data <- ceac_data %>%
+    filter(Strategy %in% names(strategy_labels)) %>%
+    mutate(Strategy = factor(strategy_labels[Strategy], levels = strategy_labels))
 
   p_ceac <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
-    geom_line(linewidth = 0.8) +
-    facet_wrap(~Model, ncol = 1) +
-    geom_vline(xintercept = 51000, linetype = "dotted", color = "gray40", linewidth = 0.5) +
-    geom_vline(xintercept = 100000, linetype = "dotted", color = "gray60", linewidth = 0.3) +
-    scale_x_continuous(
-      labels = scales::label_currency(
-        prefix = "\u20AC", scale = 0.001, suffix = "K", big.mark = ","
-      ),
-      breaks = seq(0, 150000, by = 25000)
-    ) +
+    geom_line(linewidth = 0.85) +
+    geom_vline(xintercept = WTP, linetype = "dotted", color = "gray40") +
+    geom_vline(xintercept = 100000, linetype = "dotted", color = "gray65") +
+    scale_x_continuous(labels = scales::label_currency(prefix = "EUR ", scale = 0.001,
+                                                       suffix = "K")) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
-    scale_color_manual(values = strategy_colors, name = "Strategy") +
-    labs(
-      x = "Willingness-to-Pay Threshold (EUR/QALY)",
-      y = "Probability of Being Cost-Effective"
-    ) +
+    scale_color_manual(values = c("Standard of Care" = "gray50",
+                                  "CRP-guided" = "#E69F00",
+                                  "TMB/BRAF-guided" = "#0072B2")) +
+    labs(x = "Willingness-to-pay threshold (EUR/QALY)",
+         y = "Probability cost-effective",
+         color = NULL) +
     theme_minimal() +
-    theme(
-      strip.text = element_text(size = 11, face = "bold"),
-      legend.position = "bottom",
-      panel.grid.minor = element_blank()
-    ) +
-    guides(color = guide_legend(nrow = 1))
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
 
   print(p_ceac)
+} else {
+  cat("PSA cache not available.")
 }
 ```
 
 ```{r save-figure, include=FALSE}
-if (nrow(ceac_data) > 0) {
+if (exists("p_ceac")) {
   figs_dir <- here("figs")
-  if (!dir.exists(figs_dir)) {
-    dir.create(figs_dir, recursive = TRUE)
-  }
-
-  ggsave(
-    filename = here("figs", "figure_s4.png"),
-    plot = p_ceac,
-    width = 10,
-    height = 10,
-    dpi = 300,
-    bg = "white"
-  )
-
-  cat("Figure saved to:", here("figs", "figure_s4.png"), "\n")
+  if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+  ggsave(here("figs", "figure_s4.png"), p_ceac, width = 9, height = 6,
+         dpi = 300, bg = "white")
 }
 ```
 

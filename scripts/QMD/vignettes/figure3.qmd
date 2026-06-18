@@ -13,147 +13,76 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales
-)
+pacman::p_load(here, ggplot2, dplyr, scales)
 
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    axis.title = element_text(size = 10),
-    axis.text = element_text(size = 9)
-  )
-)
+suppressMessages(suppressWarnings(
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+))
 ```
 
 ```{r load-data, include=FALSE}
-# Load PSA cache for Model B (focused)
-cache_file <- here("data", "tidy", "psa_obj_focused.rds")
+cache_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
 
-if (file.exists(cache_file)) {
-  psa_obj <- readRDS(cache_file)
-  cat("Loaded PSA cache for Model B (focused):",
-      psa_obj$n_sim, "iterations,",
-      length(psa_obj$strategies), "strategies\n")
-  psa_available <- TRUE
-} else {
-  warning("PSA cache not found: ", cache_file,
-          "\nPlease run script 12_PSA.R first.")
-  psa_available <- FALSE
-}
-```
+strategy_labels <- c(
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
+)
 
-```{r build-incremental-data, include=FALSE}
 scatter_data <- data.frame()
-
-if (psa_available) {
+if (!is.null(psa_obj)) {
   cost_df <- as.data.frame(psa_obj$cost)
-  effect_df <- as.data.frame(psa_obj$effect)
-
-  # Compute incremental cost and effect relative to control
-  for (strategy in setdiff(psa_obj$strategies, "control")) {
-    inc_df <- data.frame(
-      inc_effect = effect_df[[strategy]] - effect_df[["control"]],
-      inc_cost = cost_df[[strategy]] - cost_df[["control"]],
-      Strategy = strategy,
-      stringsAsFactors = FALSE
-    )
-    scatter_data <- rbind(scatter_data, inc_df)
+  effect_df <- if (!is.null(psa_obj$effect)) {
+    as.data.frame(psa_obj$effect)
+  } else {
+    as.data.frame(psa_obj$effectiveness)
   }
 
-  # Strategy labels
-  strategy_labels <- c(
-    "crp" = "CRP Strategy",
-    "tlr" = "TLR Strategy",
-    "tmb_braf" = "TMB/BRAF Strategy"
-  )
-
-  scatter_data$Strategy <- factor(
-    scatter_data$Strategy,
-    levels = names(strategy_labels),
-    labels = strategy_labels
-  )
+  for (strategy in intersect(names(strategy_labels), psa_obj$strategies)) {
+    scatter_data <- rbind(scatter_data, data.frame(
+      inc_effect = effect_df[[strategy]] - effect_df[["control"]],
+      inc_cost = cost_df[[strategy]] - cost_df[["control"]],
+      Strategy = strategy_labels[[strategy]],
+      stringsAsFactors = FALSE
+    ))
+  }
 }
 ```
 
-```{r create-ce-plane, fig.width=9, fig.height=8}
+```{r figure, fig.width=9, fig.height=8}
 if (nrow(scatter_data) > 0) {
-  strategy_colors <- c(
-    "CRP Strategy" = "#E69F00",
-    "TLR Strategy" = "#009E73",
-    "TMB/BRAF Strategy" = "#0072B2"
-  )
-
-  WTP <- 51000
-
   p_ce <- ggplot(scatter_data, aes(x = inc_effect, y = inc_cost, color = Strategy)) +
-    geom_point(alpha = 0.2, size = 0.5) +
-    # WTP threshold line (y = WTP * x)
-    geom_abline(intercept = 0, slope = WTP, linetype = "dashed",
-                color = "black", linewidth = 0.6) +
-    # Origin reference lines
+    geom_point(alpha = 0.18, size = 0.5) +
+    geom_abline(intercept = 0, slope = WTP, linetype = "dashed", color = "black") +
     geom_hline(yintercept = 0, color = "gray70", linewidth = 0.3) +
     geom_vline(xintercept = 0, color = "gray70", linewidth = 0.3) +
-    scale_y_continuous(
-      labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")
-    ) +
-    scale_x_continuous(
-      labels = scales::number_format(accuracy = 0.01)
-    ) +
-    scale_color_manual(values = strategy_colors, name = "Strategy") +
-    labs(
-      x = "Incremental Effectiveness (QALYs)",
-      y = "Incremental Cost (EUR)"
-    ) +
-    # WTP label
-    annotate("text",
-      x = max(scatter_data$inc_effect, na.rm = TRUE) * 0.65,
-      y = max(scatter_data$inc_effect, na.rm = TRUE) * 0.65 * WTP,
-      label = paste0("WTP = \u20AC", format(WTP, big.mark = ","), "/QALY"),
-      size = 3.2, hjust = 0, vjust = -0.5, color = "black"
-    ) +
+    scale_y_continuous(labels = scales::label_currency(prefix = "EUR ", big.mark = ",")) +
+    scale_x_continuous(labels = scales::number_format(accuracy = 0.01)) +
+    scale_color_manual(values = c("CRP-guided" = "#E69F00",
+                                  "TMB/BRAF-guided" = "#0072B2")) +
+    labs(x = "Incremental effectiveness (QALYs)",
+         y = "Incremental cost (EUR)",
+         color = NULL) +
     theme_minimal() +
-    theme(
-      legend.position = "bottom",
-      panel.grid.minor = element_blank()
-    ) +
-    guides(color = guide_legend(override.aes = list(alpha = 1, size = 3), nrow = 1))
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
 
   print(p_ce)
 } else {
-  cat("PSA results not available. Please run script 12_PSA.R first.\n")
+  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
 }
 ```
 
 ```{r save-figure, include=FALSE}
-if (nrow(scatter_data) > 0) {
+if (exists("p_ce")) {
   figs_dir <- here("figs")
-  if (!dir.exists(figs_dir)) {
-    dir.create(figs_dir, recursive = TRUE)
-  }
-
-  ggsave(
-    filename = here("figs", "figure3.png"),
-    plot = p_ce,
-    width = 9,
-    height = 8,
-    dpi = 300,
-    bg = "white"
-  )
-
-  cat("Figure saved to:", here("figs", "figure3.png"), "\n")
+  if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+  ggsave(here("figs", "figure3.png"), p_ce, width = 9, height = 8,
+         dpi = 300, bg = "white")
 }
 ```
 

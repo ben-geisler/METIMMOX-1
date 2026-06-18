@@ -1,6 +1,6 @@
 ---
 title: "Input Parameters"
-subtitle: "Biomarker-Guided Strategies for Selecting Immunotherapy Candidates in Metastatic MSS/pMMR Colorectal Cancer"
+subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
 format:
@@ -30,280 +30,170 @@ execute:
   tbl-cap-location: top
 ---
 
-```{r setup}
-#| include: false
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", fig.width = 8, fig.height = 6,
+                      dpi = 300, out.width = "100%")
+knitr::opts_knit$set(root.dir = here::here())
 
-# Load required packages
 if (!require("pacman")) install.packages("pacman")
-library(pacman)
-p_load(here, knitr, kableExtra, DT, dplyr, tidyr, ggplot2)
+pacman::p_load(here, knitr, kableExtra, dplyr, scales, ggplot2)
 
-# Set knitr options for PDF
-options(knitr.table.format = "latex")
+suppressMessages(suppressWarnings({
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+}))
 
-# Load PSA results - uses model structure suffix matching cache naming convention
-model_structure_labels <- c("joint", "focused", "separate")
-MODEL_STRUCTURE <- 0  # Must match setting in 02_setup_and_global_variables.R
-current_model_label <- model_structure_labels[MODEL_STRUCTURE + 1]
-
-psa_results_path <- here("data/tidy", paste0("psa_obj_", current_model_label, "_", utility_source_label, ".rds"))
-psa_params_path <- here("data/tidy", paste0("psa_params_", current_model_label, "_", utility_source_label, ".rds"))
-
-# Try to load PSA object and parameters
-psa_obj <- NULL
-psa_params <- NULL
-
-if (file.exists(psa_results_path)) {
-  psa_obj <- readRDS(psa_results_path)
-}
-
-if (file.exists(psa_params_path)) {
-  psa_params <- readRDS(psa_params_path)
-}
+fmt_eur <- function(x) scales::dollar(x, prefix = "EUR ", accuracy = 1)
+fmt_pct <- function(x) scales::percent(x, accuracy = 0.1)
 ```
 
-# Summary
+# Model Configuration
 
-This report provides an overview of all input parameters used in the METIMMOX-1 health economic model, organized into global model settings and variable parameters across base case, DSA, and PSA analyses.
+```{r model-config}
+config <- get_current_model_config()
 
-# Global Model Parameters
-
-These parameters define the overall model structure and are held constant across all analyses.
-
-```{r global-parameters}
-#| echo: false
-
-global_params <- data.frame(
-  Parameter = c("Time Horizon",
-               "Cycle Length",
-               "Discount Rate",
-               "WTP Threshold",
-               "PSA Sample Size",
-               "Sampling Models",
-               "DSA Variation Range",
-               "Model Structure"),
-  Value = c("520 weeks (10 years)",
-           "1 week",
-           "4% per annum",
-           "€51,000 per QALY",
-           "5,000 iterations",
-           "5,000 models",
-           "±20%",
-           "0 (joint)"),
-  Description = c("Model time horizon",
-                 "Cycle length for discrete-time model",
-                 "Annual discount rate for costs and effects",
-                 "Willingness-to-pay threshold",
-                 "Number of Monte Carlo iterations for PSA",
-                 "Resampled models for survival uncertainty",
-                 "Parameter variation range for DSA",
-                 "Survival model formula: 0=joint (all biomarkers + all interactions), 1=focused (per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction), 2=separate (one biomarker only)"),
-  Source = c("Clinical follow-up period",
-            "Model assumption",
-            "Model specification",
-            "Norwegian threshold based on severity (14.5 QALYs lost for diagnosis, based on a health 65-year old)",
-            "Computational adequacy",
-            "Statistical adequacy",
-            "Standard practice",
-            "Methodological choice")
+config_table <- data.frame(
+  Item = c("Economic strategies", "Economic biomarkers", "OS formula",
+           "PFS formula", "Control formula"),
+  Value = c(
+    paste(get_strategies(), collapse = ", "),
+    paste(get_biomarkers(), collapse = ", "),
+    paste(deparse(config$formulas$shared$os), collapse = " "),
+    paste(deparse(config$formulas$shared$pfs), collapse = " "),
+    "Surv(time, event) ~ Age + sex"
+  ),
+  stringsAsFactors = FALSE
 )
 
-kable(global_params, caption = "Global Model Parameters", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9) %>%
-  column_spec(1, width = "3.5cm") %>%
-  column_spec(2, width = "3.5cm") %>%
-  column_spec(3, width = "4cm") %>%
-  column_spec(4, width = "3.5cm")
+knitr::kable(
+  config_table,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Single economic model configuration"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "11cm")
 ```
 
-\newpage
+# Biomarker Prevalence
 
-# Model Input Parameters
+```{r biomarker-prevalence}
+prevalence_table <- strategies_df %>%
+  filter(id %in% get_biomarkers()) %>%
+  transmute(
+    Biomarker = recode(id, crp = "CRP-positive", tmb_braf = "TMB/BRAF-positive"),
+    Prevalence = fmt_pct(prevalence),
+    Source = "METIMMOX-1 trial data"
+  )
 
-This table presents all variable model parameters organized by type, showing their base case values, DSA variation ranges, and PSA distribution specifications.
-
-```{r comprehensive-parameters}
-#| echo: false
-
-# Create comprehensive parameter table sorted by type
-comprehensive_params <- data.frame(
-  Parameter_Type = character(),
-  Parameter = character(),
-  Base_Case = character(),
-  DSA_Range = character(),
-  PSA_Distribution = character(),
-  stringsAsFactors = FALSE
-)
-
-# Cost Parameters
-cost_data <- data.frame(
-  Parameter_Type = rep("Cost", 9),
-  Parameter = c("Nivolumab per administration",
-               "FLOX per administration", 
-               "CT scan",
-               "Blood tests",
-               "NGS testing",
-               "Standard outpatient visit",
-               "Baseline visit",
-               "Follow-up visit",
-               "End-of-life care"),
-  Base_Case = c("€13,923",
-               "€427",
-               "€386",
-               "€0",
-               "€1,439", 
-               "€33",
-               "€530",
-               "€33",
-               "€13,803"),
-  DSA_Range = c("€11,138 - €16,708",
-                "€342 - €512",
-                "€309 - €463",
-                "Not varied",
-                "€1,151 - €1,727",
-                "Not varied", 
-                "Not varied",
-                "Not varied",
-                "€11,042 - €16,564"),
-  PSA_Distribution = c("Gamma (shape=25, rate=0.0018)",
-                      "Gamma (shape=25, rate=0.0586)",
-                      "Gamma (shape=25, rate=0.0648)",
-                      "Fixed at 0",
-                      "Gamma (shape=25, rate=0.0174)",
-                      "Gamma (shape=25, rate=0.7576)",
-                      "Gamma (shape=25, rate=0.0472)",
-                      "Gamma (shape=25, rate=0.7576)",
-                      "Gamma (shape=25, rate=0.0018)"),
-  stringsAsFactors = FALSE
-)
-
-# Utility Parameters  
-utility_data <- data.frame(
-  Parameter_Type = rep("Utility", 2),
-  Parameter = c("Non-progressed state",
-               "Progressed state"),
-  Base_Case = c("0.9077",
-               "0.9005"),
-  DSA_Range = c("0.7262 - 1.0000",
-               "0.7204 - 1.0000"),
-  PSA_Distribution = c("Beta (α=41.0, β=4.2)",
-                      "Beta (α=40.6, β=4.5)"),
-  stringsAsFactors = FALSE
-)
-
-# Biomarker Prevalence Parameters (varied in DSA and PSA per issue #75)
-biomarker_data <- data.frame(
-  Parameter_Type = rep("Prevalence", 3),
-  Parameter = c("CRP biomarker positive",
-               "TLR biomarker positive",
-               "TMB/BRAF biomarker positive"),
-  Base_Case = c("30%",
-               "25%",
-               "20%"),
-  DSA_Range = c("24% - 36%",
-               "20% - 30%",
-               "16% - 24%"),
-  PSA_Distribution = c("Beta (CV=15%)",
-                      "Beta (CV=15%)",
-                      "Beta (CV=15%)"),
-  stringsAsFactors = FALSE
-)
-
-# Survival Parameters - simplified to one row
-survival_data <- data.frame(
-  Parameter_Type = "Survival",
-  Parameter = "OS and PFS curves by biomarker status",
-  Base_Case = "Fitted parametric survival models",
-  DSA_Range = "Not varied",
-  PSA_Distribution = "Survival resampling (5,000 models)",
-  stringsAsFactors = FALSE
-)
-
-# Combine all parameter types
-comprehensive_params <- rbind(
-  cost_data,
-  utility_data, 
-  biomarker_data,
-  survival_data
-)
-
-# Create the table
-kable(comprehensive_params, 
-      caption = "Model Input Parameters by Type", 
-      booktabs = TRUE,
-      col.names = c("Type", "Parameter", "Base Case", "DSA Range", "PSA Distribution")) %>%
-  kable_styling(latex_options = c("striped", "hold_position"), font_size = 8) %>%
-  column_spec(1, width = "2cm") %>%
-  column_spec(2, width = "4cm") %>%
-  column_spec(3, width = "2.5cm") %>%
-  column_spec(4, width = "3cm") %>%
-  column_spec(5, width = "3.5cm") %>%
-  pack_rows("Cost Parameters", 1, 9, latex_gap_space = "0.5em") %>%
-  pack_rows("Utility Parameters", 10, 11, latex_gap_space = "0.5em") %>%
-  pack_rows("Prevalence Parameters", 12, 14, latex_gap_space = "0.5em") %>%
-  pack_rows("Survival Parameters", 15, 15, latex_gap_space = "0.5em") %>%
-  footnote(general = c("DSA ranges calculated as base case ± 20%. Utility upper bounds capped at 1.0.",
-                      "PSA: Gamma distributions for costs (CV=20%), Beta for utilities (CV=15%).",
-                      "Survival curves use non-parametric resampling with age and sex adjustments."),
-           general_title = "Notes:")
+knitr::kable(
+  prevalence_table,
+  booktabs = TRUE,
+  align = c("l", "r", "l"),
+  caption = "Economic biomarker prevalences"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-\newpage
+# Utilities
 
-# PSA Parameter Distributions
+```{r utility-table}
+utility_table <- data.frame(
+  Parameter = c("Progression-free utility", "Post-progression utility"),
+  Symbol = c("u_np", "u_p"),
+  Base_Case = c(l_params_base$u_np, l_params_base$u_p),
+  DSA_Low = c(l_params_base$u_np, l_params_base$u_p) * (1 - DSA_mult),
+  DSA_High = pmin(c(l_params_base$u_np, l_params_base$u_p) * (1 + DSA_mult), 1),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(across(c(Base_Case, DSA_Low, DSA_High), ~ sprintf("%.3f", .x)))
 
-This section displays histograms of all sampled parameters from the probabilistic sensitivity analysis (PSA), showing the distribution shapes and ranges used in the Monte Carlo simulation.
+knitr::kable(
+  utility_table,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r"),
+  col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High"),
+  caption = "Health-state utilities"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
 
-```{r psa-histograms}
-#| echo: false
-#| fig-width: 12
-#| fig-height: 10
-#| fig-cap: "Distribution of PSA Parameters"
+# Costs
 
-# Check if PSA parameters are available
-if (!is.null(psa_params) && is.data.frame(psa_params)) {
-  
-  # Get numeric columns only
-  numeric_cols <- sapply(psa_params, is.numeric)
-  psa_params_numeric <- psa_params[, numeric_cols, drop = FALSE]
-  
-  if (ncol(psa_params_numeric) > 0) {
-    n_params <- ncol(psa_params_numeric)
-    
-    # Calculate grid dimensions based on number of parameters
-    n_cols <- 5
-    n_rows <- ceiling(n_params / n_cols)
-    
-    par(mfrow = c(n_rows, n_cols), mar = c(4, 4, 2, 1))
-    
-    for(i in 1:n_params) {
-      hist(psa_params_numeric[, i], 
-           main = paste("Distribution of\n", colnames(psa_params_numeric)[i]),
-           xlab = colnames(psa_params_numeric)[i],
-           col = "lightblue",
-           breaks = 30,
-           cex.main = 0.9,
-           cex.lab = 0.8,
-           cex.axis = 0.8)
-    }
-    
-    par(mfrow = c(1, 1))  # Reset layout
-    
-  } else {
-    cat("No numeric parameters found in PSA data.\n")
-  }
-  
-} else {
-  cat("PSA parameter data not available.\n")
-  cat("To generate these histograms:\n")
-  cat("1. Run your PSA analysis script (e.g., scripts/R/analysis/13_EVPPIs.R)\n")
-  cat("2. Save the psa_params object using: saveRDS(psa_params, here('results', 'psa_params.rds'))\n")
-  cat("3. Re-render this report\n")
-}
+```{r cost-table}
+cost_table <- data.frame(
+  Parameter = c(
+    "Nivolumab per administration",
+    "FLOX per administration",
+    "CT scan",
+    "Blood test",
+    "NGS test",
+    "Visit",
+    "Baseline other cost",
+    "Follow-up other cost",
+    "End-of-life cost"
+  ),
+  Symbol = c(
+    "c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+    "c_test_NGS", "c_other_visit", "c_other_baseline",
+    "c_other_follow", "c_other_last"
+  ),
+  Base_Case = c(
+    l_params_base$c_drug_nivo, l_params_base$c_drug_FLOX,
+    l_params_base$c_test_CT, l_params_base$c_test_blood,
+    l_params_base$c_test_NGS, l_params_base$c_other_visit,
+    l_params_base$c_other_baseline, l_params_base$c_other_follow,
+    l_params_base$c_other_last
+  ),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    DSA_Low = pmax(Base_Case * (1 - DSA_mult), 0),
+    DSA_High = Base_Case * (1 + DSA_mult),
+    across(c(Base_Case, DSA_Low, DSA_High), fmt_eur)
+  )
+
+knitr::kable(
+  cost_table,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r"),
+  col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High"),
+  caption = "Cost inputs"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+```
+
+# Structural Parameters
+
+```{r structural-table}
+structural_table <- data.frame(
+  Parameter = c("Cycle length", "Time horizon", "Cost discount rate",
+                "Effect discount rate", "Willingness-to-pay threshold",
+                "PSA sample size"),
+  Value = c(
+    paste0(cl, " years"),
+    paste0(time_horizon, " weeks"),
+    fmt_pct(dr),
+    fmt_pct(dr),
+    fmt_eur(WTP),
+    format(n_samples, big.mark = ",")
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  structural_table,
+  booktabs = TRUE,
+  align = c("l", "r"),
+  caption = "Structural model parameters"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.1
+**Report version:** 4.0
