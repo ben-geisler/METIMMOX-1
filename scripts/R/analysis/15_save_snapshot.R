@@ -3,7 +3,7 @@
 # PURPOSE:
 #   Track the impact of bug fixes on cost-effectiveness analysis results by
 #   creating snapshots before (baseline) and after (fixed) the bug fix.
-#   Saves results for ALL three model structures (A=joint, B=focused, C=separate).
+#   Saves results for the single joint economic survival model.
 #
 # USAGE:
 #   Rscript 15_save_snapshot.R <issue_number> <baseline|fixed>
@@ -24,12 +24,12 @@
 #   4. Generate report:   quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd
 #
 # OUTPUT FILES:
-#   - snapshot_<issue>_<status>_<commit>.rds  (base case + metadata for all 3 models)
-#   - psa_<issue>_<status>_<commit>.rds       (PSA objects for all 3 models)
+#   - snapshot_<issue>_<status>_<commit>.rds  (base case + metadata)
+#   - psa_<issue>_<status>_<commit>.rds       (PSA object, if available)
 #
 # NOTES:
-#   - Runs base case for all 3 model structures (joint, focused, separate)
-#   - Loads pre-computed PSA caches (psa_obj_joint.rds, etc.)
+#   - Runs base case for the single joint economic model
+#   - Loads pre-computed PSA cache (psa_obj_{ipd|correct}.rds)
 #   - Uses sampling cache if available (much faster on subsequent runs)
 #   - Snapshots saved to data/output/snapshots/
 
@@ -106,7 +106,6 @@ cat("\n=== Loading Helper Functions ===\n")
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
-source(here::here("scripts/R/functions/multi_model_cea.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
 
 # Recover environment variables
@@ -115,21 +114,22 @@ snapshot_status <- Sys.getenv("SNAPSHOT_STATUS")
 wtp_val <- as.numeric(Sys.getenv("SNAPSHOT_WTP"))
 
 # ============================================================================
-# Step 3: Run analysis for all 3 model structures
+# Step 3: Run analysis for the single economic model
 # ============================================================================
-cat("\n=== Running Multi-Model Analysis ===\n")
-
-model_labels <- c("joint", "focused", "separate")
-models_results <- list()
-psa_objects <- list()
+cat("\n=== Running Single-Model Analysis ===\n")
 
 # Helper: compute PSA summary with CIs from a psa object
 compute_psa_summary <- function(psa_obj) {
   psa_summary_full <- summary(psa_obj, calc_sds = TRUE,
                               prob = c(0.025, 0.975))
-  cost_q <- apply(psa_obj$cost, 2, quantile, probs = c(0.025, 0.975))
-  effect_q <- apply(psa_obj$effectiveness, 2, quantile,
-                    probs = c(0.025, 0.975))
+  cost_matrix <- as.matrix(psa_obj$cost)
+  effect_matrix <- if (!is.null(psa_obj$effect)) {
+    as.matrix(psa_obj$effect)
+  } else {
+    as.matrix(psa_obj$effectiveness)
+  }
+  cost_q <- apply(cost_matrix, 2, quantile, probs = c(0.025, 0.975))
+  effect_q <- apply(effect_matrix, 2, quantile, probs = c(0.025, 0.975))
   data.frame(
     Strategy = psa_summary_full$Strategy,
     meanCost = psa_summary_full$meanCost,
@@ -144,115 +144,72 @@ compute_psa_summary <- function(psa_obj) {
   )
 }
 
-for (i in seq_along(model_labels)) {
-  ms <- i - 1  # MODEL_STRUCTURE: 0, 1, 2
-  label <- model_labels[i]
-  cat("\n--- [Model ", i, "/3: ", label, "] ---\n", sep = "")
+# Run base case
+base_results <- model_fun(l_params_base)
+icer_obj <- dampack::calculate_icers(
+  cost = base_results$Cost,
+  effect = base_results$Effect,
+  strategies = base_results$Strategy
+)
 
-  # Run base case (re-sources 06 + 07 internally)
+# Calculate NMB
+nmb_at_wtp <- data.frame(
+  Strategy = base_results$Strategy,
+  Cost = base_results$Cost,
+  Effect = base_results$Effect,
+  NMB = base_results$Effect * wtp_val - base_results$Cost
+)
+nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
+
+# Load PSA cache, or generate if not available
+cache_file_obj <- here::here("data", "tidy",
+                             paste0("psa_obj_", utility_source_label, ".rds"))
+cache_file_params <- here::here("data", "tidy",
+                                paste0("psa_params_", utility_source_label, ".rds"))
+
+psa_obj <- NULL
+psa_summary <- NULL
+
+if (file.exists(cache_file_obj)) {
+  psa_obj <- readRDS(cache_file_obj)
+  cat("Loaded PSA cache:", cache_file_obj, "\n")
+} else if (exists("sampling_models") && !is.null(sampling_models)) {
+  cat("PSA cache not found - generating PSA...\n")
+
+  psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
+  psa_results <- run_psa_analysis(
+    psa_params = psa_params_gen,
+    l_params_base = l_params_base,
+    param_distributions = param_distributions,
+    strategies = strategies,
+    time_horizon = time_horizon,
+    cl = cl,
+    n_sim = n_sim
+  )
+  psa_obj <- dampack::make_psa_obj(
+    cost = as.data.frame(psa_results$cost),
+    effect = as.data.frame(psa_results$effect),
+    strategies = strategies,
+    currency = "EUR"
+  )
+
   tryCatch({
-    bc <- run_basecase_for_structure(ms, verbose = TRUE)
-    br <- bc$base_results
-    io <- bc$icer_obj
-
-    # Calculate NMB
-    nmb <- data.frame(
-      Strategy = br$Strategy,
-      Cost = br$Cost,
-      Effect = br$Effect,
-      NMB = br$Effect * wtp_val - br$Cost
-    )
-    nmb <- nmb[order(-nmb$NMB), ]
-
-    # Load PSA cache, or generate if not available
-    psa_obj <- load_psa_cache_for_structure(ms)
-    psa_summary <- NULL
-
-    if (is.null(psa_obj)) {
-      cat("  PSA cache not found for", label, "- generating PSA...\n")
-
-      # Load sampling cache for this model structure
-      sampling_cache_file <- here::here(
-        "data", "tidy",
-        paste0("sampling_models_n", n_samples, "_",
-               ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
-               label, ".rds")
-      )
-      if (file.exists(sampling_cache_file)) {
-        sampling_models <- readRDS(sampling_cache_file)
-        cat("  Loaded sampling cache:", sampling_cache_file, "\n")
-      } else {
-        cat("  ERROR: Sampling cache not found:", sampling_cache_file, "\n")
-        cat("  Cannot generate PSA without sampling models.\n")
-        cat("  Run 08_sampling.R first.\n")
-        # Continue without PSA for this model
-        models_results[[label]] <- list(
-          base_results = br,
-          icer_obj = as.data.frame(io),
-          nmb_at_wtp = nmb,
-          psa_summary = NULL
-        )
-        cat("  Done:", label, "(without PSA)\n")
-        next
-      }
-
-      # Generate PSA (same pattern as 12_PSA.R)
-      psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
-      psa_results <- run_psa_analysis(
-        psa_params = psa_params_gen,
-        l_params_base = l_params_base,
-        param_distributions = param_distributions,
-        strategies = strategies,
-        time_horizon = time_horizon,
-        cl = cl,
-        n_sim = n_sim
-      )
-      psa_obj <- dampack::make_psa_obj(
-        cost = as.data.frame(psa_results$cost),
-        effect = as.data.frame(psa_results$effect),
-        strategies = strategies,
-        currency = "EUR"
-      )
-
-      # Save to cache for future use
-      cache_file_obj <- here::here("data", "tidy",
-                                   paste0("psa_obj_", label, "_", utility_source_label, ".rds"))
-      cache_file_params <- here::here("data", "tidy",
-                                      paste0("psa_params_", label, "_", utility_source_label, ".rds"))
-      tryCatch({
-        saveRDS(psa_obj, cache_file_obj)
-        saveRDS(psa_params_gen, cache_file_params)
-        cat("  PSA cache saved to:", cache_file_obj, "\n")
-      }, error = function(e) {
-        cat("  Warning: Failed to save PSA cache:", e$message, "\n")
-      })
-    }
-
-    if (!is.null(psa_obj)) {
-      psa_summary <- compute_psa_summary(psa_obj)
-      psa_objects[[label]] <- psa_obj
-    }
-
-    models_results[[label]] <- list(
-      base_results = br,
-      icer_obj = as.data.frame(io),
-      nmb_at_wtp = nmb,
-      psa_summary = psa_summary
-    )
-    cat("  Done:", label, "\n")
-
+    saveRDS(psa_obj, cache_file_obj)
+    saveRDS(psa_params_gen, cache_file_params)
+    cat("PSA cache saved to:", cache_file_obj, "\n")
   }, error = function(e) {
-    cat("  ERROR running", label, ":", conditionMessage(e), "\n")
-    cat("  Skipping this model structure.\n")
+    cat("Warning: Failed to save PSA cache:", e$message, "\n")
   })
+} else {
+  cat("WARNING: PSA cache not found and sampling_models is unavailable.\n")
+  cat("Snapshot will be saved without PSA summary.\n")
 }
 
-cat("\n=== Multi-Model Analysis Complete ===\n")
-cat("Models completed:", paste(names(models_results), collapse = ", "), "\n")
-
-if (length(models_results) == 0) {
-  stop("No models completed successfully. Cannot save snapshot.")
+if (!is.null(psa_obj)) {
+  psa_summary <- compute_psa_summary(psa_obj)
 }
+
+cat("\n=== Single-Model Analysis Complete ===\n")
 
 # ============================================================================
 # Step 4: Collect metadata and build snapshot
@@ -260,20 +217,13 @@ if (length(models_results) == 0) {
 cat("\nCollecting metadata...\n")
 metadata <- collect_metadata(issue_number)
 
-# Use first available model as the primary (legacy top-level fields)
-primary_label <- names(models_results)[1]
-primary <- models_results[[primary_label]]
-
 cat("Creating snapshot object...\n")
 snapshot <- list(
   metadata = metadata,
-  # Legacy top-level fields (backward compatibility)
-  base_results = primary$base_results,
-  icer_obj = primary$icer_obj,
-  nmb_at_wtp = primary$nmb_at_wtp,
-  psa_summary = primary$psa_summary,
-  # Multi-model results
-  models = models_results
+  base_results = base_results,
+  icer_obj = as.data.frame(icer_obj),
+  nmb_at_wtp = nmb_at_wtp,
+  psa_summary = psa_summary
 )
 
 # ============================================================================
@@ -291,13 +241,13 @@ snapshot_path <- file.path(snapshots_dir, snapshot_filename)
 saveRDS(snapshot, snapshot_path)
 cat("  Saved:", snapshot_path, "\n")
 
-cat("Saving PSA objects...\n")
+cat("Saving PSA object...\n")
 psa_path <- file.path(snapshots_dir, psa_filename)
-if (length(psa_objects) > 0) {
-  saveRDS(psa_objects, psa_path)
-  cat("  Saved:", psa_path, "(", length(psa_objects), "models)\n")
+if (!is.null(psa_obj)) {
+  saveRDS(psa_obj, psa_path)
+  cat("  Saved:", psa_path, "\n")
 } else {
-  cat("  WARNING: No PSA objects available - PSA file not saved\n")
+  cat("  WARNING: No PSA object available - PSA file not saved\n")
 }
 
 # ============================================================================
@@ -311,12 +261,9 @@ cat("Snapshot file:", snapshot_filename, "\n")
 cat("PSA file:", psa_filename, "\n")
 
 cat("\nSnapshot contains:\n")
-for (label in names(models_results)) {
-  mr <- models_results[[label]]
-  cat("  - ", label, ": ", nrow(mr$base_results), " strategies",
-      if (!is.null(mr$psa_summary)) " + PSA" else "",
-      "\n", sep = "")
-}
+cat("  - Base case results: ", nrow(base_results), " strategies",
+    if (!is.null(psa_summary)) " + PSA" else "",
+    "\n", sep = "")
 cat("  - Metadata (git commit, R version, package versions, parameters)\n")
 
 if (snapshot_status == "baseline") {

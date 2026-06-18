@@ -3,47 +3,6 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr, tidyr)
 
-# ===============================================================================
-# RUN_ALL_MODELS SWITCH
-# ===============================================================================
-# When RUN_ALL_MODELS = TRUE, this script will loop through all 3 MODEL_STRUCTURE
-# values (0, 1, 2) and generate caches for each. This is useful for pre-generating
-# all caches needed for multi-model CEA comparison.
-#
-# When RUN_ALL_MODELS = FALSE (default), the script uses the current MODEL_STRUCTURE
-# value and generates a single cache file.
-# ===============================================================================
-
-if (!exists("RUN_ALL_MODELS")) {
-  RUN_ALL_MODELS <- FALSE
-}
-
-if (RUN_ALL_MODELS) {
-  cat("\n=== RUN_ALL_MODELS mode: Generating caches for all model structures ===\n")
-  model_structures_to_run <- c(0, 1, 2)
-  original_model_structure <- MODEL_STRUCTURE
-} else {
-  model_structures_to_run <- MODEL_STRUCTURE
-}
-
-# Loop through model structures (single iteration if RUN_ALL_MODELS = FALSE)
-for (current_model_structure in model_structures_to_run) {
-
-  # Set MODEL_STRUCTURE for this iteration
-  MODEL_STRUCTURE <- current_model_structure
-
-  if (RUN_ALL_MODELS) {
-    cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-    cat("Processing MODEL_STRUCTURE =", MODEL_STRUCTURE,
-        "(", c("joint", "focused", "separate")[MODEL_STRUCTURE + 1], ")\n")
-    cat(paste(rep("=", 70), collapse = ""), "\n")
-
-    # Re-source scripts 06 and 07 to update predictions for this MODEL_STRUCTURE
-    cat("Re-sourcing survival analysis scripts for new MODEL_STRUCTURE...\n")
-    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-  }
-
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
 time_points_length <- length(time_points)
@@ -59,12 +18,9 @@ if (!dir.exists(cache_dir)) {
   cat("Created sampling cache directory:", cache_dir, "\n")
 }
 
-# Create cache file path based on n_samples and model configuration
-# Include MODEL_STRUCTURE in filename to ensure separate caches per structure
-model_structure_label <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
+# Create cache file path based on n_samples and age/sex adjustment setting
 cache_file <- here(cache_dir, paste0("sampling_models_n", n_samples, "_",
-                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
-                                     model_structure_label,
+                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"),
                                      ".rds"))
 
 # Check for old cache files in deprecated location
@@ -80,12 +36,12 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 }
 
 # ===============================================================================
-# MODEL FORMULA SELECTION BASED ON GLOBAL MODEL_STRUCTURE SWITCH
+# MODEL FORMULA SELECTION
 # ===============================================================================
 # Model formulas are defined in scripts/R/functions/model_configs.R
-# This ensures PSA uses the SAME model structure as base case.
+# This ensures PSA uses the same single joint model as base case.
 #
-# All three biomarker strategies (CRP, TLR, TMB/BRAF) are available in ALL models.
+# Economic biomarker strategies are CRP and TMB/BRAF.
 # ===============================================================================
 
 # Source model configurations if not already loaded
@@ -95,7 +51,6 @@ if (!exists("get_model_configs")) {
 
 # Get model configuration
 model_config <- get_current_model_config()
-model_type <- get_model_type_label()
 cat("Resampling: Using", model_config$label, "\n")
 cat("Description:", model_config$description, "\n")
 
@@ -208,7 +163,6 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
 # DISTRIBUTION RESOLUTION HELPER
 # ===============================================================================
 # Resolves the AIC-best parametric distributions from the models object.
-# Supports both Model A (global best) and Models B/C (per-biomarker best).
 # Returns a list with $os and $pfs distribution names.
 # ===============================================================================
 
@@ -221,36 +175,17 @@ resolve_best_distributions <- function(biomarker = NULL) {
   }
 
   m <- get("models", envir = .GlobalEnv)
-  is_biomarker_specific <- uses_per_strategy_formulas()
 
-  if (is_biomarker_specific && !is.null(biomarker)) {
-    # Models B/C: per-biomarker distributions
-    os_dist <- m$best_fit[[biomarker]]$os_distribution
-    pfs_dist <- m$best_fit[[biomarker]]$pfs_distribution
+  os_dist <- m$best_fit$os_distribution
+  pfs_dist <- m$best_fit$pfs_distribution
 
-    if (is.null(os_dist)) {
-      cat("WARNING: No OS distribution for biomarker '", biomarker,
-          "'. Using default:", default_dist, "\n")
-      os_dist <- default_dist
-    }
-    if (is.null(pfs_dist)) {
-      cat("WARNING: No PFS distribution for biomarker '", biomarker,
-          "'. Using default:", default_dist, "\n")
-      pfs_dist <- default_dist
-    }
-  } else {
-    # Model A: global best distributions
-    os_dist <- m$best_fit$os_distribution
-    pfs_dist <- m$best_fit$pfs_distribution
-
-    if (is.null(os_dist)) {
-      cat("WARNING: No global best OS distribution found. Using default:", default_dist, "\n")
-      os_dist <- default_dist
-    }
-    if (is.null(pfs_dist)) {
-      cat("WARNING: No global best PFS distribution found. Using default:", default_dist, "\n")
-      pfs_dist <- default_dist
-    }
+  if (is.null(os_dist)) {
+    cat("WARNING: No global best OS distribution found. Using default:", default_dist, "\n")
+    os_dist <- default_dist
+  }
+  if (is.null(pfs_dist)) {
+    cat("WARNING: No global best PFS distribution found. Using default:", default_dist, "\n")
+    pfs_dist <- default_dist
   }
 
   cat("Resolved distributions - OS:", os_dist, "| PFS:", pfs_dist,
@@ -269,7 +204,7 @@ if (file.exists(cache_file)) {
 
   sampling_models <- readRDS(cache_file)
 
-  # Validate cache - all models now use all three biomarkers
+  # Validate cache contains the single economic model biomarkers
   biomarkers_to_validate <- get_biomarkers()
   if (is.list(sampling_models) &&
       "control" %in% names(sampling_models) &&
@@ -312,13 +247,8 @@ if (is.null(sampling_models)) {
   cat("Results will be cached to:", cache_file, "\n\n")
 
   # Sample control models with age and sex adjustments
-  # For control, use global best distributions (Model A) or CRP distributions (Models B/C)
   cat("\nSampling control strategy...\n")
-  control_dists <- if (uses_per_strategy_formulas()) {
-    resolve_best_distributions(biomarker = "crp")  # Use CRP model dists for control
-  } else {
-    resolve_best_distributions(biomarker = NULL)    # Use global best dists
-  }
+  control_dists <- resolve_best_distributions(biomarker = NULL)
   sampling_models$control <- sample_correlated_survival(
     formula_os = control_os_formula,
     formula_pfs = control_pfs_formula,
@@ -329,7 +259,6 @@ if (is.null(sampling_models)) {
   )
 
   # Sample biomarker models with age and sex adjustments
-  # All models now use all three biomarkers (TLR is included in Model B with its own formula)
   biomarkers_to_sample <- get_biomarkers()
   for (biomarker in biomarkers_to_sample) {
     cat("\nSampling", biomarker, "strategy...\n")
@@ -362,11 +291,10 @@ if (is.null(sampling_models)) {
   })
 }
 
-# Print confirmation of model structures
-cat("\n=== Sampling model structures ready ===\n")
-cat("- MODEL_STRUCTURE:", MODEL_STRUCTURE, "(", model_type, ")\n")
+# Print confirmation of model structure
+cat("\n=== Sampling model structure ready ===\n")
 cat("- Model:", model_config$label, "\n")
-cat("- All three biomarker strategies: CRP, TLR, TMB/BRAF\n")
+cat("- Biomarker strategies: CRP, TMB/BRAF\n")
 cat("- Formulas defined in: scripts/R/functions/model_configs.R\n")
 cat("- Number of resampled models:", sampling_models$control$n_samples, "\n")
 cat("- PFS and OS are CORRELATED within each resampled model\n")
@@ -515,15 +443,12 @@ dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utili
 dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
 
 # Prevalence parameters - beta distributions (bounded between 0 and 1)
-# All models now include all three biomarkers
 cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
 dist_p_crp <- c(list(dist = "beta"), get_beta_params(l_params_base$p_crp, cv_prevalence))
-dist_p_tlr <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tlr, cv_prevalence))
 dist_p_tmb_braf <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tmb_braf, cv_prevalence))
 
 # Create comprehensive parameter distributions list
 # Note: Survival curves are NOT in this list - they come from bootstrap samples
-# All models now include all three biomarkers
 param_distributions <- list(
   # Cost parameters
   c_drug_nivo = dist_c_drug_nivo,
@@ -540,14 +465,12 @@ param_distributions <- list(
   u_np = dist_u_np,
   u_p = dist_u_p,
 
-  # Prevalence parameters (all three biomarkers)
+  # Prevalence parameters
   p_crp = dist_p_crp,
-  p_tlr = dist_p_tlr,
   p_tmb_braf = dist_p_tmb_braf
 )
 
 # Parameter groups for sensitivity analysis (EVPPI)
-# All models now include all three biomarkers
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
   test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
@@ -557,7 +480,7 @@ param_groups <- list(
                 "c_test_NGS", "c_other_visit", "c_other_baseline",
                 "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tlr", "p_tmb_braf")
+  prevalence = c("p_crp", "p_tmb_braf")
 )
 
 # ===============================================================================
@@ -729,13 +652,3 @@ cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
 cat("- Survival parameters: Correlated resampled models (n =", sampling_models$control$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")
 cat("\nReady for PSA analysis\n")
-
-} # End of RUN_ALL_MODELS loop
-
-# Restore original MODEL_STRUCTURE if we were in RUN_ALL_MODELS mode
-if (RUN_ALL_MODELS) {
-  MODEL_STRUCTURE <- original_model_structure
-  cat("\n=== RUN_ALL_MODELS complete ===\n")
-  cat("Generated caches for MODEL_STRUCTURE: 0 (joint), 1 (focused), 2 (separate)\n")
-  cat("Restored MODEL_STRUCTURE to:", MODEL_STRUCTURE, "\n")
-}
