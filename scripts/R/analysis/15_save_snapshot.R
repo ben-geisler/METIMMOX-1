@@ -105,6 +105,7 @@ Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
 cat("\n=== Loading Helper Functions ===\n")
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
+source(here::here("scripts/R/functions/multi_model_cea.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
 
@@ -145,12 +146,9 @@ compute_psa_summary <- function(psa_obj) {
 }
 
 # Run base case
-base_results <- model_fun(l_params_base)
-icer_obj <- dampack::calculate_icers(
-  cost = base_results$Cost,
-  effect = base_results$Effect,
-  strategies = base_results$Strategy
-)
+base_result <- run_basecase(verbose = TRUE)
+base_results <- base_result$base_results
+icer_obj <- base_result$icer_obj
 
 # Calculate NMB
 nmb_at_wtp <- data.frame(
@@ -170,39 +168,40 @@ cache_file_params <- here::here("data", "tidy",
 psa_obj <- NULL
 psa_summary <- NULL
 
-if (file.exists(cache_file_obj)) {
-  psa_obj <- readRDS(cache_file_obj)
-  cat("Loaded PSA cache:", cache_file_obj, "\n")
-} else if (exists("sampling_models") && !is.null(sampling_models)) {
-  cat("PSA cache not found - generating PSA...\n")
+psa_obj <- load_psa_cache(util_label = utility_source_label, verbose = TRUE)
 
-  psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
-  psa_results <- run_psa_analysis(
-    psa_params = psa_params_gen,
-    l_params_base = l_params_base,
-    param_distributions = param_distributions,
-    strategies = strategies,
-    time_horizon = time_horizon,
-    cl = cl,
-    n_sim = n_sim
-  )
-  psa_obj <- dampack::make_psa_obj(
-    cost = as.data.frame(psa_results$cost),
-    effect = as.data.frame(psa_results$effect),
-    strategies = strategies,
-    currency = "EUR"
-  )
+if (is.null(psa_obj)) {
+  if (exists("sampling_models") && !is.null(sampling_models)) {
+    cat("PSA cache not found - generating PSA...\n")
 
-  tryCatch({
-    saveRDS(psa_obj, cache_file_obj)
-    saveRDS(psa_params_gen, cache_file_params)
-    cat("PSA cache saved to:", cache_file_obj, "\n")
-  }, error = function(e) {
-    cat("Warning: Failed to save PSA cache:", e$message, "\n")
-  })
-} else {
-  cat("WARNING: PSA cache not found and sampling_models is unavailable.\n")
-  cat("Snapshot will be saved without PSA summary.\n")
+    psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
+    psa_results <- run_psa_analysis(
+      psa_params = psa_params_gen,
+      l_params_base = l_params_base,
+      param_distributions = param_distributions,
+      strategies = strategies,
+      time_horizon = time_horizon,
+      cl = cl,
+      n_sim = n_sim
+    )
+    psa_obj <- dampack::make_psa_obj(
+      cost = as.data.frame(psa_results$cost),
+      effect = as.data.frame(psa_results$effect),
+      strategies = strategies,
+      currency = "EUR"
+    )
+
+    tryCatch({
+      saveRDS(psa_obj, cache_file_obj)
+      saveRDS(psa_params_gen, cache_file_params)
+      cat("PSA cache saved to:", cache_file_obj, "\n")
+    }, error = function(e) {
+      cat("Warning: Failed to save PSA cache:", e$message, "\n")
+    })
+  } else {
+    cat("WARNING: PSA cache not found and sampling_models is unavailable.\n")
+    cat("Snapshot will be saved without PSA summary.\n")
+  }
 }
 
 if (!is.null(psa_obj)) {

@@ -1,15 +1,12 @@
 # Compare Analysis Snapshots
-# This script compares two snapshots to assess the impact of bug fixes
+# This script compares two single-model snapshots to assess the impact of bug fixes.
 
-# Load required packages
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, dplyr, ggplot2, gridExtra)
 
-# Load snapshot utilities
 source(here::here("scripts/R/functions/snapshot_utils.R"))
 
-# Prompt user for issue number
 cat("\n=== Compare Analysis Snapshots ===\n\n")
 cat("This script compares two snapshots to assess the impact of bug fixes.\n\n")
 
@@ -19,18 +16,20 @@ if (issue_number == "" || is.na(as.numeric(issue_number))) {
   stop("Invalid issue number. Please provide a numeric issue number.")
 }
 
-# List available snapshots
 cat("\nSearching for snapshots for issue #", issue_number, "...\n", sep = "")
 snapshot_pairs <- select_snapshots_for_comparison(issue_number)
 
 cat("\nLoading snapshots...\n")
 
-# Load snapshots
 snapshots_dir <- here::here("data", "output", "snapshots")
 before_snapshot <- load_snapshot(snapshot_pairs$before$snapshot, snapshots_dir)
 after_snapshot <- load_snapshot(snapshot_pairs$after$snapshot, snapshots_dir)
 before_psa <- load_snapshot(snapshot_pairs$before$psa, snapshots_dir)
 after_psa <- load_snapshot(snapshot_pairs$after$psa, snapshots_dir)
+
+if (!inherits(before_psa, "psa") || !inherits(after_psa, "psa")) {
+  stop("Snapshot comparison expects single-model dampack PSA objects.")
+}
 
 cat("  Before: ", snapshot_pairs$before$snapshot, "\n", sep = "")
 cat("          Commit: ", before_snapshot$metadata$git_commit,
@@ -48,7 +47,6 @@ cat("--------------------------------\n")
 before_icer <- before_snapshot$icer_obj
 after_icer <- after_snapshot$icer_obj
 
-# Merge before and after
 comparison_base <- merge(
   before_icer[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
   after_icer[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
@@ -56,17 +54,12 @@ comparison_base <- merge(
   suffixes = c("_before", "_after")
 )
 
-# Calculate differences
 comparison_base$Cost_diff <- comparison_base$Cost_after - comparison_base$Cost_before
 comparison_base$Effect_diff <- comparison_base$Effect_after - comparison_base$Effect_before
 comparison_base$Inc_Cost_diff <- comparison_base$Inc_Cost_after - comparison_base$Inc_Cost_before
 comparison_base$Inc_Effect_diff <- comparison_base$Inc_Effect_after - comparison_base$Inc_Effect_before
-
-# Calculate relative changes (handle NAs and Inf for ICERs)
 comparison_base$Cost_pct_change <- (comparison_base$Cost_diff / comparison_base$Cost_before) * 100
 comparison_base$Effect_pct_change <- (comparison_base$Effect_diff / comparison_base$Effect_before) * 100
-
-# Handle ICER differences carefully (can be NA or Inf)
 comparison_base$ICER_diff <- ifelse(
   is.na(comparison_base$ICER_before) | is.na(comparison_base$ICER_after),
   NA,
@@ -110,22 +103,27 @@ cat("-------------------------------------\n")
 before_psa_sum <- before_snapshot$psa_summary
 after_psa_sum <- after_snapshot$psa_summary
 
-comparison_psa <- merge(
-  before_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
-                     "Cost_2.5_percent", "Cost_97.5_percent",
-                     "Effect_2.5_percent", "Effect_97.5_percent")],
-  after_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
-                    "Cost_2.5_percent", "Cost_97.5_percent",
-                    "Effect_2.5_percent", "Effect_97.5_percent")],
-  by = "Strategy",
-  suffixes = c("_before", "_after")
-)
+if (is.null(before_psa_sum) || is.null(after_psa_sum)) {
+  cat("PSA summary unavailable in one or both snapshots.\n")
+  comparison_psa <- data.frame()
+} else {
+  comparison_psa <- merge(
+    before_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
+                       "Cost_2.5_percent", "Cost_97.5_percent",
+                       "Effect_2.5_percent", "Effect_97.5_percent")],
+    after_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
+                      "Cost_2.5_percent", "Cost_97.5_percent",
+                      "Effect_2.5_percent", "Effect_97.5_percent")],
+    by = "Strategy",
+    suffixes = c("_before", "_after")
+  )
 
-comparison_psa$meanCost_diff <- comparison_psa$meanCost_after - comparison_psa$meanCost_before
-comparison_psa$meanEffect_diff <- comparison_psa$meanEffect_after - comparison_psa$meanEffect_before
+  comparison_psa$meanCost_diff <- comparison_psa$meanCost_after - comparison_psa$meanCost_before
+  comparison_psa$meanEffect_diff <- comparison_psa$meanEffect_after - comparison_psa$meanEffect_before
 
-print(comparison_psa[, c("Strategy", "meanCost_before", "meanCost_after", "meanCost_diff",
-                         "meanEffect_before", "meanEffect_after", "meanEffect_diff")])
+  print(comparison_psa[, c("Strategy", "meanCost_before", "meanCost_after", "meanCost_diff",
+                           "meanEffect_before", "meanEffect_after", "meanEffect_diff")])
+}
 
 # 4. Compare metadata
 cat("\n4. Metadata Comparison\n")
@@ -143,12 +141,14 @@ cat("\nR versions:\n")
 cat("  Before:", before_snapshot$metadata$r_version, "\n")
 cat("  After: ", after_snapshot$metadata$r_version, "\n")
 
-# Check for parameter changes
-param_names <- names(before_snapshot$metadata$parameters)
+before_params <- before_snapshot$metadata$parameters
+after_params <- after_snapshot$metadata$parameters
+param_names <- union(names(before_params), names(after_params))
 param_changes <- c()
+
 for (param in param_names) {
-  before_val <- before_snapshot$metadata$parameters[[param]]
-  after_val <- after_snapshot$metadata$parameters[[param]]
+  before_val <- before_params[[param]]
+  after_val <- after_params[[param]]
   if (!identical(before_val, after_val)) {
     param_changes <- c(param_changes, param)
   }
@@ -158,8 +158,8 @@ if (length(param_changes) > 0) {
   cat("\nParameters that changed:\n")
   for (param in param_changes) {
     cat("  ", param, ": ",
-        before_snapshot$metadata$parameters[[param]], " -> ",
-        after_snapshot$metadata$parameters[[param]], "\n", sep = "")
+        before_params[[param]], " -> ",
+        after_params[[param]], "\n", sep = "")
   }
 } else {
   cat("\nNo parameter changes detected.\n")
@@ -169,48 +169,57 @@ if (length(param_changes) > 0) {
 cat("\n5. Creating PSA Scatter Plots\n")
 cat("------------------------------\n")
 
-# Extract PSA data
+get_psa_effect_matrix <- function(psa_obj) {
+  if (!is.null(psa_obj$effect)) {
+    as.matrix(psa_obj$effect)
+  } else {
+    as.matrix(psa_obj$effectiveness)
+  }
+}
+
+before_cost_matrix <- as.matrix(before_psa$cost)
+before_effect_matrix <- get_psa_effect_matrix(before_psa)
+after_cost_matrix <- as.matrix(after_psa$cost)
+after_effect_matrix <- get_psa_effect_matrix(after_psa)
+
 before_psa_data <- data.frame(
-  Strategy = rep(before_psa$strategies, each = before_psa$n_sim),
-  Cost = as.vector(as.matrix(before_psa$cost)),
-  Effect = as.vector(as.matrix(before_psa$effectiveness)),
+  Strategy = rep(before_psa$strategies, each = nrow(before_cost_matrix)),
+  Cost = as.vector(before_cost_matrix),
+  Effect = as.vector(before_effect_matrix),
   Snapshot = "Before"
 )
 
 after_psa_data <- data.frame(
-  Strategy = rep(after_psa$strategies, each = after_psa$n_sim),
-  Cost = as.vector(as.matrix(after_psa$cost)),
-  Effect = as.vector(as.matrix(after_psa$effectiveness)),
+  Strategy = rep(after_psa$strategies, each = nrow(after_cost_matrix)),
+  Cost = as.vector(after_cost_matrix),
+  Effect = as.vector(after_effect_matrix),
   Snapshot = "After"
 )
 
-# Combine for overlaid plot
 combined_psa_data <- rbind(before_psa_data, after_psa_data)
 
-# Create side-by-side plots
 plot_before <- ggplot(before_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
   geom_point(alpha = 0.3, size = 1) +
-  labs(title = "Before", x = "Effect (QALYs)", y = "Cost (€)") +
+  labs(title = "Before", x = "Effect (QALYs)", y = "Cost (EUR)") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
 plot_after <- ggplot(after_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
   geom_point(alpha = 0.3, size = 1) +
-  labs(title = "After", x = "Effect (QALYs)", y = "Cost (€)") +
+  labs(title = "After", x = "Effect (QALYs)", y = "Cost (EUR)") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
-# Create overlaid plot
-plot_overlaid <- ggplot(combined_psa_data, aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
+plot_overlaid <- ggplot(combined_psa_data,
+                        aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
   geom_point(alpha = 0.3, size = 1.5) +
   scale_shape_manual(values = c("Before" = 1, "After" = 16)) +
   labs(title = "Before vs After Comparison",
        x = "Effect (QALYs)",
-       y = "Cost (€)") +
+       y = "Cost (EUR)") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
-# Save plots
 output_dir <- here::here("output", "temp")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
