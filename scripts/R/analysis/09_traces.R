@@ -1,3 +1,12 @@
+# Load required packages
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, ggplot2, reshape2)
+
+# Load functions
+source(here::here("scripts/R/functions/model_fun.R"))
+source(here::here("scripts/R/functions/calculate_outcomes.R"))
+
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {
   time_points_length <- length(time_points)
@@ -9,6 +18,13 @@ if (length(time_points) != time_points_length) {
 
 # Generate traces by running the model with return_traces = TRUE
 cat("Generating state occupancy traces for all strategies...\n")
+
+# Save generated trace plots in a predictable location
+plot_dir <- "plots"
+if (!dir.exists(plot_dir)) {
+  cat("Creating 'plots' directory...\n")
+  dir.create(plot_dir, recursive = TRUE)
+}
 
 # Generate traces by running the model once with return_traces = TRUE.
 # model_fun() returns list(results, traces); `traces` is keyed by strategy
@@ -106,8 +122,9 @@ all_strategies_plot <- ggplot(all_strategies_df, aes(x = Year, y = Proportion, f
 print(all_strategies_plot)
 
 # Save the all strategies plot
-cat("Saving all strategies plot as PNG file...\n")
-ggsave("all_strategies_state_occupancy.png", plot = all_strategies_plot, 
+all_strategies_filename <- file.path(plot_dir, "all_strategies_state_occupancy.png")
+cat("Saving all strategies plot as", all_strategies_filename, "...\n")
+ggsave(all_strategies_filename, plot = all_strategies_plot,
        width = 10, height = 8, dpi = 300)
 
 # Create faceted plots for biomarker positive and negative status for each biomarker
@@ -211,25 +228,7 @@ for(biomarker in biomarkers) {
   print(pos_neg_plot)
   
   # Save the biomarker plot
-  filename <- paste0(biomarker, "_biomarker_state_occupancy.png")
+  filename <- file.path(plot_dir, paste0(biomarker, "_biomarker_state_occupancy.png"))
   cat("Saving", biomarker, "biomarker plot as", filename, "...\n")
   ggsave(filename, plot = pos_neg_plot, width = 10, height = 6, dpi = 300)
-}
-
-# Create a directory for plots if it doesn't exist
-if (!dir.exists("plots")) {
-  cat("Creating 'plots' directory...\n")
-  dir.create("plots")
-  
-  # Move files to the plots directory
-  file.copy("all_strategies_state_occupancy.png", "plots/")
-  file.remove("all_strategies_state_occupancy.png")
-  
-  for (biomarker in biomarkers) {
-    filename <- paste0(biomarker, "_biomarker_state_occupancy.png")
-    file.copy(filename, "plots/")
-    file.remove(filename)
-  }
-  
-  cat("All plot files moved to 'plots' directory\n")
 }
