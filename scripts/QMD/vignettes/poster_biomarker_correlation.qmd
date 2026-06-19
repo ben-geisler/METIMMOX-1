@@ -1,0 +1,207 @@
+---
+title: "Poster: Modeling Multiple Biomarkers — Correlation, Prognostic vs Predictive Value"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+# ==============================================================================
+# Vignette supporting the SMDM poster:
+#   "Modeling Multiple Biomarkers in Precision Oncology:
+#    How Ignoring Biomarker Correlations Can Reverse Clinical Conclusions"
+#
+# STANDALONE — re-introduces TLR (a post-randomization mediator that the main
+# economic pipeline deliberately EXCLUDES) only to illustrate the poster's
+# methodological point. Does not modify the main pipeline.
+#
+# Outputs: figs/poster_forest.png, tables/poster_cea.csv,
+#          tables/poster_forest_data.csv
+# ==============================================================================
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = "center", dpi = 300
+)
+knitr::opts_knit$set(root.dir = here::here())
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(here, survival, flexsurv, dplyr, ggplot2, scales, dampack,
+               knitr, kableExtra)
+
+suppressMessages(suppressWarnings({
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  source(here("scripts/R/functions/model_fun.R"))
+  source(here("scripts/R/functions/calculate_outcomes.R"))
+  source(here("scripts/R/functions/prediction_functions.R"))
+}))
+```
+
+```{r cohort, include=FALSE}
+# Common complete-case cohort for all three biomarkers, so single vs joint
+# models are compared on the SAME patients (isolates adjustment, not sample size).
+req <- c("Age","sex","Rx","crp","tlr","tmb_braf","OSwk","Death","PFSwk","Progression")
+d3  <- data[stats::complete.cases(data[, req]), ]
+n3  <- nrow(d3)
+
+bms      <- c("crp","tlr","tmb_braf")
+bm_label <- c(crp = "CRP", tlr = "TLR (mediator)", tmb_braf = "TMB/BRAF")
+dist_for <- list(OS = "weibull", PFS = "lognormal")   # matches para_models AIC choice
+surv_lhs <- list(OS = "Surv(OSwk, Death)", PFS = "Surv(PFSwk, Progression)")
+```
+
+```{r forest-data, include=FALSE}
+# Treatment x biomarker interaction, single-biomarker vs joint model.
+# Parametric AFT time ratio = exp(interaction coef). TR > 1 => experimental
+# treatment extends survival MORE in biomarker-positive (= predictive benefit).
+get_int_row <- function(res, bm) {
+  rn  <- rownames(res)
+  hit <- rn[grepl(":", rn) & grepl(bm, rn) & grepl("Rx", rn)]
+  if (length(hit) != 1) stop("Could not uniquely match interaction term for ", bm)
+  r <- res[hit, ]
+  c(est = r[["est"]], lo = r[["L95%"]], hi = r[["U95%"]])
+}
+
+forest <- list()
+for (ep in c("PFS","OS")) {
+  f_joint <- as.formula(paste0(surv_lhs[[ep]], " ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx"))
+  m_joint <- flexsurvreg(f_joint, data = d3, dist = dist_for[[ep]])
+  for (bm in bms) {
+    f_single <- as.formula(paste0(surv_lhs[[ep]], " ~ Age + sex + Rx*", bm))
+    m_single <- flexsurvreg(f_single, data = d3, dist = dist_for[[ep]])
+    rs <- get_int_row(m_single$res, bm); rj <- get_int_row(m_joint$res, bm)
+    forest[[length(forest)+1]] <- data.frame(endpoint = ep, biomarker = bm_label[[bm]],
+                                              model = "Single-biomarker",
+                                              TR = exp(rs["est"]), lo = exp(rs["lo"]), hi = exp(rs["hi"]))
+    forest[[length(forest)+1]] <- data.frame(endpoint = ep, biomarker = bm_label[[bm]],
+                                              model = "Joint (correlation-adjusted)",
+                                              TR = exp(rj["est"]), lo = exp(rj["lo"]), hi = exp(rj["hi"]))
+  }
+}
+forest_df <- do.call(rbind, forest); rownames(forest_df) <- NULL
+forest_df$endpoint  <- factor(forest_df$endpoint, levels = c("PFS","OS"))
+forest_df$biomarker <- factor(forest_df$biomarker, levels = c("CRP","TMB/BRAF","TLR (mediator)"))
+forest_df$model     <- factor(forest_df$model, levels = c("Single-biomarker","Joint (correlation-adjusted)"))
+```
+
+# Forest plot: single-biomarker vs joint modelling
+
+```{r forest-plot, fig.width=10, fig.height=5.2}
+#| fig-cap: "Treatment x biomarker interaction (survival time ratio) for each candidate biomarker, estimated in single-biomarker models versus one joint correlation-adjusted model, in the same n=65 cohort. TR > 1 favours adding immunotherapy in biomarker-positive patients; the dashed line is the null. Single-biomarker estimates are systematically further from the null; joint estimates shrink toward it (most strikingly TMB/BRAF on OS: 1.47 -> 1.06). None reaches significance at this sample size."
+p_forest <- ggplot(forest_df, aes(x = TR, y = biomarker, colour = model, shape = model)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey45") +
+  geom_pointrange(aes(xmin = lo, xmax = hi),
+                  position = position_dodge(width = 0.6), linewidth = 0.7, fatten = 3) +
+  facet_wrap(~ endpoint, ncol = 2) +
+  scale_x_log10(breaks = c(0.5, 1, 2, 4, 8)) +
+  scale_colour_manual(values = c("Single-biomarker" = "#C0392B",
+                                 "Joint (correlation-adjusted)" = "#1F4E79")) +
+  labs(
+    x = "Treatment x biomarker interaction\n(survival time ratio; >1 favours adding immunotherapy in biomarker-positive)",
+    y = NULL, colour = NULL, shape = NULL,
+    title = "Single-biomarker modelling overstates predictive value",
+    subtitle = sprintf("Parametric AFT interaction estimates, METIMMOX (n = %d complete cases on all three biomarkers)", n3)
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        strip.text = element_text(face = "bold"))
+print(p_forest)
+```
+
+```{r save-forest, include=FALSE}
+figs_dir <- here("figs"); if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+tables_dir <- here("tables"); if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+
+ggsave(here("figs", "poster_forest.png"), p_forest, width = 10, height = 5.2, dpi = 300, bg = "white")
+write.csv(forest_df, here("tables", "poster_forest_data.csv"), row.names = FALSE)
+```
+
+# Three-strategy cost-effectiveness analysis
+
+```{r cea, include=FALSE}
+# Override strategy/biomarker sets so model_fun + predictions include TLR.
+get_strategies <- function() c("control","crp","tlr","tmb_braf")
+get_biomarkers <- function() c("crp","tlr","tmb_braf")
+
+m_os3  <- flexsurvreg(Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "weibull")
+m_pfs3 <- flexsurvreg(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "lognormal")
+
+prev <- sapply(bms, function(b) mean(as.numeric(as.character(d3[[b]]))))
+strategies_df3 <- data.frame(id = c("control", bms),
+                             prevalence = c(1, prev[bms]), stringsAsFactors = FALSE)
+
+preds3 <- generate_population_averaged_predictions(
+  models = list(os = m_os3, pfs = m_pfs3),
+  strategies_df = strategies_df3, data_complete = d3,
+  time_points = seq(0, time_horizon, by = 1))
+
+mk <- function(side, ep)
+  setNames(lapply(bms, function(b) preds3[[b]][[paste0("biomarker_", side)]][[ep]]),
+           paste0(bms, if (side == "positive") "_pos_" else "_neg_", toupper(ep)))
+p_os3 <- c(list(control_OS = preds3$control$os), mk("positive","os"), mk("negative","os"),
+           setNames(lapply(bms, function(b) preds3[[b]]$os), paste0(bms, "_weighted_OS")))
+p_pfs3 <- c(list(control_PFS = preds3$control$pfs), mk("positive","pfs"), mk("negative","pfs"),
+            setNames(lapply(bms, function(b) preds3[[b]]$pfs), paste0(bms, "_weighted_PFS")))
+
+l_params_base3 <- l_params_base
+l_params_base3$p_os  <- p_os3
+l_params_base3$p_pfs <- p_pfs3
+l_params_base3$p_crp      <- prev[["crp"]]
+l_params_base3$p_tlr      <- prev[["tlr"]]
+l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
+
+res3  <- suppressWarnings(model_fun(l_params_base3, determpsa = "det"))
+icer3 <- dampack::calculate_icers(cost = res3$Cost, effect = res3$Effect, strategies = res3$Strategy)
+
+label_strategy <- c(control = "Standard of Care", crp = "CRP-guided",
+                    tlr = "TLR-guided", tmb_braf = "TMB/BRAF-guided")
+cea_tbl <- as.data.frame(icer3) %>%
+  mutate(Strategy = label_strategy[as.character(Strategy)],
+         NMB = Effect * WTP - Cost)
+write.csv(cea_tbl, here("tables", "poster_cea.csv"), row.names = FALSE)
+```
+
+```{r cea-display}
+fmt_eur <- function(x) ifelse(is.na(x) | !is.finite(x), "--",
+                              scales::dollar(x, prefix = "EUR ", accuracy = 1))
+cea_display <- cea_tbl %>%
+  transmute(
+    Strategy,
+    Cost = fmt_eur(Cost),
+    QALYs = sprintf("%.3f", Effect),
+    NMB = fmt_eur(NMB),
+    Status = recode(Status, ND = "On frontier / optimal", D = "Dominated", ED = "Ext. dominated",
+                    .default = Status)
+  )
+
+kable(cea_display,
+      caption = sprintf("Three-strategy cost-effectiveness (joint model, n = %d, WTP = EUR %s/QALY)",
+                        n3, format(WTP, big.mark = ",")),
+      format = "html", align = c("l","r","r","r","l")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) %>%
+  footnote(general = c(
+    "Comprehensive joint model: OS/PFS ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx.",
+    "TLR is a post-randomization mediator, included here only to illustrate the poster point.",
+    sprintf("Prevalence: CRP %.0f%%, TLR %.0f%%, TMB/BRAF %.0f%%.",
+            100*prev[["crp"]], 100*prev[["tlr"]], 100*prev[["tmb_braf"]]),
+    "Utilities: CORRECT trial (UTILITY_SOURCE = 1). All guided strategies are dominated by standard care."),
+    general_title = "Notes: ")
+```
+
+---
+
+Figure saved to `figs/poster_forest.png`.
+Tables saved to `tables/poster_cea.csv` and `tables/poster_forest_data.csv`.
