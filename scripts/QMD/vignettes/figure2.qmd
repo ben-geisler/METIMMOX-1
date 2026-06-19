@@ -93,6 +93,7 @@ for (i in seq_len(nrow(dsa_ranges))) {
 }
 
 tornado_wide <- tornado_data %>%
+  dplyr::select(Parameter, Value, INMB_Diff) %>%
   tidyr::pivot_wider(names_from = Value, values_from = INMB_Diff) %>%
   mutate(Range = pmax(abs(min), abs(max))) %>%
   arrange(Range)

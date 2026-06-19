@@ -42,6 +42,7 @@ pacman::p_load(here, knitr, kableExtra, dplyr, scales, ggplot2)
 suppressMessages(suppressWarnings({
   source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
   source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
   source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
 }))
 

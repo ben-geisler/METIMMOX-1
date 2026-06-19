@@ -10,25 +10,13 @@ if (length(time_points) != time_points_length) {
 # Generate traces by running the model with return_traces = TRUE
 cat("Generating state occupancy traces for all strategies...\n")
 
-# Initialize traces list
-traces <- list()
-
-# Generate traces for each strategy
-for (strategy in strategies) {
-  cat(paste0("  Generating traces for ", strategy, "...\n"))
-  traces[[strategy]] <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
-                                  determpsa = "det", return_traces = TRUE, sim_idx = NULL)
-}
-
-# Generate traces for biomarker subgroups
-for (biomarker in biomarkers) {
-  cat(paste0("  Generating traces for ", biomarker, " subgroups...\n"))
-  traces[[biomarker]] <- list()
-  traces[[biomarker]]$positive <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
-                                           determpsa = "det", return_traces = TRUE, sim_idx = NULL)
-  traces[[biomarker]]$negative <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
-                                           determpsa = "det", return_traces = TRUE, sim_idx = NULL)
-}
+# Generate traces by running the model once with return_traces = TRUE.
+# model_fun() returns list(results, traces); `traces` is keyed by strategy
+# (control, crp, tmb_braf) with weighted p_pf/p_p/p_d, and each biomarker entry
+# additionally carries $positive/$negative subgroup traces.
+model_output <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                          determpsa = "det", return_traces = TRUE, sim_idx = NULL)
+traces <- model_output$traces
 
 cat("Traces generated successfully.\n")
 

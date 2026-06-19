@@ -140,8 +140,8 @@ source("scripts/R/analysis/13_EVPPIs.R")  # Expected value of perfect partial in
 
 # Extended analyses (optional)
 source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
-source("scripts/R/analysis/14b_scenario_preview.R")  # Optional: quick scenario preview (500 iterations)
-source("scripts/R/analysis/15_save_snapshot.R")    # Save single-model results for impact assessment
+source("scripts/R/analysis/14b_scenario_preview.R")  # Optional: redundant preview (14's full cache suffices)
+# 15_save_snapshot.R: optional, interactive, standalone -- run via Rscript with <issue#> <baseline|fixed>, not sourced
 ```
 
 ### Package Installation
@@ -159,23 +159,22 @@ pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape
 
 ### Rendering Quarto Reports
 
-The project includes comprehensive Quarto reports in `scripts/QMD/report/` that generate both PDF and GFM (GitHub-Flavored Markdown) outputs. Each render produces a `.pdf` and a `.md` file in the same directory. The agent can read the `.md` files directly (e.g., `scripts/QMD/report/clinical_effectiveness.md`).
+Output format depends on report type, and this changes the render command:
+
+- **Clinical/DAG/descriptive** reports (`clinical_effectiveness`, `dag`, `dag_associations`, `biomarker_distributions`) declare `format:` with both `pdf:` and `gfm:` and render cleanly to **both** a `.pdf` and a readable `.md` (e.g. `scripts/QMD/report/clinical_effectiveness.md`).
+- **Economic** reports (`CEA`, `OWSA`, `EVPPIs`, `scenario_effect`, `biosimilar_scenario`, `enriched_population`, `biomarker_decomposition`, `input_parameters`, `para_models`) plus the survival technical docs use kableExtra HTML tables, so their **GFM pass fails** (`Functions that produce HTML output found in document targeting commonmark output`) and aborts the whole render, leaving a STALE `.pdf`. Render these with `--to pdf` and verify the text with `pdftotext` (no `.md` is produced).
 
 ```bash
-# Render individual reports (from project root)
-quarto render scripts/QMD/report/CEA.qmd
+# Clinical/DAG report -> PDF + MD (read the .md directly)
 quarto render scripts/QMD/report/clinical_effectiveness.qmd
-quarto render scripts/QMD/report/para_models.qmd
-quarto render scripts/QMD/report/OWSA.qmd
-quarto render scripts/QMD/report/EVPPIs.qmd
-quarto render scripts/QMD/report/input_parameters.qmd
-quarto render scripts/QMD/report/scenario_effect.qmd
-quarto render scripts/QMD/report/biosimilar_scenario.qmd
-quarto render scripts/QMD/report/enriched_population.qmd
 
-# Render all reports at once
-quarto render scripts/QMD/report/
+# Economic report -> PDF only, then verify content as text
+quarto render scripts/QMD/report/CEA.qmd --to pdf
+pdftotext scripts/QMD/report/CEA.pdf - | grep -ciE '\btlr\b'   # economic reports: expect 0
 ```
+
+- Do NOT run `quarto render scripts/QMD/report/` (whole directory) — it fails on every economic report's GFM pass. Render economic reports one at a time with `--to pdf`.
+- `pdftotext` (poppler) is at `/mingw64/bin`; `pdftoppm` (needed for the Read tool's visual PDF rendering) is NOT installed — verify PDFs with `pdftotext`, not by reading them directly.
 
 **Prerequisites for rendering**:
 - All analysis scripts (02-13) must be run first to generate required data objects
@@ -202,11 +201,19 @@ source("scripts/R/analysis/12_PSA.R")
 source("scripts/R/analysis/13_EVPPIs.R")
 source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Optional: scenario analysis
 source("scripts/R/analysis/14b_scenario_preview.R")  # Optional: quick scenario preview (500 iterations)
-source("scripts/R/analysis/15_save_snapshot.R")    # Optional: save single-model snapshot
+# 15_save_snapshot.R: optional, interactive, standalone -- NOT sourced here.
+# Run separately: Rscript scripts/R/analysis/15_save_snapshot.R <issue#> <baseline|fixed>
 
 # 2. Render reports (from terminal/command line)
 # quarto render scripts/QMD/report/
 ```
+
+**Running the pipeline from a clean / non-interactive session** (e.g. driving it with `Rscript`):
+- Attach packages first — only `01_data_prep.R` calls `p_load`, so `pacman::p_load(...)` the full set above before sourcing, or `09_traces.R` fails with `could not find function "ggplot"`.
+- `09_traces.R` assumes `model_fun()` is already loaded (scripts 10-15 source it themselves); source `model_fun.R`, `calculate_outcomes.R`, `prediction_functions.R` before it.
+- Wrap the source loop in a function — `02`/`03` call `rm(list=ls())` on the global env, which wipes a top-level driver's own variables (`source()` still runs each script in globalenv via `local=FALSE`).
+- `08_sampling.R` loads `sampling_models_n{n}_full.rds` if present (fast); only `12_PSA.R` (~20 min) and `14_scenario_EVPPIs.R` (~40 min) are slow at n=5000.
+- `14b_scenario_preview.R` is a redundant fallback (re-samples internally at full `n_samples`) — skip it; `14`'s full scenario cache is what `biosimilar_scenario.qmd` uses.
 
 Or render reports individually in the desired order:
 ```bash
@@ -739,7 +746,7 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 ### Components
 
-- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves single-model snapshots for the joint economic survival model
+- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves single-model snapshots for the joint economic survival model. **Interactive and standalone, NOT part of the cache pipeline** — it reads the issue number and `baseline|fixed` from stdin, so run it as `Rscript scripts/R/analysis/15_save_snapshot.R <issue#> <baseline|fixed>` (sourcing it non-interactively just errors on the empty prompt). Optional; not required to regenerate report caches.
 - **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Utility functions for snapshot management
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots to quantify changes
 - **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Report documenting bug fix impacts

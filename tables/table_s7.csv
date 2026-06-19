@@ -1,9 +1,31 @@
-"model_label","scenario_id","param_group","evppi_per_patient","evppi_pop_millions","scenario_display","model_display"
-"joint","base","Drug costs",0,0,"Base case (WTP 51k)","Model A"
-"joint","base","Other costs",0,0,"Base case (WTP 51k)","Model A"
-"joint","base","Test costs",0,0,"Base case (WTP 51k)","Model A"
-"joint","base","Utilities",0,0,"Base case (WTP 51k)","Model A"
-"joint","s1_decreased_nivo","Drug costs",0,0,"Biosimilar pricing","Model A"
-"joint","s1_decreased_nivo","Other costs",0,0,"Biosimilar pricing","Model A"
-"joint","s1_decreased_nivo","Test costs",0,0,"Biosimilar pricing","Model A"
-"joint","s1_decreased_nivo","Utilities",0,0,"Biosimilar pricing","Model A"
+"scenario_name","wtp","param_group","EVPPI","Population_EVPPI_M"
+"Base Case",51000,"Biomarker prevalence",0,0
+"Base Case",51000,"Drug costs",74.2522740558561,0.926290286439675
+"Base Case",51000,"Other costs",93.5464287933937,1.16698309141695
+"Base Case",51000,"Test costs",296.386651543879,3.69739620565632
+"Base Case",51000,"Utilities",334.579113149666,4.17384364986589
+"Decreased Nivolumab Cost",51000,"Biomarker prevalence",23.6036804595278,0.294453741813208
+"Decreased Nivolumab Cost",51000,"Drug costs",7.49587383804464,0.0935103363882824
+"Decreased Nivolumab Cost",51000,"Other costs",417.718343473491,5.21099789800512
+"Decreased Nivolumab Cost",51000,"Test costs",350.861313736626,4.37696260396308
+"Decreased Nivolumab Cost",51000,"Utilities",731.413569730801,9.12431698054339
+"WTP €100,000",1e+05,"Biomarker prevalence",0,0
+"WTP €100,000",1e+05,"Drug costs",58.2754846391617,0.726981308588794
+"WTP €100,000",1e+05,"Other costs",81.3020692297869,1.01423583253957
+"WTP €100,000",1e+05,"Test costs",479.777750072739,5.98518328486413
+"WTP €100,000",1e+05,"Utilities",656.191011222472,8.18592248484094
+"WTP €100,000 + Decreased Nivolumab",1e+05,"Biomarker prevalence",302.645606343562,3.77547609085755
+"WTP €100,000 + Decreased Nivolumab",1e+05,"Drug costs",1059.69742738197,13.2196278973305
+"WTP €100,000 + Decreased Nivolumab",1e+05,"Other costs",789.058025942461,9.84342626756389
+"WTP €100,000 + Decreased Nivolumab",1e+05,"Test costs",968.626248159242,12.0835233165448
+"WTP €100,000 + Decreased Nivolumab",1e+05,"Utilities",3690.43701494692,46.0378621817194
+"WTP €150,000",150000,"Biomarker prevalence",0,0
+"WTP €150,000",150000,"Drug costs",75.1180985943356,0.937091367887381
+"WTP €150,000",150000,"Other costs",120.038142735895,1.49746478518458
+"WTP €150,000",150000,"Test costs",740.315473473631,9.23536741061643
+"WTP €150,000",150000,"Utilities",984.366417419194,12.2798804797132
+"WTP €150,000 + Decreased Nivolumab",150000,"Biomarker prevalence",198.311195318034,2.47391391376314
+"WTP €150,000 + Decreased Nivolumab",150000,"Drug costs",0,0
+"WTP €150,000 + Decreased Nivolumab",150000,"Other costs",88.3829352582106,1.10256898469025
+"WTP €150,000 + Decreased Nivolumab",150000,"Test costs",267.152042411588,3.33269714678668
+"WTP €150,000 + Decreased Nivolumab",150000,"Utilities",1863.38133101026,23.2455106432084

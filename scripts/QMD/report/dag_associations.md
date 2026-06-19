@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-04-03
+2026-06-18
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -306,6 +306,6 @@ future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-04-03  
+**Report completed on:** 2026-06-18  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

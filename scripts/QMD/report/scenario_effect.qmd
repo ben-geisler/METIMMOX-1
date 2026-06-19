@@ -97,7 +97,8 @@ if (is.null(scenario_cache)) {
     scenario_display,
     booktabs = TRUE,
     align = "l",
-    caption = paste0("Scenario definitions loaded from ", cache_source)
+    caption = paste0("Scenario definitions loaded from ",
+                     gsub("_", "\\\\_", cache_source))
   ) %>%
     kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 }
