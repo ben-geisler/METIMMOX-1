@@ -19,11 +19,11 @@ if (length(time_points) != time_points_length) {
 # Generate traces by running the model with return_traces = TRUE
 cat("Generating state occupancy traces for all strategies...\n")
 
-# Save generated trace plots in a predictable location
-plot_dir <- "plots"
-if (!dir.exists(plot_dir)) {
-  cat("Creating 'plots' directory...\n")
-  dir.create(plot_dir, recursive = TRUE)
+# Save generated trace figures in a predictable location
+figs_dir <- "figs"
+if (!dir.exists(figs_dir)) {
+  cat("Creating 'figs' directory...\n")
+  dir.create(figs_dir, recursive = TRUE)
 }
 
 # Generate traces by running the model once with return_traces = TRUE.
@@ -122,7 +122,7 @@ all_strategies_plot <- ggplot(all_strategies_df, aes(x = Year, y = Proportion, f
 print(all_strategies_plot)
 
 # Save the all strategies plot
-all_strategies_filename <- file.path(plot_dir, "all_strategies_state_occupancy.png")
+all_strategies_filename <- file.path(figs_dir, "traces_all_strategies_state_occupancy.png")
 cat("Saving all strategies plot as", all_strategies_filename, "...\n")
 ggsave(all_strategies_filename, plot = all_strategies_plot,
        width = 10, height = 8, dpi = 300)
@@ -228,7 +228,7 @@ for(biomarker in biomarkers) {
   print(pos_neg_plot)
   
   # Save the biomarker plot
-  filename <- file.path(plot_dir, paste0(biomarker, "_biomarker_state_occupancy.png"))
+  filename <- file.path(figs_dir, paste0("traces_", biomarker, "_biomarker_state_occupancy.png"))
   cat("Saving", biomarker, "biomarker plot as", filename, "...\n")
   ggsave(filename, plot = pos_neg_plot, width = 10, height = 6, dpi = 300)
 }
