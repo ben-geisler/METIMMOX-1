@@ -268,6 +268,8 @@ Control: ~ Age + sex
 
 There is no model-structure switch or multi-structure comparison layer. The economic model is the joint CRP + TMB/BRAF formula defined in [model_configs.R](scripts/R/functions/model_configs.R).
 
+**Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [06_parametric_survival_analysis.R](scripts/R/analysis/06_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained as historical descriptions; they do not define the executable model-selection procedure or the current single-model structure.
+
 **When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, `USE_BOTH_MODELS`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
 
 ### Biomarker Strategies
@@ -484,7 +486,7 @@ Each report has specific dependencies:
 **[para_models.qmd](scripts/QMD/report/para_models.qmd)** - Parametric Survival Modeling
 - **Sources**: 02, 03, 06
 - **Shows**: Survival model fits, AIC/BIC comparisons, goodness-of-fit diagnostics
-- **Models displayed**: Best-fit model (gamma) AND Weibull PH model for reference (issue #68)
+- **Models displayed**: Ordering-constrained, minimum-combined-AIC pair (currently gamma for OS and gamma for PFS) AND Weibull PH models for reference (issue #68)
 - **Tables include**: Model parameter exponents for clinical interpretation
 - **Note**: Economic survival fits use the single joint CRP + TMB/BRAF model
 

@@ -63,7 +63,9 @@ extract_model_coefs <- function(fit, endpoint, distribution) {
 
 # Overview
 
-This technical appendix lists every fitted parametric distribution for the single joint economic survival model.
+This technical appendix lists every fitted parametric distribution for the single joint economic survival model. Overall survival (OS) and progression-free survival (PFS) are not selected independently. The base-case pair is the pair with the lowest combined AIC among candidates that preserve OS $\geq$ PFS for control and every economic biomarker subgroup at every weekly time point over the modeled horizon.
+
+With the current data and 10-year horizon, this ordering-constrained procedure selects **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained only as historical descriptions; they do not define the executable selection procedure or the current single-model structure.
 
 ```{r formula-table}
 formula_df <- data.frame(
@@ -135,7 +137,7 @@ knitr::kable(
   kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 8)
 ```
 
-# Best-Fit Summary
+# Ordering-Constrained Selection Summary
 
 ```{r best-fit}
 best_fit <- data.frame(
@@ -146,12 +148,14 @@ best_fit <- data.frame(
 )
 
 knitr::kable(best_fit, booktabs = TRUE, digits = 2,
-             caption = "Best-fitting parametric distributions by AIC") %>%
+             caption = "Selected minimum-combined-AIC pair satisfying OS >= PFS") %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
+
+The pair is selected jointly. Consequently, an endpoint's selected family need not be its independently lowest-AIC family. The full candidate-pair audit and the combined-AIC penalty relative to independent endpoint selection are stored in `models$ordered_selection` and `models$best_fit$ordering_aic_penalty`, respectively.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 5.0
