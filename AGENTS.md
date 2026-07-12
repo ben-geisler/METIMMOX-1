@@ -254,10 +254,12 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `n_samples` | 5000 | Resampling/PSA sample size |
 | `dr` | 0.04 | Discount rate (4%) |
 | `USE_BOTH_MODELS` | 0 | 0=full economic survival model only, 1=also fit reduced age/sex comparison where supported |
-| `UTILITY_SOURCE` | 0 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59) |
+| `UTILITY_SOURCE` | 1 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59) |
 | `annual_incidence_norway` | 1500 | Annual eligible MSS/pMMR mCRC patients in Norway |
 | `research_horizon_years` | 10 | Research value time horizon (years) for population EVPPI |
 | `discount_rate_research` | 0.035 | Discount rate for research benefits (3.5%) |
+
+**Utility-source provenance**: Reported economic results were generated with `UTILITY_SOURCE = 1` (CORRECT trial utilities) and correspond to the `*_correct.rds` / `*_correct.RData` cache files; the manuscript's IPD values (approximately 0.91/0.90) are retained as a different, historical utility base case.
 
 **Single economic survival model**:
 ```r
