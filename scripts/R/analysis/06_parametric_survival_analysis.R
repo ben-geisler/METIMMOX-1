@@ -293,7 +293,8 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
     models = best_models,
     strategies_df = strategies_df,
     data_complete = data_complete,
-    time_points = time_points
+    time_points = time_points,
+    prevalences = setNames(strategies_df$prevalence, strategies_df$id)
   )
 
   basecase_ordering_check <- check_population_survival_ordering(predictions)

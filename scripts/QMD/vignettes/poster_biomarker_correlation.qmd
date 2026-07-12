@@ -156,7 +156,8 @@ strategies_df3 <- data.frame(id = c("control", bms),
 preds3 <- generate_population_averaged_predictions(
   models = list(os = m_os3, pfs = m_pfs3),
   strategies_df = strategies_df3, data_complete = d3,
-  time_points = seq(0, time_horizon, by = 1))
+  time_points = seq(0, time_horizon, by = 1),
+  prevalences = prev)
 
 mk <- function(side, ep)
   setNames(lapply(bms, function(b) preds3[[b]][[paste0("biomarker_", side)]][[ep]]),

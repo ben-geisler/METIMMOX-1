@@ -205,7 +205,8 @@ if (has_models) {
         models = test_models,
         strategies_df = strategies_df,
         data_complete = data_complete,
-        time_points = time_points
+        time_points = time_points,
+        prevalences = setNames(strategies_df$prevalence, strategies_df$id)
       )
 
       # Build parameter list with new predictions

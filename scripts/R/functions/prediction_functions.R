@@ -38,6 +38,7 @@ extract_all_survival_probabilities <- function(pred_object) {
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,
                                                      data_complete, time_points,
+                                                     prevalences,
                                                      quiet = FALSE) {
 
   # Extract treatment level references
@@ -85,6 +86,21 @@ generate_population_averaged_predictions <- function(models, strategies_df,
     get_biomarkers()
   } else {
     c("crp", "tmb_braf")  # Fallback
+  }
+
+  # Prevalence is an economic-model input and must use the same canonical
+  # cohort definition as l_params_base. Do not infer it from data_complete,
+  # which is restricted to complete cases for survival-model prediction.
+  if (is.null(names(prevalences)) ||
+      !all(biomarkers_to_predict %in% names(prevalences))) {
+    stop("prevalences must be a named vector containing: ",
+         paste(biomarkers_to_predict, collapse = ", "))
+  }
+  canonical_prevalences <- as.numeric(prevalences[biomarkers_to_predict])
+  names(canonical_prevalences) <- biomarkers_to_predict
+  if (any(!is.finite(canonical_prevalences)) ||
+      any(canonical_prevalences < 0 | canonical_prevalences > 1)) {
+    stop("All canonical prevalences must be finite probabilities between 0 and 1.")
   }
 
   # Loop through each biomarker strategy
@@ -163,8 +179,8 @@ generate_population_averaged_predictions <- function(models, strategies_df,
     # POPULATION-WEIGHTED AVERAGE: Combine using prevalence
     # -----------------------------------------------------------------------
 
-    # Calculate prevalence (proportion biomarker-positive)
-    prevalence <- mean(as.numeric(as.character(data_complete[[biomarker_name]])), na.rm = TRUE)
+    # Use the canonical full-cohort prevalence supplied by the caller.
+    prevalence <- canonical_prevalences[[biomarker_name]]
 
     # Weighted average
     weighted_os <- prevalence * biomarker_pos_os + (1 - prevalence) * biomarker_neg_os
@@ -299,11 +315,13 @@ check_population_survival_ordering <- function(predictions, tolerance = 0) {
 #' @param strategies_df Data frame with strategy definitions
 #' @param data_complete Complete data with all covariates
 #' @param time_points Vector of time points for predictions
+#' @param prevalences Named vector of canonical full-cohort biomarker prevalences
 #' @return Predictions list with same structure as generate_population_averaged_predictions()
 generate_population_averaged_predictions_multimodel <- function(biomarker_models,
                                                                   strategies_df,
                                                                   data_complete,
                                                                   time_points,
+                                                                  prevalences,
                                                                   control_models = NULL) {
 
   # Extract treatment level references
@@ -362,6 +380,18 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
     get_biomarkers()
   } else {
     c("crp", "tmb_braf")  # Fallback
+  }
+
+  if (is.null(names(prevalences)) ||
+      !all(biomarkers_to_predict %in% names(prevalences))) {
+    stop("prevalences must be a named vector containing: ",
+         paste(biomarkers_to_predict, collapse = ", "))
+  }
+  canonical_prevalences <- as.numeric(prevalences[biomarkers_to_predict])
+  names(canonical_prevalences) <- biomarkers_to_predict
+  if (any(!is.finite(canonical_prevalences)) ||
+      any(canonical_prevalences < 0 | canonical_prevalences > 1)) {
+    stop("All canonical prevalences must be finite probabilities between 0 and 1.")
   }
 
   for (biomarker_name in biomarkers_to_predict) {
@@ -440,8 +470,8 @@ generate_population_averaged_predictions_multimodel <- function(biomarker_models
     # POPULATION-WEIGHTED AVERAGE: Combine using prevalence
     # -----------------------------------------------------------------------
 
-    # Calculate prevalence (proportion biomarker-positive)
-    prevalence <- mean(as.numeric(as.character(data_complete[[biomarker_name]])), na.rm = TRUE)
+    # Use the canonical full-cohort prevalence supplied by the caller.
+    prevalence <- canonical_prevalences[[biomarker_name]]
 
     # Weighted average
     weighted_os <- prevalence * biomarker_pos_os + (1 - prevalence) * biomarker_neg_os

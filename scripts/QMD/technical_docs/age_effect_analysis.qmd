@@ -53,7 +53,8 @@ mean_age_predictions <- generate_population_averaged_predictions(
   models = list(os = models$best_fit$os, pfs = models$best_fit$pfs),
   strategies_df = strategies_df,
   data_complete = mean_age_data,
-  time_points = time_points
+  time_points = time_points,
+  prevalences = setNames(strategies_df$prevalence, strategies_df$id)
 )
 
 strategy_label <- function(x) {
