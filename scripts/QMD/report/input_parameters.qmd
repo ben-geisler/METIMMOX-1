@@ -129,7 +129,8 @@ cost_table <- data.frame(
     "Nivolumab per administration",
     "FLOX per administration",
     "CT scan",
-    "Blood test",
+    "Routine blood monitoring",
+    "CRP biomarker test",
     "NGS test",
     "Visit",
     "Baseline other cost",
@@ -138,13 +139,13 @@ cost_table <- data.frame(
   ),
   Symbol = c(
     "c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-    "c_test_NGS", "c_other_visit", "c_other_baseline",
+    "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
     "c_other_follow", "c_other_last"
   ),
   Base_Case = c(
     l_params_base$c_drug_nivo, l_params_base$c_drug_FLOX,
     l_params_base$c_test_CT, l_params_base$c_test_blood,
-    l_params_base$c_test_NGS, l_params_base$c_other_visit,
+    l_params_base$c_test_CRP, l_params_base$c_test_NGS, l_params_base$c_other_visit,
     l_params_base$c_other_baseline, l_params_base$c_other_follow,
     l_params_base$c_other_last
   ),

@@ -38,7 +38,7 @@ suppressMessages(suppressWarnings({
 ```
 
 ```{r run-dsa, include=FALSE}
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
               "c_test_blood", "c_other_visit", "c_other_baseline",
               "c_other_follow", "c_other_last", "u_np", "u_p",
               "p_crp", "p_tmb_braf")
@@ -75,6 +75,12 @@ for (i in seq_len(nrow(dsa_ranges))) {
   for (value_type in c("min", "max")) {
     params_varied <- l_params_base
     params_varied[[param_name]] <- dsa_ranges[[value_type]][i]
+    if (param_name == "c_test_CRP") {
+      params_varied$c_test_biomarker$crp <- params_varied$c_test_CRP
+    }
+    if (param_name == "c_test_NGS") {
+      params_varied$c_test_biomarker$tmb_braf <- params_varied$c_test_NGS
+    }
 
     result <- model_fun(params_varied)
     result$NMB <- result$Effect * WTP - result$Cost
@@ -101,6 +107,7 @@ tornado_wide <- tornado_data %>%
 parameter_labels <- c(
   c_drug_nivo = "Nivolumab cost",
   c_drug_FLOX = "FLOX cost",
+  c_test_CRP = "CRP test cost",
   c_test_NGS = "NGS test cost",
   c_test_CT = "CT scan cost",
   c_test_blood = "Blood test cost",

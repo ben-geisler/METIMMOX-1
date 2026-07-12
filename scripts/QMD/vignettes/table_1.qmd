@@ -61,7 +61,7 @@ table_1 <- data.frame(
   Category = c(
     rep("Biomarker prevalences", 2),
     rep("Health-state utilities", 2),
-    rep("Treatment costs (\u20AC)", 3),
+    rep("Treatment costs (\u20AC)", 4),
     rep("Other costs (\u20AC)", 2),
     rep("Structural parameters", 2)
   ),
@@ -72,6 +72,7 @@ table_1 <- data.frame(
     "Post-progression",
     "Nivolumab per cycle",
     "FLOX per cycle",
+    "CRP testing",
     "NGS testing",
     "Monitoring per cycle",
     "End-of-life",
@@ -85,6 +86,7 @@ table_1 <- data.frame(
     sprintf("%.2f", l_params_base$u_p),
     sprintf("\u20AC%s", format(round(l_params_base$c_drug_nivo), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_drug_FLOX), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_test_CRP), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_test_NGS), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_test_CT), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_other_last), big.mark = ",")),
@@ -107,6 +109,9 @@ table_1 <- data.frame(
             format(round(l_params_base$c_drug_FLOX * (1 - DSA_mult)), big.mark = ","),
             format(round(l_params_base$c_drug_FLOX * (1 + DSA_mult)), big.mark = ",")),
     sprintf("%s\u2013%s",
+            format(round(l_params_base$c_test_CRP * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_test_CRP * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
             format(round(l_params_base$c_test_NGS * (1 - DSA_mult)), big.mark = ","),
             format(round(l_params_base$c_test_NGS * (1 + DSA_mult)), big.mark = ",")),
     sprintf("%s\u2013%s",
@@ -121,14 +126,14 @@ table_1 <- data.frame(
   Distribution = c(
     "Beta", "Beta",
     "Beta", "Beta",
-    "Gamma", "Gamma", "Gamma",
+    "Gamma", "Gamma", "Gamma", "Gamma",
     "Gamma", "Gamma",
     "Fixed", "Fixed"
   ),
   Source = c(
     "METIMMOX", "METIMMOX",
     "METIMMOX EQ-5D", "METIMMOX EQ-5D",
-    "NoMA", "NoMA", "Local",
+    "NoMA", "NoMA", "Local", "Local",
     "Ref 27", "Ref 28",
     "NoMA guidelines", ""
   ),
@@ -143,6 +148,7 @@ table_1 <- data.frame(
     "Danish tariff",
     "40% discount",
     "",
+    "CRP only",
     "TMB/BRAF only",
     "CT scans",
     "",

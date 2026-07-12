@@ -19,7 +19,7 @@ if (length(time_points) != time_points_length) {
 }
 
 # Define parameters to vary in sensitivity analysis (matches EVPPI parameters)
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
               "c_test_blood", "c_other_visit", "c_other_baseline",
               "c_other_follow", "c_other_last", "u_np", "u_p",
               "p_crp", "p_tmb_braf")
@@ -56,7 +56,7 @@ for (param in prevalence_params) {
 }
 
 # Ensure cost parameters are non-negative (Issue #48)
-cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS", "c_test_CT",
+cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
                  "c_test_blood", "c_other_visit", "c_other_baseline",
                  "c_other_follow", "c_other_last")
 for (param in cost_params) {
@@ -116,9 +116,13 @@ for (i in 1:nrow(dsa_ranges)) {
   # Create parameter sets for min and max values
   params_min <- dsa_basecase
   params_min[[param_name]] <- param_min
+  if (param_name == "c_test_CRP") params_min$c_test_biomarker$crp <- param_min
+  if (param_name == "c_test_NGS") params_min$c_test_biomarker$tmb_braf <- param_min
   
   params_max <- dsa_basecase
   params_max[[param_name]] <- param_max
+  if (param_name == "c_test_CRP") params_max$c_test_biomarker$crp <- param_max
+  if (param_name == "c_test_NGS") params_max$c_test_biomarker$tmb_braf <- param_max
   
   # Run model with min value
   result_min <- model_fun(params_min)

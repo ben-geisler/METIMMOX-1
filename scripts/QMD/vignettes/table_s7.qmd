@@ -48,7 +48,7 @@ if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
   evppi_grouped <- evppi_all %>%
     mutate(param_group = case_when(
       parameter %in% c("c_drug_nivo", "c_drug_FLOX") ~ "Drug costs",
-      parameter %in% c("c_test_NGS", "c_test_CT", "c_test_blood") ~ "Test costs",
+      parameter %in% c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood") ~ "Test costs",
       parameter %in% c("c_other_visit", "c_other_baseline",
                        "c_other_follow", "c_other_last") ~ "Other costs",
       parameter %in% c("u_np", "u_p") ~ "Utilities",

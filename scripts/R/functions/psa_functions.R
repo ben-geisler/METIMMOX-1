@@ -79,6 +79,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     for (param_name in names(param_distributions)) {
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
+    # Keep the data-driven diagnostic-cost lookup aligned with sampled scalars.
+    sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
+    sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
     
     # Use withCallingHandlers to capture warnings, tryCatch for errors
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
@@ -190,6 +193,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         for (param_name in names(param_distributions)) {
           sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
         }
+        sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
+        sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
 
         # Try to run with a different resampled model
         tryCatch({

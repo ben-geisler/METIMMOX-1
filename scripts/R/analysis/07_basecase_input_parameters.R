@@ -46,6 +46,9 @@ p_pfs <- list(
   tmb_braf_weighted_PFS = predictions$tmb_braf$pfs  # Population-marginalized
 )
 
+# Biomarker diagnostic costs are distinct from routine monitoring costs.
+c_test_CRP <- 16
+c_test_NGS <- 2518
 
 # Compile all parameters into a list for the model function
 l_params_base <- list(
@@ -69,9 +72,11 @@ l_params_base <- list(
   
   # Test costs
   c_test_CT = 386,      # cost of CT scan
-  c_test_blood = 16,    # assuming CRP, CBC, and chem-7; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter; 
+  c_test_blood = 16,    # routine CBC and chemistry monitoring; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter;
   # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
-  c_test_NGS = 2518,    # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
+  c_test_CRP = c_test_CRP, # one-time CRP biomarker test (independent of routine blood monitoring)
+  c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
+  c_test_biomarker = list(crp = c_test_CRP, tmb_braf = c_test_NGS),
   
   # Other costs
   c_other_visit = 33,     # cost of standard outpatient visit

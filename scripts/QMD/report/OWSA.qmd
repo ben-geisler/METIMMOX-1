@@ -49,7 +49,7 @@ suppressMessages(suppressWarnings({
 
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_NGS", "c_test_CT", "c_test_blood"),
+  test_costs = c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood"),
   other_costs = c("c_other_visit", "c_other_baseline",
                   "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),

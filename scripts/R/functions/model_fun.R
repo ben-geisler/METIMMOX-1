@@ -40,12 +40,12 @@ validate_model_params <- function(params, time_horizon) {
   # Required scalar parameters - economic biomarker prevalence values
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                        "c_test_blood", "c_test_NGS", "c_other_visit",
+                        "c_test_blood", "c_test_CRP", "c_test_NGS", "c_other_visit",
                         "c_other_baseline", "c_other_follow", "c_other_last",
                         "p_crp", "p_tmb_braf")
 
   # Required list parameters
-  required_lists <- c("p_os", "p_pfs")
+  required_lists <- c("p_os", "p_pfs", "c_test_biomarker")
 
   # Required schedule vectors
   required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
@@ -60,12 +60,34 @@ validate_model_params <- function(params, time_horizon) {
 
   # Validate cost parameters are non-negative
   cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                   "c_test_NGS", "c_other_visit", "c_other_baseline",
+                   "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
                    "c_other_follow", "c_other_last")
   for (p in cost_params) {
     if (params[[p]] < 0) {
       stop("Cost parameter '", p, "' cannot be negative. Got: ", params[[p]])
     }
+  }
+
+  # Validate the data-driven diagnostic-cost mapping used by each biomarker strategy.
+  required_biomarkers <- if (exists("get_biomarkers")) {
+    get_biomarkers()
+  } else {
+    c("crp", "tmb_braf")
+  }
+  missing_biomarker_costs <- setdiff(required_biomarkers,
+                                     names(params$c_test_biomarker))
+  if (length(missing_biomarker_costs) > 0) {
+    stop("Missing diagnostic-test costs for biomarkers: ",
+         paste(missing_biomarker_costs, collapse = ", "))
+  }
+  invalid_biomarker_costs <- vapply(
+    params$c_test_biomarker[required_biomarkers],
+    function(x) !is.numeric(x) || length(x) != 1 || is.na(x) || x < 0,
+    logical(1)
+  )
+  if (any(invalid_biomarker_costs)) {
+    stop("Diagnostic-test costs must be non-negative numeric scalars for: ",
+         paste(required_biomarkers[invalid_biomarker_costs], collapse = ", "))
   }
 
   # Validate utilities are in [0, 1]

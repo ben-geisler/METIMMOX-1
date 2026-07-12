@@ -54,6 +54,14 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
       cache_valid <- FALSE
     }
 
+    # Parameter-set changes (including new diagnostic costs) invalidate old caches.
+    missing_param_columns <- setdiff(names(param_distributions), names(psa_params))
+    if (length(missing_param_columns) > 0) {
+      cat("  Cache validation failed: missing PSA parameters:",
+          paste(missing_param_columns, collapse = ", "), "\n")
+      cache_valid <- FALSE
+    }
+
     if (cache_valid) {
       cat("  Cache validation successful!\n")
       cat("  Loaded PSA results from cache:\n")

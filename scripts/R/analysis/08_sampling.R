@@ -431,6 +431,9 @@ dist_c_test_CT <- c(list(dist = "gamma"),
 dist_c_test_blood <- c(list(dist = "gamma"), 
                        get_gamma_params(l_params_base$c_test_blood, cv_costs))
 
+dist_c_test_CRP <- c(list(dist = "gamma"),
+                     get_gamma_params(l_params_base$c_test_CRP, cv_costs))
+
 dist_c_test_NGS <- c(list(dist = "gamma"), 
                      get_gamma_params(l_params_base$c_test_NGS, cv_costs))
 
@@ -474,6 +477,7 @@ param_distributions <- list(
   c_drug_FLOX = dist_c_drug_FLOX,
   c_test_CT = dist_c_test_CT,
   c_test_blood = dist_c_test_blood,
+  c_test_CRP = dist_c_test_CRP,
   c_test_NGS = dist_c_test_NGS,
   c_other_visit = dist_c_other_visit,
   c_other_baseline = dist_c_other_baseline,
@@ -492,11 +496,11 @@ param_distributions <- list(
 # Parameter groups for sensitivity analysis (EVPPI)
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CT", "c_test_blood", "c_test_NGS"),
+  test_costs = c("c_test_CT", "c_test_blood", "c_test_CRP", "c_test_NGS"),
   other_costs = c("c_other_visit", "c_other_baseline",
                   "c_other_follow", "c_other_last"),
   all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                "c_test_NGS", "c_other_visit", "c_other_baseline",
+                "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
                 "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),
   prevalence = c("p_crp", "p_tmb_braf")

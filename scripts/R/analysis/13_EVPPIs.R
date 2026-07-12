@@ -96,7 +96,7 @@ cat("  - EVPI:", round(evpi_manual, 2), "\n")
 # ===============================================================================
 
 # Define parameters for EVPPI analysis
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
+evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
                   "c_test_CT", "u_np", "u_p", "c_other_last",
                   "c_test_blood", "c_other_visit", "c_other_baseline",
                   "c_other_follow", "p_crp", "p_tmb_braf")

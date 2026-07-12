@@ -272,9 +272,11 @@ N <- 1000; set.seed(2026); idx <- sample(nrow(psa_params), N)
 
 run_panel <- function(d_row, dp, panel) {
   p <- l_params_base
-  for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_NGS",
+  for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_CRP","c_test_NGS",
                "c_other_visit","c_other_baseline","c_other_follow","c_other_last",
                "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
+  p$c_test_biomarker$crp <- p$c_test_CRP
+  p$c_test_biomarker$tmb_braf <- p$c_test_NGS
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
   oc <- curve_draw(dp$ctrl_os, XC$ctrl, "weibull"); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, "lognormal")
   if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"
