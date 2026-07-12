@@ -4,17 +4,18 @@ Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic MSS/
 
 ## Overview
 
-This repository contains the R code for a cost-effectiveness analysis comparing three biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
+This repository contains the R code for a cost-effectiveness analysis comparing two pre-treatment biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
 
 **METIMMOX** stands for: **Colorectal Cancer METastasis - Shaping Anti-tumor IMMunity by OXaliplatin**
 
 ### Biomarker Strategies Evaluated
 
 1. **CRP Strategy**: C-reactive protein levels
-2. **TLR Strategy**: Tumor lesion reduction
-3. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation
+2. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation
 
-Each strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
+**Clinical-only TLR analysis**: Tumor lesion reduction (TLR) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator rather than a pre-treatment treatment-selection biomarker.
+
+Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
 
 ## Target Audience
 
@@ -43,7 +44,7 @@ METIMMOX-1/
 ### Key Files
 
 - **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (multi-model comparison), and sensitivity analysis utilities
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (single-model CEA execution and summary helpers; legacy filename), and sensitivity analysis utilities
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
 - **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses
@@ -189,10 +190,9 @@ quarto render scripts/QMD/report/
 
 ### Core Modeling
 - **Partitioned survival model** for cost-effectiveness analysis
-- **Biomarker-guided treatment strategies** comparing three biomarkers (CRP, TLR, TMB/BRAF) against standard of care
+- **Biomarker-guided treatment strategies** comparing two pre-treatment biomarkers (CRP and TMB/BRAF) against standard of care
 - **Microsatellite-stable (MSS) colorectal cancer** focus
 - **Parametric survival modeling** using multiple distributions (Weibull, exponential, gamma, etc.)
-- **Multi-model structure comparison** (Model A/B/C: joint/focused/separate biomarker modeling approaches)
 
 ### Sensitivity and Uncertainty Analysis
 - **Deterministic sensitivity analysis (DSA)** with tornado diagrams
