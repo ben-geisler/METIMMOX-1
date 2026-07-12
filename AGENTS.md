@@ -375,6 +375,10 @@ data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
 
 `data$tlr` is kept for clinical effectiveness, DAG, and biomarker distribution reports only. It is not included in economic strategies, economic survival formulas, PSA parameters, EVPPI groups, DSA, scenario analyses, enriched-population CEA, or snapshots.
 
+### Adverse-Event Scope
+
+Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
+
 ### Survival Model Formulas
 
 **Control group** (age- and sex-adjusted):
@@ -779,6 +783,11 @@ The repository includes a snapshot comparison system for assessing the impact of
 The test suite in `scripts/R/tests/` includes:
 
 - **[test_sex_variable_fix.R](scripts/R/tests/test_sex_variable_fix.R)**: Validates Issue #72 fix (sex variable type consistency in resampled models)
+- **[test_survival_ordering.R](scripts/R/tests/test_survival_ordering.R)**: Verifies deterministic OS >= PFS ordering and PSA-only handling of resampled crossings
+- **[test_biomarker_test_cost_mapping.R](scripts/R/tests/test_biomarker_test_cost_mapping.R)**: Verifies data-driven diagnostic-test cost assignment
+- **[test_canonical_prevalence.R](scripts/R/tests/test_canonical_prevalence.R)**: Verifies weighted curves use canonical full-cohort biomarker prevalence
+- **[test_psa_fallback_reporting.R](scripts/R/tests/test_psa_fallback_reporting.R)**: Verifies PSA fallback-rate reporting and its failure threshold
+- **[test_sim_idx_validation.R](scripts/R/tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
 - **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
@@ -787,6 +796,23 @@ The test suite in `scripts/R/tests/` includes:
 - **diagnose_prediction_failures.R**: Analyzes why PSA iterations fail
 - **test_psa_error_rate.R**: Quantifies PSA iteration error rates
 - **test_sampling_convergence_rate.R**: Tests sampling convergence
+
+### Test protocol and results
+
+Focused executable regression tests live in [`scripts/R/tests/`](scripts/R/tests/). The durable record of the broader 12 July 2026 black-box and extreme-value run lives in [`report_Opus/findings/findings_blackbox.json`](report_Opus/findings/findings_blackbox.json); that run used an external scratch harness, so the JSON record, rather than the harness itself, is retained in this repository. Unless a row specifies otherwise, numeric comparisons use a tolerance of `1e-10`; any non-finite value, unexpected warning/error, or unmet criterion is a failure.
+
+| Invariant / boundary test | Predefined pass criterion | Location | Recorded result |
+|---|---|---|---|
+| OS/PFS ordering | OS >= PFS at all 521 modeled time points for control and all four economic biomarker subgroups; an injected deterministic crossing must error, while a PSA crossing must be reported and capped | [`test_survival_ordering.R`](scripts/R/tests/test_survival_ordering.R) | Pass after ordering-constrained distribution selection |
+| Cohort conservation | For every strategy and cycle, PF + P + D = 1 and each occupancy is within [0, 1] | Black-box record (`BB-TR0/1`) in [`findings_blackbox.json`](report_Opus/findings/findings_blackbox.json) | Pass for control, CRP, and TMB/BRAF |
+| Utilities = 1 | With both state utilities set to 1, discounted QALYs equal discounted life-years | Black-box record (`BB-U1`) | Pass |
+| Utilities = 0 | With both state utilities set to 0, total QALYs equal 0 for every strategy | Black-box record (`BB-U0`) | Pass |
+| Costs = 0 | With every drug, test, visit, follow-up, and end-of-life unit cost set to 0, total cost equals 0 for every strategy | Black-box record (`BB-C0`) | Pass |
+| No mortality | With OS and PFS fixed at 1, death occupancy remains 0 and undiscounted life-years equal the stated 10-year horizon | Black-box record (`BB-M0`) | Fail (minor): 521 weekly grid points produce 10.019 rather than 10.000 life-years; equal across strategies |
+| Near-certain mortality | With survival forced near 0 after baseline, more than 99% of the cohort is dead by cycle 3 | Black-box record (`BB-M1`) | Pass |
+| Determinism | Two deterministic runs with identical inputs produce bitwise-identical costs and QALYs | Black-box record (`BB-RE`) | Pass |
+
+Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" scripts/R/tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.
 
 ## Clinical Context
 

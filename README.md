@@ -17,6 +17,8 @@ This repository contains the R code for a cost-effectiveness analysis comparing 
 
 Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
 
+The deployed analysis uses one joint economic survival model (`Age + sex + Rx + crp*Rx + tmb_braf*Rx`) for both biomarker-guided strategies. Historical "Model A/B/C" specifications are not alternative structures in the executable model.
+
 ## Target Audience
 
 This repository is designed for **health economists** and researchers developing decision-analytic models in R. The code provides a framework that can be adopted and adapted for similar cost-effectiveness analyses.
@@ -168,10 +170,9 @@ quarto render scripts/QMD/report/EVPPIs.qmd
 quarto render scripts/QMD/report/scenario_effect.qmd
 quarto render scripts/QMD/report/biomarker_decomposition.qmd
 quarto render scripts/QMD/report/biomarker_distributions.qmd
-
-# Or render all reports at once
-quarto render scripts/QMD/report/
 ```
+
+Clinical/DAG/descriptive reports may be rendered to all declared formats. Economic reports use HTML-producing tables and must be rendered individually with `--to pdf` (for example, `quarto render scripts/QMD/report/CEA.qmd --to pdf`). Do not render the whole report directory in one command.
 
 **Report Descriptions**:
 1. **para_models.qmd** - Parametric survival model fits and diagnostics
@@ -224,6 +225,10 @@ State occupancy is derived from parametric survival curves:
 - PF state = PFS curve
 - P state = OS - PFS (bounded at 0)
 - D state = 1 - OS
+
+### Adverse-event scope
+
+Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
 
 ## Publication Figures
 
