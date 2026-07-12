@@ -209,18 +209,37 @@ if (file.exists(cache_file)) {
   if (is.list(sampling_models) &&
       "control" %in% names(sampling_models) &&
       all(biomarkers_to_validate %in% names(sampling_models))) {
+    expected_dists <- resolve_best_distributions()
+    cache_components <- c("control", biomarkers_to_validate)
+    distributions_match <- all(vapply(
+      cache_components,
+      function(component) {
+        cached <- sampling_models[[component]]
+        identical(cached$dist_os, expected_dists$os) &&
+          identical(cached$dist_pfs, expected_dists$pfs)
+      },
+      logical(1)
+    ))
 
-    cat("Cache loaded successfully!\n")
-    cat("- Control samples:", sampling_models$control$n_samples, "\n")
-    cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
-    cat("- Created:", format(sampling_models$control$creation_time), "\n")
-    cat("- Distribution:", sampling_models$control$dist, "\n")
+    if (!distributions_match) {
+      cat("Cache distributions do not match the ordering-constrained base case ",
+          "(OS: ", expected_dists$os, ", PFS: ", expected_dists$pfs,
+          "). Regenerating...\n", sep = "")
+      sampling_models <- NULL
+    } else {
+      cat("Cache loaded successfully!\n")
+      cat("- Control samples:", sampling_models$control$n_samples, "\n")
+      cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
+      cat("- Created:", format(sampling_models$control$creation_time), "\n")
+      cat("- Distributions: OS", sampling_models$control$dist_os,
+          "| PFS", sampling_models$control$dist_pfs, "\n")
 
-    # Check if n_samples matches
-    if (sampling_models$control$n_samples != n_samples) {
-      cat("WARNING: Cached models (", sampling_models$control$n_samples,
-          ") != requested (", n_samples, ")\n")
-      cat("Will use cached models. Delete cache file to regenerate.\n")
+      # Check if n_samples matches
+      if (sampling_models$control$n_samples != n_samples) {
+        cat("WARNING: Cached models (", sampling_models$control$n_samples,
+            ") != requested (", n_samples, ")\n")
+        cat("Will use cached models. Delete cache file to regenerate.\n")
+      }
     }
 
   } else {

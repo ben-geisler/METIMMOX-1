@@ -18,8 +18,9 @@
 # parameter uncertainty, not patient heterogeneity.
 #
 # Biological Constraint (Issue #76):
-#   - PFS is capped at OS to prevent invalid state occupancy (PFS > OS can
-#     occur with resampled models). Without this, states can sum to >1.
+#   - Base-case ordering is guaranteed during joint distribution selection.
+#   - PFS is capped at OS only for resampled PSA models. Without this safety
+#     net, states can sum to >1 when a resampled pair crosses.
 #
 # Fallback Tracking (Issue #79):
 #   - When PSA survival curve generation fails, the function falls back to
@@ -291,6 +292,34 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
   }
 
+  # Ordered base-case curves are guaranteed during distribution selection.
+  # Resampled PSA fits are selected upstream and may still cross, so retain the
+  # clamp only there as a last-resort safety net and emit a structured warning
+  # that psa_functions.R can aggregate.
+  enforce_survival_ordering <- function(pfs, os, curve_label) {
+    violation_idx <- which(pfs > os)
+    if (length(violation_idx) == 0) {
+      return(pfs)
+    }
+
+    if (determpsa != "psa") {
+      stop(
+        "Base-case survival ordering invariant failed for ", curve_label,
+        ": PFS exceeded OS at ", length(violation_idx), " time points. ",
+        "Refit using ordering-constrained distribution selection."
+      )
+    }
+
+    warning(
+      "PFS > OS constraint enforced at ", length(violation_idx),
+      " time points (", curve_label, ")",
+      if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "",
+      "; max excess=", signif(max(pfs[violation_idx] - os[violation_idx]), 4),
+      call. = FALSE
+    )
+    pmin(pfs, os)
+  }
+
   # =========================================================================
   # CONTROL STRATEGY
   # =========================================================================
@@ -301,15 +330,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   validate_curve_length(os_control, "control_OS")
   validate_curve_length(pfs_control, "control_PFS")
 
-  # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-  # Without this, state occupancy can sum to >1 when curves cross
-  if (any(pfs_control > os_control)) {
-    n_violations <- sum(pfs_control > os_control)
-    warning("PFS > OS constraint enforced at ", n_violations,
-            " time points (control)",
-            if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-  }
-  pfs_control <- pmin(pfs_control, os_control)
+  pfs_control <- enforce_survival_ordering(pfs_control, os_control, "control")
 
   # Calculate state occupancy for partitioned survival model
   # Progression-free: PFS curve
@@ -372,14 +393,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(os_pos, paste0(biomarker, "_pos_OS"))
     validate_curve_length(pfs_pos, paste0(biomarker, "_pos_PFS"))
 
-    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-    if (any(pfs_pos > os_pos)) {
-      n_violations <- sum(pfs_pos > os_pos)
-      warning("PFS > OS constraint enforced at ", n_violations,
-              " time points (", biomarker, "+)",
-              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-    }
-    pfs_pos <- pmin(pfs_pos, os_pos)
+    pfs_pos <- enforce_survival_ordering(
+      pfs_pos, os_pos, paste0(biomarker, "+")
+    )
 
     # Calculate positive state occupancy
     p_pf_pos <- pfs_pos
@@ -401,14 +417,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(os_neg, paste0(biomarker, "_neg_OS"))
     validate_curve_length(pfs_neg, paste0(biomarker, "_neg_PFS"))
 
-    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-    if (any(pfs_neg > os_neg)) {
-      n_violations <- sum(pfs_neg > os_neg)
-      warning("PFS > OS constraint enforced at ", n_violations,
-              " time points (", biomarker, "-)",
-              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-    }
-    pfs_neg <- pmin(pfs_neg, os_neg)
+    pfs_neg <- enforce_survival_ordering(
+      pfs_neg, os_neg, paste0(biomarker, "-")
+    )
 
     # Calculate negative state occupancy
     p_pf_neg <- pfs_neg

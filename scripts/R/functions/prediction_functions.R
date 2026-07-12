@@ -37,7 +37,8 @@ extract_all_survival_probabilities <- function(pred_object) {
 # Main function for population-averaged predictions across all strategies
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,
-                                                     data_complete, time_points) {
+                                                     data_complete, time_points,
+                                                     quiet = FALSE) {
 
   # Extract treatment level references
   exp_rx <- levels(data_complete$Rx)[2]  # Experimental treatment
@@ -50,7 +51,7 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # CONTROL STRATEGY: All patients receive standard of care
   # -------------------------------------------------------------------------
 
-  cat("Generating population-averaged predictions for control strategy...\n")
+  if (!quiet) cat("Generating population-averaged predictions for control strategy...\n")
 
   # Create dataset with all patients assigned to control treatment
   control_data <- data_complete
@@ -89,7 +90,9 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # Loop through each biomarker strategy
   for (biomarker_name in biomarkers_to_predict) {
 
-    cat("Generating population-averaged predictions for", biomarker_name, "strategy...\n")
+    if (!quiet) {
+      cat("Generating population-averaged predictions for", biomarker_name, "strategy...\n")
+    }
 
     # Get strategy info
     strategy_info <- strategies_df[strategies_df$id == biomarker_name, ]
@@ -184,9 +187,101 @@ generate_population_averaged_predictions <- function(models, strategies_df,
     )
   }
 
-  cat("Population-averaged predictions complete for all strategies.\n")
+  if (!quiet) cat("Population-averaged predictions complete for all strategies.\n")
 
   return(predictions)
+}
+
+# Generate the five endpoint-specific curves needed during joint distribution
+# selection. Keeping OS and PFS prediction separate lets the selection loop
+# compute each candidate distribution once instead of once per pair.
+generate_population_averaged_endpoint_curves <- function(model, data_complete,
+                                                          time_points) {
+  exp_rx <- levels(data_complete$Rx)[2]
+  ctrl_rx <- levels(data_complete$Rx)[1]
+  biomarkers <- if (exists("get_biomarkers")) get_biomarkers() else
+    c("crp", "tmb_braf")
+
+  average_prediction <- function(newdata, rx_level) {
+    newdata$Rx <- factor(rx_level, levels = levels(data_complete$Rx))
+    prediction <- predict(
+      model, newdata = newdata, type = "survival", times = time_points
+    )
+    rowMeans(extract_all_survival_probabilities(prediction), na.rm = TRUE)
+  }
+
+  curves <- list(control = average_prediction(data_complete, ctrl_rx))
+  for (biomarker in biomarkers) {
+    status <- as.numeric(as.character(data_complete[[biomarker]]))
+    positive_data <- data_complete[status == 1, , drop = FALSE]
+    negative_data <- data_complete[status == 0, , drop = FALSE]
+
+    if (nrow(positive_data) == 0 || nrow(negative_data) == 0) {
+      stop("Both biomarker subgroups are required for ordering selection: ",
+           biomarker)
+    }
+
+    curves[[paste0(biomarker, "_positive")]] <-
+      average_prediction(positive_data, exp_rx)
+    curves[[paste0(biomarker, "_negative")]] <-
+      average_prediction(negative_data, ctrl_rx)
+  }
+  curves
+}
+
+check_endpoint_curve_ordering <- function(os_curves, pfs_curves,
+                                          tolerance = 0) {
+  curve_names <- union(names(os_curves), names(pfs_curves))
+  details <- lapply(curve_names, function(curve_name) {
+    os <- os_curves[[curve_name]]
+    pfs <- pfs_curves[[curve_name]]
+    if (is.null(os) || is.null(pfs) || length(os) != length(pfs) ||
+        any(!is.finite(os)) || any(!is.finite(pfs))) {
+      return(data.frame(
+        curve = curve_name, n_violations = NA_integer_,
+        max_pfs_minus_os = Inf, ordered = FALSE,
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    gaps <- pfs - os
+    data.frame(
+      curve = curve_name,
+      n_violations = sum(gaps > tolerance),
+      max_pfs_minus_os = max(gaps),
+      ordered = all(gaps <= tolerance),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  details <- do.call(rbind, details)
+  list(
+    ordered = all(details$ordered),
+    n_violations = if (anyNA(details$n_violations)) NA_integer_ else
+      sum(details$n_violations),
+    max_pfs_minus_os = max(details$max_pfs_minus_os),
+    details = details
+  )
+}
+
+# Check the defining partitioned-survival ordering invariant on population curves.
+# The subgroup checks are stricter than checking only prevalence-weighted strategy
+# curves: if every subgroup is ordered, each weighted strategy is ordered too.
+check_population_survival_ordering <- function(predictions, tolerance = 0) {
+  curve_sets <- list(control = predictions$control)
+
+  strategy_names <- setdiff(names(predictions), "control")
+  for (strategy_name in strategy_names) {
+    strategy <- predictions[[strategy_name]]
+    curve_sets[[paste0(strategy_name, "_positive")]] <- strategy$biomarker_positive
+    curve_sets[[paste0(strategy_name, "_negative")]] <- strategy$biomarker_negative
+  }
+
+  check_endpoint_curve_ordering(
+    os_curves = lapply(curve_sets, `[[`, "os"),
+    pfs_curves = lapply(curve_sets, `[[`, "pfs"),
+    tolerance = tolerance
+  )
 }
 
 # ===============================================================================

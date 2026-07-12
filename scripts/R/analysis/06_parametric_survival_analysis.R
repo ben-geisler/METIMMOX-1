@@ -167,7 +167,7 @@ for (formula_set in names(model_formulas)) {
 }
 
 # ===============================================================================
-# GLOBAL BEST MODEL SELECTION
+# ORDERING-CONSTRAINED JOINT MODEL SELECTION
 # ===============================================================================
 
 collect_ic <- function(outcome) {
@@ -194,44 +194,83 @@ collect_ic <- function(outcome) {
 all_os_aic <- collect_ic("os")
 all_pfs_aic <- collect_ic("pfs")
 
-# Select globally best OS model
-if (!is.null(all_os_aic) && nrow(all_os_aic) > 0) {
-  best_os_overall <- all_os_aic[!is.na(all_os_aic$AIC), ]
+make_candidates <- function(ic_data, outcome) {
+  ic_data <- ic_data[!is.na(ic_data$AIC), , drop = FALSE]
+  candidate_models <- Map(
+    function(formula_set, distribution) {
+      models[[formula_set]][[outcome]][[distribution]]
+    },
+    ic_data$formula_set,
+    ic_data$Distribution
+  )
+  ordering_data <- lapply(candidate_models, function(candidate_model) {
+    tryCatch(
+      generate_population_averaged_endpoint_curves(
+        model = candidate_model,
+        data_complete = data_complete,
+        time_points = time_points
+      ),
+      error = identity
+    )
+  })
 
-  if (nrow(best_os_overall) > 0) {
-    best_os_idx <- which.min(best_os_overall$AIC)
-    best_os_formula_set <- best_os_overall$formula_set[best_os_idx]
-    best_os_dist <- best_os_overall$Distribution[best_os_idx]
-
-    models$best_fit$os <- models[[best_os_formula_set]]$os[[best_os_dist]]
-    models$best_fit$os_structure <- best_os_formula_set
-    models$best_fit$os_distribution <- best_os_dist
-    models$best_fit$os_aic <- best_os_overall$AIC[best_os_idx]
-
-    cat("Best OS model:", best_os_formula_set, "formula set,",
-        best_os_dist, "distribution (AIC:",
-        round(best_os_overall$AIC[best_os_idx], 2), ")\n")
-  }
+  data.frame(
+    formula_set = ic_data$formula_set,
+    distribution = ic_data$Distribution,
+    AIC = ic_data$AIC,
+    ordering_data = I(ordering_data),
+    stringsAsFactors = FALSE
+  )
 }
 
-# Select globally best PFS model
-if (!is.null(all_pfs_aic) && nrow(all_pfs_aic) > 0) {
-  best_pfs_overall <- all_pfs_aic[!is.na(all_pfs_aic$AIC), ]
+if (!is.null(all_os_aic) && !is.null(all_pfs_aic)) {
+  os_candidates <- make_candidates(all_os_aic, "os")
+  pfs_candidates <- make_candidates(all_pfs_aic, "pfs")
 
-  if (nrow(best_pfs_overall) > 0) {
-    best_pfs_idx <- which.min(best_pfs_overall$AIC)
-    best_pfs_formula_set <- best_pfs_overall$formula_set[best_pfs_idx]
-    best_pfs_dist <- best_pfs_overall$Distribution[best_pfs_idx]
-
-    models$best_fit$pfs <- models[[best_pfs_formula_set]]$pfs[[best_pfs_dist]]
-    models$best_fit$pfs_structure <- best_pfs_formula_set
-    models$best_fit$pfs_distribution <- best_pfs_dist
-    models$best_fit$pfs_aic <- best_pfs_overall$AIC[best_pfs_idx]
-
-    cat("Best PFS model:", best_pfs_formula_set, "formula set,",
-        best_pfs_dist, "distribution (AIC:",
-        round(best_pfs_overall$AIC[best_pfs_idx], 2), ")\n")
+  if (nrow(os_candidates) == 0 || nrow(pfs_candidates) == 0) {
+    stop("No valid fitted OS or PFS candidates are available for joint selection.")
   }
+
+  ordering_check <- function(os_curves, pfs_curves) {
+    if (inherits(os_curves, "condition")) stop(conditionMessage(os_curves))
+    if (inherits(pfs_curves, "condition")) stop(conditionMessage(pfs_curves))
+    check_endpoint_curve_ordering(os_curves, pfs_curves)
+  }
+
+  ordered_selection <- find_best_ordered_model_pair(
+    os_candidates = os_candidates,
+    pfs_candidates = pfs_candidates,
+    ordering_check = ordering_check,
+    criterion = "AIC"
+  )
+
+  # Preserve the full audit trail, including rejected pairs and AIC penalty.
+  models$ordered_selection <- ordered_selection
+
+  if (is.null(ordered_selection$selected)) {
+    stop(
+      "No fitted OS/PFS distribution pair satisfies OS >= PFS over the full ",
+      "time horizon for control and all biomarker subgroups. A PFS + ",
+      "post-progression-survival decomposition is required."
+    )
+  }
+
+  selected <- ordered_selection$selected[1, ]
+  models$best_fit$os <- models[[selected$os_formula_set]]$os[[selected$os_distribution]]
+  models$best_fit$pfs <- models[[selected$pfs_formula_set]]$pfs[[selected$pfs_distribution]]
+  models$best_fit$os_structure <- selected$os_formula_set
+  models$best_fit$pfs_structure <- selected$pfs_formula_set
+  models$best_fit$os_distribution <- selected$os_distribution
+  models$best_fit$pfs_distribution <- selected$pfs_distribution
+  models$best_fit$os_aic <- selected$os_ic
+  models$best_fit$pfs_aic <- selected$pfs_ic
+  models$best_fit$combined_aic <- selected$combined_ic
+  models$best_fit$ordering_aic_penalty <- ordered_selection$ic_penalty
+
+  cat("Ordering-constrained model pair:", selected$os_distribution, "(OS),",
+      selected$pfs_distribution, "(PFS); combined AIC:",
+      round(selected$combined_ic, 2), "; constraint penalty:",
+      round(ordered_selection$ic_penalty, 2), "\n")
 }
 
 # ===============================================================================
@@ -256,6 +295,11 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
     data_complete = data_complete,
     time_points = time_points
   )
+
+  basecase_ordering_check <- check_population_survival_ordering(predictions)
+  if (!basecase_ordering_check$ordered) {
+    stop("Internal error: selected base-case curves violate OS >= PFS.")
+  }
 } else {
   predictions <- list()
   warning("Model fitting failed - predictions object is empty")
@@ -288,6 +332,11 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
 #     - $os_distribution: Best OS distribution
 #     - $os_aic: AIC value
 #     - equivalent fields for PFS
+#     - $combined_aic: Combined AIC for the selected ordered pair
+#     - $ordering_aic_penalty: Combined-AIC cost versus independent selection
+# - models$ordered_selection
+#     - $pairs: Audit table for every candidate OS/PFS distribution pair
+#     - $selected: Minimum-combined-AIC pair satisfying OS >= PFS
 #
 # PREDICTIONS OBJECT STRUCTURE:
 # - predictions$control: Standard of care strategy
