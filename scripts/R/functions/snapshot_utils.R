@@ -77,7 +77,6 @@ collect_metadata <- function(issue_number) {
       cl = if (exists("cl")) cl else NA,
       dr = if (exists("dr")) dr else NA,
       DSA_mult = if (exists("DSA_mult")) DSA_mult else NA,
-      USE_BOTH_MODELS = if (exists("USE_BOTH_MODELS")) USE_BOTH_MODELS else NA,
       UTILITY_SOURCE = if (exists("UTILITY_SOURCE")) UTILITY_SOURCE else NA,
       utility_source_label = if (exists("utility_source_label")) utility_source_label else NA
     )

@@ -17,8 +17,6 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(survival, flexsurv, dplyr, ggplot2, scales)
 
-USE_BOTH_MODELS <- 1
-
 # load results and run analysis if needed
 setwd("../../..") 
 if (!exists("models")) {

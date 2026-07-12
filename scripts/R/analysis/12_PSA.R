@@ -19,8 +19,8 @@ if (length(time_points) != time_points_length) {
 }
 
 # Define cache file paths with utility source label
-cache_file_obj <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
-cache_file_params <- here("data", "tidy", paste0("psa_params_", utility_source_label, ".rds"))
+cache_file_obj <- psa_obj_path()
+cache_file_params <- psa_params_path()
 
 # Check if PSA cache exists and is valid
 psa_cached <- FALSE

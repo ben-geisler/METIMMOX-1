@@ -105,7 +105,7 @@ Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
 cat("\n=== Loading Helper Functions ===\n")
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
-source(here::here("scripts/R/functions/multi_model_cea.R"))
+source(here::here("scripts/R/functions/cea_helpers.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
 
@@ -160,10 +160,8 @@ nmb_at_wtp <- data.frame(
 nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
 
 # Load PSA cache, or generate if not available
-cache_file_obj <- here::here("data", "tidy",
-                             paste0("psa_obj_", utility_source_label, ".rds"))
-cache_file_params <- here::here("data", "tidy",
-                                paste0("psa_params_", utility_source_label, ".rds"))
+cache_file_obj <- psa_obj_path(utility_source_label)
+cache_file_params <- psa_params_path(utility_source_label)
 
 psa_obj <- NULL
 psa_summary <- NULL

@@ -214,7 +214,7 @@ evppi_cache <- list(
   scenarios = scenarios
 )
 
-scenario_evppi_cache_file <- here::here("data/tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+scenario_evppi_cache_file <- scenario_evppi_path()
 saveRDS(evppi_cache, file = scenario_evppi_cache_file)
 
 cat("\n=== ANALYSIS COMPLETE ===\n")

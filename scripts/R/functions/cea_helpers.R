@@ -25,6 +25,16 @@ if (!exists("get_current_model_config") || !exists("get_strategies")) {
   }
 }
 
+# Source cache-path helpers if needed (utility label + cache file locations).
+if (!exists("psa_obj_path") || !exists("resolve_util_label")) {
+  cache_paths_path <- here::here("scripts/R/functions/cache_paths.R")
+  if (file.exists(cache_paths_path)) {
+    source(cache_paths_path)
+  } else {
+    stop("cache_paths.R not found. Please ensure scripts/R/functions/cache_paths.R exists.")
+  }
+}
+
 #' Run base case analysis for the single joint economic model
 #'
 #' @param params Parameter list. Defaults to global l_params_base.
@@ -79,15 +89,7 @@ load_psa_cache <- function(util_label = NULL,
                            cache_dir = here::here("data", "tidy"),
                            verbose = TRUE) {
 
-  if (is.null(util_label)) {
-    util_label <- if (exists("utility_source_label", inherits = TRUE)) {
-      get("utility_source_label", inherits = TRUE)
-    } else {
-      "ipd"
-    }
-  }
-
-  cache_file <- file.path(cache_dir, paste0("psa_obj_", util_label, ".rds"))
+  cache_file <- psa_obj_path(util_label, cache_dir)
 
   if (!file.exists(cache_file)) {
     warning("PSA cache not found: ", cache_file)
@@ -116,15 +118,7 @@ load_psa_params_cache <- function(util_label = NULL,
                                   cache_dir = here::here("data", "tidy"),
                                   verbose = TRUE) {
 
-  if (is.null(util_label)) {
-    util_label <- if (exists("utility_source_label", inherits = TRUE)) {
-      get("utility_source_label", inherits = TRUE)
-    } else {
-      "ipd"
-    }
-  }
-
-  cache_file <- file.path(cache_dir, paste0("psa_params_", util_label, ".rds"))
+  cache_file <- psa_params_path(util_label, cache_dir)
 
   if (!file.exists(cache_file)) {
     warning("PSA parameter cache not found: ", cache_file)
@@ -235,13 +229,7 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
 load_scenario_evppi_results <- function(results_file = NULL) {
 
   if (is.null(results_file)) {
-    util_label <- if (exists("utility_source_label", inherits = TRUE)) {
-      get("utility_source_label", inherits = TRUE)
-    } else {
-      "ipd"
-    }
-    results_file <- here::here("data", "tidy",
-                               paste0("scenario_evppi_results_", util_label, ".rds"))
+    results_file <- scenario_evppi_path()
   }
 
   if (!file.exists(results_file)) {

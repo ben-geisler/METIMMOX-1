@@ -46,7 +46,7 @@ METIMMOX-1/
 ### Key Files
 
 - **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (single-model CEA execution and summary helpers; legacy filename), and sensitivity analysis utilities
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
 - **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses

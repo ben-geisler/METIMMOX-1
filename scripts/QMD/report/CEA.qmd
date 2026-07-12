@@ -31,41 +31,11 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  fig.width = 8,
-  fig.height = 6,
-  dpi = 300,
-  out.width = "100%"
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "06", "07"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers")
 )
-
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, knitr, kableExtra, ggplot2, dplyr, scales,
-  survival, flexsurv, dampack
-)
-
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 14, face = "bold"),
-    plot.subtitle = element_text(size = 12),
-    legend.position = "bottom"
-  ))
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-  source(here::here("scripts/R/functions/model_fun.R"))
-  source(here::here("scripts/R/functions/calculate_outcomes.R"))
-  source(here::here("scripts/R/functions/multi_model_cea.R"))
-}))
 
 strategy_label <- function(x) {
   dplyr::recode(

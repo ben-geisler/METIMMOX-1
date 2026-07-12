@@ -18,16 +18,12 @@ if (!dir.exists(cache_dir)) {
   cat("Created sampling cache directory:", cache_dir, "\n")
 }
 
-# Create cache file path based on n_samples and age/sex adjustment setting
-cache_file <- here(cache_dir, paste0("sampling_models_n", n_samples, "_",
-                                     ifelse(USE_BOTH_MODELS == 0, "full", "both"),
-                                     ".rds"))
+# Create cache file path based on n_samples
+cache_file <- sampling_cache_path(n_samples, cache_dir)
 
 # Check for old cache files in deprecated location
 old_cache_dir <- here("data", "bootstrap_cache")
-old_cache_file <- here(old_cache_dir, paste0("boot_models_n", n_samples, "_",
-                                              ifelse(USE_BOTH_MODELS == 0, "full", "both"),
-                                              ".rds"))
+old_cache_file <- here(old_cache_dir, paste0("boot_models_n", n_samples, "_full.rds"))
 if (file.exists(old_cache_file) && !file.exists(cache_file)) {
   cat("\n*** NOTICE: Old cache file detected ***\n")
   cat("Old location:", old_cache_file, "\n")

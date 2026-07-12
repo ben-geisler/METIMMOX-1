@@ -46,9 +46,7 @@ cat("                    PART 1: EXISTING CACHE INSPECTION                      
 cat("===============================================================================\n\n")
 
 # Define cache file path (matching 08_sampling.R)
-cache_file <- here("data", "tidy", paste0("sampling_models_n", n_samples, "_",
-                                          ifelse(USE_BOTH_MODELS == 0, "full", "both"),
-                                          ".rds"))
+cache_file <- here("data", "tidy", paste0("sampling_models_n", n_samples, "_full.rds"))
 
 if (file.exists(cache_file)) {
   cat("Cache file found:", cache_file, "\n")

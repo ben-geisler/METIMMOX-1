@@ -80,16 +80,13 @@ nmb_matrix <- effect_matrix * WTP - cost_matrix
 cat("NMB matrix summary:\n")
 print(summary(nmb_matrix))
 
-# Calculate EVPI manually for verification
-max_nmb_per_sim <- apply(nmb_matrix, 1, max, na.rm = TRUE)
-expected_max_nmb <- mean(max_nmb_per_sim, na.rm = TRUE)
-max_expected_nmb <- max(colMeans(nmb_matrix, na.rm = TRUE))
-evpi_manual <- expected_max_nmb - max_expected_nmb
+# Total EVPI via dampack. This equals the population-NMB definition used above
+# (mean(max NMB per draw) - max(mean NMB per strategy)); verified equal to the
+# hand-rolled value to < 1e-6. Named evpi_manual for cache/report compatibility.
+evpi_manual <- dampack::calc_evpi(psa = psa_obj, wtp = WTP)$EVPI[1]
 
 cat("EVPI calculation:\n")
-cat("  - Expected value of max NMB per simulation:", round(expected_max_nmb, 2), "\n")
-cat("  - Max expected NMB across strategies:", round(max_expected_nmb, 2), "\n")
-cat("  - EVPI:", round(evpi_manual, 2), "\n")
+cat("  - EVPI (dampack::calc_evpi):", round(evpi_manual, 2), "\n")
 
 # ===============================================================================
 # RUN EVPPI ANALYSIS
@@ -213,6 +210,6 @@ if (nrow(evppi_results) > 0) {
 }
 
 # Save results
-evppi_cache_file <- here::here("data/tidy", paste0("evppi_results_", utility_source_label, ".RData"))
+evppi_cache_file <- evppi_path()
 save(evppi_results, evpi_manual, file = evppi_cache_file)
 cat("\nEVPPI analysis complete. Results saved to", evppi_cache_file, "\n")

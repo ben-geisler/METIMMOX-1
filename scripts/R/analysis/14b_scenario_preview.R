@@ -165,9 +165,7 @@ evppi_cache_preview <- list(
 )
 
 # Save to preview cache file (utility-source-aware name, matching 14_scenario_EVPPIs.R)
-preview_cache_file <- here::here("data/tidy",
-                                 paste0("scenario_evppi_results_", utility_source_label,
-                                        "_PREVIEW.rds"))
+preview_cache_file <- scenario_evppi_path(preview = TRUE)
 saveRDS(evppi_cache_preview, file = preview_cache_file)
 
 cat("\n=== PREVIEW COMPLETE ===\n")

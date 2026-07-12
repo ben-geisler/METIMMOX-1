@@ -28,7 +28,7 @@ p_load(here, dampack, dplyr, scales, flexsurv)
 
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
-source(here::here("scripts/R/functions/multi_model_cea.R"))
+source(here::here("scripts/R/functions/cea_helpers.R"))
 source(here::here("scripts/R/functions/prediction_functions.R"))
 
 # ===============================================================================

@@ -17,16 +17,6 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr)
 
-# ===============================================================================
-# MODEL SELECTION CONFIGURATION
-# ===============================================================================
-
-# Controls whether to fit only the full model (0) or also a reduced age/sex model
-# when supported by downstream helper functions.
-if (!exists("USE_BOTH_MODELS")) {
-  USE_BOTH_MODELS <- 0
-}
-
 # Load parametric model fitting functions
 para_model_fit_path <- here::here("scripts", "R", "functions", "para_model_fit.R")
 if (file.exists(para_model_fit_path)) {
@@ -315,9 +305,6 @@ if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
 #     OS:  Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
 #     PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
 # - TLR is excluded from economic survival modeling.
-# - USE_BOTH_MODELS controls age/sex adjustment where supported:
-#     0 = only fit full model with age and sex adjustments
-#     1 = fit both full model and model without age/sex adjustments
 #
 # MODELS OBJECT STRUCTURE:
 # - models$full

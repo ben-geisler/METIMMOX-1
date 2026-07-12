@@ -253,7 +253,6 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 | `WTP` | 51000 | Willingness-to-pay threshold (EUR) |
 | `n_samples` | 5000 | Resampling/PSA sample size |
 | `dr` | 0.04 | Discount rate (4%) |
-| `USE_BOTH_MODELS` | 0 | 0=full economic survival model only, 1=also fit reduced age/sex comparison where supported |
 | `UTILITY_SOURCE` | 1 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59) |
 | `annual_incidence_norway` | 1500 | Annual eligible MSS/pMMR mCRC patients in Norway |
 | `research_horizon_years` | 10 | Research value time horizon (years) for population EVPPI |
@@ -272,7 +271,7 @@ There is no model-structure switch or multi-structure comparison layer. The econ
 
 **Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [06_parametric_survival_analysis.R](scripts/R/analysis/06_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained as historical descriptions; they do not define the executable model-selection procedure or the current single-model structure.
 
-**When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, `USE_BOTH_MODELS`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
+**When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
 
 ### Biomarker Strategies
 
@@ -304,7 +303,7 @@ The model uses **correlated survival resampling** ([08_sampling.R](scripts/R/ana
 
 - Both PFS and OS models are fitted to the **same resampled patient cohort**
 - Results are cached in `data/tidy/`
-- Cache file naming: `sampling_models_n{n_samples}_{full|both}.rds`
+- Cache file naming: `sampling_models_n{n_samples}_full.rds`
 
 **IMPORTANT**: The first run of `08_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
 
@@ -399,11 +398,14 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 
 **Model Configuration**:
 - **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for the economic strategies, biomarkers, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_current_model_config()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_control_formula()`, `get_model_formulas()`.
+- **[cache_paths.R](scripts/R/functions/cache_paths.R)**: Single source of truth for the utility-source label and cached-object file paths (sampling, PSA, EVPPI, scenario). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`.
+- **[report_setup.R](scripts/R/functions/report_setup.R)**: One-call Quarto report setup (knitr options, package loading, shared ggplot theme, and sourcing of analysis scripts/function files), used to remove duplicated setup boilerplate across the economic reports. Key function: `setup_report(sources, funs, packages, set_theme)`.
 
 **Core Model Functions**:
 - **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
+- **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`). Renamed from the legacy `multi_model_cea.R`.
 
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
@@ -688,7 +690,6 @@ The analysis uses several cache systems to speed up computation:
 - Survival model formulas change
 - Economic strategy/biomarker set changes
 - `n_samples` changes
-- `USE_BOTH_MODELS` setting changes
 - Clinical data is updated
 
 **To regenerate**:
