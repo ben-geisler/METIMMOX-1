@@ -1,0 +1,97 @@
+{
+  "module": "M1",
+  "reviewer": "documentation-consistency",
+  "findings": [
+    {
+      "id": "TR-CONS-003",
+      "test": "UTILITY_SOURCE default consistency across AGENTS.md, code, and manuscript",
+      "target": "AGENTS.md 'Critical Global Variables' table vs scripts/R/analysis/02_setup_and_global_variables.R:59 and manuscript utility narrative",
+      "inputs": "AGENTS.md table row 'UTILITY_SOURCE | 0 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59)'; code line UTILITY_SOURCE <- 1; 07_basecase_input_parameters.R:63-64 wiring; manuscript Discussion citing utilities '0.91' / '0.90'; git blame commit 2ce4618 'default utilities CORRECT trial' (2026-02-26) which flipped the default after AGENTS.md's table was written, with AGENTS.md subsequently re-edited (commit ab7a079, 2026-06-19) without correcting the table",
+      "expected": "Documented default value matches the code's actual default, and matches the utility source implied by the manuscript's reported results",
+      "observed": "AGENTS.md documents default 0 (IPD-derived, u_np=0.9077/u_p=0.9005); code's actual default is 1 (CORRECT trial, u_np=0.73/u_p=0.59); manuscript's reported/discussed utility values (0.91 progression-free, 0.90 progressed) correspond to the IPD default (0), not the code's current default (1). No document in the reviewed set states the correct current default. A fresh clone run with default settings will not reproduce the manuscript's utility inputs.",
+      "verdict": "fail",
+      "severity": "critical",
+      "location": "AGENTS.md (Critical Global Variables table); scripts/R/analysis/02_setup_and_global_variables.R:59; scripts/R/analysis/07_basecase_input_parameters.R:63-64; manuscript/METIMMOX_CEA_LancetOncol_v4.md:102,174",
+      "checklist_items": ["CDA-AMC 26", "CDA-AMC 27", "CDA-AMC 4"],
+      "recommended_fix": "Update AGENTS.md's default value to 1 (or revert code to 0 if IPD utilities are intended as the reported base case), and add an explicit note in both AGENTS.md and the manuscript methods stating which UTILITY_SOURCE value was used to generate the reported results, with the corresponding cache filenames."
+    },
+    {
+      "id": "TR-CONS-002",
+      "test": "README 'Multi-model structure comparison (Model A/B/C)' and multi_model_cea.R content vs AGENTS.md 'no model-structure switch' and actual code",
+      "target": "docs/README.md:195 vs AGENTS.md model-description text vs scripts/R/functions/multi_model_cea.R (full read) and scripts/R/functions/model_configs.R:44-63",
+      "inputs": "README claim 'Multi-model structure comparison (Model A/B/C: joint/focused/separate biomarker modeling approaches)'; AGENTS.md 'There is no model-structure switch or multi-structure comparison layer'; full text of multi_model_cea.R (contains only run_basecase/load_psa_cache/create_ceac_plot/create_psa_summary_table/load_scenario_evppi_results, all single-model helpers, no A/B/C branching); model_configs.R defines exactly one 'joint' config; manuscript Results/Methods (lines 110-150) report Model A/B/C comparisons and TLR-guided-strategy ICERs as primary findings; parent-repo git history commits 9c04da7...ab7a079 ('refactor stage 1'...'refactor stage 7: finish single-model/no-TLR cleanup, fix renders, regen outputs', 2026-06-18/19) removed the multi-model/TLR machinery that existed as of Feb 2026 (commits a5054e5/01ce4ee); docs/README.md last substantively written 2026-02-17 (commit 4e55627), before the refactor",
+      "expected": "If documentation and the manuscript describe a Model A/B/C structure-comparison capability and a TLR-guided economic strategy as current/reproducible features, corresponding strategy identifiers, formula branches, or a model-structure switch should exist in the code",
+      "observed": "No Model A/B/C switch, no per-strategy TLR formula, and no TLR entry in ALL_STRATEGIES exist anywhere in scripts/R/. multi_model_cea.R, despite its name and despite being cited by README as the multi-model comparison module, contains only single-joint-model helper functions. The current codebase therefore cannot reproduce the manuscript's Model A/C results or its TLR-guided-strategy ICERs under any settings -- this is a structural absence discoverable by static inspection, not merely an untested claim. AGENTS.md accurately reflects the current (post-refactor) code; README and the manuscript reflect the pre-refactor (pre-2026-06-18) design and were not updated afterward.",
+      "verdict": "fail",
+      "severity": "critical",
+      "location": "docs/README.md:191-195; scripts/R/functions/multi_model_cea.R (whole file); scripts/R/functions/model_configs.R:28,44-63; manuscript/METIMMOX_CEA_LancetOncol_v4.md:110-150",
+      "checklist_items": ["CDA-AMC 3", "CDA-AMC 7", "CDA-AMC 26", "CDA-AMC 27"],
+      "recommended_fix": "Remove the Model A/B/C and TLR-strategy claims from README.md (or restore/re-implement the multi-model comparison code if it is still intended to be part of the analysis), rename or gut multi_model_cea.R to match its actual single-model scope, and add a note to the manuscript methods clarifying that Model A and Model C, and the TLR-guided economic strategy, are historical/no-longer-reproducible specifications relative to the current repository state."
+    },
+    {
+      "id": "TR-CONS-001",
+      "test": "README biomarker-strategy count/list vs model_configs.R ALL_STRATEGIES",
+      "target": "docs/README.md:11-17,192 vs scripts/R/functions/model_configs.R:28,31,170",
+      "inputs": "README: '1. CRP Strategy ... 2. TLR Strategy ... 3. TMB/BRAF Strategy' and 'three biomarkers (CRP, TLR, TMB/BRAF) against standard of care'; model_configs.R: ALL_STRATEGIES <- c(\"control\",\"crp\",\"tmb_braf\"); ALL_BIOMARKERS <- c(\"crp\",\"tmb_braf\"); startup message 'TLR is excluded from economic strategy modeling'",
+      "expected": "Documented comparators/strategies should have corresponding strategy identifiers or parameter branches in the code",
+      "observed": "README documents TLR as one of three economic biomarker strategies; the code's single source of truth for economic strategies (model_configs.R) explicitly excludes TLR by design, with an explanatory comment and startup message. TLR is used only in clinical-effectiveness/DAG/biomarker-distribution contexts per AGENTS.md and 03_biomarker_strategies.R, not as an economic strategy.",
+      "verdict": "fail",
+      "severity": "major",
+      "location": "docs/README.md:11-17,192; scripts/R/functions/model_configs.R:28,31,170",
+      "checklist_items": ["CDA-AMC 1", "CDA-AMC 2", "CDA-AMC 3"],
+      "recommended_fix": "Edit docs/README.md's 'Biomarker Strategies Evaluated' section to list only CRP and TMB/BRAF as economic strategies, and add a sentence noting TLR is retained only for clinical-effectiveness/DAG analyses (mirroring AGENTS.md's existing wording)."
+    },
+    {
+      "id": "TR-CONS-006",
+      "test": "Internal consistency of versioned technical documentation (model_b_comparison.pdf) against current model_configs.R",
+      "target": "scripts/QMD/technical_docs/model_b_comparison.pdf (2026-02-23, v2.2) vs scripts/R/functions/model_configs.R (current)",
+      "inputs": "model_b_comparison.pdf Section 2.1.2 'Current Model B' formulas explicitly include a TLR strategy formula (Surv(...) ~ Age+sex+Rx+crp+tmb_braf+tlr:Rx) and Table 1 lists 'Strategies evaluated: control, crp, tlr, tmb_braf' for both Original and Current Model B; current model_configs.R has no TLR strategy at all",
+      "expected": "A technical doc describing the 'current' design should match the actual current code, or the documentation set should mark it as superseded",
+      "observed": "model_b_comparison.pdf's 'Current Model B' is itself now stale relative to the June 2026 single-model/no-TLR refactor; no note in the reviewed documentation marks this technical doc as superseded, so a reader following technical_docs/ would form an incorrect picture of the present strategy set, compounding TR-CONS-001/002.",
+      "verdict": "fail",
+      "severity": "minor",
+      "location": "scripts/QMD/technical_docs/model_b_comparison.pdf",
+      "checklist_items": ["CDA-AMC 26"],
+      "recommended_fix": "Add a superseded/deprecated banner to model_b_comparison.pdf (or its .qmd source) noting that TLR and the per-strategy formula structure it describes were removed in the June 2026 single-model refactor, with a pointer to model_configs.R as the current source of truth."
+    },
+    {
+      "id": "TR-CONS-004",
+      "test": "Dependency declaration completeness (prose package lists vs packages actually used in code)",
+      "target": "docs/README.md Installation section and AGENTS.md Package Installation section vs environment.md 'used in code' column",
+      "inputs": "environment.md: DESCRIPTION present FALSE, renv.lock present FALSE, 37 packages flagged 'undeclared'; README/AGENTS.md pacman::p_load(...) lists (devtools, readxl, dplyr, tableone, ggplot2, flexsurv, survival, survminer, gems, mstate, tidyverse, xtable, darthtools, dampack, mvtnorm, Matrix, here, knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)",
+      "expected": "Dependency guidance, even if prose-only, should enumerate all packages actually imported/used by the analysis and report code",
+      "observed": "No DESCRIPTION or renv.lock exists to pin versions, and the prose package lists in both README and AGENTS.md omit at least 14 packages that environment.md shows are actually used in the repository's own scripts/qmd files: coin, cowplot, coxphf, dagitty, emmeans, ggdag, ggtext, glmnet, logistf, MASS, readr, tibble, tidyr, vcd (mostly used by the DAG and clinical-effectiveness statistical reports).",
+      "verdict": "partial",
+      "severity": "minor",
+      "location": "docs/README.md (Installation section); AGENTS.md (Package Installation section); environment.md",
+      "checklist_items": ["CDA-AMC 26"],
+      "recommended_fix": "Generate a DESCRIPTION or renv.lock from the ambient library (or at minimum an exhaustive pacman::p_load list covering all detected packages, including the DAG/statistics-only ones) so a fresh clone can install everything needed to render every report, not just the core economic pipeline."
+    },
+    {
+      "id": "TR-CONS-005",
+      "test": "Render guidance consistency: README 'render whole directory' vs AGENTS.md '--to pdf only' warning for economic reports",
+      "target": "docs/README.md:171-173 vs AGENTS.md rendering-guidance section vs scripts/QMD/report/CEA.qmd YAML/body",
+      "inputs": "README: '# Or render all reports at once\\nquarto render scripts/QMD/report/'; AGENTS.md: 'Do NOT run quarto render scripts/QMD/report/ (whole directory) -- it fails on every economic report's GFM pass. Render economic reports one at a time with --to pdf.'; CEA.qmd:6-23 declares both format: pdf: and format: gfm: targets and contains multiple kableExtra::kable_styling(latex_options=...)/column_spec() calls (e.g. lines 121-149,164-193,221) that are LaTeX-oriented and plausibly break a commonmark render",
+      "expected": "Run instructions in sibling documentation should not contradict each other, and should match the render behavior implied by the report source files",
+      "observed": "README's instruction to render the whole scripts/QMD/report/ directory at once directly contradicts AGENTS.md's explicit warning not to do this for economic reports. The YAML/kableExtra structure of CEA.qmd (dual pdf+gfm targets plus LaTeX-specific table styling) is consistent with AGENTS.md's claimed GFM failure, but the exact runtime error was not independently reproduced by this reviewer (would require executing Quarto, out of scope for a read-only consistency review) -- see 'not-tested' note in the narrative report.",
+      "verdict": "fail",
+      "severity": "minor",
+      "location": "docs/README.md:171-173; AGENTS.md (Rendering Quarto Reports section); scripts/QMD/report/CEA.qmd:6-23,121-221",
+      "checklist_items": ["CDA-AMC 26"],
+      "recommended_fix": "Remove the 'render all reports at once' instruction from README.md (or replace it with AGENTS.md's per-report --to pdf guidance), since README is the more prominently discoverable entry point for new users."
+    },
+    {
+      "id": "TR-CONS-007",
+      "test": "multi_model_cea.R module identity vs actual content",
+      "target": "scripts/R/functions/multi_model_cea.R (filename and header comment) vs its function bodies",
+      "inputs": "File header comment: 'SINGLE-MODEL CEA HELPER FUNCTIONS ... Functions for running and summarizing the single joint economic model' (lines 1-11) contradicts the filename multi_model_cea.R itself, which README cites (line 46) as providing 'multi-model comparison'",
+      "expected": "A file's name should not promise functionality its own header comment and body disclaim",
+      "observed": "The file's own internal header already states it is single-model-only, while its filename and README's description both imply multi-model (A/B/C) comparison capability. This is a code-artifact self-inconsistency that the documentation (README) inherited without noticing the header's disclaimer.",
+      "verdict": "fail",
+      "severity": "minor",
+      "location": "scripts/R/functions/multi_model_cea.R:1-11; docs/README.md:46",
+      "checklist_items": ["CDA-AMC 7"],
+      "recommended_fix": "Rename multi_model_cea.R to single_model_cea.R (or similar) to match its actual, current content and header comment, and update README's file-listing description accordingly."
+    }
+  ]
+}

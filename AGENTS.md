@@ -548,6 +548,11 @@ Each report has specific dependencies:
 - `clin_effect_figure_s2.qmd` → `figs/clin_effect_figure_s2.png` (sensitivity DAG)
 - `clin_effect_table_s1.qmd` → `tables/clin_effect_table_s1.csv` (DAG association consolidated summary)
 
+**Poster vignette** (in `scripts/QMD/vignettes/`): `poster_biomarker_correlation.qmd` supports the SMDM poster "Modeling Multiple Biomarkers in Precision Oncology: How Ignoring Biomarker Correlations Can Reverse Clinical Conclusions". Self-contained (HTML, `embed-resources: true`). **Standalone and intentionally off-pipeline**: it re-introduces TLR as a third biomarker-guided strategy purely to illustrate the methodological point, even though the main economic model deliberately excludes TLR as a post-randomization mediator. It sources 02/03/06/07 + `model_fun`/`calculate_outcomes`/`prediction_functions`, then overrides `get_strategies()`/`get_biomarkers()` locally to add `tlr`; it does not modify the main pipeline. Outputs:
+- `figs/poster_forest.png` (treatment x biomarker interaction, single-biomarker vs joint correlation-adjusted model, parametric AFT time ratios, PFS + OS)
+- `figs/poster_ceac.png` (two-panel cost-effectiveness acceptability curves: single-biomarker vs joint modelling, at biosimilar nivolumab pricing; built via a self-contained parametric-bootstrap PSA reusing the cached economic-parameter draws)
+- `tables/poster_cea.csv` (three-strategy CEA), `tables/poster_forest_data.csv` (forest interaction estimates), and `tables/poster_ceac_data.csv` (CEAC probabilities)
+
 ### Quarto Report Structure Pattern
 
 All reports follow a consistent pattern:

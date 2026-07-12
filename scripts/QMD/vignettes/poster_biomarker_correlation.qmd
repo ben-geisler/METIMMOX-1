@@ -33,7 +33,7 @@ knitr::opts_chunk$set(
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, survival, flexsurv, dplyr, ggplot2, scales, dampack,
+pacman::p_load(here, survival, flexsurv, coxphf, dplyr, ggplot2, scales, dampack,
                knitr, kableExtra)
 
 suppressMessages(suppressWarnings({
@@ -61,61 +61,72 @@ surv_lhs <- list(OS = "Surv(OSwk, Death)", PFS = "Surv(PFSwk, Progression)")
 ```
 
 ```{r forest-data, include=FALSE}
-# Treatment x biomarker interaction, single-biomarker vs joint model.
-# Parametric AFT time ratio = exp(interaction coef). TR > 1 => experimental
-# treatment extends survival MORE in biomarker-positive (= predictive benefit).
-get_int_row <- function(res, bm) {
-  rn  <- rownames(res)
-  hit <- rn[grepl(":", rn) & grepl(bm, rn) & grepl("Rx", rn)]
-  if (length(hit) != 1) stop("Could not uniquely match interaction term for ", bm)
-  r <- res[hit, ]
-  c(est = r[["est"]], lo = r[["L95%"]], hi = r[["U95%"]])
+# Biomarker MAIN effects (prognostic) and treatment x biomarker INTERACTIONS
+# (predictive), estimated with Firth-corrected Cox PH (penalised likelihood;
+# corrects small-sample bias / monotone-likelihood separation) in the SAME n=65
+# cohort, two ways: single-biomarker (one biomarker at a time) and joint (all
+# biomarkers and all biomarker x treatment terms in one model).
+# HR < 1 = lower hazard. Interaction: alternating immunotherapy more beneficial
+# in biomarker-positive. Main effect: better prognosis in the control arm.
+flhs <- list(PFS = "Surv(PFSwk, Progression)", OS = "Surv(OSwk, Death)")
+
+row_mi <- function(fit, ep, bm, estimator) {
+  cf <- fit$coefficients
+  mn <- paste0(bm, "1"); it <- names(cf)[grepl(":", names(cf)) & grepl(bm, names(cf))]
+  rbind(
+    data.frame(endpoint=ep, biomarker=bm, effect="Main effect (prognostic)", estimator=estimator,
+               HR=exp(cf[mn]), lo=fit$ci.lower[mn], hi=fit$ci.upper[mn], row.names=NULL),
+    data.frame(endpoint=ep, biomarker=bm, effect="Interaction (predictive)", estimator=estimator,
+               HR=exp(cf[it]), lo=fit$ci.lower[it], hi=fit$ci.upper[it], row.names=NULL))
+}
+firth_single <- function(ep, bm)
+  row_mi(suppressWarnings(coxphf(as.formula(paste0(flhs[[ep]], " ~ Age + sex + Rx*", bm)),
+         data = d3, firth = TRUE, pl = TRUE, maxit = 400, maxstep = 0.1)),
+         ep, bm, "Single-biomarker (Firth Cox)")
+firth_joint <- function(ep) {
+  fit <- suppressWarnings(coxphf(as.formula(paste0(flhs[[ep]],
+            " ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx")),
+            data = d3, firth = TRUE, pl = TRUE, maxit = 400, maxstep = 0.1))
+  do.call(rbind, lapply(bms, function(bm) row_mi(fit, ep, bm, "Joint (Firth Cox)")))
 }
 
-forest <- list()
-for (ep in c("PFS","OS")) {
-  f_joint <- as.formula(paste0(surv_lhs[[ep]], " ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx"))
-  m_joint <- flexsurvreg(f_joint, data = d3, dist = dist_for[[ep]])
-  for (bm in bms) {
-    f_single <- as.formula(paste0(surv_lhs[[ep]], " ~ Age + sex + Rx*", bm))
-    m_single <- flexsurvreg(f_single, data = d3, dist = dist_for[[ep]])
-    rs <- get_int_row(m_single$res, bm); rj <- get_int_row(m_joint$res, bm)
-    forest[[length(forest)+1]] <- data.frame(endpoint = ep, biomarker = bm_label[[bm]],
-                                              model = "Single-biomarker",
-                                              TR = exp(rs["est"]), lo = exp(rs["lo"]), hi = exp(rs["hi"]))
-    forest[[length(forest)+1]] <- data.frame(endpoint = ep, biomarker = bm_label[[bm]],
-                                              model = "Joint (correlation-adjusted)",
-                                              TR = exp(rj["est"]), lo = exp(rj["lo"]), hi = exp(rj["hi"]))
-  }
-}
-forest_df <- do.call(rbind, forest); rownames(forest_df) <- NULL
+forest_df <- rbind(
+  do.call(rbind, lapply(c("PFS","OS"), function(ep) do.call(rbind, lapply(bms, firth_single, ep = ep)))),
+  do.call(rbind, lapply(c("PFS","OS"), firth_joint)))
+for (cl in c("HR","lo","hi")) forest_df[[cl]] <- as.numeric(forest_df[[cl]])
+lab <- c(crp = "CRP", tmb_braf = "TMB/BRAF", tlr = "TLR")
+forest_df$biomarker <- factor(lab[forest_df$biomarker], levels = c("TMB/BRAF","CRP","TLR"))  # CRP in middle
 forest_df$endpoint  <- factor(forest_df$endpoint, levels = c("PFS","OS"))
-forest_df$biomarker <- factor(forest_df$biomarker, levels = c("CRP","TMB/BRAF","TLR (mediator)"))
-forest_df$model     <- factor(forest_df$model, levels = c("Single-biomarker","Joint (correlation-adjusted)"))
+forest_df$effect    <- factor(forest_df$effect,
+                              levels = c("Main effect (prognostic)","Interaction (predictive)"))  # prognostic on top
+forest_df$estimator <- factor(forest_df$estimator,
+                              levels = c("Single-biomarker (Firth Cox)","Joint (Firth Cox)"))
 ```
 
-# Forest plot: single-biomarker vs joint modelling
+> **Why TLR is excluded from the economic model.** Target lesion reduction (TLR) is shown below as an illustrative third candidate, but it is *not* used as an economic treatment-selection biomarker for two reasons. (1) It lies **on the causal pathway** between treatment and survival — a post-randomization mediator — so building a selection strategy on it (or conditioning on it) would bias the estimated treatment effect. (2) It is a **dynamic biomarker** measured on follow-up imaging, i.e. not available at baseline before immunotherapy starts, so it cannot inform a pre-treatment treatment-selection decision. Only the two baseline biomarkers, CRP and TMB/BRAF, enter the economic model.
 
-```{r forest-plot, fig.width=10, fig.height=5.2}
-#| fig-cap: "Treatment x biomarker interaction (survival time ratio) for each candidate biomarker, estimated in single-biomarker models versus one joint correlation-adjusted model, in the same n=65 cohort. TR > 1 favours adding immunotherapy in biomarker-positive patients; the dashed line is the null. Single-biomarker estimates are systematically further from the null; joint estimates shrink toward it (most strikingly TMB/BRAF on OS: 1.47 -> 1.06). None reaches significance at this sample size."
-p_forest <- ggplot(forest_df, aes(x = TR, y = biomarker, colour = model, shape = model)) +
+# Forest plot: prognostic main effects and predictive interactions
+
+```{r forest-plot, fig.width=8, fig.height=6}
+#| fig-cap: "Biomarker main effects (prognostic, upper panels) and treatment x biomarker interactions (predictive, lower panels) on the log hazard-ratio scale, estimated by Firth-corrected Cox PH one biomarker at a time (single-biomarker) versus all biomarkers and interactions jointly, in the same n = 65 cohort. HR < 1 favours alternating immunotherapy in biomarker-positive (interaction) or indicates better prognosis in the control arm (main effect). TLR shows a strong prognostic main effect but a null predictive interaction; as a dynamic, post-baseline mediator it is excluded from the economic model. No interaction reaches significance at this sample size."
+p_forest <- ggplot(forest_df, aes(x = HR, y = biomarker, colour = estimator, shape = estimator)) +
   geom_vline(xintercept = 1, linetype = "dashed", colour = "grey45") +
   geom_pointrange(aes(xmin = lo, xmax = hi),
-                  position = position_dodge(width = 0.6), linewidth = 0.7, fatten = 3) +
-  facet_wrap(~ endpoint, ncol = 2) +
-  scale_x_log10(breaks = c(0.5, 1, 2, 4, 8)) +
-  scale_colour_manual(values = c("Single-biomarker" = "#C0392B",
-                                 "Joint (correlation-adjusted)" = "#1F4E79")) +
+                  position = position_dodge(width = 0.6), linewidth = 0.7, fatten = 2.6) +
+  facet_grid(effect ~ endpoint) +
+  scale_x_log10(breaks = c(0.1, 0.25, 0.5, 1, 2, 4)) +
+  scale_colour_manual(values = c("Single-biomarker (Firth Cox)" = "#C0392B",
+                                 "Joint (Firth Cox)" = "#1F4E79")) +
   labs(
-    x = "Treatment x biomarker interaction\n(survival time ratio; >1 favours adding immunotherapy in biomarker-positive)",
+    x = "Hazard ratio (HR < 1 favours alternating immunotherapy)",
     y = NULL, colour = NULL, shape = NULL,
-    title = "Single-biomarker modelling overstates predictive value",
-    subtitle = sprintf("Parametric AFT interaction estimates, METIMMOX (n = %d complete cases on all three biomarkers)", n3)
+    subtitle = sprintf("Firth-corrected Cox PH: single-biomarker vs joint, METIMMOX (n = %d)", n3)
   ) +
-  theme_minimal(base_size = 13) +
+  theme_minimal(base_size = 12) +
   theme(legend.position = "bottom",
         plot.title = element_text(face = "bold"),
         panel.grid.minor = element_blank(),
+        panel.spacing.x = grid::unit(0.3, "lines"),
         strip.text = element_text(face = "bold"))
 print(p_forest)
 ```
@@ -124,7 +135,7 @@ print(p_forest)
 figs_dir <- here("figs"); if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
 tables_dir <- here("tables"); if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
 
-ggsave(here("figs", "poster_forest.png"), p_forest, width = 10, height = 5.2, dpi = 300, bg = "white")
+ggsave(here("figs", "poster_forest.png"), p_forest, width = 8, height = 6, dpi = 300, bg = "white")
 write.csv(forest_df, here("tables", "poster_forest_data.csv"), row.names = FALSE)
 ```
 
@@ -201,7 +212,123 @@ kable(cea_display,
     general_title = "Notes: ")
 ```
 
+# Cost-effectiveness acceptability curves: single-biomarker vs joint modelling
+
+```{r ceac-build, include=FALSE}
+# Two CEAC panels for the two PRE-TREATMENT economic biomarkers (CRP, TMB/BRAF):
+#   Panel A  "one biomarker"  - each guided strategy from its OWN single-biomarker model
+#   Panel B  "two biomarkers" - both guided strategies from the joint model
+# Same control model and the SAME cached economic-parameter draws are used in both
+# panels, so the only thing that differs is single vs joint survival modelling.
+# Survival uncertainty is propagated by a parametric bootstrap (MVN draws on the
+# flexsurv coefficient vector). Shown at biosimilar nivolumab pricing, where the
+# decision is a close call and the modelling choice is economically visible (at
+# list price the two panels are essentially identical).
+get_strategies <- function() c("control","crp","tmb_braf")   # reset (TLR off for the CEAC)
+get_biomarkers <- function() c("crp","tmb_braf")
+
+dc <- data_complete
+times_c <- seq(0, time_horizon)
+ctrl_rx <- levels(dc$Rx)[1]; exp_rx <- levels(dc$Rx)[2]
+fitc <- function(lhs, rhs, dist) flexsurvreg(as.formula(paste(lhs, rhs)), data = dc, dist = dist)
+mC <- list(
+  ctrl_os  = fitc("Surv(OSwk,Death)","~ Age + sex","weibull"),
+  ctrl_pfs = fitc("Surv(PFSwk,Progression)","~ Age + sex","lognormal"),
+  joint_os = fitc("Surv(OSwk,Death)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx","weibull"),
+  joint_pfs= fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx","lognormal"),
+  crp_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*crp","weibull"),
+  crp_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*crp","lognormal"),
+  tmb_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*tmb_braf","weibull"),
+  tmb_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*tmb_braf","lognormal"))
+
+Xof <- function(rhs, nd) model.matrix(as.formula(rhs), data = nd)
+set_rx <- function(nd, rx) { nd$Rx <- factor(rx, levels = levels(dc$Rx)); nd }
+bm_sub <- function(bm, val) dc[as.numeric(as.character(dc[[bm]])) == val, ]
+rj <- "~ Age + sex + Rx + crp*Rx + tmb_braf*Rx"
+XC <- list(ctrl = Xof("~ Age + sex", set_rx(dc, ctrl_rx)),
+  j_crp_p = Xof(rj, set_rx(bm_sub("crp",1), exp_rx)),       j_crp_n = Xof(rj, set_rx(bm_sub("crp",0), ctrl_rx)),
+  j_tmb_p = Xof(rj, set_rx(bm_sub("tmb_braf",1), exp_rx)),  j_tmb_n = Xof(rj, set_rx(bm_sub("tmb_braf",0), ctrl_rx)),
+  s_crp_p = Xof("~ Age + sex + Rx*crp", set_rx(bm_sub("crp",1), exp_rx)),
+  s_crp_n = Xof("~ Age + sex + Rx*crp", set_rx(bm_sub("crp",0), ctrl_rx)),
+  s_tmb_p = Xof("~ Age + sex + Rx*tmb_braf", set_rx(bm_sub("tmb_braf",1), exp_rx)),
+  s_tmb_n = Xof("~ Age + sex + Rx*tmb_braf", set_rx(bm_sub("tmb_braf",0), ctrl_rx)))
+
+curve_draw <- function(pars, Xm, dist) {
+  cn <- colnames(Xm)
+  loc <- if (dist == "weibull") "scale" else "meanlog"
+  anc <- if (dist == "weibull") "shape" else "sdlog"
+  beta <- setNames(numeric(length(cn)), cn)
+  beta["(Intercept)"] <- pars[[loc]]; oth <- setdiff(cn, "(Intercept)"); beta[oth] <- pars[oth]
+  lp <- as.numeric(Xm %*% beta); a <- exp(pars[[anc]])
+  M <- if (dist == "weibull") exp(-outer(times_c, exp(lp), function(t,s)(t/s)^a)) else
+                              1 - outer(times_c, lp, function(t,mu) pnorm((log(t)-mu)/a))
+  M[1, ] <- 1; rowMeans(M)
+}
+draw_pars <- function(mod) MASS::mvrnorm(1, coef(mod), vcov(mod))
+
+psa_params <- readRDS(here("data/tidy/psa_params_correct.rds"))
+NIVO_FACTOR <- 4641 / 13923            # biosimilar nivolumab price (repo biosimilar scenario)
+N <- 1000; set.seed(2026); idx <- sample(nrow(psa_params), N)
+
+run_panel <- function(d_row, dp, panel) {
+  p <- l_params_base
+  for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_NGS",
+               "c_other_visit","c_other_baseline","c_other_follow","c_other_last",
+               "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
+  p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
+  oc <- curve_draw(dp$ctrl_os, XC$ctrl, "weibull"); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, "lognormal")
+  if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"
+    Xcp<-XC$j_crp_p;Xcn<-XC$j_crp_n;Xtp<-XC$j_tmb_p;Xtn<-XC$j_tmb_n
+  } else { co<-"crp_os";cf<-"crp_pfs";to<-"tmb_os";tf<-"tmb_pfs"
+    Xcp<-XC$s_crp_p;Xcn<-XC$s_crp_n;Xtp<-XC$s_tmb_p;Xtn<-XC$s_tmb_n }
+  p$p_os <- list(control_OS=oc, crp_pos_OS=curve_draw(dp[[co]],Xcp,"weibull"),
+                 crp_neg_OS=curve_draw(dp[[co]],Xcn,"weibull"),
+                 tmb_braf_pos_OS=curve_draw(dp[[to]],Xtp,"weibull"),
+                 tmb_braf_neg_OS=curve_draw(dp[[to]],Xtn,"weibull"))
+  p$p_pfs <- list(control_PFS=pc, crp_pos_PFS=curve_draw(dp[[cf]],Xcp,"lognormal"),
+                  crp_neg_PFS=curve_draw(dp[[cf]],Xcn,"lognormal"),
+                  tmb_braf_pos_PFS=curve_draw(dp[[tf]],Xtp,"lognormal"),
+                  tmb_braf_neg_PFS=curve_draw(dp[[tf]],Xtn,"lognormal"))
+  suppressWarnings(model_fun(p, determpsa = "det"))
+}
+
+cj <- ej <- cs <- es <- matrix(NA, N, 3, dimnames = list(NULL, c("control","crp","tmb_braf")))
+for (i in seq_len(N)) {
+  dr <- psa_params[idx[i], ]; dp <- lapply(mC, draw_pars)
+  a <- run_panel(dr, dp, "joint");  cj[i,] <- a$Cost; ej[i,] <- a$Effect
+  b <- run_panel(dr, dp, "single"); cs[i,] <- b$Cost; es[i,] <- b$Effect
+}
+mk_psa <- function(co, ef) dampack::make_psa_obj(as.data.frame(co), as.data.frame(ef),
+            parameters = NULL, strategies = c("control","crp","tmb_braf"))
+wtp_range <- seq(0, 150000, by = 2000)
+c1 <- dampack::ceac(wtp_range, mk_psa(cs, es)); c1$Panel <- "One biomarker (modelled in isolation)"
+c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- "Two biomarkers (joint, correlation-adjusted)"
+ceac_df <- rbind(as.data.frame(c1), as.data.frame(c2))
+names(ceac_df)[names(ceac_df) == "Proportion"] <- "Probability"
+ceac_df$Strategy <- c(control="Standard of Care", crp="CRP-guided",
+                      tmb_braf="TMB/BRAF-guided")[as.character(ceac_df$Strategy)]
+write.csv(ceac_df, here("tables", "poster_ceac_data.csv"), row.names = FALSE)
+```
+
+```{r ceac-plot, fig.width=11, fig.height=5}
+#| fig-cap: "Cost-effectiveness acceptability curves at biosimilar nivolumab pricing. Left: each biomarker-guided strategy estimated from its own single-biomarker survival model. Right: both estimated from the joint, correlation-adjusted model. Standard of care remains the most probable optimal strategy in both panels, but single-biomarker modelling inflates the apparent cost-effectiveness of TMB/BRAF-guided treatment (higher probability at every threshold); CRP-guided is essentially unchanged. At list price (not shown) the two panels are indistinguishable. Dotted line = EUR 51,000/QALY."
+p_ceac <- ggplot(ceac_df, aes(WTP, Probability, colour = Strategy)) +
+  geom_vline(xintercept = WTP, linetype = "dotted", colour = "grey40") +
+  geom_line(linewidth = 0.9) +
+  facet_wrap(~ Panel) +
+  scale_x_continuous(labels = scales::dollar_format(prefix = "EUR ", scale = 0.001, suffix = "K")) +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+  scale_colour_manual(values = c("Standard of Care" = "#2E7D32",
+                                 "CRP-guided" = "#C0392B", "TMB/BRAF-guided" = "#1F4E79")) +
+  labs(x = "Willingness-to-pay (EUR/QALY)", y = "Probability cost-effective", colour = NULL) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank(), strip.text = element_text(face = "bold"))
+print(p_ceac)
+ggsave(here("figs", "poster_ceac.png"), p_ceac, width = 11, height = 5, dpi = 300, bg = "white")
+```
+
 ---
 
-Figure saved to `figs/poster_forest.png`.
-Tables saved to `tables/poster_cea.csv` and `tables/poster_forest_data.csv`.
+Figure saved to `figs/poster_forest.png` and `figs/poster_ceac.png`.
+Tables saved to `tables/poster_cea.csv`, `tables/poster_forest_data.csv`, and `tables/poster_ceac_data.csv`.
