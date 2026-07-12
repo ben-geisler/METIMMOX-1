@@ -102,6 +102,12 @@ if (!psa_cached) {
     n_sim = n_sim
   )
 
+  cat(sprintf(
+    "PSA fallback diagnostic: %d/%d initial iterations (%.2f%%; maximum permitted %.2f%%)\n",
+    psa_results$fallback_count, n_sim, 100 * psa_results$fallback_rate,
+    100 * psa_results$fallback_threshold
+  ))
+
   # Create the PSA object using dampack's make_psa_obj function
   psa_obj <- dampack::make_psa_obj(
     cost = as.data.frame(psa_results$cost),
@@ -111,6 +117,11 @@ if (!psa_cached) {
   )
 
   cat("\n=== PSA generation complete ===\n")
+} else {
+  cat(paste0(
+    "PSA fallback diagnostic: unavailable for the existing cache ",
+    "(the PSA loop was not run).\n"
+  ))
 }
 
 # Verify the PSA object structure

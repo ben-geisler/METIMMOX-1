@@ -43,9 +43,17 @@ generate_psa_samples <- function(param_distributions, n_sim) {
 #' @param time_horizon Time horizon for analysis
 #' @param cl Cycle length (1/52 weeks)
 #' @param n_sim Number of simulations
-#' @return List with cost and effect matrices
+#' @param fallback_threshold Maximum permitted proportion of initial PSA
+#'   iterations using fallback before the analysis stops
+#' @return List with cost and effect matrices and fallback diagnostics
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
-                             strategies, time_horizon, cl, n_sim) {
+                             strategies, time_horizon, cl, n_sim,
+                             fallback_threshold = 0.02) {
+  if (length(fallback_threshold) != 1L || !is.finite(fallback_threshold) ||
+      fallback_threshold < 0 || fallback_threshold > 1) {
+    stop("fallback_threshold must be a single finite value between 0 and 1")
+  }
+
   # Create empty matrices to store results
   cost_matrix <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                         dimnames = list(NULL, strategies))
@@ -119,7 +127,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
       # Check if fallback was used (Issue #79)
       if (isTRUE(attr(sim_results, "fallback_used"))) {
-        fallback_iterations <<- c(fallback_iterations, i)
+        fallback_iterations <- c(fallback_iterations, i)
       }
 
       # Store results
@@ -135,7 +143,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
           cost_matrix[i, strat] <- NA
           effect_matrix[i, strat] <- NA
           if (!(i %in% fallback_iterations)) {
-            fallback_iterations <<- c(fallback_iterations, i)
+            fallback_iterations <- c(fallback_iterations, i)
           }
         }
       }
@@ -162,6 +170,27 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   
   total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
   cat(sprintf("PSA initial pass complete: %d simulations in %.1f minutes\n", n_sim, total_time))
+
+  # Report and bound initial-pass fallback use before attempting replacements.
+  # A high rate indicates systematic survival-prediction failures and would
+  # otherwise silently reduce the uncertainty represented by the PSA.
+  fallback_iterations <- unique(fallback_iterations)
+  fallback_count <- length(fallback_iterations)
+  fallback_rate <- fallback_count / n_sim
+  cat(sprintf(
+    "PSA initial-pass fallback rate: %d/%d (%.2f%%; maximum permitted %.2f%%)\n",
+    fallback_count, n_sim, 100 * fallback_rate, 100 * fallback_threshold
+  ))
+
+  if (fallback_rate > fallback_threshold) {
+    stop(sprintf(
+      paste0(
+        "PSA initial-pass fallback rate %.2f%% (%d/%d) exceeds the ",
+        "permitted %.2f%% threshold; investigate survival-prediction failures."
+      ),
+      100 * fallback_rate, fallback_count, n_sim, 100 * fallback_threshold
+    ))
+  }
 
   # =========================================================================
   # REPLACE FALLBACK ITERATIONS (Issue #79)
@@ -287,6 +316,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   # Return the cost and effect matrices separately
   return(list(
     cost = cost_matrix,
-    effect = effect_matrix
+    effect = effect_matrix,
+    fallback_count = fallback_count,
+    fallback_rate = fallback_rate,
+    fallback_threshold = fallback_threshold
   ))
 }
