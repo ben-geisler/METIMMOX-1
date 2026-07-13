@@ -129,7 +129,7 @@ if (is.null(comparison_pair)) {
     pair_df,
     booktabs = TRUE,
     align = c("l", "l", "l"),
-    caption = paste0("Selected snapshot pair for issue #", selected_issue)
+    caption = paste0("Selected snapshot pair for issue \\#", selected_issue)
   ) %>%
     kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
 }
