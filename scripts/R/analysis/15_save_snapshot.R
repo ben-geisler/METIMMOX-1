@@ -172,7 +172,11 @@ if (is.null(psa_obj)) {
   if (exists("sampling_models") && !is.null(sampling_models)) {
     cat("PSA cache not found - generating PSA...\n")
 
-    psa_params_gen <- generate_psa_samples(param_distributions, n_sim)
+    psa_params_gen <- generate_psa_samples(
+      param_distributions,
+      n_sim,
+      seed = analysis_seed
+    )
     psa_results <- run_psa_analysis(
       psa_params = psa_params_gen,
       l_params_base = l_params_base,

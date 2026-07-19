@@ -4,10 +4,14 @@
 #' 
 #' @param param_distributions List of parameter distributions with dist, shape, and rate/scale info
 #' @param n_sim Number of simulations
+#' @param seed RNG seed used immediately before drawing PSA parameters
 #' @return Data frame with sampled parameter values
-generate_psa_samples <- function(param_distributions, n_sim) {
+generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
   samples <- data.frame(sim = 1:n_sim)
-  
+
+  # Make draws independent of RNG use in earlier analysis or cache branches.
+  set.seed(seed)
+
   # Sample from each parameter distribution
   for (param_name in names(param_distributions)) {
     dist_info <- param_distributions[[param_name]]
@@ -30,8 +34,18 @@ generate_psa_samples <- function(param_distributions, n_sim) {
                                      max = dist_info$max)
     }
   }
-  
+
+  attr(samples, "seed") <- seed
   return(samples)
+}
+
+#' Check whether cached PSA samples were generated with the requested seed
+#'
+#' @param psa_params Data frame returned by generate_psa_samples()
+#' @param seed Expected RNG seed
+#' @return Logical scalar
+psa_samples_seed_matches <- function(psa_params, seed = 123L) {
+  identical(attr(psa_params, "seed"), seed)
 }
 
 #' Run PSA analysis across all simulations

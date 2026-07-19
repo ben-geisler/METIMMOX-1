@@ -91,7 +91,8 @@ rm(list = setdiff(ls(), c(
   # Biomarker prevalence
   "p_crp", "p_tlr", "p_tmb_braf",
   # Other essential variables from 02_setup_and_global_variables.R
-  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr",
+  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim",
+  "analysis_seed", "dr",
   # Population parameters for EVPPI scaling
   "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
   # Model configuration switches

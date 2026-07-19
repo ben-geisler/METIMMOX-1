@@ -31,6 +31,7 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
   if (!is.null(interaction_coefs) &&
       nrow(interaction_coefs) == nrow(psa_params)) {
     psa_params <- cbind(psa_params, interaction_coefs)
+    attr(psa_params, "seed") <- analysis_seed
     cat("Interaction coefficients appended to psa_params\n")
     cat("psa_params now has", ncol(psa_params), "columns\n")
     interaction_params_available <- TRUE
@@ -127,7 +128,8 @@ evppi_results <- run_evppi_analysis(
   psa_params = psa_params,
   wtp = WTP,
   evppi_params = evppi_params,
-  param_groups = param_groups
+  param_groups = param_groups,
+  seed = analysis_seed
 )
 
 # ===============================================================================

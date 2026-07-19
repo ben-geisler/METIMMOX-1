@@ -84,7 +84,11 @@ for (i in 1:nrow(scenarios_preview)) {
   scenario_param_dist$c_drug_nivo <- c(list(dist = "gamma"), nivo_gamma)
 
   # Generate new PSA samples with updated distributions (reduced iterations)
-  scenario_psa_params <- generate_psa_samples(scenario_param_dist, n_sim_preview)
+  scenario_psa_params <- generate_psa_samples(
+    scenario_param_dist,
+    n_sim_preview,
+    seed = analysis_seed
+  )
 
   # Run PSA
   psa_results <- run_psa_analysis(
@@ -113,7 +117,8 @@ for (i in 1:nrow(scenarios_preview)) {
     psa_obj = psa_obj,
     psa_params = scenario_psa_params,
     wtp = scenario_row$wtp,
-    evppi_params = evppi_params
+    evppi_params = evppi_params,
+    seed = analysis_seed
   )
 
   # Add scenario information to results

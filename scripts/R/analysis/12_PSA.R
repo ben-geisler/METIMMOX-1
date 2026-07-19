@@ -21,6 +21,7 @@ if (length(time_points) != time_points_length) {
 # Define cache file paths with utility source label
 cache_file_obj <- psa_obj_path()
 cache_file_params <- psa_params_path()
+psa_seed <- analysis_seed
 
 # Check if PSA cache exists and is valid
 psa_cached <- FALSE
@@ -51,6 +52,14 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
     # Check if psa_params has correct number of rows
     if (nrow(psa_params) != n_sim) {
       cat("  Cache validation failed: psa_params row count mismatch\n")
+      cache_valid <- FALSE
+    }
+
+    # Legacy caches without seed metadata, and caches made with another seed,
+    # cannot guarantee reproducibility against a fresh run.
+    if (!psa_samples_seed_matches(psa_params, psa_seed)) {
+      cat("  Cache validation failed: RNG seed missing or mismatched (expected:",
+          psa_seed, ")\n")
       cache_valid <- FALSE
     }
 
@@ -88,7 +97,11 @@ if (!psa_cached) {
 
   # Generate PSA samples
   cat("Generating PSA samples for", n_sim, "simulations\n")
-  psa_params <- generate_psa_samples(param_distributions, n_sim)
+  psa_params <- generate_psa_samples(
+    param_distributions,
+    n_sim,
+    seed = psa_seed
+  )
 
   # Run the PSA
   cat("Starting PSA with", n_sim, "simulations\n")

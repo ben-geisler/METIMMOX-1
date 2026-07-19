@@ -20,6 +20,7 @@ if (!dir.exists(cache_dir)) {
 
 # Create cache file path based on n_samples
 cache_file <- sampling_cache_path(n_samples, cache_dir)
+sampling_seed <- analysis_seed
 
 # Check for old cache files in deprecated location
 old_cache_dir <- here("data", "bootstrap_cache")
@@ -69,7 +70,7 @@ create_biomarker_formula <- function(outcome, biomarker) {
 
 sample_correlated_survival <- function(formula_os, formula_pfs, data,
                                        dist_os = "weibull", dist_pfs = "weibull",
-                                       n_samples = n_samples) {
+                                       n_samples = n_samples, seed = 123L) {
 
   n_patients <- nrow(data)
   sampled_models <- vector("list", n_samples)
@@ -82,6 +83,9 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
   # Fit original models for reference
   original_os <- flexsurvreg(formula_os, data = data, dist = dist_os)
   original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist_pfs)
+
+  # Make bootstrap indices independent of prior RNG use and cache branches.
+  set.seed(seed)
 
   # Set up progress reporting
   start_time <- Sys.time()
@@ -154,7 +158,18 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
     n_failed = n_failed,
     dist_os = dist_os,
     dist_pfs = dist_pfs,
+    seed = seed,
     creation_time = Sys.time()
+  ))
+}
+
+# Return TRUE only when every requested cache component records the expected seed.
+sampling_cache_seed_matches <- function(sampling_models, components,
+                                        seed = 123L) {
+  all(vapply(
+    components,
+    function(component) identical(sampling_models[[component]]$seed, seed),
+    logical(1)
   ))
 }
 
@@ -219,11 +234,20 @@ if (file.exists(cache_file)) {
       },
       logical(1)
     ))
+    seed_matches <- sampling_cache_seed_matches(
+      sampling_models,
+      cache_components,
+      sampling_seed
+    )
 
     if (!distributions_match) {
       cat("Cache distributions do not match the ordering-constrained base case ",
           "(OS: ", expected_dists$os, ", PFS: ", expected_dists$pfs,
           "). Regenerating...\n", sep = "")
+      sampling_models <- NULL
+    } else if (!seed_matches) {
+      cat("Cache RNG seed is missing or does not match the requested seed (",
+          sampling_seed, "). Regenerating...\n", sep = "")
       sampling_models <- NULL
     } else {
       cat("Cache loaded successfully!\n")
@@ -232,6 +256,7 @@ if (file.exists(cache_file)) {
       cat("- Created:", format(sampling_models$control$creation_time), "\n")
       cat("- Distributions: OS", sampling_models$control$dist_os,
           "| PFS", sampling_models$control$dist_pfs, "\n")
+      cat("- RNG seed:", sampling_models$control$seed, "\n")
 
       # Check if n_samples matches
       if (sampling_models$control$n_samples != n_samples) {
@@ -273,7 +298,8 @@ if (is.null(sampling_models)) {
     data = data_control,
     dist_os = control_dists$os,
     dist_pfs = control_dists$pfs,
-    n_samples = n_samples
+    n_samples = n_samples,
+    seed = sampling_seed
   )
 
   # Sample biomarker models with age and sex adjustments
@@ -294,7 +320,8 @@ if (is.null(sampling_models)) {
       data = data,
       dist_os = bm_dists$os,
       dist_pfs = bm_dists$pfs,
-      n_samples = n_samples
+      n_samples = n_samples,
+      seed = sampling_seed
     )
   }
 

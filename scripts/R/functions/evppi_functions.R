@@ -8,9 +8,11 @@
 #' @param wtp Willingness-to-pay threshold
 #' @param n_inner Number of inner loop simulations
 #' @param n_grid Number of grid points for parameter values
+#' @param seed RNG seed used before subsampling multi-parameter combinations
 #' @return List with EVPPI results and diagnostics
 calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp, 
-                                     n_inner = 1000, n_grid = 500) {
+                                     n_inner = 1000, n_grid = 500,
+                                     seed = 123L) {
   
   cat("Calculating EVPPI for parameter(s):", paste(param_names, collapse = ", "), "\n")
   
@@ -105,6 +107,8 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       max_combos <- n_grid  # Cap at n_grid evaluation points
       all_param_values <- psa_params[, param_names, drop = FALSE]
       if (nrow(all_param_values) > max_combos) {
+        # Make the subset independent of prior EVPPI groups and scenarios.
+        set.seed(seed)
         sample_idx <- sample(nrow(all_param_values), max_combos)
         param_combinations <- all_param_values[sample_idx, , drop = FALSE]
       } else {
@@ -183,9 +187,10 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
 #' @param wtp Willingness-to-pay threshold
 #' @param evppi_params Vector of parameter names to analyze
 #' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @param seed RNG seed used for grouped-parameter subsampling
 #' @return Data frame with EVPPI results for all parameters and groups
 run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
-                               param_groups = NULL) {
+                               param_groups = NULL, seed = 123L) {
   
   # Calculate NMB and EVPI for diagnostics
   cost_matrix <- as.matrix(psa_obj$cost)
@@ -240,7 +245,8 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
   if (length(params_with_variation) > 0) {
     for (param in params_with_variation) {
       result <- calculate_evppi_improved(psa_obj, psa_params, param, 
-                                         wtp = wtp, n_inner = 1000, n_grid = 500)
+                                         wtp = wtp, n_inner = 1000, n_grid = 500,
+                                         seed = seed)
       
       evppi_percent <- if (result$evpi > 0) (result$evppi / result$evpi) * 100 else 0
       
@@ -276,7 +282,8 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
             "(", paste(group_params, collapse = ", "), ")\n")
 
         result <- calculate_evppi_improved(psa_obj, psa_params, group_params,
-                                           wtp = wtp, n_inner = 1000, n_grid = 100)
+                                           wtp = wtp, n_inner = 1000, n_grid = 100,
+                                           seed = seed)
 
         evppi_percent <- if (result$evpi > 0) {
           (result$evppi / result$evpi) * 100

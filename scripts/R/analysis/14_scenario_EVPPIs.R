@@ -103,7 +103,8 @@ all_scenario_results <- run_all_scenarios(
   cl = cl,
   n_sim = n_sim,
   evppi_params = evppi_params,
-  param_groups = scenario_param_groups
+  param_groups = scenario_param_groups,
+  seed = analysis_seed
 )
 
 evppi_all_scenarios <- compile_evppi_results(all_scenario_results)
