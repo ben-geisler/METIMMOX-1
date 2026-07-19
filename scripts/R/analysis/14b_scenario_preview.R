@@ -120,6 +120,7 @@ for (i in 1:nrow(scenarios_preview)) {
   psa_obj$dropped_count <- psa_results$dropped_count
   psa_obj$dropped_iterations <- psa_results$dropped_iterations
   psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
+  psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
 
   cat("\nPSA Summary:\n")
   print(summary(psa_obj))
@@ -179,7 +180,7 @@ evppi_cache_preview <- list(
   all_scenario_results = all_scenario_results_preview,
   evppi_all_scenarios = evppi_all_scenarios_preview,
   scenarios = scenarios_preview,
-  failed_draw_policy = "drop_unreplaced_v1"
+  failed_draw_policy = psa_failed_draw_policy()
 )
 
 # Save to preview cache file (utility-source-aware name, matching 14_scenario_EVPPIs.R)

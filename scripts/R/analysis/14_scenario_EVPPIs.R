@@ -213,7 +213,7 @@ evppi_cache <- list(
   all_scenario_results = all_scenario_results,
   evppi_all_scenarios = evppi_all_scenarios,
   scenarios = scenarios,
-  failed_draw_policy = "drop_unreplaced_v1"
+  failed_draw_policy = psa_failed_draw_policy()
 )
 
 scenario_evppi_cache_file <- scenario_evppi_path()

@@ -119,6 +119,7 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   psa_obj$dropped_count <- psa_results$dropped_count
   psa_obj$dropped_iterations <- psa_results$dropped_iterations
   psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
+  psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))

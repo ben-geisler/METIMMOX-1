@@ -48,6 +48,35 @@ psa_samples_seed_matches <- function(psa_params, seed = 123L) {
   identical(attr(psa_params, "seed"), seed)
 }
 
+#' Return the failed-draw handling policy used by PSA caches
+#'
+#' @return Character policy identifier
+psa_failed_draw_policy <- function() {
+  "cyclic_other_models_drop_unreplaced_v2"
+}
+
+#' List replacement survival-model indices for a failed PSA draw
+#'
+#' The cache contains exactly `n_sim` resampled survival models, all of which
+#' are assigned during the initial PSA pass. There is therefore no unused model
+#' bank for replacements. A failed non-survival parameter draw is instead
+#' re-paired with up to 10 *other* cached survival models, each used at most
+#' once for that draw, in deterministic cyclic order starting after its
+#' original model. If every candidate fails, the complete PSA draw is dropped.
+#'
+#' @param failed_i Index of the failed PSA draw
+#' @param n_sim Number of cached resampled survival models
+#' @param max_attempts Maximum distinct alternative models to return
+#' @return Integer vector of candidate model indices
+psa_replacement_candidates <- function(failed_i, n_sim, max_attempts = 10L) {
+  if (n_sim <= 1L) {
+    return(integer(0))
+  }
+
+  candidate_count <- min(as.integer(max_attempts), n_sim - 1L)
+  as.integer(((failed_i + seq_len(candidate_count) - 1L) %% n_sim) + 1L)
+}
+
 #' Run PSA analysis across all simulations
 #'
 #' @param psa_params Data frame with PSA parameter samples
@@ -219,20 +248,27 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cat(sprintf("\n--- Replacing %d fallback iterations (Issue #79) ---\n",
                 length(fallback_iterations)))
 
-    replacement_idx <- n_sim + 1  # Start with models beyond initial set
     replaced_count <- 0
-    max_attempts <- length(fallback_iterations) * 10  # Safety limit
-    attempt <- 0
+    total_attempts <- 0L
 
     for (failed_i in fallback_iterations) {
       success <- FALSE
 
+      # There are no models beyond the initial n_sim cached draws. Re-pair the
+      # failed economic-parameter draw with up to 10 other cached survival
+      # models, each at most once. Start after its original index to avoid
+      # favoring low indices and bound the work for an unrecoverable draw.
+      replacement_candidates <- psa_replacement_candidates(failed_i, n_sim)
+      max_attempts <- length(replacement_candidates)
+
+      # Each failed draw receives its own complete candidate scan. A shared
+      # counter would let early failures exhaust the budget for later failures.
+      attempt <- 0L
+
       while (!success && attempt < max_attempts) {
         attempt <- attempt + 1
-
-        # Use modulo to wrap around if we exceed available models
-        # This ensures we always have a valid model index
-        actual_sim_idx <- ((replacement_idx - 1) %% n_sim) + 1
+        total_attempts <- total_attempts + 1L
+        actual_sim_idx <- replacement_candidates[attempt]
 
         # Create parameter set (use same PSA samples as original iteration)
         sim_params <- l_params_base
@@ -275,8 +311,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         }, error = function(e) {
           # This model also failed, try next
         })
-
-        replacement_idx <- replacement_idx + 1
       }
 
       if (!success) {
@@ -287,9 +321,14 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
     cat(sprintf("Successfully replaced %d of %d fallback iterations\n",
                 replaced_count, length(fallback_iterations)))
-    cat(sprintf("Models tried: %d (wrapped around %d times)\n",
-                replacement_idx - n_sim - 1,
-                (replacement_idx - n_sim - 1) %/% n_sim))
+    cat(sprintf(
+      paste0(
+        "Replacement model attempts: %d ",
+        "(policy: up to 10 other cached models, each at most once ",
+        "per failed draw)\n"
+      ),
+      total_attempts
+    ))
   }
 
   # Drop entire draws that could not be replaced. Keeping base-case fallback
@@ -363,7 +402,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     dropped_iterations = dropped_iterations,
     retained_iterations = retained_iterations,
     n_sim = length(retained_iterations),
-    failed_draw_policy = "drop_unreplaced_v1",
+    failed_draw_policy = psa_failed_draw_policy(),
+    replacement_model_policy = "cyclic_next_10_other_cached_models_v1",
     fallback_rate = fallback_rate,
     fallback_threshold = fallback_threshold
   ))

@@ -205,6 +205,7 @@ if (is.null(psa_obj)) {
     psa_obj$dropped_count <- psa_results$dropped_count
     psa_obj$dropped_iterations <- psa_results$dropped_iterations
     psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
+    psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
 
     tryCatch({
       saveRDS(psa_obj, cache_file_obj)

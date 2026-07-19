@@ -60,8 +60,9 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
       cache_valid <- FALSE
     }
 
-    # Legacy caches may contain mean-imputed failed draws and must be rebuilt.
-    if (!identical(psa_obj$failed_draw_policy, "drop_unreplaced_v1")) {
+    # Legacy caches may contain mean-imputed draws or the old shared-budget
+    # replacement loop and must be rebuilt.
+    if (!identical(psa_obj$failed_draw_policy, psa_failed_draw_policy())) {
       cat("  Cache validation failed: legacy failed-draw handling policy\n")
       cache_valid <- FALSE
     }
@@ -155,6 +156,7 @@ if (!psa_cached) {
   psa_obj$dropped_count <- psa_results$dropped_count
   psa_obj$dropped_iterations <- psa_results$dropped_iterations
   psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
+  psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
 
   cat("\n=== PSA generation complete ===\n")
 } else {
