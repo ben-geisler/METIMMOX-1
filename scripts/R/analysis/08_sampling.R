@@ -93,11 +93,11 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
 
     # Fit BOTH models to the SAME resampled dataset
     # This is critical: PFS and OS share the same patient cohort
-    tryCatch({
+    sampled_models[[i]] <- tryCatch({
       os_model <- flexsurvreg(formula_os, data = resampled_data, dist = dist_os)
       pfs_model <- flexsurvreg(formula_pfs, data = resampled_data, dist = dist_pfs)
 
-      sampled_models[[i]] <- list(
+      list(
         os = list(
           model = os_model,
           coefficients = os_model$coefficients,
@@ -113,7 +113,7 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
     }, error = function(e) {
       # If resampled model fails, use original model
       cat("Warning: Resampled model", i, "failed:", conditionMessage(e), "\n")
-      sampled_models[[i]] <- list(
+      list(
         os = list(
           model = original_os,
           coefficients = original_os$coefficients,
@@ -126,8 +126,11 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
         ),
         failed = TRUE
       )
-      n_failed <<- n_failed + 1
     })
+
+    if (isTRUE(sampled_models[[i]]$failed)) {
+      n_failed <- n_failed + 1
+    }
     
     # Progress reporting
     if (i %% 500 == 0) {
