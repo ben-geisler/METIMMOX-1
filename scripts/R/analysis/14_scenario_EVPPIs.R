@@ -212,7 +212,8 @@ if (nrow(evppi_all_scenarios) > 0) {
 evppi_cache <- list(
   all_scenario_results = all_scenario_results,
   evppi_all_scenarios = evppi_all_scenarios,
-  scenarios = scenarios
+  scenarios = scenarios,
+  failed_draw_policy = "drop_unreplaced_v1"
 )
 
 scenario_evppi_cache_file <- scenario_evppi_path()

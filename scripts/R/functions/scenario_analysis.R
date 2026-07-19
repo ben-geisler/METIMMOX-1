@@ -100,6 +100,12 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
     n_sim = n_sim
   )
 
+  scenario_seed_attr <- attr(scenario_psa_params, "seed")
+  scenario_psa_params <- scenario_psa_params[
+    psa_results$retained_iterations, , drop = FALSE
+  ]
+  attr(scenario_psa_params, "seed") <- scenario_seed_attr
+
   # Create PSA object
   psa_obj <- dampack::make_psa_obj(
     cost = as.data.frame(psa_results$cost),
@@ -107,6 +113,12 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
     strategies = strategies,
     currency = "€"
   )
+
+  psa_obj$requested_n_sim <- n_sim
+  psa_obj$fallback_count <- psa_results$fallback_count
+  psa_obj$dropped_count <- psa_results$dropped_count
+  psa_obj$dropped_iterations <- psa_results$dropped_iterations
+  psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))

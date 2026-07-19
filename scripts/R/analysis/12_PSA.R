@@ -36,9 +36,14 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
     # Validate cache
     cache_valid <- TRUE
 
-    # Check if n_sim matches
-    if (psa_obj$n_sim != n_sim) {
-      cat("  Cache validation failed: n_sim mismatch (cached:", psa_obj$n_sim,
+    # The effective n_sim may be smaller when failed draws were dropped.
+    cached_requested_n_sim <- if (!is.null(psa_obj$requested_n_sim)) {
+      psa_obj$requested_n_sim
+    } else {
+      psa_obj$n_sim
+    }
+    if (cached_requested_n_sim != n_sim) {
+      cat("  Cache validation failed: requested n_sim mismatch (cached:", cached_requested_n_sim,
           ", expected:", n_sim, ")\n")
       cache_valid <- FALSE
     }
@@ -49,9 +54,15 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
       cache_valid <- FALSE
     }
 
-    # Check if psa_params has correct number of rows
-    if (nrow(psa_params) != n_sim) {
-      cat("  Cache validation failed: psa_params row count mismatch\n")
+    # Cost/effect outcomes and parameter samples must remain row-aligned.
+    if (nrow(psa_params) != psa_obj$n_sim) {
+      cat("  Cache validation failed: psa_params/PSA row count mismatch\n")
+      cache_valid <- FALSE
+    }
+
+    # Legacy caches may contain mean-imputed failed draws and must be rebuilt.
+    if (!identical(psa_obj$failed_draw_policy, "drop_unreplaced_v1")) {
+      cat("  Cache validation failed: legacy failed-draw handling policy\n")
       cache_valid <- FALSE
     }
 
@@ -121,6 +132,16 @@ if (!psa_cached) {
     100 * psa_results$fallback_threshold
   ))
 
+  cat(sprintf(
+    "PSA dropped-draw diagnostic: %d unrecoverable iteration(s); effective n_sim = %d\n",
+    psa_results$dropped_count, psa_results$n_sim
+  ))
+
+  # Apply the same row filter to the parameter draws used by downstream EVPPI.
+  psa_seed_attr <- attr(psa_params, "seed")
+  psa_params <- psa_params[psa_results$retained_iterations, , drop = FALSE]
+  attr(psa_params, "seed") <- psa_seed_attr
+
   # Create the PSA object using dampack's make_psa_obj function
   psa_obj <- dampack::make_psa_obj(
     cost = as.data.frame(psa_results$cost),
@@ -128,6 +149,12 @@ if (!psa_cached) {
     strategies = strategies,
     currency = "€"
   )
+
+  psa_obj$requested_n_sim <- n_sim
+  psa_obj$fallback_count <- psa_results$fallback_count
+  psa_obj$dropped_count <- psa_results$dropped_count
+  psa_obj$dropped_iterations <- psa_results$dropped_iterations
+  psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
 
   cat("\n=== PSA generation complete ===\n")
 } else {

@@ -59,7 +59,8 @@ psa_samples_seed_matches <- function(psa_params, seed = 123L) {
 #' @param n_sim Number of simulations
 #' @param fallback_threshold Maximum permitted proportion of initial PSA
 #'   iterations using fallback before the analysis stops
-#' @return List with cost and effect matrices and fallback diagnostics
+#' @return List with cost and effect matrices, retained iteration indices, and
+#'   fallback/drop diagnostics
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                              strategies, time_horizon, cl, n_sim,
                              fallback_threshold = 0.02) {
@@ -212,6 +213,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   # Instead of mixing base case fallbacks with resampled model results,
   # run additional simulations to replace failed iterations
 
+  replaced_iterations <- integer(0)
+
   if (length(fallback_iterations) > 0) {
     cat(sprintf("\n--- Replacing %d fallback iterations (Issue #79) ---\n",
                 length(fallback_iterations)))
@@ -252,18 +255,22 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
             )
           })
 
-          # Check if this one succeeded (no fallback)
-          if (!isTRUE(attr(sim_results, "fallback_used"))) {
+          # A replacement is valid only when it did not use fallback and
+          # returned exactly one complete result for every strategy.
+          strategy_rows <- match(strategies, sim_results$Strategy)
+          replacement_complete <-
+            all(!is.na(strategy_rows)) &&
+            all(is.finite(sim_results$Cost[strategy_rows])) &&
+            all(is.finite(sim_results$Effect[strategy_rows]))
+
+          if (!isTRUE(attr(sim_results, "fallback_used")) &&
+              replacement_complete) {
             # Replace the failed iteration's results
-            for (strat in strategies) {
-              strat_row <- which(sim_results$Strategy == strat)
-              if (length(strat_row) > 0) {
-                cost_matrix[failed_i, strat] <- sim_results$Cost[strat_row]
-                effect_matrix[failed_i, strat] <- sim_results$Effect[strat_row]
-              }
-            }
+            cost_matrix[failed_i, ] <- sim_results$Cost[strategy_rows]
+            effect_matrix[failed_i, ] <- sim_results$Effect[strategy_rows]
             success <- TRUE
             replaced_count <- replaced_count + 1
+            replaced_iterations <- c(replaced_iterations, failed_i)
           }
         }, error = function(e) {
           # This model also failed, try next
@@ -285,14 +292,34 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                 (replacement_idx - n_sim - 1) %/% n_sim))
   }
 
-  # Replace any remaining NAs with column means (safety fallback)
-  na_count <- sum(is.na(cost_matrix))
-  if (na_count > 0) {
-    warning("Still have ", na_count, " NA values after replacement - using column means")
-    for (strat in strategies) {
-      cost_matrix[is.na(cost_matrix[, strat]), strat] <- mean(cost_matrix[, strat], na.rm = TRUE)
-      effect_matrix[is.na(effect_matrix[, strat]), strat] <- mean(effect_matrix[, strat], na.rm = TRUE)
-    }
+  # Drop entire draws that could not be replaced. Keeping base-case fallback
+  # values or mean-imputing individual cells would artificially reduce PSA
+  # variance and bias CEAC/EVPI/EVPPI estimates.
+  unreplaced_iterations <- setdiff(fallback_iterations, replaced_iterations)
+  incomplete_iterations <- which(
+    !apply(cost_matrix, 1L, function(x) all(is.finite(x))) |
+      !apply(effect_matrix, 1L, function(x) all(is.finite(x)))
+  )
+  dropped_iterations <- sort(unique(c(
+    unreplaced_iterations,
+    incomplete_iterations
+  )))
+  dropped_count <- length(dropped_iterations)
+  retained_iterations <- setdiff(seq_len(n_sim), dropped_iterations)
+
+  if (dropped_count > 0L) {
+    warning(
+      "Dropping ", dropped_count,
+      " PSA iteration(s) that remained invalid after replacement; ",
+      length(retained_iterations), " simulation(s) remain.",
+      call. = FALSE
+    )
+    cost_matrix <- cost_matrix[retained_iterations, , drop = FALSE]
+    effect_matrix <- effect_matrix[retained_iterations, , drop = FALSE]
+  }
+
+  if (length(retained_iterations) == 0L) {
+    stop("No valid PSA iterations remain after dropping failed draws.")
   }
 
   # Print summary of PFS > OS constraint violations (Issue #76)
@@ -332,6 +359,11 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cost = cost_matrix,
     effect = effect_matrix,
     fallback_count = fallback_count,
+    dropped_count = dropped_count,
+    dropped_iterations = dropped_iterations,
+    retained_iterations = retained_iterations,
+    n_sim = length(retained_iterations),
+    failed_draw_policy = "drop_unreplaced_v1",
     fallback_rate = fallback_rate,
     fallback_threshold = fallback_threshold
   ))

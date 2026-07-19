@@ -53,6 +53,14 @@ if (file.exists(scenario_cache_file)) {
   cache_source <- basename(preview_cache_file)
 }
 
+if (!is.null(scenario_cache) &&
+    !identical(scenario_cache$failed_draw_policy, "drop_unreplaced_v1")) {
+  stop(
+    "Scenario cache uses legacy failed-draw handling; rerun ",
+    "14_scenario_EVPPIs.R before rendering this report."
+  )
+}
+
 strategy_label <- function(x) {
   dplyr::recode(
     x,

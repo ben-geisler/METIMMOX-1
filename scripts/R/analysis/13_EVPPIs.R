@@ -23,13 +23,25 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
   warning("sampling_models not available - interaction EVPPI will be skipped")
   interaction_params_available <- FALSE
 } else {
-  interaction_coefs <- extract_interaction_coefficients(
+  interaction_coefs_all <- extract_interaction_coefficients(
     sampling_models = sampling_models,
-    n_sim = nrow(psa_params)
+    n_sim = n_sim
   )
 
-  if (!is.null(interaction_coefs) &&
-      nrow(interaction_coefs) == nrow(psa_params)) {
+  retained_sim_ids <- if ("sim" %in% names(psa_params)) {
+    psa_params$sim
+  } else {
+    seq_len(nrow(psa_params))
+  }
+  valid_sim_ids <-
+    length(retained_sim_ids) == nrow(psa_params) &&
+    all(is.finite(retained_sim_ids)) &&
+    all(retained_sim_ids == as.integer(retained_sim_ids)) &&
+    all(retained_sim_ids >= 1L & retained_sim_ids <= n_sim)
+
+  if (!is.null(interaction_coefs_all) &&
+      nrow(interaction_coefs_all) == n_sim && valid_sim_ids) {
+    interaction_coefs <- interaction_coefs_all[retained_sim_ids, , drop = FALSE]
     psa_params <- cbind(psa_params, interaction_coefs)
     attr(psa_params, "seed") <- analysis_seed
     cat("Interaction coefficients appended to psa_params\n")

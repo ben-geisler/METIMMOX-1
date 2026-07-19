@@ -96,8 +96,9 @@ source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
 cat("[5/5] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
 source(here::here("scripts/R/analysis/08_sampling.R"))
 
-# Save WTP for NMB calculation (survives re-sourcing)
+# Save parameters for recovery after re-sourcing (survives rm(list = ls()))
 Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
+Sys.setenv(SNAPSHOT_ANALYSIS_SEED = as.character(analysis_seed))
 
 # ============================================================================
 # Step 2: Source helper functions
@@ -113,6 +114,7 @@ source(here::here("scripts/R/functions/snapshot_utils.R"))
 issue_number <- Sys.getenv("SNAPSHOT_ISSUE_NUMBER")
 snapshot_status <- Sys.getenv("SNAPSHOT_STATUS")
 wtp_val <- as.numeric(Sys.getenv("SNAPSHOT_WTP"))
+analysis_seed <- as.integer(Sys.getenv("SNAPSHOT_ANALYSIS_SEED"))
 
 # ============================================================================
 # Step 3: Run analysis for the single economic model
@@ -186,12 +188,23 @@ if (is.null(psa_obj)) {
       cl = cl,
       n_sim = n_sim
     )
+    psa_seed_attr <- attr(psa_params_gen, "seed")
+    psa_params_gen <- psa_params_gen[
+      psa_results$retained_iterations, , drop = FALSE
+    ]
+    attr(psa_params_gen, "seed") <- psa_seed_attr
     psa_obj <- dampack::make_psa_obj(
       cost = as.data.frame(psa_results$cost),
       effect = as.data.frame(psa_results$effect),
       strategies = strategies,
       currency = "EUR"
     )
+
+    psa_obj$requested_n_sim <- n_sim
+    psa_obj$fallback_count <- psa_results$fallback_count
+    psa_obj$dropped_count <- psa_results$dropped_count
+    psa_obj$dropped_iterations <- psa_results$dropped_iterations
+    psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
 
     tryCatch({
       saveRDS(psa_obj, cache_file_obj)

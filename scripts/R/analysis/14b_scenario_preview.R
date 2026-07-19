@@ -101,6 +101,12 @@ for (i in 1:nrow(scenarios_preview)) {
     n_sim = n_sim_preview
   )
 
+  scenario_seed_attr <- attr(scenario_psa_params, "seed")
+  scenario_psa_params <- scenario_psa_params[
+    psa_results$retained_iterations, , drop = FALSE
+  ]
+  attr(scenario_psa_params, "seed") <- scenario_seed_attr
+
   # Create PSA object
   psa_obj <- dampack::make_psa_obj(
     cost = as.data.frame(psa_results$cost),
@@ -108,6 +114,12 @@ for (i in 1:nrow(scenarios_preview)) {
     strategies = strategies,
     currency = "€"
   )
+
+  psa_obj$requested_n_sim <- n_sim_preview
+  psa_obj$fallback_count <- psa_results$fallback_count
+  psa_obj$dropped_count <- psa_results$dropped_count
+  psa_obj$dropped_iterations <- psa_results$dropped_iterations
+  psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
 
   cat("\nPSA Summary:\n")
   print(summary(psa_obj))
@@ -166,7 +178,8 @@ if (nrow(evppi_all_scenarios_preview) > 0) {
 evppi_cache_preview <- list(
   all_scenario_results = all_scenario_results_preview,
   evppi_all_scenarios = evppi_all_scenarios_preview,
-  scenarios = scenarios_preview
+  scenarios = scenarios_preview,
+  failed_draw_policy = "drop_unreplaced_v1"
 )
 
 # Save to preview cache file (utility-source-aware name, matching 14_scenario_EVPPIs.R)
