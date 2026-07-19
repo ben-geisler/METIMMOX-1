@@ -1,26 +1,25 @@
 # Snapshot Utility Functions
-# Helper functions for managing result snapshots for bug fix impact analysis
+# Helper functions for managing single-model result snapshots for bug fix impact analysis.
 
 #' Get Git Commit Hash
 #'
-#' Retrieves the current git commit hash (short version)
+#' Retrieves the current git commit hash (short version).
 #'
-#' @return Character string with short commit hash, or "unknown" if not in git repo
+#' @return Character string with short commit hash, or "unknown" if unavailable.
 get_git_commit <- function() {
   tryCatch({
-    commit <- system("git rev-parse --short HEAD", intern = TRUE)
-    return(commit)
+    system("git rev-parse --short HEAD", intern = TRUE)
   }, error = function(e) {
     warning("Could not retrieve git commit hash")
-    return("unknown")
+    "unknown"
   })
 }
 
 #' Get Package Versions
 #'
-#' Retrieves version numbers for key R packages used in the analysis
+#' Retrieves version numbers for key R packages used in the analysis.
 #'
-#' @return Named list of package versions
+#' @return Named list of package versions.
 get_package_versions <- function() {
   key_packages <- c(
     "dampack", "flexsurv", "survival", "dplyr", "ggplot2",
@@ -29,110 +28,192 @@ get_package_versions <- function() {
 
   versions <- list()
   for (pkg in key_packages) {
-    if (requireNamespace(pkg, quietly = TRUE)) {
-      versions[[pkg]] <- as.character(packageVersion(pkg))
+    versions[[pkg]] <- if (requireNamespace(pkg, quietly = TRUE)) {
+      as.character(packageVersion(pkg))
     } else {
-      versions[[pkg]] <- "not installed"
+      "not installed"
     }
   }
 
-  return(versions)
+  versions
+}
+
+#' Get Current Economic Model Metadata
+#'
+#' @return List describing the single economic model, or NULL if unavailable.
+get_economic_model_metadata <- function() {
+  if (!exists("get_current_model_config", mode = "function", inherits = TRUE)) {
+    return(NULL)
+  }
+
+  config <- get_current_model_config()
+  list(
+    label = config$label,
+    description = config$description,
+    strategies = config$strategies,
+    biomarkers = config$biomarkers
+  )
 }
 
 #' Collect Metadata
 #'
-#' Collects comprehensive metadata about the current analysis run
+#' Collects comprehensive metadata about the current single-model analysis run.
 #'
-#' @param issue_number GitHub issue number (character or numeric)
-#' @return List containing all metadata
+#' @param issue_number GitHub issue number (character or numeric).
+#' @return List containing metadata.
 collect_metadata <- function(issue_number) {
-  metadata <- list(
+  list(
     issue_number = as.character(issue_number),
     git_commit = get_git_commit(),
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     r_version = R.version.string,
     packages = get_package_versions(),
+    model = get_economic_model_metadata(),
     parameters = list(
-      WTP = if(exists("WTP")) WTP else NA,
-      time_horizon = if(exists("time_horizon")) time_horizon else NA,
-      n_samples = if(exists("n_samples")) n_samples else NA,
-      n_sim = if(exists("n_sim")) n_sim else NA,
-      cl = if(exists("cl")) cl else NA,
-      dr = if(exists("dr")) dr else NA,
-      DSA_mult = if(exists("DSA_mult")) DSA_mult else NA,
-      USE_BOTH_MODELS = if(exists("USE_BOTH_MODELS")) USE_BOTH_MODELS else NA,
-      MODEL_STRUCTURE = if(exists("MODEL_STRUCTURE")) MODEL_STRUCTURE else NA
+      WTP = if (exists("WTP")) WTP else NA,
+      time_horizon = if (exists("time_horizon")) time_horizon else NA,
+      n_samples = if (exists("n_samples")) n_samples else NA,
+      n_sim = if (exists("n_sim")) n_sim else NA,
+      cl = if (exists("cl")) cl else NA,
+      dr = if (exists("dr")) dr else NA,
+      DSA_mult = if (exists("DSA_mult")) DSA_mult else NA,
+      USE_BOTH_MODELS = if (exists("USE_BOTH_MODELS")) USE_BOTH_MODELS else NA,
+      UTILITY_SOURCE = if (exists("UTILITY_SOURCE")) UTILITY_SOURCE else NA,
+      utility_source_label = if (exists("utility_source_label")) utility_source_label else NA
     )
   )
-
-  return(metadata)
 }
 
 #' Generate Snapshot Filename
 #'
-#' Creates standardized filename for snapshot files
+#' Creates standardized filenames used by 15_save_snapshot.R.
 #'
-#' @param type File type ("snapshot" or "psa")
-#' @param issue_number GitHub issue number
-#' @param timestamp Timestamp string (default: current time)
-#' @param commit Git commit hash (default: current commit)
-#' @return Character string with filename
-generate_snapshot_filename <- function(type, issue_number,
-                                      timestamp = format(Sys.time(), "%Y%m%d_%H%M%S"),
-                                      commit = get_git_commit()) {
-  filename <- paste0(type, "_", issue_number, "_", timestamp, "_", commit, ".rds")
-  return(filename)
+#' @param type File type ("snapshot" or "psa").
+#' @param issue_number GitHub issue number.
+#' @param status Snapshot status ("baseline" or "fixed").
+#' @param commit Git commit hash.
+#' @return Character string with filename.
+generate_snapshot_filename <- function(type, issue_number, status,
+                                       commit = get_git_commit()) {
+  if (!type %in% c("snapshot", "psa")) {
+    stop("type must be 'snapshot' or 'psa'.")
+  }
+  if (!status %in% c("baseline", "fixed")) {
+    stop("status must be 'baseline' or 'fixed'.")
+  }
+
+  paste0(type, "_", issue_number, "_", status, "_", commit, ".rds")
+}
+
+#' Parse Snapshot Filename
+#'
+#' Supports current status-based filenames and older timestamp-based filenames.
+#'
+#' @param filename Snapshot or PSA filename.
+#' @return Data frame with parsed fields.
+parse_snapshot_filename <- function(filename) {
+  base <- basename(filename)
+  no_ext <- sub("\\.rds$", "", base)
+  parts <- strsplit(no_ext, "_")[[1]]
+
+  empty <- data.frame(
+    filename = base,
+    type = NA_character_,
+    issue = NA_character_,
+    status = NA_character_,
+    timestamp = NA_character_,
+    commit = NA_character_,
+    stringsAsFactors = FALSE
+  )
+
+  if (length(parts) < 4 || !parts[1] %in% c("snapshot", "psa")) {
+    return(empty)
+  }
+
+  type <- parts[1]
+  issue <- parts[2]
+  token <- parts[3]
+
+  if (token %in% c("baseline", "fixed")) {
+    status <- token
+    timestamp <- NA_character_
+    commit <- paste(parts[4:length(parts)], collapse = "_")
+  } else if (length(parts) >= 5) {
+    status <- NA_character_
+    timestamp <- paste(parts[3], parts[4], sep = "_")
+    commit <- paste(parts[5:length(parts)], collapse = "_")
+  } else {
+    status <- NA_character_
+    timestamp <- NA_character_
+    commit <- paste(parts[4:length(parts)], collapse = "_")
+  }
+
+  data.frame(
+    filename = base,
+    type = type,
+    issue = issue,
+    status = status,
+    timestamp = timestamp,
+    commit = commit,
+    stringsAsFactors = FALSE
+  )
 }
 
 #' List Snapshots for Issue
 #'
-#' Lists all snapshot files for a given issue number
+#' Lists all snapshot and PSA files for a given issue number.
 #'
-#' @param issue_number GitHub issue number
-#' @param snapshots_dir Directory containing snapshots (default: data/output/snapshots/)
-#' @return Data frame with snapshot information (filename, type, timestamp, commit)
-list_snapshots <- function(issue_number, snapshots_dir = here::here("data", "output", "snapshots")) {
-  pattern <- paste0("^(snapshot|psa)_", issue_number, "_")
+#' @param issue_number GitHub issue number.
+#' @param snapshots_dir Directory containing snapshots.
+#' @return Data frame with snapshot information.
+list_snapshots <- function(issue_number,
+                           snapshots_dir = here::here("data", "output", "snapshots")) {
+  if (!dir.exists(snapshots_dir)) {
+    message("Snapshot directory not found: ", snapshots_dir)
+    return(data.frame(
+      filename = character(0),
+      type = character(0),
+      issue = character(0),
+      status = character(0),
+      timestamp = character(0),
+      commit = character(0),
+      mtime = as.POSIXct(character(0))
+    ))
+  }
+
+  pattern <- paste0("^(snapshot|psa)_", issue_number, "_.*\\.rds$")
   files <- list.files(snapshots_dir, pattern = pattern, full.names = FALSE)
 
   if (length(files) == 0) {
     message("No snapshots found for issue #", issue_number)
-    return(data.frame(filename = character(0), type = character(0),
-                     timestamp = character(0), commit = character(0)))
+    return(data.frame(
+      filename = character(0),
+      type = character(0),
+      issue = character(0),
+      status = character(0),
+      timestamp = character(0),
+      commit = character(0),
+      mtime = as.POSIXct(character(0))
+    ))
   }
 
-  # Parse filenames to extract information
-  snapshot_info <- do.call(rbind, lapply(files, function(f) {
-    parts <- strsplit(f, "_")[[1]]
-    type <- parts[1]
-    # timestamp is parts 3 and 4
-    timestamp <- paste(parts[3], parts[4], sep = "_")
-    # commit is part 5 without .rds
-    commit <- gsub("\\.rds$", "", parts[5])
+  snapshot_info <- do.call(rbind, lapply(files, parse_snapshot_filename))
+  snapshot_info$mtime <- file.info(file.path(snapshots_dir, snapshot_info$filename))$mtime
+  snapshot_info <- snapshot_info[order(snapshot_info$mtime), ]
+  rownames(snapshot_info) <- NULL
 
-    data.frame(
-      filename = f,
-      type = type,
-      timestamp = timestamp,
-      commit = commit,
-      stringsAsFactors = FALSE
-    )
-  }))
-
-  # Sort by timestamp
-  snapshot_info <- snapshot_info[order(snapshot_info$timestamp), ]
-
-  return(snapshot_info)
+  snapshot_info
 }
 
 #' Load Snapshot
 #'
-#' Loads a snapshot file and validates its structure
+#' Loads a snapshot file and validates its single-model structure.
 #'
-#' @param filename Snapshot filename (without path)
-#' @param snapshots_dir Directory containing snapshots
-#' @return Snapshot object (list)
-load_snapshot <- function(filename, snapshots_dir = here::here("data", "output", "snapshots")) {
+#' @param filename Snapshot filename without path.
+#' @param snapshots_dir Directory containing snapshots.
+#' @return Snapshot object.
+load_snapshot <- function(filename,
+                          snapshots_dir = here::here("data", "output", "snapshots")) {
   filepath <- file.path(snapshots_dir, filename)
 
   if (!file.exists(filepath)) {
@@ -141,124 +222,100 @@ load_snapshot <- function(filename, snapshots_dir = here::here("data", "output",
 
   snapshot <- readRDS(filepath)
 
-  # Validate structure for snapshot files
   if (grepl("^snapshot_", filename)) {
-    required_components <- c("metadata", "base_results", "icer_obj", "nmb_at_wtp", "psa_summary")
+    required_components <- c("metadata", "base_results", "icer_obj",
+                             "nmb_at_wtp", "psa_summary")
     missing <- setdiff(required_components, names(snapshot))
     if (length(missing) > 0) {
       warning("Snapshot missing components: ", paste(missing, collapse = ", "))
     }
-  }
-
-  # Validate structure for PSA files (accept single psa object or named list)
-  if (grepl("^psa_", filename)) {
-    if (!("psa" %in% class(snapshot)) && !is.list(snapshot)) {
-      warning("PSA file does not contain a valid dampack psa object or model list")
+    if ("models" %in% names(snapshot)) {
+      warning("Snapshot contains obsolete multi-model 'models' component.")
     }
   }
 
-  return(snapshot)
-}
-
-#' Check if a snapshot contains multi-model results
-#'
-#' @param snapshot A loaded snapshot object
-#' @return Logical TRUE if snapshot contains models list
-is_multimodel_snapshot <- function(snapshot) {
-  "models" %in% names(snapshot)
-}
-
-#' Get model names from a snapshot (multi or single)
-#'
-#' @param snapshot A loaded snapshot object
-#' @return Character vector of model names
-get_snapshot_model_names <- function(snapshot) {
-  if (is_multimodel_snapshot(snapshot)) {
-    return(names(snapshot$models))
+  if (grepl("^psa_", filename) && !inherits(snapshot, "psa")) {
+    warning("PSA file does not contain a dampack psa object.")
   }
-  ms <- snapshot$metadata$parameters$MODEL_STRUCTURE
-  if (is.null(ms) || is.na(ms)) return("joint")
-  c("joint", "focused", "separate")[ms + 1]
+
+  snapshot
 }
 
 #' Find Matching Snapshot Pair
 #'
-#' Finds matching snapshot and PSA files by timestamp and commit
+#' Finds the matching PSA file for a snapshot file.
 #'
-#' @param snapshot_file Snapshot filename
-#' @param snapshots_dir Directory containing snapshots
-#' @return List with snapshot and psa filenames, or NULL if no match
-find_snapshot_pair <- function(snapshot_file, snapshots_dir = here::here("data", "output", "snapshots")) {
-  # Extract timestamp and commit from snapshot filename
-  parts <- strsplit(snapshot_file, "_")[[1]]
-  issue <- parts[2]
-  timestamp <- parts[3]
-  time <- parts[4]
-  commit <- gsub("\\.rds$", "", parts[5])
+#' @param snapshot_file Snapshot filename.
+#' @param snapshots_dir Directory containing snapshots.
+#' @return List with snapshot and psa filenames, or NULL if no match.
+find_snapshot_pair <- function(snapshot_file,
+                               snapshots_dir = here::here("data", "output", "snapshots")) {
+  info <- parse_snapshot_filename(snapshot_file)
 
-  # Construct expected PSA filename
-  psa_file <- paste0("psa_", issue, "_", timestamp, "_", time, "_", commit, ".rds")
-
-  # Check if PSA file exists
-  if (file.exists(file.path(snapshots_dir, psa_file))) {
-    return(list(snapshot = snapshot_file, psa = psa_file))
-  } else {
-    warning("No matching PSA file found for ", snapshot_file)
-    return(NULL)
+  if (is.na(info$type) || info$type != "snapshot") {
+    stop("Expected a snapshot filename, got: ", snapshot_file)
   }
+
+  psa_file <- if (!is.na(info$status)) {
+    paste0("psa_", info$issue, "_", info$status, "_", info$commit, ".rds")
+  } else if (!is.na(info$timestamp)) {
+    paste0("psa_", info$issue, "_", info$timestamp, "_", info$commit, ".rds")
+  } else {
+    NULL
+  }
+
+  if (!is.null(psa_file) && file.exists(file.path(snapshots_dir, psa_file))) {
+    return(list(snapshot = snapshot_file, psa = psa_file))
+  }
+
+  warning("No matching PSA file found for ", snapshot_file)
+  NULL
 }
 
 #' Select Snapshots for Comparison
 #'
-#' Interactive function to select two snapshots for comparison
+#' Selects baseline and fixed single-model snapshot pairs for an issue.
 #'
-#' @param issue_number GitHub issue number
-#' @param snapshots_dir Directory containing snapshots
-#' @return List with two snapshot pairs (before and after)
+#' @param issue_number GitHub issue number.
+#' @param snapshots_dir Directory containing snapshots.
+#' @return List with before and after snapshot pairs.
 select_snapshots_for_comparison <- function(issue_number,
-                                           snapshots_dir = here::here("data", "output", "snapshots")) {
+                                            snapshots_dir = here::here("data", "output", "snapshots")) {
   snapshot_info <- list_snapshots(issue_number, snapshots_dir)
-
-  # Filter to only snapshot files (not psa)
   snapshot_files <- snapshot_info[snapshot_info$type == "snapshot", ]
 
   if (nrow(snapshot_files) == 0) {
     stop("No snapshots found for issue #", issue_number)
   }
 
-  if (nrow(snapshot_files) == 1) {
-    stop("Only one snapshot found for issue #", issue_number,
-         ". Need at least two snapshots to compare.")
-  }
+  has_status_pair <- any(snapshot_files$status == "baseline", na.rm = TRUE) &&
+    any(snapshot_files$status == "fixed", na.rm = TRUE)
 
-  if (nrow(snapshot_files) == 2) {
-    # Exactly two snapshots - use them
-    message("Found 2 snapshots for issue #", issue_number)
-    before_file <- snapshot_files$filename[1]
-    after_file <- snapshot_files$filename[2]
+  if (has_status_pair) {
+    baseline_files <- snapshot_files[snapshot_files$status == "baseline", ]
+    fixed_files <- snapshot_files[snapshot_files$status == "fixed", ]
+
+    before_file <- baseline_files$filename[which.max(baseline_files$mtime)]
+    after_file <- fixed_files$filename[which.max(fixed_files$mtime)]
+    message("Selected latest baseline and fixed snapshots for issue #", issue_number)
   } else {
-    # More than two snapshots - let user choose or default to first and last
-    message("Found ", nrow(snapshot_files), " snapshots for issue #", issue_number)
-    message("\nAvailable snapshots (chronological order):")
-    for (i in 1:nrow(snapshot_files)) {
-      message(sprintf("  %d. %s (commit: %s)", i, snapshot_files$timestamp[i],
-                     snapshot_files$commit[i]))
+    if (nrow(snapshot_files) == 1) {
+      stop("Only one snapshot found for issue #", issue_number,
+           ". Need at least two snapshots to compare.")
     }
 
-    message("\nDefaulting to earliest vs. latest (1 vs. ", nrow(snapshot_files), ")")
-    message("To compare different snapshots, modify the compare_snapshots.R script.")
-
+    message("No baseline/fixed status pair found; defaulting to earliest vs latest snapshot.")
+    snapshot_files <- snapshot_files[order(snapshot_files$mtime), ]
     before_file <- snapshot_files$filename[1]
     after_file <- snapshot_files$filename[nrow(snapshot_files)]
   }
 
-  # Find matching PSA files
   before_pair <- find_snapshot_pair(before_file, snapshots_dir)
   after_pair <- find_snapshot_pair(after_file, snapshots_dir)
 
   if (is.null(before_pair) || is.null(after_pair)) {
-    stop("Could not find matching snapshot pairs")
+    stop("Could not find matching snapshot/PSA pairs")
   }
 
-  return(list(before = before_pair, after = after_pair))
+  list(before = before_pair, after = after_pair)
 }

@@ -1,6 +1,6 @@
 # Causal DAG
 Ben Geisler
-2026-04-10
+2026-06-18
 
 - [Introduction](#introduction)
 - [Node Definitions](#node-definitions)
@@ -173,17 +173,16 @@ PFS and OS indicate that the magnitude of the treatment effect on
 survival outcomes is hypothesised to be modified by TMB/BRAF and CRP
 status — the central question addressed by the biomarker analysis.
 
-![Simplified causal DAG for METIMMOX-1. Node colour: blue = exposure
-(T), red = outcome (PFS/OS), grey = covariates and biomarkers. Solid
-arrows denote assumed causal effects. The dashed arrow from T to PFS/OS
-indicates that the treatment effect on survival is hypothesised to be
-modified by TMB/BRAF and CRP status. Interaction and latent-variable
-nodes are shown in the full DAG above. Node abbreviations: T =
-Treatment; Demo = Demographics (Age, Sex); PFS/OS = Progression-free and
-overall survival.](dag_files/figure-commonmark/dag-simple-plot-1.png)
+![Figure 3. Simplified causal DAG for METIMMOX-1. Solid arrows denote
+assumed causal effects. The dashed arrow indicates that the treatment
+effect on survival is hypothesised to be modified by TMB/BRAF and CRP
+status. Interaction and latent-variable nodes are shown in the full DAG.
+Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS =
+progression-free survival, T = treatment, TMB = tumour mutational
+burden.](dag_files/figure-commonmark/dag-simple-plot-1.png)
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-04-10  
+**Report completed on:** 2026-06-18  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 2.1
+**Report version:** 2.2

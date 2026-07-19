@@ -56,8 +56,8 @@ if (exists("get_strategies")) {
   strategies <- get_strategies()
   biomarkers <- get_biomarkers()
 } else {
-  strategies <- c("control", "crp", "tlr", "tmb_braf")
-  biomarkers <- c("crp", "tlr", "tmb_braf")
+  strategies <- c("control", "crp", "tmb_braf")
+  biomarkers <- c("crp", "tmb_braf")
 }
 
 # Create a comprehensive strategy dataframe with all relevant information
@@ -65,19 +65,16 @@ strategies_df <- data.frame(
   id = strategies,
   name = c("Standard of care: FLOX chemotherapy only", 
            "Biomarker-guided: C-reactive protein", 
-           "Biomarker-guided: tumor lesion reduction", 
            "Biomarker-guided: tumor mutation burden or BRAF mutation"),
   description = c(
     "Standard of care - All patients receive only FLOX chemotherapy",
     "C-reactive protein with cut-off of <5 for biomarker-positive status. If CRP-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if CRP-negative: chemotherapy only",
-    "Tumor Lesion Reduction with cut-off of >=10% for biomarker-positive status. If TLR-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if TLR-negative: chemotherapy only", 
     "Combined biomarker: either Tumor Mutation Burden >= 9 or BRAF V600 mutation positive (both from next-generation sequencing). If TMB/BRAF-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if TMB/BRAF-negative: chemotherapy only"
   ),
   # Store prevalence rates in dataframe
-  prevalence = c(1.0, p_crp, p_tlr, p_tmb_braf),
+  prevalence = c(1.0, p_crp, p_tmb_braf),
   n_patients = c(nrow(data_control), 
                  nrow(data_crp), 
-                 nrow(data_tlr), 
                  nrow(data_tmb_braf)),
   stringsAsFactors = FALSE
 )
@@ -98,10 +95,9 @@ rm(list = setdiff(ls(), c(
   # Population parameters for EVPPI scaling
   "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
   # Model configuration switches
-  "USE_BOTH_MODELS", "MODEL_STRUCTURE", "UTILITY_SOURCE", "utility_source_label",
+  "USE_BOTH_MODELS", "UTILITY_SOURCE", "utility_source_label",
   # Model config helper functions
   "get_strategies", "get_biomarkers", "get_model_configs", "get_current_model_config",
-  "get_strategy_formula", "get_control_formula", "get_model_type_label",
-  "get_model_short_label", "get_model_formulas", "uses_per_strategy_formulas",
-  "validate_model_structure", "print_model_config", "ALL_STRATEGIES", "ALL_BIOMARKERS"
+  "get_strategy_formula", "get_control_formula", "get_model_formulas",
+  "print_model_config", "ALL_STRATEGIES", "ALL_BIOMARKERS"
 )))

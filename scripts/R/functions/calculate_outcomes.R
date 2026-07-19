@@ -45,13 +45,11 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   
   # Add biomarker test cost if applicable
   if(!is.null(biomarker)) {
-    if(biomarker == "tmb_braf") {
-      test_costs[1] <- test_costs[1] + params$c_test_NGS
-    } else if(biomarker == "crp") {
-      test_costs[1] <- test_costs[1] + params$c_test_blood  # CRP is a blood test
-    } else if(biomarker == "tlr") {
-      test_costs[1] <- test_costs[1] + params$c_test_CT  # TLR requires CT measurement
+    biomarker_test_cost <- params$c_test_biomarker[[biomarker]]
+    if (is.null(biomarker_test_cost)) {
+      stop("No diagnostic-test cost configured for biomarker '", biomarker, "'")
     }
+    test_costs[1] <- test_costs[1] + biomarker_test_cost
   }
   
   # Visit costs

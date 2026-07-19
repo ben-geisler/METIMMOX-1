@@ -18,8 +18,9 @@
 # parameter uncertainty, not patient heterogeneity.
 #
 # Biological Constraint (Issue #76):
-#   - PFS is capped at OS to prevent invalid state occupancy (PFS > OS can
-#     occur with resampled models). Without this, states can sum to >1.
+#   - Base-case ordering is guaranteed during joint distribution selection.
+#   - PFS is capped at OS only for resampled PSA models. Without this safety
+#     net, states can sum to >1 when a resampled pair crosses.
 #
 # Fallback Tracking (Issue #79):
 #   - When PSA survival curve generation fails, the function falls back to
@@ -36,15 +37,15 @@
 # ===============================================================================
 
 validate_model_params <- function(params, time_horizon) {
-  # Required scalar parameters - all three biomarker prevalence values always required
+  # Required scalar parameters - economic biomarker prevalence values
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                        "c_test_blood", "c_test_NGS", "c_other_visit",
+                        "c_test_blood", "c_test_CRP", "c_test_NGS", "c_other_visit",
                         "c_other_baseline", "c_other_follow", "c_other_last",
-                        "p_crp", "p_tlr", "p_tmb_braf")
+                        "p_crp", "p_tmb_braf")
 
   # Required list parameters
-  required_lists <- c("p_os", "p_pfs")
+  required_lists <- c("p_os", "p_pfs", "c_test_biomarker")
 
   # Required schedule vectors
   required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
@@ -59,12 +60,34 @@ validate_model_params <- function(params, time_horizon) {
 
   # Validate cost parameters are non-negative
   cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                   "c_test_NGS", "c_other_visit", "c_other_baseline",
+                   "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
                    "c_other_follow", "c_other_last")
   for (p in cost_params) {
     if (params[[p]] < 0) {
       stop("Cost parameter '", p, "' cannot be negative. Got: ", params[[p]])
     }
+  }
+
+  # Validate the data-driven diagnostic-cost mapping used by each biomarker strategy.
+  required_biomarkers <- if (exists("get_biomarkers")) {
+    get_biomarkers()
+  } else {
+    c("crp", "tmb_braf")
+  }
+  missing_biomarker_costs <- setdiff(required_biomarkers,
+                                     names(params$c_test_biomarker))
+  if (length(missing_biomarker_costs) > 0) {
+    stop("Missing diagnostic-test costs for biomarkers: ",
+         paste(missing_biomarker_costs, collapse = ", "))
+  }
+  invalid_biomarker_costs <- vapply(
+    params$c_test_biomarker[required_biomarkers],
+    function(x) !is.numeric(x) || length(x) != 1 || is.na(x) || x < 0,
+    logical(1)
+  )
+  if (any(invalid_biomarker_costs)) {
+    stop("Diagnostic-test costs must be non-negative numeric scalars for: ",
+         paste(required_biomarkers[invalid_biomarker_costs], collapse = ", "))
   }
 
   # Validate utilities are in [0, 1]
@@ -76,8 +99,7 @@ validate_model_params <- function(params, time_horizon) {
   }
 
   # Validate prevalence parameters are in [0, 1]
-  # All three biomarkers are required in all models
-  prev_params <- c("p_crp", "p_tlr", "p_tmb_braf")
+  prev_params <- c("p_crp", "p_tmb_braf")
   for (p in prev_params) {
     if (params[[p]] < 0 || params[[p]] > 1) {
       stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
@@ -104,15 +126,14 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
   # These must exist in the global environment before calling model_fun in PSA mode.
 
-  # Get strategies and biomarkers from central config
-  # All models now include all three biomarker strategies (CRP, TLR, TMB/BRAF)
+  # Get economic strategies and biomarkers from central config
   if (exists("get_strategies")) {
     strat_names <- get_strategies()
     biomarkers_to_run <- get_biomarkers()
   } else {
     # Fallback for backward compatibility
-    strat_names <- c("control", "crp", "tlr", "tmb_braf")
-    biomarkers_to_run <- c("crp", "tlr", "tmb_braf")
+    strat_names <- c("control", "crp", "tmb_braf")
+    biomarkers_to_run <- c("crp", "tmb_braf")
   }
 
   # Validate input parameters (Issue #47)
@@ -293,6 +314,34 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
   }
 
+  # Ordered base-case curves are guaranteed during distribution selection.
+  # Resampled PSA fits are selected upstream and may still cross, so retain the
+  # clamp only there as a last-resort safety net and emit a structured warning
+  # that psa_functions.R can aggregate.
+  enforce_survival_ordering <- function(pfs, os, curve_label) {
+    violation_idx <- which(pfs > os)
+    if (length(violation_idx) == 0) {
+      return(pfs)
+    }
+
+    if (determpsa != "psa") {
+      stop(
+        "Base-case survival ordering invariant failed for ", curve_label,
+        ": PFS exceeded OS at ", length(violation_idx), " time points. ",
+        "Refit using ordering-constrained distribution selection."
+      )
+    }
+
+    warning(
+      "PFS > OS constraint enforced at ", length(violation_idx),
+      " time points (", curve_label, ")",
+      if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "",
+      "; max excess=", signif(max(pfs[violation_idx] - os[violation_idx]), 4),
+      call. = FALSE
+    )
+    pmin(pfs, os)
+  }
+
   # =========================================================================
   # CONTROL STRATEGY
   # =========================================================================
@@ -303,15 +352,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   validate_curve_length(os_control, "control_OS")
   validate_curve_length(pfs_control, "control_PFS")
 
-  # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-  # Without this, state occupancy can sum to >1 when curves cross
-  if (any(pfs_control > os_control)) {
-    n_violations <- sum(pfs_control > os_control)
-    warning("PFS > OS constraint enforced at ", n_violations,
-            " time points (control)",
-            if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-  }
-  pfs_control <- pmin(pfs_control, os_control)
+  pfs_control <- enforce_survival_ordering(pfs_control, os_control, "control")
 
   # Calculate state occupancy for partitioned survival model
   # Progression-free: PFS curve
@@ -374,14 +415,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(os_pos, paste0(biomarker, "_pos_OS"))
     validate_curve_length(pfs_pos, paste0(biomarker, "_pos_PFS"))
 
-    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-    if (any(pfs_pos > os_pos)) {
-      n_violations <- sum(pfs_pos > os_pos)
-      warning("PFS > OS constraint enforced at ", n_violations,
-              " time points (", biomarker, "+)",
-              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-    }
-    pfs_pos <- pmin(pfs_pos, os_pos)
+    pfs_pos <- enforce_survival_ordering(
+      pfs_pos, os_pos, paste0(biomarker, "+")
+    )
 
     # Calculate positive state occupancy
     p_pf_pos <- pfs_pos
@@ -403,14 +439,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(os_neg, paste0(biomarker, "_neg_OS"))
     validate_curve_length(pfs_neg, paste0(biomarker, "_neg_PFS"))
 
-    # Enforce biological constraint: PFS cannot exceed OS (Issue #76)
-    if (any(pfs_neg > os_neg)) {
-      n_violations <- sum(pfs_neg > os_neg)
-      warning("PFS > OS constraint enforced at ", n_violations,
-              " time points (", biomarker, "-)",
-              if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "")
-    }
-    pfs_neg <- pmin(pfs_neg, os_neg)
+    pfs_neg <- enforce_survival_ordering(
+      pfs_neg, os_neg, paste0(biomarker, "-")
+    )
 
     # Calculate negative state occupancy
     p_pf_neg <- pfs_neg

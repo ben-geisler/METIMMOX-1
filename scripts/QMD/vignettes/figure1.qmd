@@ -68,21 +68,13 @@ cat("Treatment levels:", ctrl_rx, "(control),", exp_rx, "(experimental)\n")
 
 ```{r fit-models, include=FALSE}
 # ===============================================================================
-# Fit gamma models for CRP strategy across Model A, B, C
+# Fit gamma model for the CRP strategy under the single joint economic model
 # ===============================================================================
 
 model_formulas <- list(
-  A = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
-  ),
-  B = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
-  ),
-  C = list(
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
+  joint = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
   )
 )
 
@@ -163,24 +155,21 @@ cat("Base-case predictions generated for models:",
 # Load sampling caches and compute 95% bootstrap CIs
 # ===============================================================================
 
-model_structure_labels <- c(A = "joint", B = "focused", C = "separate")
 n_boot_subset <- 500  # Subset of 5000 for speed
 
 ci_data <- list()
 
-for (model_name in names(model_structure_labels)) {
-  model_label <- model_structure_labels[model_name]
-
-  # Try to find cache file
+for (model_name in "joint") {
+  # Single joint economic model; sampling cache has no structure label
   cache_pattern <- here("data", "tidy",
-    paste0("sampling_models_n", n_samples, "_full_", model_label, ".rds"))
+    paste0("sampling_models_n", n_samples, "_full.rds"))
 
   if (!file.exists(cache_pattern)) {
-    cat("Sampling cache not found for", model_label, "- skipping bootstrap CI\n")
+    cat("Sampling cache not found - skipping bootstrap CI\n")
     next
   }
 
-  cat("Loading sampling cache for", model_label, "...\n")
+  cat("Loading sampling cache ...\n")
   sampling_models_cache <- readRDS(cache_pattern)
 
   n_available <- min(n_boot_subset, sampling_models_cache$crp$n_samples)
@@ -303,7 +292,7 @@ cat("KM curves computed. Control arm:", nrow(data_control), "patients.",
 # Build individual panels: 3 models x 2 outcomes
 # ===============================================================================
 
-model_display <- c(A = "Model A", B = "Model B", C = "Model C")
+model_display <- c(joint = "Joint model")
 strategy_colors <- c("Control" = "gray50", "CRP Strategy" = "#E69F00")
 
 create_survival_panel <- function(model_name, outcome, show_legend = FALSE) {
@@ -381,7 +370,7 @@ create_survival_panel <- function(model_name, outcome, show_legend = FALSE) {
       labels = function(x) x / 52
     ) +
     labs(x = "Time (years)", y = outcome_label,
-         title = model_display[model_name]) +
+         title = outcome_label) +
     theme_minimal() +
     theme(
       plot.title = element_text(size = 11, face = "bold", hjust = 0.5),
@@ -398,9 +387,9 @@ create_survival_panel <- function(model_name, outcome, show_legend = FALSE) {
   return(p)
 }
 
-# Generate all 6 panels
+# Generate panels for the single joint model (OS, PFS)
 panels <- list()
-for (model_name in c("A", "B", "C")) {
+for (model_name in "joint") {
   for (outcome in c("os", "pfs")) {
     key <- paste0(model_name, "_", outcome)
     panels[[key]] <- create_survival_panel(model_name, outcome, show_legend = FALSE)
@@ -408,24 +397,23 @@ for (model_name in c("A", "B", "C")) {
 }
 ```
 
-```{r combined-figure, fig.width=12, fig.height=8}
+```{r combined-figure, fig.width=10, fig.height=5}
 # Extract a shared legend from one panel
-legend_panel <- create_survival_panel("A", "os", show_legend = TRUE)
+legend_panel <- create_survival_panel("joint", "os", show_legend = TRUE)
 shared_legend <- cowplot::get_legend(legend_panel)
 
-# Assemble 3 columns x 2 rows grid
+# Assemble 2 columns x 1 row grid (OS, PFS) for the single joint model
 plot_grid_main <- plot_grid(
-  panels$A_os, panels$B_os, panels$C_os,
-  panels$A_pfs, panels$B_pfs, panels$C_pfs,
-  ncol = 3, nrow = 2,
-  labels = c("A", "B", "C", "D", "E", "F"),
+  panels$joint_os, panels$joint_pfs,
+  ncol = 2, nrow = 1,
+  labels = c("A", "B"),
   label_size = 14
 )
 
 # Add shared legend at bottom
 combined_plot <- plot_grid(
   plot_grid_main, shared_legend,
-  ncol = 1, rel_heights = c(1, 0.05)
+  ncol = 1, rel_heights = c(1, 0.08)
 )
 
 print(combined_plot)
@@ -440,8 +428,8 @@ if (!dir.exists(figs_dir)) {
 ggsave(
   filename = here("figs", "figure1.png"),
   plot = combined_plot,
-  width = 12,
-  height = 8,
+  width = 10,
+  height = 5,
   dpi = 300,
   bg = "white"
 )

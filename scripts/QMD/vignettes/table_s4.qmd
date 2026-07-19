@@ -39,7 +39,7 @@ suppressMessages(suppressWarnings({
 }))
 
 # Create data_complete (same logic as 06_parametric_survival_analysis.R)
-data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp",
                                                "tmb_braf", "OSwk", "Death",
                                                "PFSwk", "Progression")]), ]
 
@@ -63,48 +63,17 @@ extract_coefs <- function(model, model_label, outcome_label) {
   return(coef_table)
 }
 
-# Fit gamma models for each specification
+# Fit gamma model for the single joint economic model specification
 model_specs <- list(
-  A = list(
-    structure = 0,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx
-  ),
-  B_crp = list(
-    structure = 1,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx
-  ),
-  B_tlr = list(
-    structure = 1,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf + tlr:Rx
-  ),
-  C_crp = list(
-    structure = 2,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp:Rx
-  ),
-  C_tlr = list(
-    structure = 2,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + tlr:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tlr:Rx
-  ),
-  C_tmb = list(
-    structure = 2,
-    os = Surv(OSwk, Death) ~ Age + sex + Rx + tmb_braf:Rx,
-    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + tmb_braf:Rx
+  joint = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
   )
 )
 
 # Model labels for display
 model_display_labels <- c(
-  A = "Model A (Joint)",
-  B_crp = "Model B: CRP/TMB-BRAF formula",
-  B_tlr = "Model B: TLR formula",
-  C_crp = "Model C: CRP only",
-  C_tlr = "Model C: TLR only",
-  C_tmb = "Model C: TMB/BRAF only"
+  joint = "Joint economic model (CRP + TMB/BRAF)"
 )
 
 all_coefs <- data.frame()
@@ -163,11 +132,8 @@ for (spec_label in unique(all_coefs$Model)) {
 
 ```{r footnotes}
 cat("\n\n**Notes:**\n\n")
-cat("- All models use gamma distribution for both OS and PFS.\n")
-cat("- Model A (Joint): All three biomarker-treatment interactions in a single model.\n")
-cat("- Model B (Focused): CRP and TMB/BRAF as covariates with both interaction terms; TLR uses separate formula with only TLR:Rx interaction.\n")
-cat("- Model C (Separate): One biomarker and its treatment interaction per model.\n")
-cat("- All models adjusted for age and sex.\n")
+cat("- Gamma distribution used for both OS and PFS.\n")
+cat("- Joint economic model: both biomarker-treatment interactions (crp:Rx, tmb_braf:Rx) in a single model, adjusted for age and sex.\n")
 cat("- Rx = treatment arm (experimental vs control). Interaction terms (e.g., crp1:Rx) represent treatment-biomarker interaction effects.\n")
 ```
 

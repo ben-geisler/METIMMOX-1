@@ -4,17 +4,20 @@ Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic MSS/
 
 ## Overview
 
-This repository contains the R code for a cost-effectiveness analysis comparing three biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
+This repository contains the R code for a cost-effectiveness analysis comparing two pre-treatment biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
 
 **METIMMOX** stands for: **Colorectal Cancer METastasis - Shaping Anti-tumor IMMunity by OXaliplatin**
 
 ### Biomarker Strategies Evaluated
 
 1. **CRP Strategy**: C-reactive protein levels
-2. **TLR Strategy**: Tumor lesion reduction
-3. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation
+2. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation
 
-Each strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
+**Clinical-only TLR analysis**: Tumor lesion reduction (TLR) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator rather than a pre-treatment treatment-selection biomarker.
+
+Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
+
+The deployed analysis uses one joint economic survival model (`Age + sex + Rx + crp*Rx + tmb_braf*Rx`) for both biomarker-guided strategies. Historical "Model A/B/C" specifications are not alternative structures in the executable model.
 
 ## Target Audience
 
@@ -43,7 +46,7 @@ METIMMOX-1/
 ### Key Files
 
 - **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (multi-model comparison), and sensitivity analysis utilities
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (single-model CEA execution and summary helpers; legacy filename), and sensitivity analysis utilities
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
 - **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses
@@ -167,10 +170,9 @@ quarto render scripts/QMD/report/EVPPIs.qmd
 quarto render scripts/QMD/report/scenario_effect.qmd
 quarto render scripts/QMD/report/biomarker_decomposition.qmd
 quarto render scripts/QMD/report/biomarker_distributions.qmd
-
-# Or render all reports at once
-quarto render scripts/QMD/report/
 ```
+
+Clinical/DAG/descriptive reports may be rendered to all declared formats. Economic reports use HTML-producing tables and must be rendered individually with `--to pdf` (for example, `quarto render scripts/QMD/report/CEA.qmd --to pdf`). Do not render the whole report directory in one command.
 
 **Report Descriptions**:
 1. **para_models.qmd** - Parametric survival model fits and diagnostics
@@ -189,10 +191,9 @@ quarto render scripts/QMD/report/
 
 ### Core Modeling
 - **Partitioned survival model** for cost-effectiveness analysis
-- **Biomarker-guided treatment strategies** comparing three biomarkers (CRP, TLR, TMB/BRAF) against standard of care
+- **Biomarker-guided treatment strategies** comparing two pre-treatment biomarkers (CRP and TMB/BRAF) against standard of care
 - **Microsatellite-stable (MSS) colorectal cancer** focus
 - **Parametric survival modeling** using multiple distributions (Weibull, exponential, gamma, etc.)
-- **Multi-model structure comparison** (Model A/B/C: joint/focused/separate biomarker modeling approaches)
 
 ### Sensitivity and Uncertainty Analysis
 - **Deterministic sensitivity analysis (DSA)** with tornado diagrams
@@ -224,6 +225,10 @@ State occupancy is derived from parametric survival curves:
 - PF state = PFS curve
 - P state = OS - PFS (bounded at 0)
 - D state = 1 - OS
+
+### Adverse-event scope
+
+Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
 
 ## Publication Figures
 

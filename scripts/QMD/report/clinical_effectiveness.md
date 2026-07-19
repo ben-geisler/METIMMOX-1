@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-05-29
+2026-06-18
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -36,6 +36,21 @@ Ben Geisler
     - [Progression-Free Survival](#progression-free-survival-1)
   - [Ridge Sensitivity Analysis (TLR Terms
     Penalized)](#ridge-sensitivity-analysis-tlr-terms-penalized)
+- [Landmark Analysis: TLR at Week 9](#landmark-analysis-tlr-at-week-9)
+  - [Landmark Cohort and Attrition](#landmark-cohort-and-attrition)
+  - [Descriptive Context (Landmark
+    Cohort)](#descriptive-context-landmark-cohort)
+    - [TLR Prevalence by Treatment Arm at Week
+      9](#tlr-prevalence-by-treatment-arm-at-week-9)
+    - [Landmark Kaplan-Meier Curves Stratified by
+      TLR](#landmark-kaplan-meier-curves-stratified-by-tlr)
+  - [Standard Cox vs Firth (Landmark)](#standard-cox-vs-firth-landmark)
+  - [Firth-Corrected Cox Model
+    (Landmark)](#firth-corrected-cox-model-landmark)
+    - [Overall Survival](#overall-survival-2)
+    - [Progression-Free Survival](#progression-free-survival-2)
+  - [Ridge Sensitivity Analysis (Landmark, TLR Terms
+    Penalized)](#ridge-sensitivity-analysis-landmark-tlr-terms-penalized)
 - [Discussion](#discussion)
   - [Primary interaction results](#primary-interaction-results)
   - [Proportional hazards and
@@ -43,6 +58,8 @@ Ben Geisler
   - [Ridge regression sensitivity](#ridge-regression-sensitivity)
   - [TLR responder analysis
     (exploratory)](#tlr-responder-analysis-exploratory)
+  - [TLR landmark analysis
+    (exploratory)](#tlr-landmark-analysis-exploratory)
 - [Summary](#summary)
 
 # Overview
@@ -372,6 +389,132 @@ landmark or formal causal-mediation analyses in future work.
 
 
 
+# Landmark Analysis: TLR at Week 9
+
+The responder analysis above treats TLR status as if it were known at
+baseline. It is not: TLR is measured at the first on-treatment CT scan,
+so a patient can only be classified TLR-positive or TLR-negative *after*
+surviving (and remaining progression-free) long enough to reach that
+scan. Conditioning survival on a post-baseline response therefore
+induces **guarantee-time (immortal-time) bias** — TLR-classified
+patients are, by construction, a more favourable risk set than the full
+randomized population.
+
+A **landmark analysis** removes this bias by (i) fixing a landmark time,
+(ii) restricting to patients still at risk at the landmark, and (iii)
+measuring survival **from the landmark onward**. Here the landmark is
+set to **week 9**, the time of the second CT (the first on-treatment
+response assessment): TLR compares this scan to the baseline CT, so a
+patient’s TLR status does not exist until week 9. Placing the landmark
+at the measurement time ensures every patient in the cohort has actually
+reached the scan and has a defined TLR. Every retained patient is
+guaranteed to have reached the assessment, so the TLR x Rx contrast is
+no longer inflated by the survival required to be classifiable. This
+section **complements** the responder analysis above (which is retained
+for comparison); it does not replace it.
+
+If the true response-assessment week differs from 9, only the single
+`LANDMARK_WK` value below needs changing. Because the small trial loses
+patients with events or censoring before the landmark, the cohort sizes
+and event counts are reported explicitly, and all model fits are wrapped
+so a too-small cohort degrades gracefully rather than aborting the
+render.
+
+## Landmark Cohort and Attrition
+
+## Descriptive Context (Landmark Cohort)
+
+### TLR Prevalence by Treatment Arm at Week 9
+
+### Landmark Kaplan-Meier Curves Stratified by TLR
+
+<img
+src="clinical_effectiveness_files/figure-commonmark/km-lm-tlr-1.png"
+style="width:100.0%" data-fig-align="center" />
+
+**Note:** Follow-up time is measured from the week-9 landmark. All
+patients shown were alive (OS) or alive and progression-free (PFS) at
+the landmark, so the curves are free of the guarantee-time bias
+affecting the responder-analysis curves above.
+
+
+
+## Standard Cox vs Firth (Landmark)
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| TLR x Rx          | 2.43 (0.74-7.95)         | 2.47 (0.75-7.75)  |
+| TLR (main effect) | 0.21 (0.08-0.54)         | 0.21 (0.08-0.55)  |
+| Rx (Experimental) | 0.60 (0.23-1.55)         | 0.59 (0.24-1.55)  |
+| CRP               | 0.52 (0.25-1.06)         | 0.53 (0.25-1.05)  |
+| TMB/BRAF          | 0.86 (0.48-1.52)         | 0.86 (0.48-1.52)  |
+| Age               | 1.01 (0.98-1.04)         | 1.01 (0.98-1.04)  |
+| Sex               | 1.48 (0.81-2.68)         | 1.47 (0.82-2.67)  |
+
+Landmark (Week 9) TLR Model - Overall Survival: Standard Cox vs Firth
+
+| Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
+|:------------------|:-------------------------|:------------------|
+| TLR x Rx          | 0.86 (0.20-3.59)         | 0.88 (0.21-3.42)  |
+| TLR (main effect) | 0.16 (0.05-0.53)         | 0.17 (0.05-0.55)  |
+| Rx (Experimental) | 1.08 (0.31-3.83)         | 1.05 (0.32-3.80)  |
+| CRP               | 0.52 (0.22-1.24)         | 0.53 (0.22-1.23)  |
+| TMB/BRAF          | 0.35 (0.16-0.77)         | 0.36 (0.16-0.77)  |
+| Age               | 1.00 (0.96-1.04)         | 1.00 (0.96-1.04)  |
+| Sex               | 1.06 (0.50-2.27)         | 1.06 (0.50-2.27)  |
+
+Landmark (Week 9) TLR Model - Progression-Free Survival: Standard Cox vs
+Firth
+
+## Firth-Corrected Cox Model (Landmark)
+
+### Overall Survival
+
+### Progression-Free Survival
+
+
+
+## Ridge Sensitivity Analysis (Landmark, TLR Terms Penalized)
+
+Ridge regression is applied to the landmark cohorts with the same
+targeted penalty as the responder analysis: only the TLR main effect and
+the TLR x Rx interaction are L2-shrunk, while Age, sex, Rx, CRP, and
+TMB/BRAF remain unpenalized.
+
+**Interpretation:** The two endpoints behave very differently under the
+landmark, and the contrast is itself informative.
+
+*Overall survival* is clean: 0 patient(s) are excluded (no deaths occur
+before week 9), so the landmark OS cohort is the full randomized
+population and the landmark Firth TLR x Rx HR (2.47 (0.75-7.75)) is
+**identical** to the responder estimate (2.47 (0.75-7.75)) — a Cox model
+is invariant to a common shift of the time origin when no one leaves the
+risk set. The OS responder signal is therefore not an early-death
+guarantee-time artefact.
+
+*Progression-free survival* exposes a deeper problem. 9 patients are
+excluded, of whom 5 progressed, 5 of them **TLR-negative**. This is not
+a coincidence: progression and TLR are read from the *same* first
+on-treatment scan, so a patient whose tumour grows at that scan is
+simultaneously classified as a progression and as TLR-negative. The
+week-9 landmark removes exactly these TLR-negative scan-time
+progressors, shifting the Firth TLR x Rx HR from 0.75 (0.20-2.66)
+(responder) to 0.88 (0.21-3.42) (landmark). The responder PFS
+association is thus **partly tautological** — TLR-negativity and early
+progression are the same measurement — which the landmark makes explicit
+by excluding the coupled events.
+
+Neither analysis resolves the most fundamental issue: TLR lies on the
+causal path of treatment (Rx -\> TLR -\> outcome), so the TLR x Rx
+contrast is not a baseline patient-selection estimate under any time
+origin; disentangling it would require formal causal mediation, not a
+landmark. All estimates remain exploratory and imprecise (PLRT p 0.135
+OS, 0.851 PFS) and must not guide treatment selection. The landmark is
+fixed at week 9 (the second, first-on-treatment CT); if the assessment
+week differs, change `LANDMARK_WK`.
+
+
+
 # Discussion
 
 ## Primary interaction results
@@ -458,9 +601,26 @@ artefact (TLR measured at a fixed CT that may occur during different
 treatment phases across arms), or genuine heterogeneity in the patient
 mix. Because TLR is itself influenced by treatment, the TLR × Rx
 interaction is a responder-stratified contrast — useful for hypothesis
-generation, but not a causal predictive-biomarker estimate. Clinical
-decision support would require a formal causal mediation or landmark
-analysis.
+generation, but not a causal predictive-biomarker estimate.
+
+## TLR landmark analysis (exploratory)
+
+A **week-9 landmark analysis** conditions on survival to the second
+(first on-treatment) CT — the scan at which TLR is defined — and
+measures survival from that point, to test whether the responder signal
+is a guarantee-time artefact. The two endpoints diverge instructively.
+For **OS**, 0 patients are excluded (no early deaths), so the landmark
+estimate is identical to the responder estimate (2.47 (0.75-7.75)): the
+OS signal is not driven by early-death immortal time. For **PFS**, 9
+patients are excluded, with 5 of the 5 excluded progressors being
+TLR-negative, because progression and TLR are ascertained at the same
+scan; removing these coupled events moves the Firth TLR × Rx HR from
+0.75 (0.20-2.66) to 0.88 (0.21-3.42). The PFS responder association is
+therefore partly tautological. Under any time origin TLR remains on the
+causal path of treatment, so a definitive predictive-biomarker estimate
+would require causal mediation rather than a landmark. Both analyses
+remain underpowered and exploratory, and neither supports baseline
+treatment selection on TLR.
 
 
 
@@ -511,8 +671,23 @@ TLR is post-randomization, this is a responder-stratified,
 hypothesis-generating contrast rather than a causal predictive-biomarker
 estimate.
 
+**TLR week-9 landmark analysis (exploratory):** A landmark analysis
+conditioning on survival to the second (first on-treatment) CT in week 9
+— the scan at which TLR is defined — was added. For OS, 0 patients are
+excluded (no early deaths), so the landmark HR 2.47 (0.75-7.75) is
+identical to the responder value: the OS signal is not an early-death
+immortal-time artefact. For PFS, 9 patients are excluded, 5 of the 5
+excluded progressors being TLR-negative because progression and TLR are
+read from the same scan; this shifts the HR from 0.75 (0.20-2.66)
+(responder) to 0.88 (0.21-3.42) (landmark), exposing the PFS association
+as partly tautological (PLRT p 0.135 OS, 0.851 PFS). Both analyses are
+retained for comparison; both are underpowered and exploratory, and the
+residual confounding from TLR being treatment-influenced needs causal
+mediation, not a landmark. Neither supports baseline treatment selection
+on TLR.
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-05-29  
+**Report completed on:** 2026-06-18  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.2
+**Report version:** 3.3

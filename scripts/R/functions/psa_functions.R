@@ -43,9 +43,17 @@ generate_psa_samples <- function(param_distributions, n_sim) {
 #' @param time_horizon Time horizon for analysis
 #' @param cl Cycle length (1/52 weeks)
 #' @param n_sim Number of simulations
-#' @return List with cost and effect matrices
+#' @param fallback_threshold Maximum permitted proportion of initial PSA
+#'   iterations using fallback before the analysis stops
+#' @return List with cost and effect matrices and fallback diagnostics
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
-                             strategies, time_horizon, cl, n_sim) {
+                             strategies, time_horizon, cl, n_sim,
+                             fallback_threshold = 0.02) {
+  if (length(fallback_threshold) != 1L || !is.finite(fallback_threshold) ||
+      fallback_threshold < 0 || fallback_threshold > 1) {
+    stop("fallback_threshold must be a single finite value between 0 and 1")
+  }
+
   # Create empty matrices to store results
   cost_matrix <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                         dimnames = list(NULL, strategies))
@@ -58,8 +66,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     control = integer(0),
     crp_pos = integer(0),
     crp_neg = integer(0),
-    tlr_pos = integer(0),
-    tlr_neg = integer(0),
     tmb_braf_pos = integer(0),
     tmb_braf_neg = integer(0)
   )
@@ -81,6 +87,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     for (param_name in names(param_distributions)) {
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
+    # Keep the data-driven diagnostic-cost lookup aligned with sampled scalars.
+    sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
+    sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
     
     # Use withCallingHandlers to capture warnings, tryCatch for errors
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
@@ -105,10 +114,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
             pfs_os_violations$crp_pos <<- c(pfs_os_violations$crp_pos, i)
           } else if (grepl("\\(crp-\\)", msg)) {
             pfs_os_violations$crp_neg <<- c(pfs_os_violations$crp_neg, i)
-          } else if (grepl("\\(tlr\\+\\)", msg)) {
-            pfs_os_violations$tlr_pos <<- c(pfs_os_violations$tlr_pos, i)
-          } else if (grepl("\\(tlr-\\)", msg)) {
-            pfs_os_violations$tlr_neg <<- c(pfs_os_violations$tlr_neg, i)
           } else if (grepl("\\(tmb_braf\\+\\)", msg)) {
             pfs_os_violations$tmb_braf_pos <<- c(pfs_os_violations$tmb_braf_pos, i)
           } else if (grepl("\\(tmb_braf-\\)", msg)) {
@@ -122,7 +127,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
       # Check if fallback was used (Issue #79)
       if (isTRUE(attr(sim_results, "fallback_used"))) {
-        fallback_iterations <<- c(fallback_iterations, i)
+        fallback_iterations <- c(fallback_iterations, i)
       }
 
       # Store results
@@ -138,7 +143,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
           cost_matrix[i, strat] <- NA
           effect_matrix[i, strat] <- NA
           if (!(i %in% fallback_iterations)) {
-            fallback_iterations <<- c(fallback_iterations, i)
+            fallback_iterations <- c(fallback_iterations, i)
           }
         }
       }
@@ -165,6 +170,27 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   
   total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
   cat(sprintf("PSA initial pass complete: %d simulations in %.1f minutes\n", n_sim, total_time))
+
+  # Report and bound initial-pass fallback use before attempting replacements.
+  # A high rate indicates systematic survival-prediction failures and would
+  # otherwise silently reduce the uncertainty represented by the PSA.
+  fallback_iterations <- unique(fallback_iterations)
+  fallback_count <- length(fallback_iterations)
+  fallback_rate <- fallback_count / n_sim
+  cat(sprintf(
+    "PSA initial-pass fallback rate: %d/%d (%.2f%%; maximum permitted %.2f%%)\n",
+    fallback_count, n_sim, 100 * fallback_rate, 100 * fallback_threshold
+  ))
+
+  if (fallback_rate > fallback_threshold) {
+    stop(sprintf(
+      paste0(
+        "PSA initial-pass fallback rate %.2f%% (%d/%d) exceeds the ",
+        "permitted %.2f%% threshold; investigate survival-prediction failures."
+      ),
+      100 * fallback_rate, fallback_count, n_sim, 100 * fallback_threshold
+    ))
+  }
 
   # =========================================================================
   # REPLACE FALLBACK ITERATIONS (Issue #79)
@@ -196,6 +222,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         for (param_name in names(param_distributions)) {
           sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
         }
+        sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
+        sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
 
         # Try to run with a different resampled model
         tryCatch({
@@ -270,8 +298,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       control = "  Control",
       crp_pos = "  CRP+",
       crp_neg = "  CRP-",
-      tlr_pos = "  TLR+",
-      tlr_neg = "  TLR-",
       tmb_braf_pos = "  TMB/BRAF+",
       tmb_braf_neg = "  TMB/BRAF-"
     )
@@ -290,6 +316,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   # Return the cost and effect matrices separately
   return(list(
     cost = cost_matrix,
-    effect = effect_matrix
+    effect = effect_matrix,
+    fallback_count = fallback_count,
+    fallback_rate = fallback_rate,
+    fallback_threshold = fallback_threshold
   ))
 }

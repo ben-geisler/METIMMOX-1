@@ -1,5 +1,5 @@
 ---
-title: "Table 5: ICERs Across Model Specifications"
+title: "Table 5: Probabilistic Sensitivity Analysis Summary"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -13,117 +13,71 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, tidyr, knitr, kableExtra, scales, dampack,
-  flexsurv, survival
-)
-```
+pacman::p_load(here, dplyr, knitr, kableExtra, scales, dampack)
 
-```{r load-analysis, include=FALSE}
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here("scripts/R/functions/multi_model_cea.R"))
 }))
 
-source(here("scripts/R/functions/model_fun.R"))
-source(here("scripts/R/functions/calculate_outcomes.R"))
-source(here("scripts/R/functions/multi_model_cea.R"))
+format_eur <- function(x) scales::dollar(x, prefix = "EUR ", accuracy = 1)
 ```
 
-```{r run-all-models, include=FALSE}
-# Run base case analysis for all three model structures
-all_results <- run_all_basecase_analyses(verbose = TRUE)
-```
+```{r load-psa, include=FALSE}
+psa_obj <- load_psa_cache(verbose = FALSE)
 
-```{r build-icer-table, include=FALSE}
-# Helper to extract ICER display value for a strategy from a model's results
-extract_icer_display <- function(result, strategy) {
-  icer_df <- as.data.frame(result$icer_obj)
-  row <- icer_df[icer_df$Strategy == strategy, ]
-  if (nrow(row) == 0) return(NA_character_)
-
-  if (row$Status %in% c("D", "ED")) {
-    return("Dominated")
-  } else if (!is.na(row$ICER)) {
-    return(sprintf("\u20AC%s", format(round(row$ICER), big.mark = ",")))
-  } else {
-    return("\u2014")
-  }
-}
-
-# Build wide-format ICER comparison table
-biomarker_strategies <- c("crp", "tmb_braf", "tlr")
 strategy_labels <- c(
-  "crp" = "CRP-guided vs SoC",
-  "tmb_braf" = "TMB/BRAF-guided vs SoC",
-  "tlr" = "TLR-guided vs SoC"
+  control = "Standard care",
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
 )
 
-table_5 <- data.frame(
-  Strategy = strategy_labels[biomarker_strategies],
-  Model_A = sapply(biomarker_strategies, function(s)
-    extract_icer_display(all_results$Model_A, s)),
-  Model_B = sapply(biomarker_strategies, function(s) {
-    if (s == "tlr") return("N/A\u2020")
-    extract_icer_display(all_results$Model_B, s)
-  }),
-  Model_C = sapply(biomarker_strategies, function(s)
-    extract_icer_display(all_results$Model_C, s)),
-  stringsAsFactors = FALSE,
-  row.names = NULL
-)
+display_df <- if (!is.null(psa_obj)) {
+  create_psa_summary_table(psa_obj, wtp = WTP) %>%
+    filter(Strategy %in% names(strategy_labels)) %>%
+    mutate(
+      Strategy = strategy_labels[Strategy],
+      Mean_Cost = format_eur(Mean_Cost),
+      Mean_QALY = sprintf("%.2f", Mean_QALY),
+      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+    )
+} else {
+  data.frame()
+}
 ```
 
 ```{r display-table}
-kable(table_5,
-      caption = "Table 5: ICERs for biomarker-guided strategies across model specifications (\u20AC per QALY, overall MSS population)",
-      format = "html",
-      col.names = c("Strategy", "Model A", "Model B", "Model C"),
-      align = c("l", "r", "r", "r")) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                full_width = FALSE,
-                font_size = 12) %>%
-  footnote(
-    general = c(
-      "SoC = Standard of care.",
-      "\u2020TLR excluded from Model B by design.",
-      "All biomarker strategies yield fewer QALYs than standard care in Models B and C. In Model A, only TMB/BRAF yields a positive (though very high) ICER; CRP and TLR are dominated.",
-      "Model A: comprehensive (all biomarkers, all interactions). Model B: focused (CRP and TMB/BRAF as covariates and interactions, TLR excluded). Model C: single biomarker."
-    ),
-    general_title = "Notes: "
-  )
+if (nrow(display_df) > 0) {
+  kable(
+    display_df,
+    caption = "Table 5: PSA summary at the base-case willingness-to-pay threshold",
+    format = "html",
+    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+    align = c("l", "r", "r", "r")
+  ) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width = FALSE, font_size = 12) %>%
+    footnote(
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY."),
+      general_title = "Notes: "
+    )
+} else {
+  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+}
 ```
 
 ```{r save-table, include=FALSE}
-tables_dir <- here("tables")
-if (!dir.exists(tables_dir)) {
-  dir.create(tables_dir, recursive = TRUE)
+if (nrow(display_df) > 0) {
+  tables_dir <- here("tables")
+  if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+  write.csv(display_df, file = here("tables", "table_5.csv"), row.names = FALSE)
 }
-
-# Save raw numeric ICER data for all models
-save_data <- data.frame(stringsAsFactors = FALSE)
-for (model_name in names(all_results)) {
-  icer_df <- as.data.frame(all_results[[model_name]]$icer_obj)
-  icer_df$Model <- model_name
-  save_data <- rbind(save_data, icer_df)
-}
-
-write.csv(save_data, file = here("tables", "table_5.csv"), row.names = FALSE)
-cat("Table saved to:", here("tables", "table_5.csv"), "\n")
 ```
 
 Table 5 has been saved to `tables/table_5.csv`.

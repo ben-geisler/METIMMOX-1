@@ -1,5 +1,5 @@
 ---
-title: "Figure S5: Cost-Effectiveness Frontier Plots"
+title: "Figure S5: Cost-Effectiveness Frontier Plot"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -13,168 +13,71 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales, dampack, cowplot,
-  flexsurv, survival
-)
+pacman::p_load(here, ggplot2, dplyr, scales, dampack,
+               flexsurv, survival)
 
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    axis.title = element_text(size = 10),
-    axis.text = element_text(size = 9)
-  )
-)
-```
-
-```{r load-analysis, include=FALSE}
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  source(here("scripts/R/functions/model_fun.R"))
+  source(here("scripts/R/functions/calculate_outcomes.R"))
+  source(here("scripts/R/functions/multi_model_cea.R"))
 }))
-
-source(here("scripts/R/functions/model_fun.R"))
-source(here("scripts/R/functions/calculate_outcomes.R"))
-source(here("scripts/R/functions/multi_model_cea.R"))
 ```
 
-```{r run-all-models, include=FALSE}
-all_results <- run_all_basecase_analyses(verbose = TRUE)
-
-model_labels <- c(
-  Model_A = "Model A (Joint)",
-  Model_B = "Model B (Focused)",
-  Model_C = "Model C (Separate)"
-)
-```
-
-```{r create-frontier-panels, include=FALSE}
-strategy_colors <- c(
-  "control" = "gray50",
-  "crp" = "#E69F00",
-  "tlr" = "#009E73",
-  "tmb_braf" = "#0072B2"
-)
+```{r data, include=FALSE}
+basecase <- run_basecase(verbose = FALSE)
+icer_df <- as.data.frame(basecase$icer_obj)
 
 strategy_labels <- c(
-  "control" = "Standard care",
-  "crp" = "CRP-guided",
-  "tlr" = "TLR-guided",
-  "tmb_braf" = "TMB/BRAF-guided"
+  control = "Standard care",
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
 )
 
-panels <- list()
-
-for (model_name in names(all_results)) {
-  result <- all_results[[model_name]]
-  icer_df <- as.data.frame(result$icer_obj)
-
-  # Build plot data
-  plot_df <- data.frame(
-    Strategy = icer_df$Strategy,
-    Cost = icer_df$Cost,
-    Effect = icer_df$Effect,
-    Status = icer_df$Status,
-    stringsAsFactors = FALSE
+plot_df <- icer_df %>%
+  filter(Strategy %in% names(strategy_labels)) %>%
+  mutate(
+    Label = strategy_labels[Strategy],
+    Frontier = ifelse(Status %in% c("D", "ED", "Dominated"), "Dominated", "Frontier")
   )
 
-  plot_df$Label <- strategy_labels[plot_df$Strategy]
-  plot_df$Color <- strategy_colors[plot_df$Strategy]
-
-  # Identify frontier strategies (non-dominated)
-  frontier <- plot_df %>% filter(Status %in% c("ND", "ref"))
-  frontier <- frontier[order(frontier$Effect), ]
-
-  p <- ggplot(plot_df, aes(x = Effect, y = Cost)) +
-    # Frontier line (connecting non-dominated strategies)
-    {if (nrow(frontier) > 1)
-      geom_line(data = frontier, aes(x = Effect, y = Cost),
-                linetype = "dashed", color = "gray40", linewidth = 0.5)
-    } +
-    # Points for all strategies
-    geom_point(aes(color = Label, shape = ifelse(Status %in% c("D", "ED"), "Dominated", "Frontier")),
-               size = 4) +
-    # Labels
-    geom_text(aes(label = Label), hjust = -0.1, vjust = -0.5, size = 3) +
-    scale_color_manual(values = setNames(strategy_colors, strategy_labels), name = NULL) +
-    scale_shape_manual(values = c("Dominated" = 4, "Frontier" = 16), name = NULL) +
-    scale_y_continuous(labels = scales::label_currency(prefix = "\u20AC", big.mark = ",")) +
-    scale_x_continuous(labels = scales::number_format(accuracy = 0.01)) +
-    labs(
-      x = "QALYs",
-      y = "Cost (EUR)",
-      title = model_labels[model_name]
-    ) +
-    # WTP threshold line through reference strategy
-    {
-      ref_row <- plot_df[plot_df$Status %in% c("ND", "ref") & plot_df$Cost == min(plot_df$Cost[plot_df$Status %in% c("ND", "ref")]), ]
-      if (nrow(ref_row) > 0) {
-        geom_abline(intercept = ref_row$Cost[1] - WTP * ref_row$Effect[1],
-                    slope = WTP, linetype = "dotted", color = "gray60", linewidth = 0.4)
-      }
-    } +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(size = 11, face = "bold", hjust = 0.5),
-      legend.position = "none",
-      panel.grid.minor = element_blank()
-    ) +
-    # Expand axes for labels
-    expand_limits(
-      x = max(plot_df$Effect) * 1.15,
-      y = max(plot_df$Cost) * 1.1
-    )
-
-  panels[[model_name]] <- p
-}
+frontier <- plot_df %>%
+  filter(Frontier == "Frontier") %>%
+  arrange(Effect)
 ```
 
-```{r combined-figure, fig.width=14, fig.height=5}
-if (length(panels) > 0) {
-  combined_plot <- plot_grid(
-    plotlist = panels,
-    ncol = 3,
-    labels = c("A", "B", "C"),
-    label_size = 14
-  )
+```{r figure, fig.width=8, fig.height=6}
+p_frontier <- ggplot(plot_df, aes(x = Effect, y = Cost)) +
+  {if (nrow(frontier) > 1) geom_line(data = frontier, color = "gray40", linetype = "dashed")} +
+  geom_point(aes(color = Label, shape = Frontier), size = 4) +
+  geom_text(aes(label = Label), hjust = -0.05, vjust = -0.7, size = 3.2) +
+  scale_color_manual(values = c("Standard care" = "gray50",
+                                "CRP-guided" = "#E69F00",
+                                "TMB/BRAF-guided" = "#0072B2"),
+                     name = NULL) +
+  scale_shape_manual(values = c(Dominated = 4, Frontier = 16), name = NULL) +
+  scale_y_continuous(labels = scales::label_currency(prefix = "EUR ", big.mark = ",")) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.01)) +
+  labs(x = "QALYs", y = "Cost (EUR)") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
 
-  print(combined_plot)
-}
+print(p_frontier)
 ```
 
 ```{r save-figure, include=FALSE}
-if (length(panels) > 0) {
-  figs_dir <- here("figs")
-  if (!dir.exists(figs_dir)) {
-    dir.create(figs_dir, recursive = TRUE)
-  }
-
-  ggsave(
-    filename = here("figs", "figure_s5.png"),
-    plot = combined_plot,
-    width = 14,
-    height = 5,
-    dpi = 300,
-    bg = "white"
-  )
-
-  cat("Figure saved to:", here("figs", "figure_s5.png"), "\n")
-}
+figs_dir <- here("figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+ggsave(here("figs", "figure_s5.png"), p_frontier, width = 8, height = 6,
+       dpi = 300, bg = "white")
 ```
 
 Figure S5 has been saved to `figs/figure_s5.png`.

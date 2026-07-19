@@ -21,7 +21,6 @@ source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/evppi_functions.R"))
 source(here::here("scripts/R/functions/scenario_analysis.R"))
-source(here::here("scripts/R/functions/multi_model_cea.R"))
 
 # ===============================================================================
 # PREVIEW CONFIGURATION
@@ -31,11 +30,6 @@ source(here::here("scripts/R/functions/multi_model_cea.R"))
 n_sim_preview <- 500  # Instead of 5000
 cat("\n=== PREVIEW MODE ===\n")
 cat("PSA iterations reduced to", n_sim_preview, "for faster testing\n\n")
-
-# Run only Model A (joint) for quick preview
-model_structures_to_run <- 0
-model_labels <- "joint"
-model_names <- "Model A: Joint"
 
 # Focus on just base case and biosimilar scenarios
 scenarios_preview <- data.frame(
@@ -54,15 +48,16 @@ cat("\n")
 # DEFINE PARAMETERS FOR EVPPI ANALYSIS
 # ===============================================================================
 
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
+evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
                   "c_test_CT", "u_np", "u_p", "c_other_last",
-                  "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow")
+                  "c_test_blood", "c_other_visit", "c_other_baseline",
+                  "c_other_follow", "p_crp", "p_tmb_braf")
 
 # ===============================================================================
 # RUN PREVIEW SCENARIOS
 # ===============================================================================
 
-cat("\n=== RUNNING PREVIEW SCENARIOS FOR Model A: Joint ===\n\n")
+cat("\n=== RUNNING PREVIEW SCENARIOS FOR THE JOINT ECONOMIC MODEL ===\n\n")
 
 all_scenario_results_preview <- list()
 
@@ -145,10 +140,6 @@ for (i in 1:nrow(scenarios_preview)) {
 evppi_all_scenarios_preview <- do.call(rbind, lapply(all_scenario_results_preview, function(x) x$evppi_results))
 
 if (nrow(evppi_all_scenarios_preview) > 0) {
-  evppi_all_scenarios_preview$model_structure <- 0
-  evppi_all_scenarios_preview$model_label <- "joint"
-  evppi_all_scenarios_preview$model_name <- "Model A: Joint"
-
   # Add population-level EVPPI (matches 14_scenario_EVPPIs.R)
   evppi_all_scenarios_preview <- evppi_all_scenarios_preview %>%
     mutate(
@@ -167,14 +158,8 @@ if (nrow(evppi_all_scenarios_preview) > 0) {
     )
 }
 
-# Create multi-model structure for compatibility
-all_model_scenario_results_preview <- list(
-  joint = all_scenario_results_preview
-)
-
 evppi_cache_preview <- list(
   all_scenario_results = all_scenario_results_preview,
-  all_model_scenario_results = all_model_scenario_results_preview,
   evppi_all_scenarios = evppi_all_scenarios_preview,
   scenarios = scenarios_preview
 )
@@ -190,6 +175,6 @@ cat("Results saved to:", preview_cache_file, "\n")
 
 cat("Summary:\n")
 cat("- PSA iterations:", n_sim_preview, "(10% of full analysis)\n")
-cat("- Model structures:", "1 (Model A only)\n")
+cat("- Model:", "Joint economic survival model\n")
 cat("- Scenarios:", nrow(scenarios_preview), "(Base case + Biosimilar)\n")
 cat("- Expected runtime:", "~5-10 minutes total\n")

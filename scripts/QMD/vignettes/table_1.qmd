@@ -59,20 +59,20 @@ prev_ci <- function(p, n) {
 # Build the table data frame
 table_1 <- data.frame(
   Category = c(
-    rep("Biomarker prevalences", 3),
+    rep("Biomarker prevalences", 2),
     rep("Health-state utilities", 2),
-    rep("Treatment costs (\u20AC)", 3),
+    rep("Treatment costs (\u20AC)", 4),
     rep("Other costs (\u20AC)", 2),
     rep("Structural parameters", 2)
   ),
   Parameter = c(
     "CRP-positive",
-    "TLR-positive",
     "TMB/BRAF-positive",
     "Progression-free",
     "Post-progression",
     "Nivolumab per cycle",
     "FLOX per cycle",
+    "CRP testing",
     "NGS testing",
     "Monitoring per cycle",
     "End-of-life",
@@ -81,12 +81,12 @@ table_1 <- data.frame(
   ),
   Base_case = c(
     sprintf("%.3f", l_params_base$p_crp),
-    sprintf("%.3f", l_params_base$p_tlr),
     sprintf("%.3f", l_params_base$p_tmb_braf),
     sprintf("%.2f", l_params_base$u_np),
     sprintf("%.2f", l_params_base$u_p),
     sprintf("\u20AC%s", format(round(l_params_base$c_drug_nivo), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_drug_FLOX), big.mark = ",")),
+    sprintf("\u20AC%s", format(round(l_params_base$c_test_CRP), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_test_NGS), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_test_CT), big.mark = ",")),
     sprintf("\u20AC%s", format(round(l_params_base$c_other_last), big.mark = ",")),
@@ -95,7 +95,6 @@ table_1 <- data.frame(
   ),
   Range = c(
     prev_ci(l_params_base$p_crp, n_patients),
-    prev_ci(l_params_base$p_tlr, n_patients),
     prev_ci(l_params_base$p_tmb_braf, n_patients),
     sprintf("%.2f\u2013%.2f",
             l_params_base$u_np * (1 - DSA_mult),
@@ -110,6 +109,9 @@ table_1 <- data.frame(
             format(round(l_params_base$c_drug_FLOX * (1 - DSA_mult)), big.mark = ","),
             format(round(l_params_base$c_drug_FLOX * (1 + DSA_mult)), big.mark = ",")),
     sprintf("%s\u2013%s",
+            format(round(l_params_base$c_test_CRP * (1 - DSA_mult)), big.mark = ","),
+            format(round(l_params_base$c_test_CRP * (1 + DSA_mult)), big.mark = ",")),
+    sprintf("%s\u2013%s",
             format(round(l_params_base$c_test_NGS * (1 - DSA_mult)), big.mark = ","),
             format(round(l_params_base$c_test_NGS * (1 + DSA_mult)), big.mark = ",")),
     sprintf("%s\u2013%s",
@@ -122,16 +124,16 @@ table_1 <- data.frame(
     "5\u201320 yr"
   ),
   Distribution = c(
-    "Beta", "Beta", "Beta",
     "Beta", "Beta",
-    "Gamma", "Gamma", "Gamma",
+    "Beta", "Beta",
+    "Gamma", "Gamma", "Gamma", "Gamma",
     "Gamma", "Gamma",
     "Fixed", "Fixed"
   ),
   Source = c(
-    "METIMMOX", "METIMMOX", "METIMMOX",
+    "METIMMOX", "METIMMOX",
     "METIMMOX EQ-5D", "METIMMOX EQ-5D",
-    "NoMA", "NoMA", "Local",
+    "NoMA", "NoMA", "Local", "Local",
     "Ref 27", "Ref 28",
     "NoMA guidelines", ""
   ),
@@ -139,9 +141,6 @@ table_1 <- data.frame(
     sprintf("95%% CI: %.1f\u2013%.1f%%",
             binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[1] * 100,
             binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[2] * 100),
-    sprintf("Model A/C only; 95%% CI: %.1f\u2013%.1f%%",
-            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[1] * 100,
-            binom.test(round(l_params_base$p_tlr * n_patients), n_patients)$conf.int[2] * 100),
     sprintf("95%% CI: %.1f\u2013%.1f%%",
             binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[1] * 100,
             binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[2] * 100),
@@ -149,6 +148,7 @@ table_1 <- data.frame(
     "Danish tariff",
     "40% discount",
     "",
+    "CRP only",
     "TMB/BRAF only",
     "CT scans",
     "",

@@ -152,3 +152,82 @@ get_modal_category <- function(x) {
   tbl <- table(x)
   names(tbl)[which.max(tbl)]
 }
+
+# Select OS and PFS distributions jointly subject to OS >= PFS.
+#
+# `ordering_check` is deliberately injected by the analysis script so this
+# fitting helper remains independent of the population-prediction implementation.
+# It must accept two endpoint prediction objects (OS, PFS) and return a list
+# containing `ordered`, `n_violations`, and `max_pfs_minus_os`.
+find_best_ordered_model_pair <- function(os_candidates, pfs_candidates,
+                                         ordering_check,
+                                         criterion = "AIC") {
+  required_columns <- c("formula_set", "distribution", criterion,
+                        "ordering_data")
+  if (!all(required_columns %in% names(os_candidates)) ||
+      !all(required_columns %in% names(pfs_candidates))) {
+    stop("Candidate tables must contain: ",
+         paste(required_columns, collapse = ", "))
+  }
+
+  rows <- vector("list", nrow(os_candidates) * nrow(pfs_candidates))
+  row_idx <- 0L
+
+  for (os_idx in seq_len(nrow(os_candidates))) {
+    for (pfs_idx in seq_len(nrow(pfs_candidates))) {
+      row_idx <- row_idx + 1L
+      check <- tryCatch(
+        ordering_check(
+          os_candidates$ordering_data[[os_idx]],
+          pfs_candidates$ordering_data[[pfs_idx]]
+        ),
+        error = function(e) list(
+          ordered = FALSE,
+          n_violations = NA_integer_,
+          max_pfs_minus_os = Inf,
+          error = conditionMessage(e)
+        )
+      )
+
+      rows[[row_idx]] <- data.frame(
+        os_formula_set = os_candidates$formula_set[os_idx],
+        os_distribution = os_candidates$distribution[os_idx],
+        os_ic = os_candidates[[criterion]][os_idx],
+        pfs_formula_set = pfs_candidates$formula_set[pfs_idx],
+        pfs_distribution = pfs_candidates$distribution[pfs_idx],
+        pfs_ic = pfs_candidates[[criterion]][pfs_idx],
+        combined_ic = os_candidates[[criterion]][os_idx] +
+          pfs_candidates[[criterion]][pfs_idx],
+        ordered = isTRUE(check$ordered),
+        n_violations = check$n_violations,
+        max_pfs_minus_os = check$max_pfs_minus_os,
+        check_error = if (is.null(check$error)) NA_character_ else check$error,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  pair_table <- do.call(rbind, rows)
+  pair_table <- pair_table[order(pair_table$combined_ic), ]
+  rownames(pair_table) <- NULL
+  feasible <- pair_table[pair_table$ordered, ]
+
+  if (nrow(feasible) == 0) {
+    return(list(
+      selected = NULL,
+      pairs = pair_table,
+      unconstrained_combined_ic = min(pair_table$combined_ic),
+      ic_penalty = Inf,
+      criterion = criterion
+    ))
+  }
+
+  selected <- feasible[which.min(feasible$combined_ic), , drop = FALSE]
+  list(
+    selected = selected,
+    pairs = pair_table,
+    unconstrained_combined_ic = min(pair_table$combined_ic),
+    ic_penalty = selected$combined_ic[[1]] - min(pair_table$combined_ic),
+    criterion = criterion
+  )
+}

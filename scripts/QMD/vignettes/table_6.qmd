@@ -1,5 +1,5 @@
 ---
-title: "Table 6: Biomarker-Enriched Population Results (Model B)"
+title: "Table 6: Biomarker-Enriched Population Results"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -13,189 +13,43 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, knitr, kableExtra, scales, dampack,
-  flexsurv, survival
-)
-```
+pacman::p_load(here, dplyr, knitr, kableExtra, scales, dampack,
+               flexsurv, survival)
 
-```{r load-analysis, include=FALSE}
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
 }))
 
-source(here("scripts/R/functions/model_fun.R"))
-source(here("scripts/R/functions/calculate_outcomes.R"))
-source(here("scripts/R/functions/prediction_functions.R"))
-source(here("scripts/R/functions/multi_model_cea.R"))
-```
-
-```{r run-enriched-model-b, include=FALSE}
-# Set Model B (focused specification)
-MODEL_STRUCTURE <<- 1
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
-}))
-
-biomarker_labels <- c(
-  crp = "CRP-positive",
-  tmb_braf = "TMB/BRAF-positive",
-  tlr = "TLR-positive"
-)
-
-enriched_results <- data.frame()
-
-for (biomarker in names(biomarker_labels)) {
-  # Get enriched population predictions
-  if (!is.null(predictions[[biomarker]]$biomarker_positive)) {
-    bm_pos_os <- predictions[[biomarker]]$biomarker_positive$os
-    bm_pos_pfs <- predictions[[biomarker]]$biomarker_positive$pfs
-  } else {
-    next
-  }
-
-  ctrl_os <- predictions$control$os
-  ctrl_pfs <- predictions$control$pfs
-
-  # Discount factors
-  dr_costs <- l_params_base$dr_costs
-  dr_effects <- l_params_base$dr_effects
-  th <- l_params_base$time_horizon
-
-  v_dw_c <- 1 / (1 + dr_costs)^(seq(0, th) / 52)
-  v_dw_e <- 1 / (1 + dr_effects)^(seq(0, th) / 52)
-
-  # Enriched experimental arm (biomarker+ on FLOX-nivo)
-  exp_pf <- bm_pos_pfs
-  exp_os <- bm_pos_os
-  exp_p <- pmax(exp_os - exp_pf, 0)
-
-  exp_qaly <- sum((exp_pf * l_params_base$u_np + exp_p * l_params_base$u_p) * v_dw_e) * l_params_base$cl
-
-  exp_cost <- sum((
-    l_params_base$l_nivo * l_params_base$c_drug_nivo +
-    l_params_base$l_FLOX_exp * l_params_base$c_drug_FLOX +
-    l_params_base$l_CT * l_params_base$c_test_CT +
-    l_params_base$l_blood * l_params_base$c_test_blood +
-    l_params_base$l_visit * l_params_base$c_other_visit
-  ) * exp_pf * v_dw_c) * l_params_base$cl +
-    l_params_base$c_other_baseline + l_params_base$c_other_last
-
-  # Add biomarker test costs
-  if (biomarker == "tmb_braf") {
-    exp_cost <- exp_cost + l_params_base$c_test_NGS
-  } else {
-    exp_cost <- exp_cost + l_params_base$c_test_blood
-  }
-
-  # Enriched control arm (biomarker+ on FLOX only)
-  ctrl_pf <- ctrl_pfs
-  ctrl_p <- pmax(ctrl_os - ctrl_pf, 0)
-
-  ctrl_qaly <- sum((ctrl_pf * l_params_base$u_np + ctrl_p * l_params_base$u_p) * v_dw_e) * l_params_base$cl
-
-  ctrl_cost <- sum((
-    l_params_base$l_FLOX_control * l_params_base$c_drug_FLOX +
-    l_params_base$l_CT * l_params_base$c_test_CT +
-    l_params_base$l_blood * l_params_base$c_test_blood +
-    l_params_base$l_visit * l_params_base$c_other_visit
-  ) * ctrl_pf * v_dw_c) * l_params_base$cl +
-    l_params_base$c_other_baseline + l_params_base$c_other_last
-
-  # Store both arms
-  enriched_results <- rbind(enriched_results,
-    data.frame(Biomarker = biomarker_labels[biomarker],
-               Treatment = "FLOX",
-               Cost = ctrl_cost, QALYs = ctrl_qaly,
-               stringsAsFactors = FALSE),
-    data.frame(Biomarker = biomarker_labels[biomarker],
-               Treatment = "FLOX\u2013nivo",
-               Cost = exp_cost, QALYs = exp_qaly,
-               stringsAsFactors = FALSE)
-  )
-}
-```
-
-```{r build-display-table, include=FALSE}
-# Compute incremental results
-display_data <- enriched_results %>%
-  group_by(Biomarker) %>%
-  summarise(
-    Ctrl_Cost = Cost[Treatment == "FLOX"],
-    Ctrl_QALY = QALYs[Treatment == "FLOX"],
-    Exp_Cost = Cost[Treatment == "FLOX\u2013nivo"],
-    Exp_QALY = QALYs[Treatment == "FLOX\u2013nivo"],
-    Inc_Cost = Exp_Cost - Ctrl_Cost,
-    Inc_QALY = Exp_QALY - Ctrl_QALY,
-    ICER = ifelse(Inc_QALY > 0, Inc_Cost / Inc_QALY, NA),
-    .groups = "drop"
-  )
-
-# Reshape for manuscript layout: two rows per biomarker (FLOX then FLOX-nivo)
-display_fmt <- enriched_results %>%
-  mutate(
-    Cost_fmt = sprintf("\u20AC%s", format(round(Cost), big.mark = ",")),
-    QALY_fmt = sprintf("%.2f", QALYs)
-  )
-
-# Add incremental columns (only on experimental rows)
-display_fmt <- display_fmt %>%
-  left_join(
-    display_data %>%
-      select(Biomarker, Inc_Cost, Inc_QALY, ICER) %>%
-      mutate(Treatment = "FLOX\u2013nivo"),
-    by = c("Biomarker", "Treatment")
-  ) %>%
-  mutate(
-    Inc_Cost_fmt = ifelse(is.na(Inc_Cost), "\u2014",
-                          sprintf("\u20AC%s", format(round(Inc_Cost), big.mark = ","))),
-    Inc_QALY_fmt = ifelse(is.na(Inc_QALY), "\u2014",
-                          sprintf("%.2f", Inc_QALY)),
-    ICER_fmt = case_when(
-      is.na(Inc_QALY) ~ "\u2014",
-      Inc_QALY <= 0 & Inc_Cost > 0 ~ "Dominated",
-      Inc_QALY > 0 ~ sprintf("\u20AC%s/QALY", format(round(ICER), big.mark = ",")),
-      TRUE ~ "Dominant"
-    )
-  ) %>%
-  select(Biomarker, Treatment, Cost_fmt, QALY_fmt,
-         Inc_Cost_fmt, Inc_QALY_fmt, ICER_fmt)
+invisible(capture.output(
+  source(here("scripts/R/analysis/10b_enriched_population_analysis.R"))
+))
 ```
 
 ```{r display-table}
-kable(display_fmt,
-      caption = "Table 6: Biomarker-enriched population results (Model B)",
-      format = "html",
-      col.names = c("Biomarker subgroup", "Treatment", "Cost (\u20AC)", "QALYs",
-                     "\u0394 Cost (\u20AC)", "\u0394 QALYs", "ICER"),
-      align = c("l", "l", rep("r", 5))) %>%
+detail_cols <- c("Biomarker", "Enr_Cost", "Enr_Effect",
+                 "Enr_Ctrl_Cost", "Enr_Ctrl_Effect", "Enr_ICER")
+
+kable(
+  enriched_display[, detail_cols],
+  caption = "Table 6: Biomarker-enriched population results",
+  format = "html",
+  col.names = c("Biomarker", "Experimental Cost", "Experimental QALYs",
+                "Control Cost", "Control QALYs", "ICER"),
+  align = c("l", rep("r", 5))
+) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                full_width = FALSE,
-                font_size = 11) %>%
-  pack_rows(index = table(display_fmt$Biomarker)[unique(display_fmt$Biomarker)]) %>%
+                full_width = FALSE, font_size = 11) %>%
   footnote(
     general = c(
-      "Biomarker-enriched analysis restricts cohort to biomarker-positive patients only.",
-      "Costs and QALYs discounted at 4%. Dominated = more costly and less effective.",
-      "Under Model C, TMB/BRAF-enriched yielded ICER \u20AC323,878/QALY; TLR-enriched \u20AC1,242,396/QALY.",
-      "Under Model A, TMB/BRAF-enriched yielded ICER \u20AC1,625,723/QALY."
+      "Enriched analysis restricts both arms to biomarker-positive patients.",
+      "Experimental arm: FLOX + nivolumab. Control arm: FLOX only.",
+      "Costs and QALYs discounted at 4% per year."
     ),
     general_title = "Notes: "
   )
@@ -203,12 +57,8 @@ kable(display_fmt,
 
 ```{r save-table, include=FALSE}
 tables_dir <- here("tables")
-if (!dir.exists(tables_dir)) {
-  dir.create(tables_dir, recursive = TRUE)
-}
-
-write.csv(display_data, file = here("tables", "table_6.csv"), row.names = FALSE)
-cat("Table saved to:", here("tables", "table_6.csv"), "\n")
+if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+write.csv(enriched_comparison, file = here("tables", "table_6.csv"), row.names = FALSE)
 ```
 
 Table 6 has been saved to `tables/table_6.csv`.

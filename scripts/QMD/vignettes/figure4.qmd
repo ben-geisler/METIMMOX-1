@@ -13,182 +13,92 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales, dampack
-)
+pacman::p_load(here, ggplot2, dplyr, scales, dampack)
 
-# Source setup script to define utility_source_label and global variables
 suppressMessages(suppressWarnings(
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
 ))
-
-theme_set(theme_minimal() +
-  theme(
-    plot.title = element_text(size = 12, face = "bold"),
-    legend.position = "bottom",
-    axis.title = element_text(size = 10),
-    axis.text = element_text(size = 9)
-  )
-)
 ```
 
 ```{r load-data, include=FALSE}
-# Panel A: Model B (focused) - base case pricing (try label-aware name first)
-psa_B_file <- here("data", "tidy", paste0("psa_obj_focused_", utility_source_label, ".rds"))
-if (!file.exists(psa_B_file)) psa_B_file <- here("data", "tidy", "psa_obj_focused.rds")
-# Panel B: Model A (joint) - base case pricing
-psa_A_file <- here("data", "tidy", paste0("psa_obj_joint_", utility_source_label, ".rds"))
-if (!file.exists(psa_A_file)) psa_A_file <- here("data", "tidy", "psa_obj_joint.rds")
-# Panel C: Model B (focused) - biosimilar pricing (from scenario EVPPI cache)
-scenario_cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
-if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
-if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
-if (!file.exists(scenario_cache_file)) scenario_cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
+base_psa_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+base_psa <- if (file.exists(base_psa_file)) readRDS(base_psa_file) else NULL
 
-psa_B <- if (file.exists(psa_B_file)) readRDS(psa_B_file) else NULL
-psa_A <- if (file.exists(psa_A_file)) readRDS(psa_A_file) else NULL
-
-# Extract biosimilar PSA from scenario cache
-psa_biosim <- NULL
-if (file.exists(scenario_cache_file)) {
-  evppi_cache <- readRDS(scenario_cache_file)
-  psa_biosim <- tryCatch(
-    evppi_cache$all_model_scenario_results$focused$s1_decreased_nivo$psa_obj,
-    error = function(e) {
-      cat("Could not extract biosimilar PSA from scenario cache:", e$message, "\n")
-      NULL
-    }
-  )
+scenario_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
+preview_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+scenario_cache <- if (file.exists(scenario_file)) {
+  readRDS(scenario_file)
+} else if (file.exists(preview_file)) {
+  readRDS(preview_file)
+} else {
+  NULL
 }
 
-panels_loaded <- sum(!is.null(psa_B), !is.null(psa_A), !is.null(psa_biosim))
-cat("Loaded", panels_loaded, "of 3 PSA objects\n")
-if (is.null(psa_B)) cat("  Missing: Model B PSA cache\n")
-if (is.null(psa_A)) cat("  Missing: Model A PSA cache\n")
-if (is.null(psa_biosim)) cat("  Missing: Biosimilar scenario PSA (run 14_scenario_EVPPIs.R)\n")
-```
+biosimilar_psa <- tryCatch(
+  scenario_cache$all_scenario_results$s1_decreased_nivo$psa_obj,
+  error = function(e) NULL
+)
 
-```{r calculate-ceacs, include=FALSE}
-wtp_range <- seq(0, 100000, by = 2000)
+wtp_range <- seq(0, 150000, by = 2000)
 ceac_data <- data.frame()
 
-# Panel A: Model B
-if (!is.null(psa_B)) {
-  ceac_B <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_B), error = function(e) NULL)
-  if (!is.null(ceac_B)) {
-    ceac_B$Panel <- "A: Model B"
-    ceac_data <- rbind(ceac_data, ceac_B)
-  }
+if (!is.null(base_psa)) {
+  tmp <- dampack::ceac(wtp = wtp_range, psa = base_psa)
+  tmp$Scenario <- "Base case"
+  ceac_data <- rbind(ceac_data, tmp)
+}
+if (!is.null(biosimilar_psa)) {
+  tmp <- dampack::ceac(wtp = wtp_range, psa = biosimilar_psa)
+  tmp$Scenario <- "Biosimilar pricing"
+  ceac_data <- rbind(ceac_data, tmp)
 }
 
-# Panel B: Model A
-if (!is.null(psa_A)) {
-  ceac_A <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_A), error = function(e) NULL)
-  if (!is.null(ceac_A)) {
-    ceac_A$Panel <- "B: Model A"
-    ceac_data <- rbind(ceac_data, ceac_A)
-  }
-}
-
-# Panel C: Model B (Biosimilar)
-if (!is.null(psa_biosim)) {
-  ceac_biosim <- tryCatch(dampack::ceac(wtp = wtp_range, psa = psa_biosim), error = function(e) NULL)
-  if (!is.null(ceac_biosim)) {
-    ceac_biosim$Panel <- "C: Biosimilar pricing (Model B)"
-    ceac_data <- rbind(ceac_data, ceac_biosim)
-  }
-}
-
-cat("CEAC data rows:", nrow(ceac_data), "\n")
+strategy_labels <- c(
+  control = "Standard of Care",
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
+)
 ```
 
-```{r create-ceac-plot, fig.width=10, fig.height=12}
+```{r figure, fig.width=9, fig.height=7}
 if (nrow(ceac_data) > 0) {
-  # Strategy labels
-  strategy_labels <- c(
-    "control" = "Control (FLOX only)",
-    "crp" = "CRP Strategy",
-    "tlr" = "TLR Strategy",
-    "tmb_braf" = "TMB/BRAF Strategy"
-  )
+  ceac_data <- ceac_data %>%
+    filter(Strategy %in% names(strategy_labels)) %>%
+    mutate(Strategy = factor(strategy_labels[Strategy], levels = strategy_labels))
 
-  ceac_data$Strategy <- factor(
-    ceac_data$Strategy,
-    levels = names(strategy_labels),
-    labels = strategy_labels
-  )
-
-  # Order panels: A (Model B), B (Model A), C (Biosimilar)
-  ceac_data$Panel <- factor(
-    ceac_data$Panel,
-    levels = c("A: Model B", "B: Model A", "C: Biosimilar pricing (Model B)")
-  )
-
-  strategy_colors <- c(
-    "Control (FLOX only)" = "gray50",
-    "CRP Strategy" = "#E69F00",
-    "TLR Strategy" = "#009E73",
-    "TMB/BRAF Strategy" = "#0072B2"
-  )
-
-  ceac_plot <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
+  p_ceac <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
     geom_line(linewidth = 0.8) +
-    facet_wrap(~Panel, ncol = 1) +
-    geom_vline(xintercept = 51000, linetype = "dotted", color = "gray40", linewidth = 0.5) +
-    scale_x_continuous(
-      labels = scales::label_currency(
-        prefix = "\u20AC", scale = 0.001, suffix = "K", big.mark = ","
-      ),
-      breaks = seq(0, 100000, by = 20000)
-    ) +
+    facet_wrap(~Scenario, ncol = 1) +
+    geom_vline(xintercept = WTP, linetype = "dotted", color = "gray40") +
+    scale_x_continuous(labels = scales::label_currency(prefix = "EUR ", scale = 0.001,
+                                                       suffix = "K")) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
-    scale_color_manual(values = strategy_colors, name = "Strategy") +
-    labs(
-      x = "Willingness-to-Pay Threshold (EUR/QALY)",
-      y = "Probability of Being Cost-Effective"
-    ) +
+    scale_color_manual(values = c("Standard of Care" = "gray50",
+                                  "CRP-guided" = "#E69F00",
+                                  "TMB/BRAF-guided" = "#0072B2")) +
+    labs(x = "Willingness-to-pay threshold (EUR/QALY)",
+         y = "Probability cost-effective",
+         color = NULL) +
     theme_minimal() +
-    theme(
-      strip.text = element_text(size = 11, face = "bold"),
-      legend.position = "bottom",
-      panel.grid.minor = element_blank()
-    ) +
-    guides(color = guide_legend(nrow = 1))
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
 
-  print(ceac_plot)
+  print(p_ceac)
 } else {
-  cat("No CEAC data available. Please run scripts 12_PSA.R and 14_scenario_EVPPIs.R first.\n")
+  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
 }
 ```
 
 ```{r save-figure, include=FALSE}
-if (nrow(ceac_data) > 0) {
+if (exists("p_ceac")) {
   figs_dir <- here("figs")
-  if (!dir.exists(figs_dir)) {
-    dir.create(figs_dir, recursive = TRUE)
-  }
-
-  ggsave(
-    filename = here("figs", "figure4.png"),
-    plot = ceac_plot,
-    width = 10,
-    height = 12,
-    dpi = 300,
-    bg = "white"
-  )
-
-  cat("Figure saved to:", here("figs", "figure4.png"), "\n")
+  if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+  ggsave(here("figs", "figure4.png"), p_ceac, width = 9, height = 7,
+         dpi = 300, bg = "white")
 }
 ```
 

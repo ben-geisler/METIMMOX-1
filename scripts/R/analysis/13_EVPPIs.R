@@ -25,8 +25,7 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
 } else {
   interaction_coefs <- extract_interaction_coefficients(
     sampling_models = sampling_models,
-    n_sim = nrow(psa_params),
-    model_structure = MODEL_STRUCTURE
+    n_sim = nrow(psa_params)
   )
 
   if (!is.null(interaction_coefs) &&
@@ -97,20 +96,14 @@ cat("  - EVPI:", round(evpi_manual, 2), "\n")
 # ===============================================================================
 
 # Define parameters for EVPPI analysis
-# Model B (focused) excludes TLR, so p_tlr is only included for Models A and C
-evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_NGS",
-                       "c_test_CT", "u_np", "u_p", "c_other_last",
-                       "c_test_blood", "c_other_visit", "c_other_baseline", "c_other_follow",
-                       "p_crp", "p_tmb_braf")
-if (MODEL_STRUCTURE != 1) {
-  evppi_params <- c(evppi_params_base, "p_tlr")
-} else {
-  evppi_params <- evppi_params_base
-}
+evppi_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
+                  "c_test_CT", "u_np", "u_p", "c_other_last",
+                  "c_test_blood", "c_other_visit", "c_other_baseline",
+                  "c_other_follow", "p_crp", "p_tmb_braf")
 
 # Add interaction parameters if available
 if (interaction_params_available) {
-  interaction_evppi_params <- get_interaction_evppi_params(MODEL_STRUCTURE)
+  interaction_evppi_params <- get_interaction_evppi_params()
   interaction_evppi_params <- intersect(
     interaction_evppi_params, colnames(psa_params)
   )
@@ -126,9 +119,7 @@ if (!exists("param_groups")) {
 
 # Add interaction parameter groups (if available)
 if (interaction_params_available) {
-  param_groups <- add_interaction_param_groups(
-    param_groups, MODEL_STRUCTURE
-  )
+  param_groups <- add_interaction_param_groups(param_groups)
   cat("Added interaction parameter groups to param_groups\n")
   cat("Total param_groups:", length(param_groups), "\n")
 }

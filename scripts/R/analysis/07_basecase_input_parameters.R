@@ -25,17 +25,14 @@ l_visit[1] <- 1  # baseline
 l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
 
 # Map survival curves directly into a list structure
-# All three biomarker strategies (CRP, TLR, TMB/BRAF) are included in all models
+# Economic strategies include CRP and TMB/BRAF only
 p_os <- list(
   control_OS = predictions$control$os,
   crp_pos_OS = predictions$crp$biomarker_positive$os,
   crp_neg_OS = predictions$crp$biomarker_negative$os,
-  tlr_pos_OS = predictions$tlr$biomarker_positive$os,
-  tlr_neg_OS = predictions$tlr$biomarker_negative$os,
   tmb_braf_pos_OS = predictions$tmb_braf$biomarker_positive$os,
   tmb_braf_neg_OS = predictions$tmb_braf$biomarker_negative$os,
   crp_weighted_OS = predictions$crp$os,      # Population-marginalized
-  tlr_weighted_OS = predictions$tlr$os,      # Population-marginalized
   tmb_braf_weighted_OS = predictions$tmb_braf$os  # Population-marginalized
 )
 
@@ -43,15 +40,15 @@ p_pfs <- list(
   control_PFS = predictions$control$pfs,
   crp_pos_PFS = predictions$crp$biomarker_positive$pfs,
   crp_neg_PFS = predictions$crp$biomarker_negative$pfs,
-  tlr_pos_PFS = predictions$tlr$biomarker_positive$pfs,
-  tlr_neg_PFS = predictions$tlr$biomarker_negative$pfs,
   tmb_braf_pos_PFS = predictions$tmb_braf$biomarker_positive$pfs,
   tmb_braf_neg_PFS = predictions$tmb_braf$biomarker_negative$pfs,
   crp_weighted_PFS = predictions$crp$pfs,    # Population-marginalized
-  tlr_weighted_PFS = predictions$tlr$pfs,    # Population-marginalized
   tmb_braf_weighted_PFS = predictions$tmb_braf$pfs  # Population-marginalized
 )
 
+# Biomarker diagnostic costs are distinct from routine monitoring costs.
+c_test_CRP <- 16
+c_test_NGS <- 2518
 
 # Compile all parameters into a list for the model function
 l_params_base <- list(
@@ -75,9 +72,11 @@ l_params_base <- list(
   
   # Test costs
   c_test_CT = 386,      # cost of CT scan
-  c_test_blood = 16,    # assuming CRP, CBC, and chem-7; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter; 
+  c_test_blood = 16,    # routine CBC and chemistry monitoring; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter;
   # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
-  c_test_NGS = 2518,    # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
+  c_test_CRP = c_test_CRP, # one-time CRP biomarker test (independent of routine blood monitoring)
+  c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
+  c_test_biomarker = list(crp = c_test_CRP, tmb_braf = c_test_NGS),
   
   # Other costs
   c_other_visit = 33,     # cost of standard outpatient visit
@@ -98,8 +97,7 @@ l_params_base <- list(
   p_pfs = p_pfs,
   
   # Biomarker prevalence - using values from strategies_df
-  # All three biomarkers are included in all models
+  # Economic strategies include CRP and TMB/BRAF only
   p_crp = strategies_df$prevalence[strategies_df$id == "crp"],
-  p_tlr = strategies_df$prevalence[strategies_df$id == "tlr"],
   p_tmb_braf = strategies_df$prevalence[strategies_df$id == "tmb_braf"]
 )

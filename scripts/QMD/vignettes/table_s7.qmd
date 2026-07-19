@@ -13,224 +13,101 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, tidyr, knitr, kableExtra
-)
+pacman::p_load(here, dplyr, tidyr, knitr, kableExtra, scales)
+
+suppressMessages(suppressWarnings(
+  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
+))
 ```
 
 ```{r load-data, include=FALSE}
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-# Load scenario EVPPI cache (try label-aware name first, then legacy names)
 cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
-if (!file.exists(cache_file)) cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
-if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results.rds")
-if (!file.exists(cache_file)) cache_file <- here("data", "tidy", "scenario_evppi_results_PREVIEW.rds")
-
-if (file.exists(cache_file)) {
-  evppi_cache <- readRDS(cache_file)
-  evppi_all <- evppi_cache$evppi_all_scenarios
-  scenarios <- evppi_cache$scenarios
-  data_available <- TRUE
-  cat("Loaded EVPPI results:", nrow(evppi_all), "rows\n")
-  cat("Models:", paste(unique(evppi_all$model_label), collapse = ", "), "\n")
-  cat("Scenarios:", paste(unique(evppi_all$scenario_id), collapse = ", "), "\n")
+preview_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
+evppi_cache <- if (file.exists(cache_file)) {
+  readRDS(cache_file)
+} else if (file.exists(preview_file)) {
+  readRDS(preview_file)
 } else {
-  warning("Scenario EVPPI cache not found. Please run script 14_scenario_EVPPIs.R first.")
-  data_available <- FALSE
+  NULL
 }
-```
 
-```{r build-grouped-table, include=FALSE}
-if (data_available) {
-  # Map parameters to publication-friendly groups
-  param_group_map <- c(
-    "c_drug_nivo" = "Drug costs",
-    "c_drug_FLOX" = "Drug costs",
-    "c_test_NGS" = "Test costs",
-    "c_test_CT" = "Test costs",
-    "c_test_blood" = "Test costs",
-    "c_other_visit" = "Other costs",
-    "c_other_baseline" = "Other costs",
-    "c_other_follow" = "Other costs",
-    "c_other_last" = "Other costs",
-    "u_np" = "Utilities",
-    "u_p" = "Utilities",
-    "p_crp" = "Biomarker prevalence",
-    "p_tlr" = "Biomarker prevalence",
-    "p_tmb_braf" = "Biomarker prevalence"
-  )
-
-  # Assign interaction parameters
-  interaction_params <- grep("^b_", evppi_all$parameter, value = TRUE)
-  for (ip in interaction_params) {
-    param_group_map[ip] <- "Treatment-biomarker interaction"
-  }
-
-  # Also handle [GROUP] entries
-  group_params <- grep("^\\[GROUP\\]", evppi_all$parameter, value = TRUE)
-  for (gp in group_params) {
-    if (grepl("interaction", gp)) param_group_map[gp] <- "Treatment-biomarker interaction"
-    else if (grepl("drug", gp)) param_group_map[gp] <- "Drug costs"
-    else if (grepl("util", gp)) param_group_map[gp] <- "Utilities"
-    else if (grepl("prevalence", gp)) param_group_map[gp] <- "Biomarker prevalence"
-    else if (grepl("test", gp)) param_group_map[gp] <- "Test costs"
-    else param_group_map[gp] <- "Other"
-  }
-
-  # Compute population-level EVPPI if not already in the data
-  # Population scaling: annual incidence * discounted research horizon
-  has_pop_col <- "evppi_population_millions" %in% names(evppi_all)
-  if (!has_pop_col) {
+evppi_grouped <- data.frame()
+if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
+  evppi_all <- evppi_cache$evppi_all_scenarios
+  if (!"evppi_population_millions" %in% names(evppi_all)) {
     discounted_pop <- annual_incidence_norway *
       sum(1 / (1 + discount_rate_research)^(0:(research_horizon_years - 1)))
     evppi_all$evppi_population_millions <- evppi_all$evppi * discounted_pop / 1e6
   }
 
-  # Filter to available scenarios
-  target_scenarios <- c("base", "s1_decreased_nivo", "s2_wtp100k")
-  available_scenarios <- intersect(target_scenarios, unique(evppi_all$scenario_id))
-
-  scenario_labels <- c(
-    "base" = "Base case (WTP 51k)",
-    "s1_decreased_nivo" = "Biosimilar pricing",
-    "s2_wtp100k" = "WTP 100k"
-  )
-
-  model_labels <- c(
-    "joint" = "Model A",
-    "focused" = "Model B",
-    "separate" = "Model C"
-  )
-
   evppi_grouped <- evppi_all %>%
-    filter(scenario_id %in% available_scenarios) %>%
-    mutate(
-      param_group = ifelse(parameter %in% names(param_group_map),
-                           param_group_map[parameter], "Other")
-    ) %>%
-    filter(param_group != "Other") %>%
-    group_by(model_label, scenario_id, param_group) %>%
+    mutate(param_group = case_when(
+      parameter %in% c("c_drug_nivo", "c_drug_FLOX") ~ "Drug costs",
+      parameter %in% c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood") ~ "Test costs",
+      parameter %in% c("c_other_visit", "c_other_baseline",
+                       "c_other_follow", "c_other_last") ~ "Other costs",
+      parameter %in% c("u_np", "u_p") ~ "Utilities",
+      parameter %in% c("p_crp", "p_tmb_braf") ~ "Biomarker prevalence",
+      grepl("^b_(crp|tmb_braf)", parameter) ~ "Biomarker-treatment interaction",
+      grepl("^\\[GROUP\\].*drug", parameter) ~ "Drug costs",
+      grepl("^\\[GROUP\\].*test", parameter) ~ "Test costs",
+      grepl("^\\[GROUP\\].*other", parameter) ~ "Other costs",
+      grepl("^\\[GROUP\\].*util", parameter) ~ "Utilities",
+      grepl("^\\[GROUP\\].*prevalence", parameter) ~ "Biomarker prevalence",
+      grepl("^\\[GROUP\\].*interaction", parameter) ~ "Biomarker-treatment interaction",
+      TRUE ~ NA_character_
+    )) %>%
+    filter(!is.na(param_group)) %>%
+    group_by(scenario_name, wtp, param_group) %>%
     summarise(
-      evppi_per_patient = sum(evppi, na.rm = TRUE),
-      evppi_pop_millions = sum(evppi_population_millions, na.rm = TRUE),
+      EVPPI = sum(evppi, na.rm = TRUE),
+      Population_EVPPI_M = sum(evppi_population_millions, na.rm = TRUE),
       .groups = "drop"
-    ) %>%
+    )
+}
+```
+
+```{r display-table}
+if (nrow(evppi_grouped) > 0) {
+  display_df <- evppi_grouped %>%
     mutate(
-      scenario_display = scenario_labels[scenario_id],
-      model_display = model_labels[model_label]
-    )
+      WTP = scales::dollar(wtp, prefix = "EUR ", accuracy = 1),
+      EVPPI = scales::dollar(EVPPI, prefix = "EUR ", accuracy = 0.01),
+      Population_EVPPI_M = paste0("EUR ", sprintf("%.2f", Population_EVPPI_M), "M")
+    ) %>%
+    select(Scenario = scenario_name, WTP, `Parameter Group` = param_group,
+           EVPPI, `Population EVPPI` = Population_EVPPI_M)
 
-  # Track which models are available for dynamic column names
-  available_models <- sort(unique(evppi_grouped$model_display))
-
-  cat("Grouped EVPPI results:", nrow(evppi_grouped), "rows\n")
-  cat("Available models:", paste(available_models, collapse = ", "), "\n")
-  cat("Available scenarios:", paste(available_scenarios, collapse = ", "), "\n")
-}
-```
-
-```{r display-per-patient}
-if (data_available && nrow(evppi_grouped) > 0) {
-  # Per-patient EVPPI table (wide format: models as columns)
-  per_patient_wide <- evppi_grouped %>%
-    select(scenario_display, model_display, param_group, evppi_per_patient) %>%
-    pivot_wider(
-      names_from = model_display,
-      values_from = evppi_per_patient,
-      values_fill = 0
-    )
-
-  # Sort by first model column descending within scenario
-  first_model_col <- available_models[1]
-  per_patient_wide <- per_patient_wide %>%
-    arrange(scenario_display, desc(.data[[first_model_col]]))
-
-  col_names <- c("Scenario", "Parameter Group", available_models)
-  col_align <- c("l", "l", rep("r", length(available_models)))
-
-  kable(per_patient_wide,
-        caption = "Per-patient EVPPI by parameter group, scenario, and model specification (EUR)",
-        format = "html",
-        col.names = col_names,
-        digits = 2,
-        align = col_align) %>%
+  kable(
+    display_df,
+    caption = "Table S7: EVPPI by parameter group and scenario",
+    format = "html",
+    align = c("l", "r", "l", "r", "r")
+  ) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                  full_width = FALSE,
-                  font_size = 11) %>%
-    pack_rows(index = table(per_patient_wide$scenario_display))
-}
-```
-
-## Population-Level EVPPI
-
-```{r display-population}
-if (data_available && nrow(evppi_grouped) > 0) {
-  # Population-level EVPPI table
-  pop_wide <- evppi_grouped %>%
-    select(scenario_display, model_display, param_group, evppi_pop_millions) %>%
-    pivot_wider(
-      names_from = model_display,
-      values_from = evppi_pop_millions,
-      values_fill = 0
-    )
-
-  first_model_col <- available_models[1]
-  pop_wide <- pop_wide %>%
-    arrange(scenario_display, desc(.data[[first_model_col]]))
-
-  col_names <- c("Scenario", "Parameter Group", available_models)
-  col_align <- c("l", "l", rep("r", length(available_models)))
-
-  kable(pop_wide,
-        caption = "Table S7: Population-level EVPPI by parameter group, scenario, and model specification (EUR millions)",
-        format = "html",
-        col.names = col_names,
-        digits = 2,
-        align = col_align) %>%
-    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                  full_width = FALSE,
-                  font_size = 11) %>%
-    pack_rows(index = table(pop_wide$scenario_display)) %>%
+                  full_width = FALSE, font_size = 11) %>%
     footnote(
-      general = c(
-        paste0("Population scaling: ", annual_incidence_norway, " patients/year over ",
-               research_horizon_years, "-year research horizon, discounted at ",
-               discount_rate_research * 100, "%."),
-        paste0("Base case WTP: \u20AC", format(WTP, big.mark = ","), "/QALY."),
-        "Biosimilar pricing: 80% discount from list price (nivolumab at approximately EUR 4,641/administration).",
-        "Parameter groups aggregate individual parameter EVPPIs within each category.",
-        "EVPPI = expected value of partial perfect information."
-      ),
+      general = paste0("Population scaling: ", annual_incidence_norway,
+                       " patients/year over ", research_horizon_years,
+                       " years, discounted at ",
+                       scales::percent(discount_rate_research, accuracy = 0.1), "."),
       general_title = "Notes: "
     )
 } else {
-  cat("EVPPI data not available. Please run scripts 12_PSA.R and 14_scenario_EVPPIs.R first.\n")
+  cat("Scenario EVPPI cache not available. Run scripts/R/analysis/14_scenario_EVPPIs.R first.")
 }
 ```
 
 ```{r save-table, include=FALSE}
-if (data_available && nrow(evppi_grouped) > 0) {
+if (nrow(evppi_grouped) > 0) {
   tables_dir <- here("tables")
-  if (!dir.exists(tables_dir)) {
-    dir.create(tables_dir, recursive = TRUE)
-  }
-
+  if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
   write.csv(evppi_grouped, file = here("tables", "table_s7.csv"), row.names = FALSE)
-  cat("Table saved to:", here("tables", "table_s7.csv"), "\n")
 }
 ```
 

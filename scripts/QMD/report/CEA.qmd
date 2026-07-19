@@ -30,8 +30,7 @@ execute:
   tbl-cap-location: top
 ---
 
-```{r cea-setup, include=FALSE}
-# Set global knitr options
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = FALSE,
   warning = FALSE,
@@ -43,601 +42,210 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 
-# Set working directory to project root
 knitr::opts_knit$set(root.dir = here::here())
 
-# Load required libraries
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(
-  here, knitr, kableExtra, ggplot2, dplyr,
-  flextable, officer, scales, gridExtra,
-  devtools, readxl, tableone, flexsurv,
-  survival, survminer, gems, mstate,
-  tidyverse, xtable, darthtools, dampack,
-  mvtnorm, Matrix, reshape2
+  here, knitr, kableExtra, ggplot2, dplyr, scales,
+  survival, flexsurv, dampack
 )
 
-# Set ggplot theme
 theme_set(theme_minimal() +
   theme(
     plot.title = element_text(size = 14, face = "bold"),
     plot.subtitle = element_text(size = 12),
-    axis.title = element_text(size = 11),
-    axis.text = element_text(size = 10),
-    legend.title = element_text(size = 11),
-    legend.text = element_text(size = 10),
-    strip.text = element_text(size = 11, face = "bold")
+    legend.position = "bottom"
   ))
-```
 
-```{r setup-global-variables, include=FALSE}
-# 02 - Setup and Global Variables
-source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-```
+suppressMessages(suppressWarnings({
+  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
+  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
+  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  source(here::here("scripts/R/functions/model_fun.R"))
+  source(here::here("scripts/R/functions/calculate_outcomes.R"))
+  source(here::here("scripts/R/functions/multi_model_cea.R"))
+}))
 
-```{r biomarker-strategies, include=FALSE}
-# 03 - Biomarker Strategies
-source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-```
-
-```{r load-helper-functions, include=FALSE}
-# Source helper functions AFTER global variables are set
-source(here::here("scripts/R/functions/model_fun.R"))
-source(here::here("scripts/R/functions/calculate_outcomes.R"))
-source(here::here("scripts/R/functions/multi_model_cea.R"))
-
-# Verify that key functions are available
-stopifnot(
-  "model_fun not loaded" = exists("model_fun"),
-  "calculate_outcomes not loaded" = exists("calculate_outcomes"),
-  "run_all_basecase_analyses not loaded" = exists("run_all_basecase_analyses"),
-  "get_model_configs not loaded" = exists("get_model_configs")
-)
-```
-
-```{r generate-caches-if-missing, include=FALSE}
-# ===============================================================================
-# AUTO-GENERATE MISSING CACHE FILES
-# ===============================================================================
-# Check if sampling and PSA caches exist for all model structures.
-# If any are missing, generate them before proceeding.
-# ===============================================================================
-
-model_labels <- c("joint", "focused", "separate")
-
-# Check for missing sampling caches
-missing_sampling_caches <- character()
-for (label in model_labels) {
-  cache_file <- here::here("data", "tidy",
-                           paste0("sampling_models_n", n_samples, "_",
-                                  ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
-                                  label, ".rds"))
-  if (!file.exists(cache_file)) {
-    missing_sampling_caches <- c(missing_sampling_caches, label)
-  }
+strategy_label <- function(x) {
+  dplyr::recode(
+    x,
+    control = "Standard of Care",
+    crp = "CRP-guided",
+    tmb_braf = "TMB/BRAF-guided",
+    .default = x
+  )
 }
 
-# Check for missing PSA caches
-missing_psa_caches <- character()
-for (label in model_labels) {
-  cache_file <- here::here("data", "tidy", paste0("psa_obj_", label, "_", utility_source_label, ".rds"))
-  if (!file.exists(cache_file)) {
-    missing_psa_caches <- c(missing_psa_caches, label)
-  }
+format_eur <- function(x) {
+  ifelse(is.na(x) | !is.finite(x), "--",
+         scales::dollar(x, prefix = "EUR ", accuracy = 1))
 }
 
-# Generate missing sampling caches
-if (length(missing_sampling_caches) > 0) {
-  cat("\n=== Generating missing sampling caches ===\n")
-  cat("Missing caches for:", paste(missing_sampling_caches, collapse = ", "), "\n")
-  cat("This may take several minutes per model structure...\n\n")
-
-  for (label in missing_sampling_caches) {
-    model_idx <- which(model_labels == label)
-    MODEL_STRUCTURE <- model_idx - 1  # 0, 1, or 2
-
-    cat("\n--- Generating sampling cache for MODEL_STRUCTURE =", MODEL_STRUCTURE,
-        "(", label, ") ---\n")
-
-    # Re-source scripts for this MODEL_STRUCTURE
-    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-
-    # Source sampling script (generates cache)
-    source(here::here("scripts/R/analysis/08_sampling.R"))
-  }
-
-  cat("\n=== Sampling cache generation complete ===\n")
+format_icer <- function(x, status = NULL) {
+  if (!is.null(status) && status %in% c("D", "ED", "Dominated")) return("Dominated")
+  if (!is.null(status) && status %in% c("Reference", "ref")) return("--")
+  if (is.na(x) || !is.finite(x)) return("--")
+  scales::dollar(x, prefix = "EUR ", accuracy = 1)
 }
 
-# Generate missing PSA caches
-if (length(missing_psa_caches) > 0) {
-  cat("\n=== Generating missing PSA caches ===\n")
-  cat("Missing caches for:", paste(missing_psa_caches, collapse = ", "), "\n")
-  cat("This may take 20-60 minutes per model structure...\n\n")
-
-  for (label in missing_psa_caches) {
-    model_idx <- which(model_labels == label)
-    MODEL_STRUCTURE <- model_idx - 1  # 0, 1, or 2
-
-    cat("\n--- Generating PSA cache for MODEL_STRUCTURE =", MODEL_STRUCTURE,
-        "(", label, ") ---\n")
-
-    # Re-source scripts for this MODEL_STRUCTURE
-    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-
-    # Source 08_sampling.R to get param_distributions and load sampling cache
-    # (08_sampling.R defines param_distributions which is needed by 12_PSA.R)
-    source(here::here("scripts/R/analysis/08_sampling.R"))
-
-    # Source PSA script (generates cache)
-    source(here::here("scripts/R/analysis/12_PSA.R"))
-  }
-
-  cat("\n=== PSA cache generation complete ===\n")
-}
-
-# Reset MODEL_STRUCTURE to default
-MODEL_STRUCTURE <- 0
-```
-
-```{r qalys-data-processing, include=FALSE}
-# 05 - Process QALYs data with proper error handling
-tryCatch({
-  metimmox_file <- here::here("data/tidy/METIMMOX.rds")
-  if (file.exists(metimmox_file)) {
-    METIMMOX <- readRDS(metimmox_file)
-  }
-}, error = function(e) {
-  # File doesn't exist or can't be read - continue without it
-})
-
-tryCatch({
-  qaly_file <- here::here("data/sensitive/231208 METIMMOX EQ_5D_5L.xlsx")
-  if (file.exists(qaly_file)) {
-    QALYsraw <- read_excel(qaly_file, sheet = 2, skip = 1) %>%
-      rename(ID = SubjectId)
-  }
-}, error = function(e) {
-  # File doesn't exist or can't be read - continue without it
-})
+basecase <- run_basecase(verbose = FALSE)
+base_results <- basecase$base_results
+icer_obj <- basecase$icer_obj
+model_config <- basecase$model_config
+psa_obj <- load_psa_cache(verbose = FALSE)
 ```
 
 # Overview
 
-This cost-effectiveness analysis evaluates three biomarker-guided strategies (CRP, TLR, and TMB/BRAF) for selecting metastatic microsatellite stable (MSS)/proficient mismatch repair (pMMR) colorectal cancer patients who might benefit from immunotherapy with nivolumab plus FLOX versus standard FLOX chemotherapy.
+This cost-effectiveness analysis evaluates standard of care against two pre-treatment biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer:
 
-**Key Feature**: This report compares cost-effectiveness results across three different model structures (Model A, B, C) to assess the robustness of our findings to modeling assumptions about how biomarker interactions are specified.
+- CRP-guided treatment selection
+- TMB/BRAF-guided treatment selection
 
-This report contains:
+The economic survival model is a single joint model with CRP and TMB/BRAF treatment interactions. Economic strategies are restricted to pre-treatment biomarkers.
 
-- **Model Structure Definitions**: Explanation of the three model specifications compared
-- **Strategy Descriptions**: Overview of the four treatment strategies evaluated
-- **Base Case Analysis**: Cost-effectiveness results across all three model structures
-- **Probabilistic Sensitivity Analysis**: Monte Carlo simulation results comparing model structures
+# Economic Survival Model
 
-```{r pagebreak-1, results='asis'}
-cat("\\newpage\n")
-```
-
-# Model Structure Definitions
-
-We compare three model structures to assess the robustness of cost-effectiveness results to the specification of biomarker-treatment interactions in the survival models.
-
-**Table 1: Model Structure Definitions**
-
-```{r model-structure-table}
-model_structure_df <- data.frame(
-  Model = c("Model A", "Model B", "Model C"),
-  Name = c("Joint", "Focused", "Separate"),
+```{r model-table}
+model_df <- data.frame(
+  Component = c("OS", "PFS", "Control"),
   Formula = c(
-    "Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx",
-    "Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx",
-    "Age + sex + Rx + [biomarker]:Rx"
+    "Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",
+    "Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",
+    "Surv(time, event) ~ Age + sex"
   ),
-  Description = c(
-    "All biomarkers and all treatment interactions in one unified model",
-    "Per-strategy formulas: CRP/TMB_BRAF with both interactions, TLR with TLR-only interaction",
-    "Only one biomarker and its treatment interaction per model (simplest specification)"
-  )
+  stringsAsFactors = FALSE
 )
 
-knitr::kable(model_structure_df,
-             col.names = c("Model", "Name", "Formula Pattern", "Description"),
-             booktabs = TRUE,
-             align = c("l", "l", "l", "l")) %>%
-  kableExtra::column_spec(1, width = "1.5cm") %>%
-  kableExtra::column_spec(2, width = "1.5cm") %>%
-  kableExtra::column_spec(3, width = "5cm") %>%
-  kableExtra::column_spec(4, width = "6cm") %>%
-  kableExtra::kable_styling(font_size = 9, latex_options = c("HOLD_position"))
+knitr::kable(
+  model_df,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Single economic survival model"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "10cm")
 ```
 
-**Rationale**: Model A (Joint) is the most comprehensive specification but may suffer from overfitting with limited sample size. Model C (Separate) is the simplest but ignores potential confounding from other biomarkers. Model B (Focused) represents a middle ground. Comparing results across all three structures provides insight into the structural uncertainty of our findings.
+```{r strategy-table}
+strategy_df <- data.frame(
+  Strategy = strategy_label(get_strategies()),
+  Definition = c(
+    "All patients receive standard FLOX chemotherapy",
+    "CRP-positive patients receive FLOX + nivolumab; CRP-negative patients receive FLOX",
+    "TMB/BRAF-positive patients receive FLOX + nivolumab; TMB/BRAF-negative patients receive FLOX"
+  ),
+  stringsAsFactors = FALSE
+)
 
-```{r pagebreak-2, results='asis'}
-cat("\\newpage\n")
+knitr::kable(
+  strategy_df,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Economic strategies"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "10cm")
 ```
 
-# Strategies Evaluated
+# Base Case Results
 
-**Table 2: Treatment Strategies Evaluated in the Cost-Effectiveness Analysis**
+```{r basecase-table}
+base_display <- base_results %>%
+  mutate(
+    NMB = Effect * WTP - Cost,
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    NMB = format_eur(NMB)
+  )
 
-```{r strategies-table}
-if (exists("strategies_df") && nrow(strategies_df) > 0) {
-  strategies_display <- strategies_df %>%
-    mutate(
-      name = case_when(
-        id == "control" ~ "Standard of Care",
-        id == "crp" ~ "CRP-guided Strategy",
-        id == "tlr" ~ "TLR-guided Strategy",
-        id == "tmb_braf" ~ "TMB/BRAF-guided Strategy",
-        TRUE ~ name
-      ),
-      prevalence = scales::percent(prevalence, accuracy = 0.1),
-      n_patients = as.character(n_patients)
-    ) %>%
-    select(
-      Strategy = name,
-      Description = description,
-      `Biomarker Prevalence` = prevalence,
-      `Patients (n)` = n_patients
-    )
-
-  knitr::kable(strategies_display,
-               booktabs = TRUE,
-               align = c("l", "l", "c", "c")) %>%
-    kableExtra::column_spec(1, width = "2.5cm") %>%
-    kableExtra::column_spec(2, width = "8cm") %>%
-    kableExtra::column_spec(c(3,4), width = "1.5cm") %>%
-    kableExtra::kable_styling(font_size = 9, latex_options = c("scale_down", "HOLD_position"))
-
-} else {
-  cat("**Strategy information not available. Check biomarker strategies script.**\n")
-}
-```
-
-```{r pagebreak-3, results='asis'}
-cat("\\newpage\n")
-```
-
-# Base Case Analysis
-
-```{r run-all-basecase, include=FALSE}
-# Run base case analysis for all three model structures
-# This re-sources scripts 06 and 07 for each MODEL_STRUCTURE value
-
-cat("Running base case analyses for all model structures...\n")
-
-all_model_results <- run_all_basecase_analyses(verbose = TRUE)
-
-cat("\nAll base case analyses complete.\n")
-```
-
-## Summary Comparison
-
-**Table 3: Base Case Cost-Effectiveness Results Across Model Structures**
-
-```{r basecase-comparison-table}
-# Create and format comparison table
-comparison_df <- format_multimodel_comparison_table(all_model_results)
-display_df <- format_comparison_for_display(comparison_df)
-
-# Rename columns for display
-names(display_df) <- c("Strategy",
-                       "Cost (A)", "QALY (A)", "ICER (A)",
-                       "Cost (B)", "QALY (B)", "ICER (B)",
-                       "Cost (C)", "QALY (C)", "ICER (C)")
-
-knitr::kable(display_df,
-             booktabs = TRUE,
-             align = c("l", rep("r", 9))) %>%
-  kableExtra::add_header_above(c(" " = 1,
-                                  "Model A: Joint" = 3,
-                                  "Model B: Focused" = 3,
-                                  "Model C: Separate" = 3)) %>%
-  kableExtra::kable_styling(font_size = 8,
-                            latex_options = c("scale_down", "HOLD_position")) %>%
-  kableExtra::footnote(general = "ICER = Incremental Cost-Effectiveness Ratio (EUR/QALY). Reference = lowest-cost strategy.",
-                       footnote_as_chunk = TRUE)
-```
-
-## Optimal Strategy by Model Structure
-
-**Table 4: Optimal Strategy at WTP Threshold of EUR `r format(WTP, big.mark=",")`/QALY**
-
-```{r optimal-strategy-table}
-optimal_df <- create_optimal_strategy_table(all_model_results, wtp = WTP)
-
-optimal_df$NMB <- scales::dollar(optimal_df$NMB, accuracy = 1)
-
-knitr::kable(optimal_df,
-             col.names = c("Model Structure", "Optimal Strategy", "Net Monetary Benefit"),
-             booktabs = TRUE,
-             align = c("l", "l", "r")) %>%
+knitr::kable(
+  base_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
+  caption = paste0("Base case results at WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r pagebreak-4, results='asis'}
-cat("\\newpage\n")
-```
-
-## Model A: Joint Model
-
-```{r model-a-results}
-result_A <- all_model_results$Model_A
-
-# Display ICER table - sort by cost ascending before formatting
-icer_table_A <- as.data.frame(result_A$icer_obj)
-icer_table_A <- icer_table_A[order(icer_table_A$Cost), ]
-rownames(icer_table_A) <- NULL
-
-# Format columns after sorting
-icer_table_A$Cost <- scales::dollar(icer_table_A$Cost, accuracy = 1)
-icer_table_A$Effect <- sprintf("%.3f", icer_table_A$Effect)
-
-# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
-icer_table_A$ICER <- ifelse(
-  icer_table_A$Status %in% c("D", "ED"),
-  "Dominated",
-  ifelse(
-    is.na(icer_table_A$ICER),
-    "Reference",
-    scales::dollar(icer_table_A$ICER, accuracy = 1)
+```{r icer-table}
+icer_display <- as.data.frame(icer_obj) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    Inc_Cost = format_eur(Inc_Cost),
+    Inc_Effect = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
+    ICER = mapply(format_icer, ICER, Status)
   )
-)
 
-knitr::kable(icer_table_A,
-             caption = "Model A (Joint): Cost-Effectiveness Results",
-             align = c("l", "r", "r", "r", "l"),
-             booktabs = TRUE) %>%
+knitr::kable(
+  icer_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r", "r", "r", "l"),
+  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
+                "Incremental QALYs", "ICER", "Status"),
+  caption = "Incremental cost-effectiveness results"
+) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-```{r ce-plane-A, fig.cap="Cost-Effectiveness Plane - Model A (Joint)"}
-ce_plot_A <- plot(result_A$icer_obj,
-                  txtsize = 10,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all")
-print(ce_plot_A)
-```
-
-```{r pagebreak-5, results='asis'}
-cat("\\newpage\n")
-```
-
-## Model B: Focused Model
-
-```{r model-b-results}
-result_B <- all_model_results$Model_B
-
-# Display ICER table - sort by cost ascending before formatting
-icer_table_B <- as.data.frame(result_B$icer_obj)
-icer_table_B <- icer_table_B[order(icer_table_B$Cost), ]
-rownames(icer_table_B) <- NULL
-
-# Format columns after sorting
-icer_table_B$Cost <- scales::dollar(icer_table_B$Cost, accuracy = 1)
-icer_table_B$Effect <- sprintf("%.3f", icer_table_B$Effect)
-
-# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
-icer_table_B$ICER <- ifelse(
-  icer_table_B$Status %in% c("D", "ED"),
-  "Dominated",
-  ifelse(
-    is.na(icer_table_B$ICER),
-    "Reference",
-    scales::dollar(icer_table_B$ICER, accuracy = 1)
-  )
+```{r ce-plane, fig.cap="Cost-effectiveness plane for the single joint economic model"}
+plot(
+  icer_obj,
+  txtsize = 11,
+  currency = "EUR",
+  effect_units = "QALYs",
+  label = "all",
+  alpha = 0.8
 )
-
-knitr::kable(icer_table_B,
-             caption = "Model B (Focused): Cost-Effectiveness Results",
-             align = c("l", "r", "r", "r", "l"),
-             booktabs = TRUE) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
-```
-
-```{r ce-plane-B, fig.cap="Cost-Effectiveness Plane - Model B (Focused)"}
-ce_plot_B <- plot(result_B$icer_obj,
-                  txtsize = 10,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all")
-print(ce_plot_B)
-```
-
-```{r pagebreak-6, results='asis'}
-cat("\\newpage\n")
-```
-
-## Model C: Separate Model
-
-```{r model-c-results}
-result_C <- all_model_results$Model_C
-
-# Display ICER table - sort by cost ascending before formatting
-icer_table_C <- as.data.frame(result_C$icer_obj)
-icer_table_C <- icer_table_C[order(icer_table_C$Cost), ]
-rownames(icer_table_C) <- NULL
-
-# Format columns after sorting
-icer_table_C$Cost <- scales::dollar(icer_table_C$Cost, accuracy = 1)
-icer_table_C$Effect <- sprintf("%.3f", icer_table_C$Effect)
-
-# Handle ICER display: Reference for cheapest, Dominated for dominated, ICER for others
-icer_table_C$ICER <- ifelse(
-  icer_table_C$Status %in% c("D", "ED"),
-  "Dominated",
-  ifelse(
-    is.na(icer_table_C$ICER),
-    "Reference",
-    scales::dollar(icer_table_C$ICER, accuracy = 1)
-  )
-)
-
-knitr::kable(icer_table_C,
-             caption = "Model C (Separate): Cost-Effectiveness Results",
-             align = c("l", "r", "r", "r", "l"),
-             booktabs = TRUE) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
-```
-
-```{r ce-plane-C, fig.cap="Cost-Effectiveness Plane - Model C (Separate)"}
-ce_plot_C <- plot(result_C$icer_obj,
-                  txtsize = 10,
-                  currency = "EUR",
-                  effect_units = "QALYs",
-                  label = "all")
-print(ce_plot_C)
-```
-
-```{r pagebreak-7, results='asis'}
-cat("\\newpage\n")
 ```
 
 # Probabilistic Sensitivity Analysis
 
-```{r load-psa-caches, include=FALSE}
-# Load PSA caches for all model structures
-all_psa_results <- load_all_psa_caches(n_samples = n_samples,
-                                        use_both_models = USE_BOTH_MODELS)
-
-psa_available <- length(all_psa_results) > 0
-
-if (psa_available) {
-  cat("Loaded PSA results for", length(all_psa_results), "model structures.\n")
+```{r psa-summary}
+if (is.null(psa_obj)) {
+  cat("PSA cache not found. Run scripts/R/analysis/12_PSA.R after regenerating the single-model sampling cache.")
 } else {
-  cat("No PSA caches found. Please run 12_PSA.R with RUN_ALL_MODELS = TRUE.\n")
-}
-```
-
-```{r psa-check, results='asis'}
-if (!psa_available) {
-  cat("**PSA results not available.** Please generate PSA caches by running:\n\n")
-  cat("```r\n")
-  cat("RUN_ALL_MODELS <- TRUE\n")
-  cat("source('scripts/R/analysis/08_sampling.R')\n")
-  cat("source('scripts/R/analysis/12_PSA.R')\n")
-  cat("```\n")
-}
-```
-
-```{r psa-summary-table, eval=psa_available}
-# Create PSA summary table
-psa_summary <- create_psa_summary_table(all_psa_results, wtp = WTP)
-
-# Format for display
-psa_summary$Mean_Cost <- scales::dollar(psa_summary$Mean_Cost, accuracy = 1)
-psa_summary$Mean_QALY <- sprintf("%.3f", psa_summary$Mean_QALY)
-psa_summary$Prob_CE <- scales::percent(psa_summary$Prob_CE, accuracy = 0.1)
-
-knitr::kable(psa_summary,
-             caption = paste0("PSA Summary: Mean Outcomes and Probability of Cost-Effectiveness at WTP = EUR ",
-                             format(WTP, big.mark = ",")),
-             col.names = c("Model", "Strategy", "Mean Cost", "Mean QALY", "P(CE)"),
-             booktabs = TRUE,
-             align = c("l", "l", "r", "r", "r")) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
-```
-
-```{r psa-scatterplots, eval=psa_available, fig.height=10, fig.width=10, fig.cap="PSA Scatterplots by Model Structure"}
-# Create faceted PSA scatterplot
-psa_scatter_data <- data.frame()
-
-model_configs <- get_model_configs()
-
-for (model_name in names(all_psa_results)) {
-  psa_obj <- all_psa_results[[model_name]]
-  config <- model_configs[[model_name]]
-
-  if (is.null(psa_obj)) next
-
-  # Extract cost and effect matrices
-  cost_df <- as.data.frame(psa_obj$cost)
-  effect_df <- as.data.frame(psa_obj$effect)
-
-  for (strategy in psa_obj$strategies) {
-    scatter_df <- data.frame(
-      Cost = cost_df[[strategy]],
-      Effect = effect_df[[strategy]],
-      Strategy = strategy,
-      Model = config$label,
-      stringsAsFactors = FALSE
+  psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+    mutate(
+      Strategy = strategy_label(Strategy),
+      Mean_Cost = format_eur(Mean_Cost),
+      Mean_QALY = sprintf("%.3f", Mean_QALY),
+      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
     )
-    psa_scatter_data <- rbind(psa_scatter_data, scatter_df)
-  }
-}
 
-if (nrow(psa_scatter_data) > 0) {
-  p_scatter <- ggplot(psa_scatter_data, aes(x = Effect, y = Cost, color = Strategy)) +
-    geom_point(alpha = 0.3, size = 0.5) +
-    facet_wrap(~Model, ncol = 2) +
-    scale_y_continuous(labels = scales::dollar_format()) +
-    scale_color_viridis_d(name = "Strategy") +
-    labs(
-      x = "Effectiveness (QALYs)",
-      y = "Total Cost (EUR)"
-    ) +
-    theme_minimal() +
-    theme(
-      legend.position = "bottom",
-      strip.text = element_text(size = 11, face = "bold")
-    ) +
-    guides(color = guide_legend(override.aes = list(alpha = 1, size = 3)))
-
-  print(p_scatter)
+  knitr::kable(
+    psa_summary,
+    booktabs = TRUE,
+    align = c("l", "r", "r", "r"),
+    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+    caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
+  ) %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position"))
 }
 ```
 
-```{r pagebreak-8, results='asis', eval=psa_available}
-cat("\\newpage\n")
+```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
+if (is.null(psa_obj)) {
+  ggplot() +
+    annotate("text", x = 0.5, y = 0.5,
+             label = "PSA cache not available", size = 5) +
+    theme_void()
+} else {
+  create_ceac_plot(psa_obj, wtp_line = WTP)
+}
 ```
-
-```{r ceac-comparison, eval=psa_available, fig.height=8, fig.width=10, fig.cap="Cost-Effectiveness Acceptability Curves by Model Structure"}
-# Create CEAC comparison plot
-ceac_plot <- create_multimodel_ceac_plot(
-  all_psa_results,
-  wtp_range = seq(0, 100000, by = 2000)
-)
-
-print(ceac_plot)
-```
-
-```{r pagebreak-9, results='asis'}
-cat("\\newpage\n")
-```
-
-# Other Reports
-
-This report focuses on comparing cost-effectiveness results across model structures. Additional analyses are available in companion reports:
-
-- **One-Way Sensitivity Analysis (OWSA)**: Deterministic sensitivity analysis with tornado diagrams showing the impact of individual parameters on model outcomes. See `OWSA.qmd`.
-
-- **Scenario Analysis**: Alternative scenarios including reduced nivolumab prices and higher willingness-to-pay thresholds. See `scenario_effect.qmd`.
-
-- **Value of Information Analysis**: Expected Value of Perfect Partial Information (EVPPI) analysis identifying parameters with highest value for additional research. See `EVPPIs.qmd`.
-
-- **Clinical Effectiveness**: Detailed clinical effectiveness results including survival analysis and treatment effect heterogeneity. See `clinical_effectiveness.qmd`.
-
-- **Input Parameters**: Comprehensive documentation of all model input parameters. See `input_parameters.qmd`.
 
 # Summary
 
-This analysis compared cost-effectiveness results across three model structures to assess structural uncertainty:
-
-1. **Model Structure Comparison**: Results were [generally consistent / showed variation] across Model A (Joint), Model B (Focused), and Model C (Separate) specifications.
-
-2. **Base Case Results**: The optimal strategy at the WTP threshold of EUR `r format(WTP, big.mark=",")` per QALY was [strategy] across [all / most] model structures.
-
-3. **Probabilistic Sensitivity Analysis**: PSA results confirmed the robustness of base case findings, with [consistent / varying] probability of cost-effectiveness across model structures.
-
-4. **Implications**: The [consistency / variation] in results across model structures suggests that our conclusions are [robust to / sensitive to] the specification of biomarker-treatment interactions.
+The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy, and TMB/BRAF-guided immunotherapy.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.1
+**Report version:** 4.0

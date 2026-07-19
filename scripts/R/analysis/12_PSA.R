@@ -8,61 +8,6 @@ source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 
-# ===============================================================================
-# RUN_ALL_MODELS SWITCH
-# ===============================================================================
-# When RUN_ALL_MODELS = TRUE, this script will loop through all 3 MODEL_STRUCTURE
-# values (0, 1, 2) and generate PSA caches for each. This is useful for pre-generating
-# all caches needed for multi-model CEA comparison.
-#
-# When RUN_ALL_MODELS = FALSE (default), the script uses the current MODEL_STRUCTURE
-# value and generates a single PSA cache file.
-# ===============================================================================
-
-if (!exists("RUN_ALL_MODELS")) {
-  RUN_ALL_MODELS <- FALSE
-}
-
-if (RUN_ALL_MODELS) {
-  cat("\n=== RUN_ALL_MODELS mode: Generating PSA caches for all model structures ===\n")
-  model_structures_to_run <- c(0, 1, 2)
-  original_model_structure <- MODEL_STRUCTURE
-} else {
-  model_structures_to_run <- MODEL_STRUCTURE
-}
-
-# Loop through model structures (single iteration if RUN_ALL_MODELS = FALSE)
-for (current_model_structure in model_structures_to_run) {
-
-  # Set MODEL_STRUCTURE for this iteration
-  MODEL_STRUCTURE <- current_model_structure
-  model_structure_label <- c("joint", "focused", "separate")[MODEL_STRUCTURE + 1]
-
-  if (RUN_ALL_MODELS) {
-    cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-    cat("Processing MODEL_STRUCTURE =", MODEL_STRUCTURE, "(", model_structure_label, ")\n")
-    cat(paste(rep("=", 70), collapse = ""), "\n")
-
-    # Re-source scripts 06, 07, 08 to update model and sampling for this MODEL_STRUCTURE
-    cat("Re-sourcing analysis scripts for new MODEL_STRUCTURE...\n")
-    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-    # Don't re-source 08 - use existing sampling_models for each structure
-    # The sampling cache is loaded based on MODEL_STRUCTURE in 08_sampling.R
-    # Instead, load the appropriate sampling cache directly
-    sampling_cache_file <- here("data", "tidy", paste0("sampling_models_n", n_samples, "_",
-                                                       ifelse(USE_BOTH_MODELS == 0, "full", "both"), "_",
-                                                       model_structure_label, ".rds"))
-    if (file.exists(sampling_cache_file)) {
-      sampling_models <- readRDS(sampling_cache_file)
-      cat("Loaded sampling cache:", sampling_cache_file, "\n")
-    } else {
-      cat("ERROR: Sampling cache not found:", sampling_cache_file, "\n")
-      cat("Please run 08_sampling.R with RUN_ALL_MODELS = TRUE first.\n")
-      next
-    }
-  }
-
 # Ensure consistent time indexing
 if (!exists("time_points_length")) {
   time_points_length <- length(time_points)
@@ -73,9 +18,9 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
-# Define cache file paths with model structure and utility source labels
-cache_file_obj <- here("data", "tidy", paste0("psa_obj_", model_structure_label, "_", utility_source_label, ".rds"))
-cache_file_params <- here("data", "tidy", paste0("psa_params_", model_structure_label, "_", utility_source_label, ".rds"))
+# Define cache file paths with utility source label
+cache_file_obj <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+cache_file_params <- here("data", "tidy", paste0("psa_params_", utility_source_label, ".rds"))
 
 # Check if PSA cache exists and is valid
 psa_cached <- FALSE
@@ -106,6 +51,14 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
     # Check if psa_params has correct number of rows
     if (nrow(psa_params) != n_sim) {
       cat("  Cache validation failed: psa_params row count mismatch\n")
+      cache_valid <- FALSE
+    }
+
+    # Parameter-set changes (including new diagnostic costs) invalidate old caches.
+    missing_param_columns <- setdiff(names(param_distributions), names(psa_params))
+    if (length(missing_param_columns) > 0) {
+      cat("  Cache validation failed: missing PSA parameters:",
+          paste(missing_param_columns, collapse = ", "), "\n")
       cache_valid <- FALSE
     }
 
@@ -149,6 +102,12 @@ if (!psa_cached) {
     n_sim = n_sim
   )
 
+  cat(sprintf(
+    "PSA fallback diagnostic: %d/%d initial iterations (%.2f%%; maximum permitted %.2f%%)\n",
+    psa_results$fallback_count, n_sim, 100 * psa_results$fallback_rate,
+    100 * psa_results$fallback_threshold
+  ))
+
   # Create the PSA object using dampack's make_psa_obj function
   psa_obj <- dampack::make_psa_obj(
     cost = as.data.frame(psa_results$cost),
@@ -158,6 +117,11 @@ if (!psa_cached) {
   )
 
   cat("\n=== PSA generation complete ===\n")
+} else {
+  cat(paste0(
+    "PSA fallback diagnostic: unavailable for the existing cache ",
+    "(the PSA loop was not run).\n"
+  ))
 }
 
 # Verify the PSA object structure
@@ -207,14 +171,4 @@ if (!psa_cached) {
   })
 } else {
   cat("\nUsing cached PSA results (not saving).\n")
-}
-
-} # End of RUN_ALL_MODELS loop
-
-# Restore original MODEL_STRUCTURE if we were in RUN_ALL_MODELS mode
-if (RUN_ALL_MODELS) {
-  MODEL_STRUCTURE <- original_model_structure
-  cat("\n=== RUN_ALL_MODELS complete ===\n")
-  cat("Generated PSA caches for MODEL_STRUCTURE: 0 (joint), 1 (focused), 2 (separate)\n")
-  cat("Restored MODEL_STRUCTURE to:", MODEL_STRUCTURE, "\n")
 }

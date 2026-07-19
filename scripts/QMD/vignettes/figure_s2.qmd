@@ -50,9 +50,7 @@ suppressMessages(suppressWarnings({
 
 source(here("scripts/R/functions/prediction_functions.R"))
 
-# Use Model A (joint) for distribution comparison
-MODEL_STRUCTURE <- 0
-
+# Use the joint economic model for distribution comparison
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
 }))

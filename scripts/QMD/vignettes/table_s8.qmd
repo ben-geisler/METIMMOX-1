@@ -13,208 +13,96 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, knitr, kableExtra, scales, dampack,
-  flexsurv, survival
-)
-```
+pacman::p_load(here, dplyr, knitr, kableExtra, scales, dampack,
+               flexsurv, survival)
 
-```{r load-analysis, include=FALSE}
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-source(here("scripts/R/functions/model_fun.R"))
-source(here("scripts/R/functions/calculate_outcomes.R"))
-source(here("scripts/R/functions/prediction_functions.R"))
-```
-
-```{r define-scenarios, include=FALSE}
-# Define scenario configurations
-# Each scenario modifies one or more base-case parameters
-
-# First, get base case for Model B (primary specification)
-MODEL_STRUCTURE <<- 1
-
-suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
   source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  source(here("scripts/R/functions/model_fun.R"))
+  source(here("scripts/R/functions/calculate_outcomes.R"))
 }))
-
-base_params <- l_params_base
-
-# Define scenarios
-scenario_defs <- list(
-  list(
-    name = "Base case",
-    description = "Model B, 10-year horizon, 4% discount, base pricing",
-    params = base_params
-  ),
-  list(
-    name = "Biosimilar pricing",
-    description = "Nivolumab at 80% discount from list (EUR 4,641/admin)",
-    params = within(base_params, {
-      c_drug_nivo <- 4641
-    })
-  ),
-  list(
-    name = "WTP EUR 100,000",
-    description = "Higher WTP threshold (EUR 100,000/QALY)",
-    params = base_params,
-    wtp_override = 100000
-  ),
-  list(
-    name = "Discount rate 0%",
-    description = "No discounting of costs and effects",
-    params = within(base_params, {
-      dr_costs <- 0
-      dr_effects <- 0
-    })
-  ),
-  list(
-    name = "Discount rate 8%",
-    description = "Higher discount rate (8% for both costs and effects)",
-    params = within(base_params, {
-      dr_costs <- 0.08
-      dr_effects <- 0.08
-    })
-  ),
-  list(
-    name = "Literature utilities",
-    description = "Literature-based utility values (u_np=0.80, u_p=0.65)",
-    params = within(base_params, {
-      u_np <- 0.80
-      u_p <- 0.65
-    })
-  )
-)
 ```
 
 ```{r run-scenarios, include=FALSE}
+base_params <- l_params_base
+scenario_defs <- list(
+  list(name = "Base case", params = base_params, wtp = WTP),
+  list(name = "Biosimilar pricing",
+       params = within(base_params, { c_drug_nivo <- 4641 }), wtp = WTP),
+  list(name = "WTP EUR 100,000", params = base_params, wtp = 100000),
+  list(name = "Discount rate 0%",
+       params = within(base_params, { dr_costs <- 0; dr_effects <- 0 }), wtp = WTP),
+  list(name = "Discount rate 8%",
+       params = within(base_params, { dr_costs <- 0.08; dr_effects <- 0.08 }), wtp = WTP),
+  list(name = "Literature utilities",
+       params = within(base_params, { u_np <- 0.80; u_p <- 0.65 }), wtp = WTP)
+)
+
 strategy_labels <- c(
-  "control" = "Standard care",
-  "crp" = "CRP-guided",
-  "tmb_braf" = "TMB/BRAF-guided",
-  "tlr" = "TLR-guided"
+  control = "Standard care",
+  crp = "CRP-guided",
+  tmb_braf = "TMB/BRAF-guided"
 )
 
 scenario_results <- data.frame()
-
 for (scenario in scenario_defs) {
-  cat("Running scenario:", scenario$name, "\n")
-
   result <- model_fun(scenario$params)
+  result <- result[result$Strategy %in% names(strategy_labels), ]
+  nmb <- result$Effect * scenario$wtp - result$Cost
 
-  # Calculate ICERs
-  icer_obj <- dampack::calculate_icers(
-    cost = result$Cost,
-    effect = result$Effect,
-    strategies = result$Strategy
-  )
-  icer_df <- as.data.frame(icer_obj)
-
-  # Determine WTP for this scenario
-  scenario_wtp <- if (!is.null(scenario$wtp_override)) scenario$wtp_override else WTP
-
-  # Calculate NMB
-  nmb <- result$Effect * scenario_wtp - result$Cost
-  optimal_idx <- which.max(nmb)
-
-  for (i in seq_len(nrow(icer_df))) {
-    icer_display <- if (icer_df$Status[i] %in% c("D", "ED")) {
-      "Dominated"
-    } else if (is.na(icer_df$ICER[i])) {
-      "Reference"
-    } else {
-      sprintf("\u20AC%s", format(round(icer_df$ICER[i]), big.mark = ","))
-    }
-
-    scenario_results <- rbind(scenario_results, data.frame(
-      Scenario = scenario$name,
-      Strategy = strategy_labels[icer_df$Strategy[i]],
-      Cost = icer_df$Cost[i],
-      QALYs = icer_df$Effect[i],
-      ICER = icer_display,
-      NMB = nmb[i],
-      Optimal = ifelse(i == optimal_idx, "Yes", ""),
-      stringsAsFactors = FALSE
-    ))
-  }
+  scenario_results <- rbind(scenario_results, data.frame(
+    Scenario = scenario$name,
+    WTP = scenario$wtp,
+    Strategy = strategy_labels[result$Strategy],
+    Cost = result$Cost,
+    QALYs = result$Effect,
+    NMB = nmb,
+    Optimal = ifelse(seq_along(nmb) == which.max(nmb), "Yes", ""),
+    stringsAsFactors = FALSE
+  ))
 }
-
-cat("Scenario results:", nrow(scenario_results), "rows\n")
 ```
 
-```{r display-full-table}
+```{r display-table}
 display_df <- scenario_results %>%
   mutate(
-    Cost = sprintf("\u20AC%s", format(round(Cost), big.mark = ",")),
+    WTP = scales::dollar(WTP, prefix = "EUR ", accuracy = 1),
+    Cost = scales::dollar(Cost, prefix = "EUR ", accuracy = 1),
     QALYs = sprintf("%.2f", QALYs),
-    NMB = sprintf("\u20AC%s", format(round(NMB), big.mark = ","))
+    NMB = scales::dollar(NMB, prefix = "EUR ", accuracy = 1)
   )
 
-kable(display_df,
-      caption = "Table S8: Scenario analyses - cost-effectiveness results under alternative assumptions (Model B)",
-      format = "html",
-      align = c("l", "l", "r", "r", "r", "r", "c")) %>%
+kable(
+  display_df,
+  caption = "Table S8: Scenario analyses under alternative assumptions",
+  format = "html",
+  align = c("l", "r", "l", "r", "r", "r", "c")
+) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                full_width = FALSE,
-                font_size = 11) %>%
+                full_width = FALSE, font_size = 11) %>%
   pack_rows(index = table(factor(display_df$Scenario, levels = unique(display_df$Scenario)))) %>%
   footnote(
     general = c(
-      "All scenarios use Model B (focused) specification unless otherwise noted.",
-      paste0("Base case: 10-year horizon, 4% discount rate, WTP = \u20AC", format(WTP, big.mark = ","), "/QALY."),
-      "Biosimilar pricing: nivolumab at EUR 4,641/administration (80% discount from list price, 67% reduction from base-case procurement price).",
-      "Literature utilities: progression-free = 0.80, post-progression = 0.65 (based on Joranger et al. 2020).",
-      "NMB = net monetary benefit at scenario-specific WTP threshold.",
-      "Optimal = strategy with highest NMB at the given WTP threshold."
+      paste0("Base case WTP: EUR ", format(WTP, big.mark = ","), "/QALY."),
+      "Biosimilar pricing sets nivolumab to EUR 4,641 per administration.",
+      "Optimal strategy is the highest-NMB strategy within each scenario."
     ),
     general_title = "Notes: "
   )
 ```
 
-## Summary: Optimal Strategy by Scenario
-
-```{r summary-table}
-summary_df <- scenario_results %>%
-  group_by(Scenario) %>%
-  filter(Optimal == "Yes") %>%
-  select(Scenario, `Optimal Strategy` = Strategy, NMB) %>%
-  mutate(NMB = sprintf("\u20AC%s", format(round(NMB), big.mark = ",")))
-
-kable(summary_df,
-      caption = "Optimal strategy by scenario",
-      format = "html",
-      row.names = FALSE) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                full_width = FALSE,
-                font_size = 12)
-```
-
 ```{r save-table, include=FALSE}
 tables_dir <- here("tables")
-if (!dir.exists(tables_dir)) {
-  dir.create(tables_dir, recursive = TRUE)
-}
-
+if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
 write.csv(scenario_results, file = here("tables", "table_s8.csv"), row.names = FALSE)
-cat("Table saved to:", here("tables", "table_s8.csv"), "\n")
 ```
 
 Table S8 has been saved to `tables/table_s8.csv`.

@@ -1,28 +1,31 @@
 # ===============================================================================
 # PARAMETRIC SURVIVAL ANALYSIS WITH MODEL SELECTION
 # ===============================================================================
-# This script performs comprehensive parametric survival analysis by:
-# 1. Fitting multiple parametric distributions across model structures
-# 2. Automatically selecting best-fitting models based on AIC
-# 3. Generating population-level predictions for all treatment strategies
-# 
+# This script performs parametric survival analysis for the single economic
+# survival model:
+#   OS:  Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+#   PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+#
+# TLR is not included in the economic survival model. It remains in the prepared
+# dataset for clinical effectiveness, DAG, and biomarker distribution analyses.
+#
 # Testing and validation outputs are handled in scripts/R/tests/para_models.R
 # ===============================================================================
 
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
-library(pacman, here)
-p_load(survival, flexsurv, dplyr)
+library(pacman)
+p_load(here, survival, flexsurv, dplyr)
 
 # ===============================================================================
 # MODEL SELECTION CONFIGURATION
 # ===============================================================================
 
-# CONFIGURATION SWITCH: Controls which model structures to consider
-# 0 = Full model (age- and sex-adjusted) only
-# 1 = Both full model and model without age- and sex-adjustments
-USE_BOTH_MODELS <- 0
-#we will set this now with the global variables, so it can be overridden later more easily
+# Controls whether to fit only the full model (0) or also a reduced age/sex model
+# when supported by downstream helper functions.
+if (!exists("USE_BOTH_MODELS")) {
+  USE_BOTH_MODELS <- 0
+}
 
 # Load parametric model fitting functions
 para_model_fit_path <- here::here("scripts", "R", "functions", "para_model_fit.R")
@@ -62,26 +65,20 @@ if ("tmb_braf" %in% names(data) && !is.null(data$tmb_braf)) {
   data$tmb_braf <- as.factor(data$tmb_braf)
 }
 
-# Remove rows with missing values for modeling
-data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr", "tmb_braf", "OSwk", "Death", "PFSwk", "Progression")]), ]
+# Remove rows with missing values required for economic survival modeling.
+# TLR is intentionally not part of this complete-case filter.
+required_model_vars <- c(
+  "Age", "sex", "Rx", "crp", "tmb_braf",
+  "OSwk", "Death", "PFSwk", "Progression"
+)
+data_complete <- data[complete.cases(data[, required_model_vars]), ]
+rm(required_model_vars)
 
 # ===============================================================================
-# MODEL STRUCTURE DEFINITIONS
+# MODEL FORMULA DEFINITIONS
 # ===============================================================================
-# Model formulas are defined in scripts/R/functions/model_configs.R
-# which provides a single source of truth for all model configurations.
-#
-# MODEL_STRUCTURE controls which model formula structure is used:
-#   0 = "joint"    - All biomarkers + all treatment interactions in ONE model (Model A)
-#   1 = "focused"  - Per-strategy formulas (Model B):
-#                    - CRP/TMB_BRAF: crp + tmb_braf + crp:Rx + tmb_braf:Rx
-#                    - TLR: crp + tmb_braf + tlr:Rx
-#   2 = "separate" - Only ONE biomarker + its interaction per model (Model C)
-#
-# All three biomarker strategies (CRP, TLR, TMB/BRAF) are available in ALL models.
-# USE_BOTH_MODELS controls age/sex adjustment (only relevant for Model A):
-#   0 = Full model with age and sex adjustments only
-#   1 = Both full model and model without age/sex adjustments
+# Model formulas are defined in scripts/R/functions/model_configs.R, the single
+# source of truth for economic survival strategies and formulas.
 # ===============================================================================
 
 # Source model configurations if not already loaded
@@ -89,339 +86,224 @@ if (!exists("get_model_configs")) {
   source(here::here("scripts/R/functions/model_configs.R"))
 }
 
-# Validate MODEL_STRUCTURE
-if (!exists("MODEL_STRUCTURE")) {
-  MODEL_STRUCTURE <- 0
-  cat("MODEL_STRUCTURE not defined, defaulting to 0 (joint)\n")
-}
-
-validate_model_structure(MODEL_STRUCTURE)
-
 # Get model configuration from central source
 model_config <- get_current_model_config()
-model_type_label <- get_model_type_label()
 model_formulas <- get_model_formulas()
 
 # Print configuration summary
 cat("Configuration:", model_config$label, "\n")
 cat("Description:", model_config$description, "\n")
-cat("Model type label:", model_type_label, "\n")
+cat("Economic strategies:", paste(model_config$strategies, collapse = ", "), "\n")
+cat("Economic biomarkers:", paste(model_config$biomarkers, collapse = ", "), "\n")
 
-# Print which models will be fitted
-cat("Model structures to be fitted: ", paste(names(model_formulas), collapse = ", "), "\n")
+# Print which formula sets will be fitted
+cat("Formula sets to be fitted:", paste(names(model_formulas), collapse = ", "), "\n")
 
 # Define parametric distributions to test
-distributions_to_test <- c("exponential", "weibull", "weibullph", "llogis", 
-                           "lognormal", "gamma", "gompertz", "gengamma", "genf")
+distributions_to_test <- c(
+  "exponential", "weibull", "weibullph", "llogis",
+  "lognormal", "gamma", "gompertz", "gengamma", "genf"
+)
 
 # ===============================================================================
 # MODEL FITTING
 # ===============================================================================
 
 # Initialize storage structure:
-# models$[structure]$[outcome]$[distribution] = fitted flexsurvreg object
-# models$[structure]$[outcome]_ic = information criteria table
+# models$[formula_set]$[outcome]$[distribution] = fitted flexsurvreg object
+# models$[formula_set]$[outcome]_ic = information criteria table
 # models$best_fit$[outcome] = best model overall
 models <- list()
 
-# Initialize model structure lists based on configuration
-for (structure_name in names(model_formulas)) {
-  models[[structure_name]] <- list()
+# Initialize model formula lists based on configuration
+for (formula_set in names(model_formulas)) {
+  models[[formula_set]] <- list()
 }
 
-# Fit models for each selected structure
-for (structure_name in names(model_formulas)) {
-  
-  cat("Fitting models for structure:", structure_name, "\n")
-  
+# Fit models for each selected formula set
+for (formula_set in names(model_formulas)) {
+
+  cat("Fitting models for formula set:", formula_set, "\n")
+
   # Fit OS models using fit_all_direct function
   os_results <- fit_all_direct(
     fit_data = data_complete,
-    fit_formula = model_formulas[[structure_name]]$os,
+    fit_formula = model_formulas[[formula_set]]$os,
     fit_dists = distributions_to_test
   )
-  
+
   # Fit PFS models using fit_all_direct function
   pfs_results <- fit_all_direct(
     fit_data = data_complete,
-    fit_formula = model_formulas[[structure_name]]$pfs,
+    fit_formula = model_formulas[[formula_set]]$pfs,
     fit_dists = distributions_to_test
   )
-  
+
   # Store fitted models in organized structure
-  models[[structure_name]]$os <- os_results$fitted_models
-  models[[structure_name]]$pfs <- pfs_results$fitted_models
-  
+  models[[formula_set]]$os <- os_results$fitted_models
+  models[[formula_set]]$pfs <- pfs_results$fitted_models
+
   # Store Kaplan-Meier fits for reference
-  models[[structure_name]]$km_os <- os_results$km_all
-  models[[structure_name]]$km_pfs <- pfs_results$km_all
-  
+  models[[formula_set]]$km_os <- os_results$km_all
+  models[[formula_set]]$km_pfs <- pfs_results$km_all
+
   # Extract and store information criteria (AIC/BIC)
-  os_ic <- extract_ic_single(os_results)
-  pfs_ic <- extract_ic_single(pfs_results)
-  
-  models[[structure_name]]$os_ic <- os_ic
-  models[[structure_name]]$pfs_ic <- pfs_ic
-  
-  # Identify best models within this structure
-  best_os <- find_best_model(os_ic, criterion = "AIC")
-  best_pfs <- find_best_model(pfs_ic, criterion = "AIC")
-  
+  models[[formula_set]]$os_ic <- extract_ic_single(os_results)
+  models[[formula_set]]$pfs_ic <- extract_ic_single(pfs_results)
+
+  # Identify best models within this formula set
+  best_os <- find_best_model(models[[formula_set]]$os_ic, criterion = "AIC")
+  best_pfs <- find_best_model(models[[formula_set]]$pfs_ic, criterion = "AIC")
+
   if (!is.null(best_os)) {
-    models[[structure_name]]$best_os_dist <- best_os$distribution
-    models[[structure_name]]$best_os_aic <- best_os$criterion_value
+    models[[formula_set]]$best_os_dist <- best_os$distribution
+    models[[formula_set]]$best_os_aic <- best_os$criterion_value
   }
-  
+
   if (!is.null(best_pfs)) {
-    models[[structure_name]]$best_pfs_dist <- best_pfs$distribution
-    models[[structure_name]]$best_pfs_aic <- best_pfs$criterion_value
+    models[[formula_set]]$best_pfs_dist <- best_pfs$distribution
+    models[[formula_set]]$best_pfs_aic <- best_pfs$criterion_value
   }
 }
 
 # ===============================================================================
-# DEDICATED CONTROL MODEL FITTING (for Models B/C)
-# ===============================================================================
-# For Models B/C, we fit a dedicated control model using the control formula
-# (~ Age + sex) to avoid arbitrary biomarker model selection for control
-# predictions. This model is fitted with all distributions and the best
-# is selected by AIC, consistent with the biomarker model selection.
+# ORDERING-CONSTRAINED JOINT MODEL SELECTION
 # ===============================================================================
 
-is_biomarker_specific <- uses_per_strategy_formulas()
+collect_ic <- function(outcome) {
+  pieces <- lapply(names(model_formulas), function(formula_set) {
+    ic_name <- paste0(outcome, "_ic")
+    ic <- models[[formula_set]][[ic_name]]
 
-if (is_biomarker_specific) {
-  cat("\nFitting dedicated control models (for Models B/C control predictions)...\n")
+    if (is.null(ic)) {
+      return(NULL)
+    }
 
-  control_os_formula_fit <- get_control_formula("os")
-  control_pfs_formula_fit <- get_control_formula("pfs")
+    data.frame(formula_set = formula_set, ic, stringsAsFactors = FALSE)
+  })
 
-  # Fit control OS models
-  control_os_results <- fit_all_direct(
-    fit_data = data_complete,
-    fit_formula = control_os_formula_fit,
-    fit_dists = distributions_to_test
-  )
+  pieces <- Filter(Negate(is.null), pieces)
 
-  # Fit control PFS models
-  control_pfs_results <- fit_all_direct(
-    fit_data = data_complete,
-    fit_formula = control_pfs_formula_fit,
-    fit_dists = distributions_to_test
-  )
-
-  # Store in models object
-  models$control_dedicated <- list(
-    os = control_os_results$fitted_models,
-    pfs = control_pfs_results$fitted_models,
-    os_ic = extract_ic_single(control_os_results),
-    pfs_ic = extract_ic_single(control_pfs_results)
-  )
-
-  # Select best control model by AIC
-  best_ctrl_os <- find_best_model(models$control_dedicated$os_ic, criterion = "AIC")
-  best_ctrl_pfs <- find_best_model(models$control_dedicated$pfs_ic, criterion = "AIC")
-
-  if (!is.null(best_ctrl_os)) {
-    models$best_fit$control_os <- models$control_dedicated$os[[best_ctrl_os$distribution]]
-    models$best_fit$control_os_distribution <- best_ctrl_os$distribution
-    cat("Best control OS model:", best_ctrl_os$distribution,
-        "(AIC:", round(best_ctrl_os$criterion_value, 2), ")\n")
+  if (length(pieces) == 0) {
+    return(NULL)
   }
-  if (!is.null(best_ctrl_pfs)) {
-    models$best_fit$control_pfs <- models$control_dedicated$pfs[[best_ctrl_pfs$distribution]]
-    models$best_fit$control_pfs_distribution <- best_ctrl_pfs$distribution
-    cat("Best control PFS model:", best_ctrl_pfs$distribution,
-        "(AIC:", round(best_ctrl_pfs$criterion_value, 2), ")\n")
-  }
+
+  do.call(rbind, pieces)
 }
 
-# ===============================================================================
-# GLOBAL BEST MODEL SELECTION
-# ===============================================================================
-# For Model A (joint): Select globally best OS and PFS models across structures
-# For Models B/C (focused/separate): Select best model for EACH biomarker
-# ===============================================================================
+all_os_aic <- collect_ic("os")
+all_pfs_aic <- collect_ic("pfs")
 
-biomarker_names <- get_biomarkers()
+make_candidates <- function(ic_data, outcome) {
+  ic_data <- ic_data[!is.na(ic_data$AIC), , drop = FALSE]
+  candidate_models <- Map(
+    function(formula_set, distribution) {
+      models[[formula_set]][[outcome]][[distribution]]
+    },
+    ic_data$formula_set,
+    ic_data$Distribution
+  )
+  ordering_data <- lapply(candidate_models, function(candidate_model) {
+    tryCatch(
+      generate_population_averaged_endpoint_curves(
+        model = candidate_model,
+        data_complete = data_complete,
+        time_points = time_points
+      ),
+      error = identity
+    )
+  })
 
-if (is_biomarker_specific) {
-  # =========================================================================
-  # BIOMARKER-SPECIFIC BEST MODEL SELECTION (Models B/C)
-  # =========================================================================
-  # Each biomarker strategy has its own model; select best distribution for each
+  data.frame(
+    formula_set = ic_data$formula_set,
+    distribution = ic_data$Distribution,
+    AIC = ic_data$AIC,
+    ordering_data = I(ordering_data),
+    stringsAsFactors = FALSE
+  )
+}
 
-  cat("Selecting best models for each biomarker strategy...\n")
+if (!is.null(all_os_aic) && !is.null(all_pfs_aic)) {
+  os_candidates <- make_candidates(all_os_aic, "os")
+  pfs_candidates <- make_candidates(all_pfs_aic, "pfs")
 
-  for (biomarker in biomarker_names) {
-    if (!is.null(models[[biomarker]])) {
-      # Select best OS model for this biomarker
-      if (!is.null(models[[biomarker]]$os_ic)) {
-        os_ic <- models[[biomarker]]$os_ic
-        os_ic_valid <- os_ic[!is.na(os_ic$AIC), ]
-        if (nrow(os_ic_valid) > 0) {
-          best_os_idx <- which.min(os_ic_valid$AIC)
-          best_os_dist <- os_ic_valid$Distribution[best_os_idx]
-
-          models$best_fit[[biomarker]]$os <- models[[biomarker]]$os[[best_os_dist]]
-          models$best_fit[[biomarker]]$os_distribution <- best_os_dist
-          models$best_fit[[biomarker]]$os_aic <- os_ic_valid$AIC[best_os_idx]
-
-          cat("  Best OS model for ", biomarker, ": ", best_os_dist,
-              " (AIC: ", round(os_ic_valid$AIC[best_os_idx], 2), ")\n", sep = "")
-        }
-      }
-
-      # Select best PFS model for this biomarker
-      if (!is.null(models[[biomarker]]$pfs_ic)) {
-        pfs_ic <- models[[biomarker]]$pfs_ic
-        pfs_ic_valid <- pfs_ic[!is.na(pfs_ic$AIC), ]
-        if (nrow(pfs_ic_valid) > 0) {
-          best_pfs_idx <- which.min(pfs_ic_valid$AIC)
-          best_pfs_dist <- pfs_ic_valid$Distribution[best_pfs_idx]
-
-          models$best_fit[[biomarker]]$pfs <- models[[biomarker]]$pfs[[best_pfs_dist]]
-          models$best_fit[[biomarker]]$pfs_distribution <- best_pfs_dist
-          models$best_fit[[biomarker]]$pfs_aic <- pfs_ic_valid$AIC[best_pfs_idx]
-
-          cat("  Best PFS model for ", biomarker, ": ", best_pfs_dist,
-              " (AIC: ", round(pfs_ic_valid$AIC[best_pfs_idx], 2), ")\n", sep = "")
-        }
-      }
-    }
+  if (nrow(os_candidates) == 0 || nrow(pfs_candidates) == 0) {
+    stop("No valid fitted OS or PFS candidates are available for joint selection.")
   }
 
-} else {
-  # =========================================================================
-  # SINGLE MODEL BEST SELECTION (Model A - Joint)
-  # =========================================================================
-  # Select globally best OS and PFS models across all structures
-
-  # Combine AIC values from all fitted structures to find global optimum
-  all_os_aic <- do.call(rbind, lapply(names(model_formulas), function(structure_name) {
-    if (!is.null(models[[structure_name]]$os_ic)) {
-      data.frame(structure = structure_name, models[[structure_name]]$os_ic)
-    }
-  }))
-
-  all_pfs_aic <- do.call(rbind, lapply(names(model_formulas), function(structure_name) {
-    if (!is.null(models[[structure_name]]$pfs_ic)) {
-      data.frame(structure = structure_name, models[[structure_name]]$pfs_ic)
-    }
-  }))
-
-  # Select globally best OS model
-  if (!is.null(all_os_aic) && nrow(all_os_aic) > 0) {
-    best_os_overall <- all_os_aic[!is.na(all_os_aic$AIC), ]
-    if (nrow(best_os_overall) > 0) {
-      best_os_idx <- which.min(best_os_overall$AIC)
-      best_os_structure <- best_os_overall$structure[best_os_idx]
-      best_os_dist <- best_os_overall$Distribution[best_os_idx]
-
-      # Store best model information
-      models$best_fit$os <- models[[best_os_structure]]$os[[best_os_dist]]
-      models$best_fit$os_structure <- best_os_structure
-      models$best_fit$os_distribution <- best_os_dist
-      models$best_fit$os_aic <- best_os_overall$AIC[best_os_idx]
-
-      cat("Best OS model: ", best_os_structure, " structure, ", best_os_dist, " distribution (AIC: ",
-          round(best_os_overall$AIC[best_os_idx], 2), ")\n")
-    }
+  ordering_check <- function(os_curves, pfs_curves) {
+    if (inherits(os_curves, "condition")) stop(conditionMessage(os_curves))
+    if (inherits(pfs_curves, "condition")) stop(conditionMessage(pfs_curves))
+    check_endpoint_curve_ordering(os_curves, pfs_curves)
   }
 
-  # Select globally best PFS model
-  if (!is.null(all_pfs_aic) && nrow(all_pfs_aic) > 0) {
-    best_pfs_overall <- all_pfs_aic[!is.na(all_pfs_aic$AIC), ]
-    if (nrow(best_pfs_overall) > 0) {
-      best_pfs_idx <- which.min(best_pfs_overall$AIC)
-      best_pfs_structure <- best_pfs_overall$structure[best_pfs_idx]
-      best_pfs_dist <- best_pfs_overall$Distribution[best_pfs_idx]
+  ordered_selection <- find_best_ordered_model_pair(
+    os_candidates = os_candidates,
+    pfs_candidates = pfs_candidates,
+    ordering_check = ordering_check,
+    criterion = "AIC"
+  )
 
-      # Store best model information
-      models$best_fit$pfs <- models[[best_pfs_structure]]$pfs[[best_pfs_dist]]
-      models$best_fit$pfs_structure <- best_pfs_structure
-      models$best_fit$pfs_distribution <- best_pfs_dist
-      models$best_fit$pfs_aic <- best_pfs_overall$AIC[best_pfs_idx]
+  # Preserve the full audit trail, including rejected pairs and AIC penalty.
+  models$ordered_selection <- ordered_selection
 
-      cat("Best PFS model: ", best_pfs_structure, " structure, ", best_pfs_dist, " distribution (AIC: ",
-          round(best_pfs_overall$AIC[best_pfs_idx], 2), ")\n")
-    }
+  if (is.null(ordered_selection$selected)) {
+    stop(
+      "No fitted OS/PFS distribution pair satisfies OS >= PFS over the full ",
+      "time horizon for control and all biomarker subgroups. A PFS + ",
+      "post-progression-survival decomposition is required."
+    )
   }
+
+  selected <- ordered_selection$selected[1, ]
+  models$best_fit$os <- models[[selected$os_formula_set]]$os[[selected$os_distribution]]
+  models$best_fit$pfs <- models[[selected$pfs_formula_set]]$pfs[[selected$pfs_distribution]]
+  models$best_fit$os_structure <- selected$os_formula_set
+  models$best_fit$pfs_structure <- selected$pfs_formula_set
+  models$best_fit$os_distribution <- selected$os_distribution
+  models$best_fit$pfs_distribution <- selected$pfs_distribution
+  models$best_fit$os_aic <- selected$os_ic
+  models$best_fit$pfs_aic <- selected$pfs_ic
+  models$best_fit$combined_aic <- selected$combined_ic
+  models$best_fit$ordering_aic_penalty <- ordered_selection$ic_penalty
+
+  cat("Ordering-constrained model pair:", selected$os_distribution, "(OS),",
+      selected$pfs_distribution, "(PFS); combined AIC:",
+      round(selected$combined_ic, 2), "; constraint penalty:",
+      round(ordered_selection$ic_penalty, 2), "\n")
 }
 
 # ===============================================================================
 # POPULATION-LEVEL PREDICTIONS
 # ===============================================================================
-# Uses population averaging approach to account for heterogeneity in patient
+# Uses population averaging to account for heterogeneity in patient
 # characteristics (age, sex, biomarkers). Predictions are generated for all
 # patients using their actual covariate values, then averaged within relevant
 # subgroups. This is the methodologically rigorous approach for CEA.
 # See GitHub Issue #69 for methodology discussion.
-#
-# For Model A (joint): Use single best model for all strategies
-# For Models B/C (focused/separate): Use biomarker-specific models
 # ===============================================================================
 
-if (is_biomarker_specific) {
-  # =========================================================================
-  # BIOMARKER-SPECIFIC PREDICTIONS (Models B/C)
-  # =========================================================================
-  # Each biomarker strategy uses its own fitted model
+if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
+  best_models <- list(
+    os = models$best_fit$os,
+    pfs = models$best_fit$pfs
+  )
 
-  # Check that all biomarker models were successfully fitted
-  all_biomarkers_fitted <- all(sapply(biomarker_names, function(bm) {
-    !is.null(models$best_fit[[bm]]$os) && !is.null(models$best_fit[[bm]]$pfs)
-  }))
+  predictions <- generate_population_averaged_predictions(
+    models = best_models,
+    strategies_df = strategies_df,
+    data_complete = data_complete,
+    time_points = time_points,
+    prevalences = setNames(strategies_df$prevalence, strategies_df$id)
+  )
 
-  if (all_biomarkers_fitted) {
-    # Build dedicated control models list if available
-    ctrl_models <- NULL
-    if (!is.null(models$best_fit$control_os) && !is.null(models$best_fit$control_pfs)) {
-      ctrl_models <- list(os = models$best_fit$control_os, pfs = models$best_fit$control_pfs)
-    }
-
-    # Generate predictions using biomarker-specific models
-    predictions <- generate_population_averaged_predictions_multimodel(
-      biomarker_models = models$best_fit,
-      strategies_df = strategies_df,
-      data_complete = data_complete,
-      time_points = time_points,
-      control_models = ctrl_models
-    )
-  } else {
-    predictions <- list()
-    warning("Some biomarker models failed to fit - predictions object is empty")
+  basecase_ordering_check <- check_population_survival_ordering(predictions)
+  if (!basecase_ordering_check$ordered) {
+    stop("Internal error: selected base-case curves violate OS >= PFS.")
   }
-
 } else {
-  # =========================================================================
-  # SINGLE MODEL PREDICTIONS (Model A - Joint)
-  # =========================================================================
-  # Use same model for all strategies
-
-  if (!is.null(models$best_fit$os) && !is.null(models$best_fit$pfs)) {
-    # Create model list for prediction functions
-    best_models <- list(
-      os = models$best_fit$os,
-      pfs = models$best_fit$pfs
-    )
-
-    # Generate population-averaged predictions for all strategies
-    # This function:
-    # 1. Predicts survival for EACH patient using their actual age, sex, biomarkers
-    # 2. For each strategy, assigns treatment based on biomarker status
-    # 3. Averages predictions within relevant subgroups (biomarker+, biomarker-)
-    # 4. Computes population-weighted averages using observed prevalence
-    predictions <- generate_population_averaged_predictions(
-      models = best_models,
-      strategies_df = strategies_df,
-      data_complete = data_complete,
-      time_points = time_points
-    )
-  } else {
-    # If model selection failed, create empty predictions object
-    predictions <- list()
-    warning("Model fitting failed - predictions object is empty")
-  }
+  predictions <- list()
+  warning("Model fitting failed - predictions object is empty")
 }
 
 # ===============================================================================
@@ -429,63 +311,43 @@ if (is_biomarker_specific) {
 # ===============================================================================
 #
 # CONFIGURATION:
-# - MODEL_STRUCTURE: Controls which model formula structure is used
-#   * 0 = "joint" (Model A): All biomarkers + all interactions in one model
-#   * 1 = "focused" (Model B): Per-strategy formulas:
-#         - CRP/TMB_BRAF: crp + tmb_braf + crp:Rx + tmb_braf:Rx
-#         - TLR: crp + tmb_braf + tlr:Rx (adjusts for other biomarkers)
-#   * 2 = "separate" (Model C): Only one biomarker + its interaction per model
-#
-# All three biomarker strategies are available in ALL models.
-# See scripts/R/functions/model_configs.R for complete formula definitions.
-#
-# - USE_BOTH_MODELS: Controls age/sex adjustment (only for Model A)
-#   * 0 = Only fit full model with age and sex adjustments
-#   * 1 = Fit both full model and model without age/sex adjustments
+# - Single economic survival model:
+#     OS:  Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+#     PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+# - TLR is excluded from economic survival modeling.
+# - USE_BOTH_MODELS controls age/sex adjustment where supported:
+#     0 = only fit full model with age and sex adjustments
+#     1 = fit both full model and model without age/sex adjustments
 #
 # MODELS OBJECT STRUCTURE:
+# - models$full
+#     - $os: OS models by distribution
+#     - $pfs: PFS models by distribution
+#     - $os_ic: AIC/BIC table for OS models
+#     - $pfs_ic: AIC/BIC table for PFS models
+#     - $km_os: Kaplan-Meier fit for OS
+#     - $km_pfs: Kaplan-Meier fit for PFS
+# - models$best_fit
+#     - $os: Best OS model object
+#     - $os_structure: Formula set name ("full")
+#     - $os_distribution: Best OS distribution
+#     - $os_aic: AIC value
+#     - equivalent fields for PFS
+#     - $combined_aic: Combined AIC for the selected ordered pair
+#     - $ordering_aic_penalty: Combined-AIC cost versus independent selection
+# - models$ordered_selection
+#     - $pairs: Audit table for every candidate OS/PFS distribution pair
+#     - $selected: Minimum-combined-AIC pair satisfying OS >= PFS
 #
-# For MODEL_STRUCTURE = 0 (Model A - Joint):
-# ├── models$full                       # Single model with all biomarker interactions
-# │   ├── $os                          # OS models by distribution
-# │   │   ├── $weibull                # flexsurvreg object
-# │   │   ├── $exponential            # flexsurvreg object
-# │   │   └── $[other_distributions]
-# │   ├── $pfs                         # PFS models by distribution
-# │   ├── $os_ic                       # AIC/BIC table for OS models
-# │   ├── $pfs_ic                      # AIC/BIC table for PFS models
-# │   ├── $km_os                       # Kaplan-Meier fit for OS
-# │   └── $km_pfs                      # Kaplan-Meier fit for PFS
-# └── models$best_fit                  # Globally best models
-#     ├── $os                          # Best OS model object
-#     ├── $os_structure               # Structure name ("full")
-#     ├── $os_distribution            # e.g., "gamma"
-#     ├── $os_aic                     # AIC value
-#     └── [same for pfs]
-#
-# For MODEL_STRUCTURE = 1 or 2 (Models B/C - Biomarker-specific):
-# ├── models$crp                        # CRP-specific model
-# │   ├── $os, $pfs, $os_ic, $pfs_ic, $km_os, $km_pfs  # Same structure as above
-# ├── models$tlr                        # TLR-specific model
-# │   ├── ... (same structure)
-# ├── models$tmb_braf                   # TMB/BRAF-specific model
-# │   ├── ... (same structure)
-# └── models$best_fit                   # Best models PER BIOMARKER
-#     ├── $crp$os, $crp$pfs            # Best CRP models
-#     ├── $crp$os_distribution, $crp$os_aic
-#     ├── $tlr$os, $tlr$pfs            # Best TLR models
-#     ├── ... (same structure)
-#     └── $tmb_braf$os, $tmb_braf$pfs  # Best TMB/BRAF models
-#
-# PREDICTIONS OBJECT STRUCTURE (same for all MODEL_STRUCTURE values):
-# ├── predictions$control              # Standard of care strategy
-# │   ├── $os                         # Population OS curve
-# │   └── $pfs                        # Population PFS curve
-# ├── predictions$crp                 # CRP-guided strategy
-# │   ├── $os                         # Population-weighted OS curve
-# │   ├── $pfs                        # Population-weighted PFS curve
-# │   ├── $biomarker_positive         # CRP+ subgroup predictions
-# │   ├── $biomarker_negative         # CRP- subgroup predictions
-# │   └── $prevalence                 # CRP prevalence used for weighting
-# └── predictions$[tlr/tmb_braf]      # Same structure for other biomarkers
+# PREDICTIONS OBJECT STRUCTURE:
+# - predictions$control: Standard of care strategy
+#     - $os: Population OS curve
+#     - $pfs: Population PFS curve
+# - predictions$crp: CRP-guided strategy
+#     - $os/$pfs: Population-weighted curves
+#     - $biomarker_positive: CRP+ subgroup predictions
+#     - $biomarker_negative: CRP- subgroup predictions
+#     - $prevalence: CRP prevalence used for weighting
+# - predictions$tmb_braf: TMB/BRAF-guided strategy
+#     - same structure as CRP
 # ===============================================================================
