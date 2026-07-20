@@ -72,10 +72,6 @@ if (!snapshot_status %in% c("baseline", "fixed")) {
   stop("Invalid snapshot status. Must be 'baseline' or 'fixed'.")
 }
 
-# Save parameters as environment variables (survives rm(list = ls()))
-Sys.setenv(SNAPSHOT_ISSUE_NUMBER = issue_number)
-Sys.setenv(SNAPSHOT_STATUS = snapshot_status)
-
 # ============================================================================
 # Step 1: Run model-independent setup
 # ============================================================================
@@ -96,10 +92,6 @@ source(here::here("scripts/R/analysis/05_basecase_input_parameters.R"))
 cat("[5/5] Running 06_sampling.R (may take time if cache doesn't exist)...\n")
 source(here::here("scripts/R/analysis/06_sampling.R"))
 
-# Save parameters for recovery after re-sourcing (survives rm(list = ls()))
-Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
-Sys.setenv(SNAPSHOT_ANALYSIS_SEED = as.character(analysis_seed))
-
 # ============================================================================
 # Step 2: Source helper functions
 # ============================================================================
@@ -109,12 +101,6 @@ source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/cea_helpers.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/snapshot_utils.R"))
-
-# Recover environment variables
-issue_number <- Sys.getenv("SNAPSHOT_ISSUE_NUMBER")
-snapshot_status <- Sys.getenv("SNAPSHOT_STATUS")
-wtp_val <- as.numeric(Sys.getenv("SNAPSHOT_WTP"))
-analysis_seed <- as.integer(Sys.getenv("SNAPSHOT_ANALYSIS_SEED"))
 
 # ============================================================================
 # Step 3: Run analysis for the single economic model
@@ -157,7 +143,7 @@ nmb_at_wtp <- data.frame(
   Strategy = base_results$Strategy,
   Cost = base_results$Cost,
   Effect = base_results$Effect,
-  NMB = base_results$Effect * wtp_val - base_results$Cost
+  NMB = base_results$Effect * WTP - base_results$Cost
 )
 nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
 

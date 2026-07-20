@@ -4,11 +4,13 @@
 library(here)
 
 run_survival_ordering_test <- function() {
+  caller_owned_value <- "preserved"
   source("scripts/R/analysis/02_setup_and_global_variables.R", local = environment())
   source("scripts/R/analysis/03_biomarker_strategies.R", local = environment())
   source("scripts/R/analysis/04_parametric_survival_analysis.R", local = environment())
 
   stopifnot(
+    identical(caller_owned_value, "preserved"),
     length(time_points) == 521L,
     isTRUE(basecase_ordering_check$ordered),
     identical(basecase_ordering_check$n_violations, 0L),

@@ -74,35 +74,3 @@ strategies_df <- transform(
 
 # Print the final dataframe
 print(strategies_df)
-
-# Clean up intermediate variables
-rm(list = setdiff(ls(), c(
-  # Main datasets
-  "data", "data_control", "data_crp", "data_tlr", "data_tmb_braf",
-  # Model parameters and structure
-  "strategies", "biomarkers", "strategies_df",
-  # Biomarker prevalence
-  "p_crp", "p_tlr", "p_tmb_braf",
-  # Other essential variables from 02_setup_and_global_variables.R
-  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim",
-  "analysis_seed", "dr",
-  # Population parameters for EVPPI scaling
-  "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
-  # Model configuration switches
-  "UTILITY_SOURCE", "utility_source_label",
-  # Model config helper functions
-  "get_strategies", "get_control_strategy", "get_biomarkers",
-  "get_model_configs", "get_current_model_config",
-  "get_strategy_metadata", "strategy_display_name", "biomarker_cost_key",
-  "biomarker_prevalence_key", "sync_biomarker_test_costs",
-  "get_strategy_formula", "get_control_formula", "get_model_formulas",
-  "print_model_config", "CONTROL_STRATEGY", "ALL_STRATEGIES", "ALL_BIOMARKERS",
-  "STRATEGY_METADATA", "BIOMARKER_METADATA",
-  # Cache-path helper functions
-  "resolve_util_label", "sampling_cache_path", "psa_obj_path", "psa_params_path",
-  "evppi_path", "scenario_evppi_path",
-  # Parameter-distribution helper functions
-  "parameter_distribution_spec", "distribution_parameters",
-  "create_parameter_distributions", "create_parameter_groups",
-  "configure_parameter_distributions"
-)))

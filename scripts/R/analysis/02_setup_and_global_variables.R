@@ -1,5 +1,3 @@
-# clear all objects from the work space
-rm(list = ls())
 # load faster binary format
 rds_path <- here::here("data", "tidy", "METIMMOX.rds")
 if (file.exists(rds_path)) {
