@@ -127,7 +127,9 @@ run_enriched_analysis <- function(verbose = TRUE) {
 
     os_exp <- l_params_base$p_os[[paste0(biomarker, "_pos_OS")]]
     pfs_exp <- l_params_base$p_pfs[[paste0(biomarker, "_pos_PFS")]]
-    states_exp <- partitioned_survival_states(os_exp, pfs_exp, TRUE)
+    states_exp <- partitioned_survival_states(
+      os_exp, pfs_exp, paste0("enriched ", biomarker, "+ experimental")
+    )
 
     exp_outcomes <- calculate_outcomes(
       params = l_params_base,
@@ -143,7 +145,8 @@ run_enriched_analysis <- function(verbose = TRUE) {
 
     ctrl_curves <- generate_enriched_control_curves(biomarker)
     states_ctrl <- partitioned_survival_states(
-      ctrl_curves$os, ctrl_curves$pfs, TRUE
+      ctrl_curves$os, ctrl_curves$pfs,
+      paste0("enriched ", biomarker, "+ control")
     )
 
     ctrl_outcomes <- calculate_outcomes(

@@ -2,10 +2,23 @@
 #'
 #' @param os Overall-survival probabilities
 #' @param pfs Progression-free-survival probabilities
-#' @param enforce_order Whether to cap PFS at OS before deriving states
+#' @param curve_label Label identifying the curve in an ordering-violation error.
+#'   When supplied, OS >= PFS is asserted. Callers that have already run
+#'   model_fun()'s enforce_survival_ordering() leave this NULL.
 #' @return List containing progression-free, progressed, and dead occupancy
-partitioned_survival_states <- function(os, pfs, enforce_order = FALSE) {
-  if (enforce_order) pfs <- pmin(pfs, os)
+partitioned_survival_states <- function(os, pfs, curve_label = NULL) {
+  if (!is.null(curve_label)) {
+    violation_idx <- which(pfs > os)
+    if (length(violation_idx) > 0) {
+      stop(
+        "Survival ordering invariant failed for ", curve_label,
+        ": PFS exceeded OS at ", length(violation_idx), " time points",
+        "; max excess=",
+        signif(max(pfs[violation_idx] - os[violation_idx]), 4),
+        ". Refit using ordering-constrained distribution selection."
+      )
+    }
+  }
   states <- list(p_pf = pfs, p_p = pmax(os - pfs, 0), p_d = 1 - os)
   states$p_pf[1] <- 1
   states$p_p[1] <- states$p_d[1] <- 0
