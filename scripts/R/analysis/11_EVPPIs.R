@@ -198,7 +198,7 @@ if (nrow(evppi_results) > 0) {
   
   if (nrow(high_priority_params) > 0) {
     cat("\nHigh-priority parameters for future research (>", high_priority_threshold * 100, "% of EVPI):\n")
-    for (i in 1:nrow(high_priority_params)) {
+    for (i in seq_len(nrow(high_priority_params))) {
       cat("  ", high_priority_params$parameter[i], ": €", 
           round(high_priority_params$evppi[i], 4), "\n")
     }

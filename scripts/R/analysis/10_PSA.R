@@ -29,7 +29,7 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
   cat("PSA cache files detected. Attempting to load...\n")
 
   # Try to load cached PSA results
-  tryCatch({
+  psa_cached <- tryCatch({
     psa_obj <- readRDS(cache_file_obj)
     psa_params <- readRDS(cache_file_params)
 
@@ -90,16 +90,16 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
       cat("    - Modified:", format(file.info(cache_file_obj)$mtime, "%Y-%m-%d %H:%M:%S"), "\n")
       cat("    - Simulations:", psa_obj$n_sim, "\n")
       cat("    - Strategies:", psa_obj$n_strategies, "\n")
-      psa_cached <- TRUE
     } else {
       cat("  Cache invalid. PSA will be regenerated.\n")
-      psa_cached <- FALSE
     }
+
+    cache_valid
 
   }, error = function(e) {
     cat("  Error loading cache:", e$message, "\n")
     cat("  PSA will be regenerated.\n")
-    psa_cached <- FALSE
+    FALSE
   })
 }
 

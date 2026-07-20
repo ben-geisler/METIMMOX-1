@@ -22,7 +22,6 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   
   # Define quarterly cycles for follow-up costs
   quarterly_cycles <- seq(13, n_cycles, by = 13)
-  quarterly_cycles <- quarterly_cycles[quarterly_cycles <= n_cycles]
   
   # Calculate QALYs
   qalys_pf <- p_pf * params$u_np * cl

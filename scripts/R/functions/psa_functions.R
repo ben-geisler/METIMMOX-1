@@ -123,7 +123,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   start_time <- Sys.time()
   
   # Run the model for each simulation
-  for (i in 1:n_sim) {
+  for (i in seq_len(n_sim)) {
     # Create parameter set for this simulation
     sim_params <- l_params_base
     

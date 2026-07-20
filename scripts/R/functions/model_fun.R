@@ -36,7 +36,7 @@
 # Provides clear error messages when parameters are misconfigured.
 # ===============================================================================
 
-validate_model_params <- function(params, time_horizon) {
+validate_model_params <- function(params) {
   # Required scalar parameters - economic biomarker prevalence values
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
@@ -137,7 +137,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   }
 
   # Validate input parameters (Issue #47)
-  validate_model_params(params, time_horizon)
+  validate_model_params(params)
 
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
@@ -175,9 +175,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # This helps track iterations where resampled model fitting failed and the
     # original model was substituted, which reduces uncertainty estimation
     control_failed <- isTRUE(sampling_models$control$samples[[sim_idx]]$failed)
-    biomarker_failed <- any(sapply(biomarkers_to_run, function(bm) {
+    biomarker_failed <- any(vapply(biomarkers_to_run, function(bm) {
       isTRUE(sampling_models[[bm]]$samples[[sim_idx]]$failed)
-    }))
+    }, logical(1)))
     if (control_failed || biomarker_failed) {
       fallback_used <- TRUE
     }

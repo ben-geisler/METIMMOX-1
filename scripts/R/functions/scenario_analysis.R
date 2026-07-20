@@ -279,7 +279,7 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
     )
 
     # Run EVPPI for each scenario in this cost group (varying WTP)
-    for (j in 1:nrow(cost_group)) {
+    for (j in seq_len(nrow(cost_group))) {
       scenario_results <- run_scenario_evppi(
         scenario_row = cost_group[j, ],
         psa_obj = psa_result$psa_obj,

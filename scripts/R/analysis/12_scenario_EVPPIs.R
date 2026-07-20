@@ -153,7 +153,7 @@ if (nrow(evppi_all_scenarios) > 0) {
       head(3)
 
     if (nrow(scen_data) > 0) {
-      for (i in 1:nrow(scen_data)) {
+      for (i in seq_len(nrow(scen_data))) {
         cat(sprintf("  %s: €%.2fM\n",
                     scen_data$parameter[i],
                     scen_data$evppi_population_millions[i]))
@@ -194,7 +194,7 @@ if (nrow(evppi_all_scenarios) > 0) {
       cat("\n  Top 3 Parameters:\n")
       top3 <- scenario_data[1:min(3, nrow(scenario_data)),
                             c("parameter", "evppi", "evppi_percent_of_evpi")]
-      for (i in 1:nrow(top3)) {
+      for (i in seq_len(nrow(top3))) {
         cat("    ", i, ". ", top3$parameter[i], ": EUR",
             round(top3$evppi[i], 2), " (", round(top3$evppi_percent_of_evpi[i], 1), "%)\n", sep = "")
       }

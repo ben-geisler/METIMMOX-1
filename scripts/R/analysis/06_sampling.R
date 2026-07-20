@@ -90,7 +90,7 @@ sample_correlated_survival <- function(formula_os, formula_pfs, data,
   # Set up progress reporting
   start_time <- Sys.time()
 
-  for (i in 1:n_samples) {
+  for (i in seq_len(n_samples)) {
     # Resample patients with replacement (non-parametric resampling)
     resample_idx <- sample(1:n_patients, size = n_patients, replace = TRUE)
     resampled_data <- data[resample_idx, ]

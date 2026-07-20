@@ -120,7 +120,7 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
     # Calculate expected NMB for each parameter combination
     expected_nmbs <- numeric(nrow(param_combinations))
     
-    for (i in 1:nrow(param_combinations)) {
+    for (i in seq_len(nrow(param_combinations))) {
       param_values_combo <- as.numeric(param_combinations[i, ])
       
       # Find closest simulations (using Euclidean distance)
@@ -385,7 +385,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
     tmb_braf = "tmb_braf.*:Rx"
   )
 
-  result <- data.frame(row.names = 1:n_sim)
+  result <- data.frame(row.names = seq_len(n_sim))
 
   cat("\n=== Extracting interaction coefficients from sampling models ===\n")
 
@@ -404,7 +404,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
       n_failed <- 0
       n_missing <- 0
 
-      for (i in 1:n_sim) {
+      for (i in seq_len(n_sim)) {
         sample_i <- strategy_models$samples[[i]]
 
         if (is.null(sample_i)) {
@@ -448,7 +448,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
   }
 
   # Remove columns that are entirely NA (coefficient not in model formula)
-  all_na_cols <- sapply(result, function(x) all(is.na(x)))
+  all_na_cols <- vapply(result, function(x) all(is.na(x)), logical(1))
   if (any(all_na_cols)) {
     cat("  Removing all-NA columns:",
         paste(names(result)[all_na_cols], collapse = ", "), "\n")

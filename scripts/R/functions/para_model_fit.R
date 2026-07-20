@@ -71,7 +71,7 @@ fit_all_direct <- function(fit_data,
   
   # Strip background data from fitted models
   if(strip_bkgr_dat) {
-    for (i in 1:length(fit_dists)) {
+    for (i in seq_along(fit_dists)) {
       tryCatch(fits[[i]][["data"]] <- NULL,
                error = function(e) NULL)
     }

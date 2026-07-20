@@ -106,7 +106,7 @@ base_optimal <- base_result$Strategy[which.max(base_nmb)]
 cat("Optimal strategy in base case:", base_optimal, "\n\n")
 
 # For each parameter, run the model at min and max values
-for (i in 1:nrow(dsa_ranges)) {
+for (i in seq_len(nrow(dsa_ranges))) {
   param_name <- dsa_ranges$pars[i]
   param_min <- dsa_ranges$min[i]
   param_max <- dsa_ranges$max[i]
@@ -180,7 +180,9 @@ if (has_models) {
 
   # Get list of distributions to test from the shared economic model
   distributions_tested <- names(models$full$os)
-  distributions_tested <- distributions_tested[!sapply(models$full$os[distributions_tested], is.null)]
+  distributions_tested <- distributions_tested[
+    !vapply(models$full$os[distributions_tested], is.null, logical(1))
+  ]
 
   cat("Distributions to test:", paste(distributions_tested, collapse = ", "), "\n")
 
@@ -441,7 +443,7 @@ for (strat in strategies) {
     top_params <- param_impact[1:top_n, ]
     
     # Add to summary
-    for (i in 1:top_n) {
+    for (i in seq_len(top_n)) {
       impact_summary <- rbind(impact_summary, data.frame(
         Strategy = strat,
         Rank = i,
