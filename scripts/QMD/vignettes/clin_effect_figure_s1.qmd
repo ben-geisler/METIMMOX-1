@@ -21,22 +21,10 @@ setup_report(
 )
 ```
 
-```{r dag-define, include=FALSE}
-# `dag` is provided by dag_helpers.R.
-```
-
 ```{r dag-plot, fig.width=9, fig.height=7}
 #| fig-cap: "Causal DAG for the METIMMOX-1 analysis. Node colour indicates role: blue = exposure (T), red = outcomes (PFS, OS), green = latent variable (U), grey = covariates and intermediate variables. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF and T x CRP on PFS and OS. Node abbreviations: T = Treatment; TxTMB = Treatment x TMB/BRAF interaction; TxCRP = Treatment x CRP interaction; TLR = Tumour Lesion Reduction; U = Unmeasured confounders."
 
-tidy_dag <- tidy_dagitty(dag)
-tidy_dag$data <- tidy_dag$data |>
-  mutate(
-    y    = 1 - y,
-    yend = if_else(is.na(yend), NA_real_, 1 - yend),
-    hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
-  )
-
-p <- plot_dag(tidy_dag, dag_palette)
+p <- plot_full_dag(dag)
 print(p)
 ```
 

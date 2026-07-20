@@ -1,5 +1,5 @@
 ---
-title: "Table 4: Base-Case Cost-Effectiveness Results"
+title: "Tables 4 and S5: Cost-Effectiveness Results"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -36,9 +36,23 @@ display_df <- icer_df %>%
     ICER = mapply(format_icer, ICER, Status)
   ) %>%
   select(Strategy_Label, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER)
+
+display_df_s5 <- icer_df %>%
+  filter(Strategy %in% names(strategy_labels)) %>%
+  mutate(
+    Strategy = strategy_labels[Strategy],
+    Cost = format_eur(Cost),
+    QALYs = sprintf("%.3f", Effect),
+    Inc_Cost = format_eur(Inc_Cost),
+    Inc_QALYs = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
+    ICER = format_icer(ICER, Status)
+  ) %>%
+  select(Strategy, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER, Status)
 ```
 
-```{r display-table}
+## Table 4
+
+```{r display-table-4}
 kable(
   display_df,
   caption = "Table 4: Base-case cost-effectiveness results, overall MSS population",
@@ -59,10 +73,26 @@ kable(
   )
 ```
 
+## Table S5
+
+```{r display-table-s5}
+kable(
+  display_df_s5,
+  caption = "Table S5: Full cost-effectiveness results, overall MSS population",
+  format = "html",
+  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
+                "Incremental QALYs", "ICER", "Status"),
+  align = c("l", rep("r", 5), "l")
+) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 12)
+```
+
 ```{r save-table, include=FALSE}
 tables_dir <- here("tables")
 if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
 write.csv(icer_df, file = here("tables", "table_4.csv"), row.names = FALSE)
+write.csv(icer_df, file = here("tables", "table_s5.csv"), row.names = FALSE)
 ```
 
-Table 4 has been saved to `tables/table_4.csv`.
+Tables 4 and S5 have been saved to `tables/table_4.csv` and `tables/table_s5.csv`.

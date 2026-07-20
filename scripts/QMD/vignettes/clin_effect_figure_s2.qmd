@@ -21,22 +21,10 @@ setup_report(
 )
 ```
 
-```{r dag-sens-define, include=FALSE}
-# `dag_sens` is provided by dag_helpers.R.
-```
-
 ```{r dag-sens-plot, fig.width=9, fig.height=7}
 #| fig-cap: "Sensitivity DAG for the METIMMOX-1 analysis, excluding the Age -> TMB_BRAF and Sex -> TMB_BRAF edges while retaining all other assumed causal relationships. Solid arrows denote assumed causal effects; dashed arrows indicate the hypothesised interaction effects of T x TMB/BRAF and T x CRP on PFS and OS."
 
-tidy_dag_sens <- tidy_dagitty(dag_sens)
-tidy_dag_sens$data <- tidy_dag_sens$data |>
-  mutate(
-    y    = 1 - y,
-    yend = if_else(is.na(yend), NA_real_, 1 - yend),
-    hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
-  )
-
-p <- plot_dag(tidy_dag_sens, dag_palette)
+p <- plot_full_dag(dag_sens)
 print(p)
 ```
 

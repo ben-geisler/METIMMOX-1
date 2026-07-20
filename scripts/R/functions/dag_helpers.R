@@ -110,6 +110,25 @@ dag_palette <- c(
   latent = "#1b7837"
 )
 
+#' Prepare a full DAG for plotting
+#'
+#' Flips the y-axis coordinates used by DAGitty and marks the hypothesised
+#' treatment-by-biomarker interaction edges.
+#'
+#' @param dag_obj A dagitty object using the canonical interaction-node names.
+prepare_full_dag <- function(dag_obj) {
+  tidy_dag_obj <- ggdag::tidy_dagitty(dag_obj)
+  tidy_dag_obj$data <- tidy_dag_obj$data |>
+    dplyr::mutate(
+      y = 1 - y,
+      yend = dplyr::if_else(is.na(yend), NA_real_, 1 - yend),
+      hyp = !is.na(to) &
+        name %in% c("TxTMB", "TxCRP") &
+        to %in% c("PFS", "OS")
+    )
+  tidy_dag_obj
+}
+
 #' Plot a prepared full or sensitivity DAG
 #'
 #' @param tidy_dag_obj A ggdag tidy object with a logical `hyp` edge column.
@@ -178,6 +197,105 @@ plot_dag <- function(tidy_dag_obj, caption_pal = dag_palette) {
       legend.position = "bottom",
       legend.text = ggplot2::element_text(size = 10),
       legend.title = ggplot2::element_text(size = 10, face = "bold"),
+      plot.margin = ggplot2::margin(10, 10, 10, 10)
+    )
+}
+
+#' Prepare and plot a canonical full or sensitivity DAG
+#'
+#' @param dag_obj A dagitty object using the canonical interaction-node names.
+#' @param caption_pal Named node-status colour palette.
+plot_full_dag <- function(dag_obj, caption_pal = dag_palette) {
+  plot_dag(prepare_full_dag(dag_obj), caption_pal)
+}
+
+#' Plot the simplified clinical-effectiveness DAG
+#'
+#' @param dag_obj The simplified dagitty object.
+plot_simple_dag <- function(dag_obj = dag_simple) {
+  tidy_dag_obj <- ggdag::tidy_dagitty(dag_obj)
+  tidy_dag_obj$data <- tidy_dag_obj$data |>
+    dplyr::mutate(
+      y = 1 - y,
+      yend = dplyr::if_else(is.na(yend), NA_real_, 1 - yend),
+      hyp = !is.na(to) & name == "T" & to == "Survival"
+    )
+
+  node_data <- ggdag::node_status(tidy_dag_obj)$data |>
+    dplyr::distinct(name, x, y, status) |>
+    dplyr::mutate(
+      status = dplyr::if_else(is.na(status), "covariate", status),
+      label = dplyr::case_when(
+        name == "Demo" ~ "Age/<br>Sex",
+        name == "Survival" ~ "PFS/<br>OS",
+        name == "TMB_BRAF" ~ "TMB/<br><i>BRAF</i>",
+        TRUE ~ name
+      )
+    )
+  x_range <- range(node_data$x, na.rm = TRUE)
+  y_range <- range(node_data$y, na.rm = TRUE)
+  palette <- c(
+    exposure = "#2166ac",
+    outcome = "#b2182b",
+    covariate = "grey55"
+  )
+
+  ggplot2::ggplot(
+    tidy_dag_obj$data,
+    ggplot2::aes(x = x, y = y, xend = xend, yend = yend)
+  ) +
+    ggdag::geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), !hyp)
+    ) +
+    ggdag::geom_dag_edges_link(
+      data = function(d) dplyr::filter(d, !is.na(to), hyp),
+      edge_linetype = "dashed"
+    ) +
+    ggdag::geom_dag_node(
+      data = node_data,
+      mapping = ggplot2::aes(x = x, y = y, colour = status, fill = status),
+      size = 24,
+      inherit.aes = FALSE
+    ) +
+    ggtext::geom_richtext(
+      data = node_data,
+      mapping = ggplot2::aes(x = x, y = y, label = label),
+      colour = "white",
+      size = 3.5,
+      fill = NA,
+      label.color = NA,
+      label.padding = grid::unit(c(0, 0, 0, 0), "pt"),
+      inherit.aes = FALSE
+    ) +
+    ggplot2::coord_equal(
+      xlim = c(x_range[1] - diff(x_range) * 0.10, x_range[2] + diff(x_range) * 0.10),
+      ylim = c(y_range[1] - diff(y_range) * 0.10, y_range[2] + diff(y_range) * 0.10),
+      clip = "off"
+    ) +
+    ggdag::theme_dag() +
+    ggplot2::scale_color_manual(
+      name = NULL,
+      values = palette,
+      breaks = c("exposure", "outcome", "covariate"),
+      labels = c(
+        exposure = "Treatment",
+        outcome = "Outcome",
+        covariate = "Covariates and biomarkers"
+      )
+    ) +
+    ggplot2::scale_fill_manual(
+      name = NULL,
+      values = palette,
+      breaks = c("exposure", "outcome", "covariate"),
+      labels = c(
+        exposure = "Treatment",
+        outcome = "Outcome",
+        covariate = "Covariates and biomarkers"
+      )
+    ) +
+    ggplot2::theme(
+      legend.position = "bottom",
+      legend.text = ggplot2::element_text(size = 10),
       plot.margin = ggplot2::margin(10, 10, 10, 10)
     )
 }
