@@ -3,17 +3,13 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, dampack)
 
-# Script 06 defines these groups in the sequential pipeline. Keep script 09
-# runnable on its own (including from reports that intentionally skip sampling).
-if (!exists("param_groups")) {
-  param_groups <- list(
-    drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-    test_costs = c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood"),
-    other_costs = c("c_other_visit", "c_other_baseline",
-                    "c_other_follow", "c_other_last"),
-    utilities = c("u_np", "u_p"),
-    prevalence = c("p_crp", "p_tmb_braf")
-  )
+# Script 06 normally creates these objects. Recreate them cheaply when DSA is
+# run on its own or from a report that intentionally skips survival resampling.
+if (!exists("param_distributions") || !exists("param_groups")) {
+  parameter_config <- configure_parameter_distributions(l_params_base)
+  param_distributions <- parameter_config$distributions
+  param_groups <- parameter_config$groups
+  rm(parameter_config)
 }
 
 # Load functions
@@ -31,13 +27,9 @@ if (length(time_points) != time_points_length) {
   stop("time_points length inconsistency detected")
 }
 
-# Define parameters to vary in sensitivity analysis (matches EVPPI parameters)
-biomarker_cost_params <- unique(unname(biomarker_cost_key()))
-prevalence_params <- unname(biomarker_prevalence_key())
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params, "c_test_CT",
-              "c_test_blood", "c_other_visit", "c_other_baseline",
-              "c_other_follow", "c_other_last", "u_np", "u_p",
-              prevalence_params)
+# Define parameters to vary in sensitivity analysis (matches EVPPI parameters).
+dsa_pars <- names(param_distributions)
+prevalence_params <- param_groups$prevalence
 
 # Use base case values as starting point
 dsa_basecase <- l_params_base
@@ -52,7 +44,7 @@ dsa_ranges <- data.frame(
 )
 
 # Cap utility values at 1.0
-utility_params <- c("u_np", "u_p")
+utility_params <- param_groups$utilities
 for (param in utility_params) {
   idx <- which(dsa_ranges$pars == param)
   if (length(idx) > 0) {
@@ -70,9 +62,7 @@ for (param in prevalence_params) {
 }
 
 # Ensure cost parameters are non-negative (Issue #48)
-cost_params <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params, "c_test_CT",
-                 "c_test_blood", "c_other_visit", "c_other_baseline",
-                 "c_other_follow", "c_other_last")
+cost_params <- param_groups$all_costs
 for (param in cost_params) {
   idx <- which(dsa_ranges$pars == param)
   if (length(idx) > 0) {

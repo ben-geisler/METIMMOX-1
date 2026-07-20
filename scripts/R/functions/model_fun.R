@@ -180,7 +180,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # -----------------------------------------------------------------------
     # CONTROL STRATEGY: Population-averaged predictions over FULL population
     # -----------------------------------------------------------------------
-    # Uses generate_psa_control_predictions() to predict for ALL patients in
+    # Uses the shared population-averaging helper to predict for ALL patients in
     # data_complete (both arms), matching the base case methodology which
     # also averages over the full population. The control model only uses
     # Age + sex, so treatment arm assignment is irrelevant.
@@ -188,19 +188,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     tryCatch({
       # Use population averaging over FULL population (data_complete)
       # to match base case which also uses data_complete for control predictions
-      os_control <- generate_psa_control_predictions(
+      os_control <- generate_psa_population_averaged_predictions(
         sampling_model_list = sampling_models[[control_strategy]],
         outcome = "os",
         sample_idx = sim_idx,
-        data_control_original = data_complete,
+        data_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 
-      pfs_control <- generate_psa_control_predictions(
+      pfs_control <- generate_psa_population_averaged_predictions(
         sampling_model_list = sampling_models[[control_strategy]],
         outcome = "pfs",
         sample_idx = sim_idx,
-        data_control_original = data_complete,
+        data_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 

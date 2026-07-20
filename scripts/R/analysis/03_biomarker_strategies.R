@@ -100,5 +100,9 @@ rm(list = setdiff(ls(), c(
   "STRATEGY_METADATA", "BIOMARKER_METADATA",
   # Cache-path helper functions
   "resolve_util_label", "sampling_cache_path", "psa_obj_path", "psa_params_path",
-  "evppi_path", "scenario_evppi_path"
+  "evppi_path", "scenario_evppi_path",
+  # Parameter-distribution helper functions
+  "parameter_distribution_spec", "distribution_parameters",
+  "create_parameter_distributions", "create_parameter_groups",
+  "configure_parameter_distributions"
 )))

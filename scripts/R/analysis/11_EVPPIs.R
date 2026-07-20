@@ -105,11 +105,11 @@ cat("  - EVPI (dampack::calc_evpi):", round(evpi_manual, 2), "\n")
 # RUN EVPPI ANALYSIS
 # ===============================================================================
 
-# Define parameters for EVPPI analysis
-evppi_params <- c("c_drug_nivo", "c_drug_FLOX", unique(unname(biomarker_cost_key())),
-                  "c_test_CT", "u_np", "u_p", "c_other_last",
-                  "c_test_blood", "c_other_visit", "c_other_baseline",
-                  "c_other_follow", unname(biomarker_prevalence_key()))
+# Define parameters for EVPPI analysis from the shared uncertainty specification.
+if (!exists("param_distributions")) {
+  stop("'param_distributions' not found. Run 06_sampling.R first.")
+}
+evppi_params <- names(param_distributions)
 
 # Add interaction parameters if available
 if (interaction_params_available) {

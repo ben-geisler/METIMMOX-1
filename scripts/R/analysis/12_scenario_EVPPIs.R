@@ -46,20 +46,16 @@ cat("\n")
 # DEFINE BASE PARAMETERS FOR EVPPI ANALYSIS
 # ===============================================================================
 # Cost, utility, prevalence, and interaction parameters for the single economic model.
-
-biomarker_cost_params <- unique(unname(biomarker_cost_key()))
-prevalence_params <- unname(biomarker_prevalence_key())
-evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params,
-                       "c_test_CT", "u_np", "u_p", "c_other_last",
-                       "c_test_blood", "c_other_visit", "c_other_baseline",
-                       "c_other_follow")
+if (!exists("param_distributions") || !exists("param_groups")) {
+  stop("Parameter distributions not found. Run 06_sampling.R first.")
+}
 
 # ===============================================================================
 # RUN SCENARIOS
 # ===============================================================================
 
 # Assemble full evppi_params (matches 11_EVPPIs.R)
-evppi_params <- c(evppi_params_base, prevalence_params)
+evppi_params <- names(param_distributions)
 
 # Add interaction parameters if available
 if (exists("get_interaction_evppi_params")) {
@@ -71,19 +67,8 @@ if (exists("get_interaction_evppi_params")) {
   }
 }
 
-# Build parameter groups for joint EVPPI analysis
-# (matches the definitions in 06_sampling.R + 11_EVPPIs.R)
-scenario_param_groups <- list(
-  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CT", "c_test_blood", biomarker_cost_params),
-  other_costs = c("c_other_visit", "c_other_baseline",
-                  "c_other_follow", "c_other_last"),
-  all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                "c_test_blood", biomarker_cost_params, "c_other_visit",
-                "c_other_baseline", "c_other_follow", "c_other_last"),
-  utilities = c("u_np", "u_p"),
-  prevalence = prevalence_params
-)
+# Build parameter groups for joint EVPPI analysis from the same specification.
+scenario_param_groups <- param_groups
 
 # Add interaction parameter groups if available
 if (exists("add_interaction_param_groups")) {

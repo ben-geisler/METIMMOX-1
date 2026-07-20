@@ -28,10 +28,10 @@ theme_set(theme_minimal() +
 ```
 
 ```{r run-dsa, include=FALSE}
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", unique(unname(biomarker_cost_key())), "c_test_CT",
-              "c_test_blood", "c_other_visit", "c_other_baseline",
-              "c_other_follow", "c_other_last", "u_np", "u_p",
-              unname(biomarker_prevalence_key()))
+parameter_config <- configure_parameter_distributions(l_params_base)
+param_distributions <- parameter_config$distributions
+param_groups <- parameter_config$groups
+dsa_pars <- names(param_distributions)
 
 dsa_ranges <- data.frame(
   pars = dsa_pars,
@@ -40,11 +40,11 @@ dsa_ranges <- data.frame(
   stringsAsFactors = FALSE
 )
 
-for (param in c("u_np", "u_p")) {
+for (param in param_groups$utilities) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
 }
-for (param in unname(biomarker_prevalence_key())) {
+for (param in param_groups$prevalence) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)

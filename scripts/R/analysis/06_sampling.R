@@ -22,16 +22,6 @@ if (!dir.exists(cache_dir)) {
 cache_file <- sampling_cache_path(n_samples, cache_dir)
 sampling_seed <- analysis_seed
 
-# Check for old cache files in deprecated location
-old_cache_dir <- here("data", "bootstrap_cache")
-old_cache_file <- here(old_cache_dir, paste0("boot_models_n", n_samples, "_full.rds"))
-if (file.exists(old_cache_file) && !file.exists(cache_file)) {
-  cat("\n*** NOTICE: Old cache file detected ***\n")
-  cat("Old location:", old_cache_file, "\n")
-  cat("New location:", cache_file, "\n")
-  cat("Please regenerate sampling models. Old cache will not be used.\n\n")
-}
-
 # ===============================================================================
 # MODEL FORMULA SELECTION
 # ===============================================================================
@@ -44,6 +34,9 @@ if (file.exists(old_cache_file) && !file.exists(cache_file)) {
 # Source model configurations if not already loaded
 if (!exists("get_model_configs")) {
   source(here::here("scripts/R/functions/model_configs.R"))
+}
+if (!exists("extract_all_survival_probabilities", mode = "function")) {
+  source(here::here("scripts/R/functions/prediction_functions.R"))
 }
 
 # Get model configuration
@@ -180,31 +173,27 @@ sampling_cache_seed_matches <- function(sampling_models, components,
 # Returns a list with $os and $pfs distribution names.
 # ===============================================================================
 
-resolve_best_distributions <- function(biomarker = NULL) {
+resolve_best_distributions <- function(models) {
   default_dist <- "weibull"
 
-  if (!exists("models", envir = .GlobalEnv)) {
-    cat("WARNING: 'models' object not found. Using default distribution:", default_dist, "\n")
+  if (is.null(models)) {
+    cat("WARNING: 'models' is NULL. Using default distribution:", default_dist, "\n")
     return(list(os = default_dist, pfs = default_dist))
   }
 
-  m <- get("models", envir = .GlobalEnv)
-
-  os_dist <- m$best_fit$os_distribution
-  pfs_dist <- m$best_fit$pfs_distribution
+  os_dist <- models$best_fit$os_distribution
+  pfs_dist <- models$best_fit$pfs_distribution
 
   if (is.null(os_dist)) {
-    cat("WARNING: No global best OS distribution found. Using default:", default_dist, "\n")
+    cat("WARNING: No selected OS distribution found. Using default:", default_dist, "\n")
     os_dist <- default_dist
   }
   if (is.null(pfs_dist)) {
-    cat("WARNING: No global best PFS distribution found. Using default:", default_dist, "\n")
+    cat("WARNING: No selected PFS distribution found. Using default:", default_dist, "\n")
     pfs_dist <- default_dist
   }
 
-  cat("Resolved distributions - OS:", os_dist, "| PFS:", pfs_dist,
-      if (!is.null(biomarker)) paste0(" (biomarker: ", biomarker, ")") else "(control/global)",
-      "\n")
+  cat("Resolved distributions - OS:", os_dist, "| PFS:", pfs_dist, "\n")
   return(list(os = os_dist, pfs = pfs_dist))
 }
 
@@ -223,7 +212,7 @@ if (file.exists(cache_file)) {
   if (is.list(sampling_models) &&
       "control" %in% names(sampling_models) &&
       all(biomarkers_to_validate %in% names(sampling_models))) {
-    expected_dists <- resolve_best_distributions()
+    expected_dists <- resolve_best_distributions(models)
     cache_components <- c("control", biomarkers_to_validate)
     distributions_match <- all(vapply(
       cache_components,
@@ -292,13 +281,13 @@ if (is.null(sampling_models)) {
 
   # Sample control models with age and sex adjustments
   cat("\nSampling control strategy...\n")
-  control_dists <- resolve_best_distributions(biomarker = NULL)
+  selected_dists <- resolve_best_distributions(models)
   sampling_models[[get_control_strategy()]] <- sample_correlated_survival(
     formula_os = control_os_formula,
     formula_pfs = control_pfs_formula,
     data = data_control,
-    dist_os = control_dists$os,
-    dist_pfs = control_dists$pfs,
+    dist_os = selected_dists$os,
+    dist_pfs = selected_dists$pfs,
     n_samples = n_samples,
     seed = sampling_seed
   )
@@ -312,15 +301,12 @@ if (is.null(sampling_models)) {
     os_formula <- create_biomarker_formula("os", biomarker)
     pfs_formula <- create_biomarker_formula("pfs", biomarker)
 
-    # Resolve AIC-best distributions for this biomarker
-    bm_dists <- resolve_best_distributions(biomarker = biomarker)
-
     sampling_models[[biomarker]] <- sample_correlated_survival(
       formula_os = os_formula,
       formula_pfs = pfs_formula,
       data = data,
-      dist_os = bm_dists$os,
-      dist_pfs = bm_dists$pfs,
+      dist_os = selected_dists$os,
+      dist_pfs = selected_dists$pfs,
       n_samples = n_samples,
       seed = sampling_seed
     )
@@ -347,362 +333,89 @@ cat("- Number of resampled models:",
 cat("- PFS and OS are CORRELATED within each resampled model\n")
 
 # ===============================================================================
-# PREDICTION FUNCTION FOR SAMPLED MODELS - CORRECTED VERSION
-# ===============================================================================
-
-generate_sampling_predictions <- function(sampling_model_list, outcome = "os",
-                                         sample_idx = 1, newdata = NULL,
-                                         time_points) {
-  # Make sure time_points passed in has correct length
-  if (length(time_points) != time_points_length) {
-    warning("time_points length mismatch in sampling predictions")
-    time_points <- time_points[1:min(length(time_points), time_points_length)]
-  }
-
-  # Extract the specific sampled model
-  sampled_model <- sampling_model_list$samples[[sample_idx]]
-
-  if (is.null(sampled_model)) {
-    warning("Sampled model ", sample_idx, " is NULL, using original model")
-    model_obj <- if (outcome == "os") sampling_model_list$original_os else sampling_model_list$original_pfs
-  } else {
-    # Get the model for the requested outcome (os or pfs)
-    model_obj <- sampled_model[[outcome]]$model
-  }
-
-  # Generate predictions using the resampled model
-  tryCatch({
-    if (is.null(newdata)) {
-      # No newdata - predict at mean covariate values
-      pred <- predict(model_obj, type = "survival", times = time_points)
-    } else {
-      # With newdata - predict for specific covariate combination
-      pred <- predict(model_obj, newdata = newdata, type = "survival", times = time_points)
-    }
-    
-    # ========================================================================
-    # CRITICAL FIX: Extract survival predictions from nested tibble structure
-    # ========================================================================
-    # predict.flexsurvreg returns a tibble with a list column called .pred
-    # Each element of .pred is itself a tibble with columns:
-    #   .eval_time (the time points) and .pred_survival (the survival probabilities)
-    
-    if (is.data.frame(pred) && ".pred" %in% names(pred)) {
-      # This is the nested tibble structure from flexsurv
-      
-      if (is.null(newdata)) {
-        # Without newdata: multiple rows (one per patient in original data)
-        # We want to take the MEAN across all patients
-        # Extract all survival predictions and average them
-        all_surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
-        
-        # Convert list to matrix (each column is a patient, each row is a time point)
-        surv_matrix <- do.call(cbind, all_surv_probs)
-        
-        # Take row means (average across patients at each time point)
-        mean_survival <- rowMeans(surv_matrix, na.rm = TRUE)
-        
-        return(mean_survival)
-        
-      } else {
-        # With newdata: typically just one row
-        # Extract the survival predictions for that row
-        if (nrow(pred) == 1) {
-          # Single prediction
-          survival_pred <- pred$.pred[[1]]$.pred_survival
-          return(survival_pred)
-        } else {
-          # Multiple rows in newdata - take the first one
-          warning("Multiple rows in newdata, using first row")
-          survival_pred <- pred$.pred[[1]]$.pred_survival
-          return(survival_pred)
-        }
-      }
-    } else {
-      warning("Unexpected prediction structure from flexsurvreg")
-      return(rep(NA, length(time_points)))
-    }
-    
-  }, error = function(e) {
-    warning("Prediction failed for resampled model ", sample_idx, ": ", conditionMessage(e))
-    # Return NA vector of correct length
-    return(rep(NA, length(time_points)))
-  })
-}
-
-# ===============================================================================
 # PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS (NON-SURVIVAL PARAMETERS)
 # ===============================================================================
 
-# Create parameter distributions for other model parameters
-# Cost parameters (assume 20% coefficient of variation for costs)
-cv_costs <- 0.2
-
-# Function to calculate gamma parameters from mean and CV
-get_gamma_params <- function(mean_val, cv) {
-  shape <- 1/cv^2
-  rate <- shape/mean_val
-  return(list(shape = shape, rate = rate))
-}
-
-# Drug costs - gamma distributions
-dist_c_drug_nivo <- c(list(dist = "gamma"), 
-                      get_gamma_params(l_params_base$c_drug_nivo, cv_costs))
-
-dist_c_drug_FLOX <- c(list(dist = "gamma"), 
-                      get_gamma_params(l_params_base$c_drug_FLOX, cv_costs))
-
-# Test costs - gamma distributions
-dist_c_test_CT <- c(list(dist = "gamma"), 
-                    get_gamma_params(l_params_base$c_test_CT, cv_costs))
-
-dist_c_test_blood <- c(list(dist = "gamma"), 
-                       get_gamma_params(l_params_base$c_test_blood, cv_costs))
-
-biomarker_cost_keys <- unique(unname(biomarker_cost_key()))
-biomarker_cost_distributions <- setNames(
-  lapply(biomarker_cost_keys, function(cost_key) {
-    c(list(dist = "gamma"), get_gamma_params(l_params_base[[cost_key]], cv_costs))
-  }),
-  biomarker_cost_keys
-)
-
-# Other costs - gamma distributions
-dist_c_other_visit <- c(list(dist = "gamma"), 
-                        get_gamma_params(l_params_base$c_other_visit, cv_costs))
-
-dist_c_other_baseline <- c(list(dist = "gamma"), 
-                           get_gamma_params(l_params_base$c_other_baseline, cv_costs))
-
-dist_c_other_follow <- c(list(dist = "gamma"), 
-                         get_gamma_params(l_params_base$c_other_follow, cv_costs))
-
-dist_c_other_last <- c(list(dist = "gamma"), 
-                       get_gamma_params(l_params_base$c_other_last, cv_costs))
-
-
-# Utility parameters - beta distributions (bounded between 0 and 1)
-# Using method of moments to get alpha and beta parameters
-get_beta_params <- function(mean_val, cv) {
-  var_val <- (mean_val * cv)^2
-  alpha <- mean_val * (mean_val * (1 - mean_val) / var_val - 1)
-  beta <- (1 - mean_val) * (mean_val * (1 - mean_val) / var_val - 1)
-  return(list(shape1 = alpha, shape2 = beta))
-}
-
-cv_utilities <- 0.15  # 15% CV for utilities
-dist_u_np <- c(list(dist = "beta"), get_beta_params(l_params_base$u_np, cv_utilities))
-dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utilities))
-
-# Prevalence parameters - beta distributions (bounded between 0 and 1)
-cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
-prevalence_keys <- unname(biomarker_prevalence_key())
-prevalence_distributions <- setNames(
-  lapply(prevalence_keys, function(prevalence_key) {
-    c(list(dist = "beta"),
-      get_beta_params(l_params_base[[prevalence_key]], cv_prevalence))
-  }),
-  prevalence_keys
-)
-
-# Create comprehensive parameter distributions list
-# Note: Survival curves are NOT in this list - they come from bootstrap samples
-param_distributions <- c(list(
-  # Cost parameters
-  c_drug_nivo = dist_c_drug_nivo,
-  c_drug_FLOX = dist_c_drug_FLOX,
-  c_test_CT = dist_c_test_CT,
-  c_test_blood = dist_c_test_blood
-), biomarker_cost_distributions, list(
-  c_other_visit = dist_c_other_visit,
-  c_other_baseline = dist_c_other_baseline,
-  c_other_follow = dist_c_other_follow,
-  c_other_last = dist_c_other_last,
-
-  # Utility parameters
-  u_np = dist_u_np,
-  u_p = dist_u_p
-), prevalence_distributions)
-
-# Parameter groups for sensitivity analysis (EVPPI)
-param_groups <- list(
-  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CT", "c_test_blood", biomarker_cost_keys),
-  other_costs = c("c_other_visit", "c_other_baseline",
-                  "c_other_follow", "c_other_last"),
-  all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                biomarker_cost_keys, "c_other_visit", "c_other_baseline",
-                "c_other_follow", "c_other_last"),
-  utilities = c("u_np", "u_p"),
-  prevalence = prevalence_keys
-)
+# Survival curves are excluded because they come from correlated resampling.
+parameter_config <- configure_parameter_distributions(l_params_base)
+param_distributions <- parameter_config$distributions
+param_groups <- parameter_config$groups
+parameter_spec <- parameter_config$spec
+rm(parameter_config)
 
 # ===============================================================================
-# POPULATION AVERAGING FUNCTION FOR PSA (BIOMARKER STRATEGIES)
+# POPULATION AVERAGING FUNCTION FOR PSA
 # ===============================================================================
-# This function implements population averaging for biomarker strategies in PSA.
-# Uses the ORIGINAL population (not resampled cohort) for predictions.
-# This ensures:
-#   1. Consistent population across all PSA iterations
-#   2. True biomarker prevalence is maintained
-#   3. External validity - predicting for actual patient population
-# The resampled model captures parameter uncertainty; population averaging
-# integrates out patient heterogeneity.
-# See GitHub Issues #73, #74, #87 for methodology discussion.
-# ===============================================================================
+# With biomarker_name = NULL, predicts the control curve over all patients.
+# Otherwise predicts the biomarker-positive/experimental and
+# biomarker-negative/control subgroup curves using one shared code path.
 
 generate_psa_population_averaged_predictions <- function(sampling_model_list,
-                                                         biomarker_name,
+                                                         biomarker_name = NULL,
                                                          outcome = "os",
                                                          sample_idx = 1,
                                                          data_original,
                                                          time_points) {
-
-  # Extract the resampled model
   sampled_model <- sampling_model_list$samples[[sample_idx]]
-
-  if (is.null(sampled_model)) {
-    warning("Sampled model ", sample_idx, " is NULL - returning NULL")
-    return(NULL)
-  }
-
-  # Get the model object for this outcome
-  model_obj <- sampled_model[[outcome]]$model
-
-  if (is.null(model_obj)) {
-    warning("Model object for ", outcome, " is NULL in sample ", sample_idx)
-    return(NULL)
-  }
-
-  # Get treatment levels
-  exp_rx <- levels(data_original$Rx)[2]
-  ctrl_rx <- levels(data_original$Rx)[1]
-
-  # Initialize outputs
-  survival_pos <- NULL
-  survival_neg <- NULL
-
-  # -----------------------------------------------------------------------
-  # BIOMARKER-POSITIVE SUBGROUP: All biomarker+ patients with experimental Rx
-  # -----------------------------------------------------------------------
-  # Use ORIGINAL population, not resampled cohort
-  # Use explicit type conversion for robustness (works with factor, character, or numeric)
-  biomarker_pos_data <- data_original[
-    as.numeric(as.character(data_original[[biomarker_name]])) == 1, ]
-
-  if (nrow(biomarker_pos_data) > 0) {
-    # Assign experimental treatment to all biomarker+ patients
-    biomarker_pos_data$Rx <- factor(exp_rx, levels = levels(data_original$Rx))
-
-    # Predict for ALL biomarker+ patients in original population
-    tryCatch({
-      pred_pos <- predict(model_obj, newdata = biomarker_pos_data,
-                         type = "survival", times = time_points)
-
-      # Extract and average survival probabilities across all patients
-      all_surv_probs_pos <- lapply(pred_pos$.pred, function(x) x$.pred_survival)
-      surv_matrix_pos <- do.call(cbind, all_surv_probs_pos)
-      survival_pos <- rowMeans(surv_matrix_pos, na.rm = TRUE)
-
-    }, error = function(e) {
-      warning("Prediction failed for ", biomarker_name, "+ in sim ", sample_idx,
-              ": ", conditionMessage(e))
-      survival_pos <<- rep(NA, length(time_points))
-    })
-  } else {
-    warning("No biomarker+ patients in original data for ", biomarker_name)
-    survival_pos <- rep(NA, length(time_points))
-  }
-
-  # -----------------------------------------------------------------------
-  # BIOMARKER-NEGATIVE SUBGROUP: All biomarker- patients with control Rx
-  # -----------------------------------------------------------------------
-  # Use ORIGINAL population, not resampled cohort
-  # Use explicit type conversion for robustness (works with factor, character, or numeric)
-  biomarker_neg_data <- data_original[
-    as.numeric(as.character(data_original[[biomarker_name]])) == 0, ]
-
-  if (nrow(biomarker_neg_data) > 0) {
-    # Assign control treatment to all biomarker- patients
-    biomarker_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_original$Rx))
-
-    # Predict for ALL biomarker- patients in original population
-    tryCatch({
-      pred_neg <- predict(model_obj, newdata = biomarker_neg_data,
-                         type = "survival", times = time_points)
-
-      # Extract and average survival probabilities across all patients
-      all_surv_probs_neg <- lapply(pred_neg$.pred, function(x) x$.pred_survival)
-      surv_matrix_neg <- do.call(cbind, all_surv_probs_neg)
-      survival_neg <- rowMeans(surv_matrix_neg, na.rm = TRUE)
-
-    }, error = function(e) {
-      warning("Prediction failed for ", biomarker_name, "- in sim ", sample_idx,
-              ": ", conditionMessage(e))
-      survival_neg <<- rep(NA, length(time_points))
-    })
-  } else {
-    warning("No biomarker- patients in original data for ", biomarker_name)
-    survival_neg <- rep(NA, length(time_points))
-  }
-
-  # Return both subgroup predictions
-  return(list(
-    positive = survival_pos,
-    negative = survival_neg
-  ))
-}
-
-# ===============================================================================
-# CONTROL STRATEGY PSA PREDICTION FUNCTION
-# ===============================================================================
-# This function generates population-averaged predictions for the CONTROL strategy
-# using the ORIGINAL control population (not the resampled cohort).
-# This matches the methodology used for biomarker strategies (Issue #97).
-# ===============================================================================
-
-generate_psa_control_predictions <- function(sampling_model_list,
-                                              outcome = "os",
-                                              sample_idx = 1,
-                                              data_control_original,
-                                              time_points) {
-  # Extract the resampled model
-  sampled_model <- sampling_model_list$samples[[sample_idx]]
-
   if (is.null(sampled_model)) {
     warning("Sampled model ", sample_idx, " is NULL - returning NULL")
     return(NULL)
   }
 
   model_obj <- sampled_model[[outcome]]$model
-
   if (is.null(model_obj)) {
     warning("Model object for ", outcome, " is NULL in sample ", sample_idx)
     return(NULL)
   }
 
-  # Predict for ALL patients in original control population
-  tryCatch({
-    pred <- predict(model_obj, newdata = data_control_original,
-                    type = "survival", times = time_points)
+  average_prediction <- function(subgroup_data, rx_level = NULL, label) {
+    if (nrow(subgroup_data) == 0) {
+      warning("No patients in ", label, " subgroup")
+      return(rep(NA_real_, length(time_points)))
+    }
+    if (!is.null(rx_level)) {
+      subgroup_data$Rx <- factor(rx_level, levels = levels(data_original$Rx))
+    }
+    tryCatch({
+      prediction <- predict(
+        model_obj, newdata = subgroup_data,
+        type = "survival", times = time_points
+      )
+      rowMeans(extract_all_survival_probabilities(prediction), na.rm = TRUE)
+    }, error = function(e) {
+      warning("Prediction failed for ", label, " in sim ", sample_idx,
+              ": ", conditionMessage(e))
+      rep(NA_real_, length(time_points))
+    })
+  }
 
-    # Extract and average survival probabilities across all patients
-    all_surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
-    surv_matrix <- do.call(cbind, all_surv_probs)
-    survival_avg <- rowMeans(surv_matrix, na.rm = TRUE)
+  if (is.null(biomarker_name)) {
+    return(average_prediction(data_original, label = "control"))
+  }
 
-    return(survival_avg)
-
-  }, error = function(e) {
-    warning("Prediction failed for control in sim ", sample_idx,
-            ": ", conditionMessage(e))
-    return(rep(NA, length(time_points)))
+  status <- as.numeric(as.character(data_original[[biomarker_name]]))
+  subgroup_spec <- list(
+    positive = list(status = 1, rx = levels(data_original$Rx)[2], suffix = "+"),
+    negative = list(status = 0, rx = levels(data_original$Rx)[1], suffix = "-")
+  )
+  lapply(subgroup_spec, function(subgroup) {
+    average_prediction(
+      data_original[status == subgroup$status, , drop = FALSE],
+      rx_level = subgroup$rx,
+      label = paste0(biomarker_name, subgroup$suffix)
+    )
   })
 }
 
+cost_cv <- unique(parameter_spec$cv[parameter_spec$distribution == "gamma"])
+utility_cv <- unique(parameter_spec$cv[parameter_spec$group == "utilities"])
+if (length(cost_cv) != 1 || length(utility_cv) != 1) {
+  stop("Expected one coefficient of variation per parameter category.")
+}
+
 cat("\n=== Parameter distributions configured ===\n")
-cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
-cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
+cat("- Cost parameters: Gamma distributions (CV =", cost_cv, ")\n")
+cat("- Utility parameters: Beta distributions (CV =", utility_cv, ")\n")
 cat("- Survival parameters: Correlated resampled models (n =",
     sampling_models[[get_control_strategy()]]$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")

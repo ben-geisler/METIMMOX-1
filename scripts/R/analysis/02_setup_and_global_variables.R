@@ -66,6 +66,9 @@ source(here::here("scripts/R/functions/model_configs.R"))
 # Source cache-path helpers (utility label + cached-object file locations).
 source(here::here("scripts/R/functions/cache_paths.R"))
 
+# Source the shared PSA/DSA/EVPPI parameter specification.
+source(here::here("scripts/R/functions/parameter_distributions.R"))
+
 # Set global strategy and biomarker vectors for backward compatibility.
 # Economic analyses include control, CRP, and TMB/BRAF only.
 strategies <- get_strategies()
