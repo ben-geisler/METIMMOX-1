@@ -1,4 +1,4 @@
 "Strategy","Mean_Cost","Mean_QALY","Prob_CE"
-"Standard care","EUR 21,187","1.30","95.7%"
-"CRP-guided","EUR 54,085","1.42","2.6%"
-"TMB/BRAF-guided","EUR 62,615","1.39","1.8%"
+"Standard of Care","EUR 21,088","1.29","95.8%"
+"CRP-guided","EUR 54,019","1.41","2.7%"
+"TMB/BRAF-guided","EUR 62,460","1.39","1.5%"
