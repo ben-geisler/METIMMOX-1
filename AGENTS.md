@@ -6,14 +6,14 @@ METIMMOX-1 is a cost-effectiveness analysis comparing biomarker-guided immunothe
 
 ## Version Control
 
-This repository uses Git for version control. **Important**: The agent should NOT commit changes or push to remote repositories. All Git operations (commits, pushes, branch management, pull requests) are the responsibility of the user.
+This repository uses Git for version control. The agent may create local commits as part of analysis workflows. Pushing to remote repositories remains the responsibility of the user unless the user explicitly requests it.
 
 The agent may:
 - Read Git status and history for context
 - Create or modify files as part of analysis workflows
+- Create local commits
 
 The agent should NOT:
-- Create commits
 - Push changes to remote repositories
 - Modify Git configuration
 - Create or manage branches
@@ -266,7 +266,7 @@ Control: ~ Age + sex
 
 There is no model-structure switch or multi-structure comparison layer. The economic model is the joint CRP + TMB/BRAF formula defined in [model_configs.R](scripts/R/functions/model_configs.R).
 
-**Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [04_parametric_survival_analysis.R](scripts/R/analysis/04_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained as historical descriptions; they do not define the executable model-selection procedure or the current single-model structure.
+**Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [04_parametric_survival_analysis.R](scripts/R/analysis/04_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**.
 
 **When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
 
@@ -405,6 +405,12 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`). Renamed from the legacy `multi_model_cea.R`.
 - **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
 
+**Shared Report and Clinical-Analysis Helpers**:
+- **[assoc_tests.R](scripts/R/functions/assoc_tests.R)**: Shared categorical/continuous association tests and formatted results used by DAG reports and vignettes
+- **[cox_extract.R](scripts/R/functions/cox_extract.R)**: Shared Cox-model fitting and tidy coefficient extraction helpers
+- **[dag_helpers.R](scripts/R/functions/dag_helpers.R)**: Shared DAG construction, styling, validation, and rendering helpers
+- **[report_format.R](scripts/R/functions/report_format.R)**: Shared strategy/biomarker labels and economic-result number formatting
+
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions, population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
@@ -412,7 +418,6 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 
 **Survival Modeling Functions**:
 - **[para_model_fit.R](scripts/R/functions/para_model_fit.R)**: Parametric model fitting helper
-- **[para_model_fit_table.R](scripts/R/functions/para_model_fit_table.R)**: Model fit summary tables
 - **[survival_plots.R](scripts/R/functions/survival_plots.R)**: Survival curve visualization
 
 **Visualization Functions**:
@@ -427,11 +432,11 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 
 ### Treatment Schedules
 
-Treatment administration is defined by binary vectors indicating weeks when treatments are given:
+Treatment administration is defined by binary vectors aligned to `time_points <- seq(0, time_horizon, by = 1)`. Because R vectors are one-indexed while the model grid starts at week 0, vector position `i` represents modeled week `i - 1`; schedule subscripts in the code are positions, not week numbers.
 
-**Nivolumab** (experimental): Weeks 5, 7, 13, 15, 29, 31, 37, 39
-**FLOX experimental**: Weeks 1, 3, 9, 11, 25, 27, 33, 35
-**FLOX control**: All 16 time points from both nivolumab and FLOX experimental schedules
+**Nivolumab** (experimental): Modeled weeks 4, 6, 12, 14, 28, 30, 36, 38 (R positions 5, 7, 13, 15, 29, 31, 37, 39)
+**FLOX experimental**: Modeled weeks 0, 2, 8, 10, 24, 26, 32, 34 (R positions 1, 3, 9, 11, 25, 27, 33, 35)
+**FLOX control**: Modeled weeks 0, 2, 4, 6, 8, 10, 12, 14, 24, 26, 28, 30, 32, 34, 36, 38 (the union of the two experimental-arm position sets)
 
 **Monitoring**:
 - CT scans: Baseline + every 12 weeks
@@ -474,6 +479,20 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
 - **Tests directory** (`scripts/R/tests/`): Validation and diagnostic scripts
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports with embedded R code
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact reports and technical documentation
+
+### Retired Files
+
+The B1 cleanup deleted obsolete or superseded files rather than leaving dead entry points in the live tree:
+
+- `scripts/R/analysis/14b_scenario_preview.R` (the full scenario cache from `12_scenario_EVPPIs.R` is the only supported scenario output)
+- `scripts/R/functions/para_model_fit_table.R`
+- `scripts/R/tests/diagnose_prediction_failures.R`
+- `scripts/R/tests/test_psa_error_rate.R`
+- `scripts/R/tests/test_sampling_convergence_rate.R`
+- `scripts/R/tests/test_sex_variable_fix.R`
+- `scripts/R/tests/tlr.R`
+
+`scripts/R/tests/fit_independent_biomarker_models.R` was moved to `scripts/R/archive/fit_independent_biomarker_models.R`; it was archived, not deleted.
 
 ## Quarto Report Architecture
 
@@ -772,7 +791,6 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 The test suite in `scripts/R/tests/` includes:
 
-- **[test_sex_variable_fix.R](scripts/R/tests/test_sex_variable_fix.R)**: Validates Issue #72 fix (sex variable type consistency in resampled models)
 - **[test_survival_ordering.R](scripts/R/tests/test_survival_ordering.R)**: Verifies deterministic OS >= PFS ordering and PSA-only handling of resampled crossings
 - **[test_biomarker_test_cost_mapping.R](scripts/R/tests/test_biomarker_test_cost_mapping.R)**: Verifies data-driven diagnostic-test cost assignment
 - **[test_canonical_prevalence.R](scripts/R/tests/test_canonical_prevalence.R)**: Verifies weighted curves use canonical full-cohort biomarker prevalence
@@ -781,11 +799,6 @@ The test suite in `scripts/R/tests/` includes:
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
 - **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
-
-**Diagnostic Scripts** (for troubleshooting PSA/sampling issues):
-- **diagnose_prediction_failures.R**: Analyzes why PSA iterations fail
-- **test_psa_error_rate.R**: Quantifies PSA iteration error rates
-- **test_sampling_convergence_rate.R**: Tests sampling convergence
 
 ### Test protocol and results
 
