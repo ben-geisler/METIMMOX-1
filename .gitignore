@@ -45,6 +45,23 @@ data/output/*
 .Ruserdata
 Rplots.pdf
 
+# Regenerable rendered reports and embedded-resource vignettes
+/report_Opus/report.pdf
+/report_Opus/report.html
+/scripts/QMD/report/*.pdf
+/scripts/QMD/technical_docs/*.pdf
+/scripts/QMD/vignettes/*.html
+
+# Orphaned CommonMark render assets (no tracked Markdown references)
+/scripts/QMD/report/CEA_files/
+/scripts/QMD/report/EVPPIs_files/
+/scripts/QMD/report/OWSA_files/
+/scripts/QMD/report/biomarker_decomposition_files/
+/scripts/QMD/report/biosimilar_scenario_files/
+/scripts/QMD/report/enriched_population_files/
+/scripts/QMD/report/para_models_files/
+/scripts/QMD/report/scenario_effect_files/
+
 # Windows artifacts
 nul
 
