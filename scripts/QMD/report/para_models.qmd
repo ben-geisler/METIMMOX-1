@@ -33,7 +33,7 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "06", "07"),
+  sources = c("02", "03", "04", "05"),
   funs = c("report_format"),
   packages = c(REPORT_PACKAGES, "survminer"),
   set_theme = FALSE

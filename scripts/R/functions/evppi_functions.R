@@ -360,7 +360,7 @@ calculate_population_evppi <- function(evppi_per_patient,
 #' These can be appended to psa_params for EVPPI analysis of treatment effect
 #' modification parameters.
 #'
-#' @param sampling_models List of resampled models (global variable from 08_sampling.R)
+#' @param sampling_models List of resampled models (global variable from 06_sampling.R)
 #' @param n_sim Number of PSA iterations (must match length of sampling_models$*$samples)
 #' @return Data frame with n_sim rows and columns for each extracted interaction
 #'   coefficient (b_<biomarker>_rx_<outcome>). Returns NULL if extraction fails.

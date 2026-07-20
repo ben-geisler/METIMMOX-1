@@ -29,7 +29,7 @@ This repository is designed for **health economists** and researchers developing
 METIMMOX-1/
 ├── scripts/
 │   ├── R/
-│   │   ├── analysis/      # Numbered analysis scripts (01-15, main workflow)
+│   │   ├── analysis/      # Numbered analysis scripts (01-13)
 │   │   ├── functions/     # Reusable model functions
 │   │   ├── tests/         # Validation and diagnostic scripts
 │   │   └── archive/       # Deprecated code (for reference)
@@ -45,7 +45,7 @@ METIMMOX-1/
 
 ### Key Files
 
-- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
+- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-13) containing the core decision-analytic model workflow and optional extended analyses
 - **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
 - **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
@@ -120,26 +120,26 @@ source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
 
 # Survival analysis
-source("scripts/R/analysis/06_parametric_survival_analysis.R")
-source("scripts/R/analysis/07_basecase_input_parameters.R")
+source("scripts/R/analysis/04_parametric_survival_analysis.R")
+source("scripts/R/analysis/05_basecase_input_parameters.R")
 
 # Survival resampling (first run generates cache - takes time)
-source("scripts/R/analysis/08_sampling.R")
+source("scripts/R/analysis/06_sampling.R")
 
 # Model execution
-source("scripts/R/analysis/09_traces.R")
-source("scripts/R/analysis/10_basecase_analysis.R")
+source("scripts/R/analysis/07_traces.R")
+source("scripts/R/analysis/08_basecase_analysis.R")
 
 # Sensitivity analyses
-source("scripts/R/analysis/11_DSA.R")   # Deterministic sensitivity analysis
-source("scripts/R/analysis/12_PSA.R")   # Probabilistic sensitivity analysis
-source("scripts/R/analysis/13_EVPPIs.R") # Expected value of perfect partial information
+source("scripts/R/analysis/09_DSA.R")   # Deterministic sensitivity analysis
+source("scripts/R/analysis/10_PSA.R")   # Probabilistic sensitivity analysis
+source("scripts/R/analysis/11_EVPPIs.R") # Expected value of perfect partial information
 ```
 
 **Notes**:
-- Scripts 04-05 are supplementary RMarkdown files, not part of the main pipeline
+- The obsolete `04_baseline_characteristics.Rmd` and `05_QALYs.Rmd` exploratory notebooks are retained in `scripts/R/archive/`; their reusable EQ-5D-5L scoring functions are in `scripts/R/functions/eq5d5l_utility.R`
 - The clinical trial dataset is confidential and not included in this repository
-- First runs of scripts 08 (sampling) and 12 (PSA) generate caches and may take significant time; subsequent runs are much faster
+- First runs of scripts 06 (sampling) and 10 (PSA) generate caches and may take significant time; subsequent runs are much faster
 
 ### Optional and Extended Analyses
 
@@ -147,13 +147,15 @@ Additional analysis scripts provide extended functionality:
 
 ```r
 # Extended analyses (optional)
-source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
-source("scripts/R/analysis/15_save_snapshot.R")    # Save results for bug fix impact assessment
+source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+
+# Standalone snapshot utility (run from a terminal, not with source())
+# Rscript scripts/R/analysis/13_save_snapshot.R <issue_number> <baseline|fixed>
 ```
 
 **When to use**:
-- `14_scenario_EVPPIs.R`: For scenario-specific value of information analysis
-- `15_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
+- `12_scenario_EVPPIs.R`: For scenario-specific value of information analysis
+- `13_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
 
 ### Generating Reports
 
@@ -185,7 +187,7 @@ Clinical/DAG/descriptive reports may be rendered to all declared formats. Econom
 8. **biomarker_decomposition.qmd** - Biomarker effect decomposition analysis
 9. **biomarker_distributions.qmd** - Biomarker distribution and prevalence sensitivity
 
-**Prerequisites**: All analysis scripts (02-13) must be run first to generate required data objects.
+**Prerequisites**: Run the scripts required by each report; the full core analysis runs scripts 02-11 in sequence, while scenario outputs additionally require script 12.
 
 ## Key Features
 

@@ -1,8 +1,8 @@
 # Regression test for the correlated-resampling failure fallback.
 
 # Evaluate only sample_correlated_survival() so this focused test does not run
-# the cache-generation side effects in 08_sampling.R.
-sampling_expressions <- parse("scripts/R/analysis/08_sampling.R")
+# the cache-generation side effects in 06_sampling.R.
+sampling_expressions <- parse("scripts/R/analysis/06_sampling.R")
 is_sampling_function <- vapply(sampling_expressions, function(expr) {
   is.call(expr) &&
     identical(expr[[1]], as.name("<-")) &&

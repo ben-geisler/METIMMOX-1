@@ -181,7 +181,7 @@ if (!is.null(before_snapshot) && !is.null(after_snapshot)) {
 
 # Interpretation
 
-This report expects the current single-model snapshot format produced by `scripts/R/analysis/15_save_snapshot.R`. If older snapshots contain obsolete multi-model components, `load_snapshot()` warns during render and the comparison table uses the top-level single-model results.
+This report expects the current single-model snapshot format produced by `scripts/R/analysis/13_save_snapshot.R`. If older snapshots contain obsolete multi-model components, `load_snapshot()` warns during render and the comparison table uses the top-level single-model results.
 
 ---
 

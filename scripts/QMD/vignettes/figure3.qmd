@@ -70,7 +70,7 @@ if (nrow(scatter_data) > 0) {
 
   print(p_ce)
 } else {
-  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+  cat("PSA cache not available. Run scripts/R/analysis/10_PSA.R first.")
 }
 ```
 

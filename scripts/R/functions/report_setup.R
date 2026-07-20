@@ -4,12 +4,12 @@
 # One call to set up a Quarto report environment: sets the common knitr chunk and
 # root-directory options, loads the shared package set, applies the shared ggplot
 # theme, and sources the requested analysis scripts (by number prefix, e.g. "02"
-# or "10b") and function files. Replaces the boilerplate setup chunk that was
+# or "08b") and function files. Replaces the boilerplate setup chunk that was
 # duplicated across the economic reports.
 #
 # Usage (in a report setup chunk):
 #   source(here::here("scripts/R/functions/report_setup.R"))
-#   setup_report(sources = c("02", "03", "06", "07"),
+#   setup_report(sources = c("02", "03", "04", "05"),
 #                funs    = c("model_fun", "calculate_outcomes", "cea_helpers"))
 # ===============================================================================
 
@@ -22,7 +22,7 @@ REPORT_PACKAGES <- c(
 #' Set up a Quarto report environment
 #'
 #' @param sources Character vector of analysis-script number prefixes to source,
-#'   in order (e.g. c("02", "03", "06", "07"), "10b", "11"). Each is resolved to
+#'   in order (e.g. c("02", "03", "04", "05"), "08b", "09"). Each is resolved to
 #'   the matching scripts/R/analysis/<prefix>_*.R file.
 #' @param funs Character vector of function-file basenames (without ".R") to
 #'   source from scripts/R/functions/.

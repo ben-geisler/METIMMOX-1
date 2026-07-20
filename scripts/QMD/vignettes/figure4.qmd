@@ -35,7 +35,7 @@ scenario_file <- scenario_evppi_path()
 if (!file.exists(scenario_file)) {
   stop(
     "Full scenario cache not found: ", scenario_file, ". Run ",
-    "scripts/R/analysis/14_scenario_EVPPIs.R before rendering Figure 4."
+    "scripts/R/analysis/12_scenario_EVPPIs.R before rendering Figure 4."
   )
 }
 scenario_cache <- readRDS(scenario_file)
@@ -85,7 +85,7 @@ if (nrow(ceac_data) > 0) {
 
   print(p_ceac)
 } else {
-  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+  cat("PSA cache not available. Run scripts/R/analysis/10_PSA.R first.")
 }
 ```
 

@@ -27,7 +27,7 @@ suppressMessages(suppressWarnings({
 }))
 
 invisible(capture.output(
-  source(here("scripts/R/analysis/10b_enriched_population_analysis.R"))
+  source(here("scripts/R/analysis/08b_enriched_population_analysis.R"))
 ))
 ```
 

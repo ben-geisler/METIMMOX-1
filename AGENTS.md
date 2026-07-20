@@ -71,8 +71,8 @@ R analysis scripts depend on functions defined in `scripts/R/functions/`. When r
 # For testing model_fun() and calculate_outcomes()
 source("scripts/R/analysis/02_setup_and_global_variables.R")  # Global vars: time_horizon, cl, dr, etc.
 source("scripts/R/analysis/03_biomarker_strategies.R")         # Biomarker definitions
-source("scripts/R/analysis/06_parametric_survival_analysis.R") # Fit survival models
-source("scripts/R/analysis/07_basecase_input_parameters.R")    # Parameter list: l_params_base
+source("scripts/R/analysis/04_parametric_survival_analysis.R") # Fit survival models
+source("scripts/R/analysis/05_basecase_input_parameters.R")    # Parameter list: l_params_base
 
 # Source required functions
 source("scripts/R/functions/model_fun.R")
@@ -99,8 +99,8 @@ result <- model_fun(l_params_base, determpsa = "det", return_traces = FALSE)
   setwd('c:/Users/benjampg/git/METIMMOX-1');
   source('scripts/R/analysis/02_setup_and_global_variables.R');
   source('scripts/R/analysis/03_biomarker_strategies.R');
-  source('scripts/R/analysis/06_parametric_survival_analysis.R');
-  source('scripts/R/analysis/07_basecase_input_parameters.R');
+  source('scripts/R/analysis/04_parametric_survival_analysis.R');
+  source('scripts/R/analysis/05_basecase_input_parameters.R');
   source('scripts/R/functions/model_fun.R');
   source('scripts/R/functions/calculate_outcomes.R');
   cat('Testing model_fun...\n');
@@ -122,25 +122,25 @@ source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
 
 # Survival analysis
-source("scripts/R/analysis/06_parametric_survival_analysis.R")
-source("scripts/R/analysis/07_basecase_input_parameters.R")
+source("scripts/R/analysis/04_parametric_survival_analysis.R")
+source("scripts/R/analysis/05_basecase_input_parameters.R")
 
 # Survival resampling (generates cache - takes time on first run)
-source("scripts/R/analysis/08_sampling.R")
+source("scripts/R/analysis/06_sampling.R")
 
 # Model execution
-source("scripts/R/analysis/09_traces.R")
-source("scripts/R/analysis/10_basecase_analysis.R")
-source("scripts/R/analysis/10b_enriched_population_analysis.R")  # Optional: enriched population CEA for economic biomarkers
+source("scripts/R/analysis/07_traces.R")
+source("scripts/R/analysis/08_basecase_analysis.R")
+source("scripts/R/analysis/08b_enriched_population_analysis.R")  # Optional: enriched population CEA for economic biomarkers
 
 # Sensitivity analyses
-source("scripts/R/analysis/11_DSA.R")  # Deterministic sensitivity analysis
-source("scripts/R/analysis/12_PSA.R")  # Probabilistic sensitivity analysis
-source("scripts/R/analysis/13_EVPPIs.R")  # Expected value of perfect partial information
+source("scripts/R/analysis/09_DSA.R")  # Deterministic sensitivity analysis
+source("scripts/R/analysis/10_PSA.R")  # Probabilistic sensitivity analysis
+source("scripts/R/analysis/11_EVPPIs.R")  # Expected value of perfect partial information
 
 # Extended analyses (optional)
-source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
-# 15_save_snapshot.R: optional, interactive, standalone -- run via Rscript with <issue#> <baseline|fixed>, not sourced
+source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+# 13_save_snapshot.R: optional, interactive, standalone -- run via Rscript with <issue#> <baseline|fixed>, not sourced
 ```
 
 ### Package Installation
@@ -176,8 +176,8 @@ pdftotext scripts/QMD/report/CEA.pdf - | grep -ciE '\btlr\b'   # economic report
 - `pdftotext` (poppler) is at `/mingw64/bin`; `pdftoppm` (needed for the Read tool's visual PDF rendering) is NOT installed — verify PDFs with `pdftotext`, not by reading them directly.
 
 **Prerequisites for rendering**:
-- All analysis scripts (02-13) must be run first to generate required data objects
-- Sampling cache must exist (from running [08_sampling.R](scripts/R/analysis/08_sampling.R))
+- Run the analysis scripts required by the report (up to 11 for the full core analysis; script 12 additionally generates scenario outputs)
+- Sampling cache must exist (from running [06_sampling.R](scripts/R/analysis/06_sampling.R))
 - Results objects (e.g., `cea_results`, `owsa_results`, `psa_results`, `evppi_results`) must be in the R environment or saved as `.rds` files
 
 ### Complete Analysis & Reporting Workflow
@@ -189,29 +189,29 @@ To generate all analysis results and reports from scratch:
 source("scripts/R/analysis/01_data_prep.R")
 source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
-source("scripts/R/analysis/06_parametric_survival_analysis.R")
-source("scripts/R/analysis/07_basecase_input_parameters.R")
-source("scripts/R/analysis/08_sampling.R")  # Takes time on first run
-source("scripts/R/analysis/09_traces.R")
-source("scripts/R/analysis/10_basecase_analysis.R")
-source("scripts/R/analysis/10b_enriched_population_analysis.R")  # Optional: enriched population CEA for economic biomarkers
-source("scripts/R/analysis/11_DSA.R")
-source("scripts/R/analysis/12_PSA.R")
-source("scripts/R/analysis/13_EVPPIs.R")
-source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Optional: scenario analysis
-# 15_save_snapshot.R: optional, interactive, standalone -- NOT sourced here.
-# Run separately: Rscript scripts/R/analysis/15_save_snapshot.R <issue#> <baseline|fixed>
+source("scripts/R/analysis/04_parametric_survival_analysis.R")
+source("scripts/R/analysis/05_basecase_input_parameters.R")
+source("scripts/R/analysis/06_sampling.R")  # Takes time on first run
+source("scripts/R/analysis/07_traces.R")
+source("scripts/R/analysis/08_basecase_analysis.R")
+source("scripts/R/analysis/08b_enriched_population_analysis.R")  # Optional: enriched population CEA for economic biomarkers
+source("scripts/R/analysis/09_DSA.R")
+source("scripts/R/analysis/10_PSA.R")
+source("scripts/R/analysis/11_EVPPIs.R")
+source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Optional: scenario analysis
+# 13_save_snapshot.R: optional, interactive, standalone -- NOT sourced here.
+# Run separately: Rscript scripts/R/analysis/13_save_snapshot.R <issue#> <baseline|fixed>
 
 # 2. Render reports (from terminal/command line)
 # quarto render scripts/QMD/report/
 ```
 
 **Running the pipeline from a clean / non-interactive session** (e.g. driving it with `Rscript`):
-- Attach packages first — only `01_data_prep.R` calls `p_load`, so `pacman::p_load(...)` the full set above before sourcing, or `09_traces.R` fails with `could not find function "ggplot"`.
-- `09_traces.R` assumes `model_fun()` is already loaded (scripts 10-15 source it themselves); source `model_fun.R`, `calculate_outcomes.R`, `prediction_functions.R` before it.
+- Attach packages first — only `01_data_prep.R` calls `p_load`, so `pacman::p_load(...)` the full set above before sourcing, or `07_traces.R` fails with `could not find function "ggplot"`.
+- `07_traces.R` assumes `model_fun()` is already loaded (scripts 08-13 source it themselves); source `model_fun.R`, `calculate_outcomes.R`, `prediction_functions.R` before it.
 - Wrap the source loop in a function — `02`/`03` call `rm(list=ls())` on the global env, which wipes a top-level driver's own variables (`source()` still runs each script in globalenv via `local=FALSE`).
-- `08_sampling.R` loads `sampling_models_n{n}_full.rds` if present (fast); only `12_PSA.R` (~20 min) and `14_scenario_EVPPIs.R` (~40 min) are slow at n=5000.
-- Scenario reports and publication vignettes require the full cache generated by `14_scenario_EVPPIs.R`.
+- `06_sampling.R` loads `sampling_models_n{n}_full.rds` if present (fast); only `10_PSA.R` (~20 min) and `12_scenario_EVPPIs.R` (~40 min) are slow at n=5000.
+- Scenario reports and publication vignettes require the full cache generated by `12_scenario_EVPPIs.R`.
 
 Or render reports individually in the desired order:
 ```bash
@@ -267,7 +267,7 @@ Control: ~ Age + sex
 
 There is no model-structure switch or multi-structure comparison layer. The economic model is the joint CRP + TMB/BRAF formula defined in [model_configs.R](scripts/R/functions/model_configs.R).
 
-**Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [06_parametric_survival_analysis.R](scripts/R/analysis/06_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained as historical descriptions; they do not define the executable model-selection procedure or the current single-model structure.
+**Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [04_parametric_survival_analysis.R](scripts/R/analysis/04_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained as historical descriptions; they do not define the executable model-selection procedure or the current single-model structure.
 
 **When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
 
@@ -297,13 +297,13 @@ Both approaches are methodologically valid for their respective analytical purpo
 
 ### Survival Resampling & Correlation
 
-The model uses **correlated survival resampling** ([08_sampling.R](scripts/R/analysis/08_sampling.R:103-200)) to maintain the correlation between PFS and OS:
+The model uses **correlated survival resampling** ([06_sampling.R](scripts/R/analysis/06_sampling.R:103-200)) to maintain the correlation between PFS and OS:
 
 - Both PFS and OS models are fitted to the **same resampled patient cohort**
 - Results are cached in `data/tidy/`
 - Cache file naming: `sampling_models_n{n_samples}_full.rds`
 
-**IMPORTANT**: The first run of `08_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
+**IMPORTANT**: The first run of `06_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
 
 ### Main Model Function
 
@@ -404,6 +404,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
 - **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`). Renamed from the legacy `multi_model_cea.R`.
+- **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
 
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
@@ -465,13 +466,12 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
 
 - **Numbered analysis scripts** (`scripts/R/analysis/`): Designed to run sequentially, building on previous steps
   - Scripts 01-03: Core setup and data preparation
-  - Scripts 04-05: Supplementary RMarkdown files (not part of main execution pipeline)
-  - Scripts 06-13: Main analysis pipeline
-  - Script 10b: Enriched population CEA for economic biomarker-positive populations (optional)
-  - Scripts 14-15: Extended analyses (scenario EVPPIs, snapshot saving)
-  - Script 14b: Quick scenario preview (500 iterations)
+  - Scripts 04-11: Main analysis pipeline
+  - Script 08b: Enriched population CEA for economic biomarker-positive populations (optional)
+  - Script 12: Extended scenario EVPPI analysis (optional)
+  - Script 13: Standalone snapshot utility (optional; run via `Rscript`, not sourced)
 - **Functions directory** (`scripts/R/functions/`): Reusable components that are sourced by analysis scripts
-- **Archive directory** (`scripts/R/archive/`): Deprecated/unused code preserved for reference
+- **Archive directory** (`scripts/R/archive/`): Deprecated/unused code preserved for reference, including the former baseline-characteristics and QALY exploratory notebooks
 - **Tests directory** (`scripts/R/tests/`): Validation and diagnostic scripts
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports with embedded R code
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact reports and technical documentation
@@ -490,50 +490,50 @@ The Quarto reports in `scripts/QMD/report/` are self-contained documents that:
 Each report has specific dependencies:
 
 **[para_models.qmd](scripts/QMD/report/para_models.qmd)** - Parametric Survival Modeling
-- **Sources**: 02, 03, 06
+- **Sources**: 02, 03, 04, 05
 - **Shows**: Survival model fits, AIC/BIC comparisons, goodness-of-fit diagnostics
 - **Models displayed**: Ordering-constrained, minimum-combined-AIC pair (currently gamma for OS and gamma for PFS) AND Weibull PH models for reference (issue #68)
 - **Tables include**: Model parameter exponents for clinical interpretation
 - **Note**: Economic survival fits use the single joint CRP + TMB/BRAF model
 
 **[clinical_effectiveness.qmd](scripts/QMD/report/clinical_effectiveness.qmd)** - Clinical Effectiveness Analysis
-- **Sources**: 02, 03, 06, 07
+- **Sources**: 02, 03 (with report-specific clinical models fitted in the document)
 - **Shows**: Baseline characteristics, clinical survival curves, life-years gained; may include TLR clinical analyses independent of the economic model
 
 **[input_parameters.qmd](scripts/QMD/report/input_parameters.qmd)** - Input Parameters Summary
-- **Sources**: 02, 03, 07
+- **Sources**: 02, 03, 04, 05
 - **Shows**: All model input parameters (costs, utilities, prevalence rates, treatment schedules)
 
 **[CEA.qmd](scripts/QMD/report/CEA.qmd)** - Cost-Effectiveness Analysis Report
-- **Sources**: 02, 03, 05, 06, 07, 08, 09, 10
-- **Requires**: Base case analysis results from script 10
+- **Sources**: 02, 03, 04, 05; runs the base case through shared helpers
+- **Requires**: PSA cache from script 10 for probabilistic outputs
 - **Shows**: Incremental cost-effectiveness ratios (ICERs), cost-effectiveness plane, decision tables
 
 **[OWSA.qmd](scripts/QMD/report/OWSA.qmd)** - One-Way Sensitivity Analysis (Deterministic)
-- **Sources**: 02, 03, 06, 07, 08, 11
-- **Requires**: DSA results from script 11
+- **Sources**: 02, 03, 04, 05, then 09
+- **Requires**: DSA results from script 09
 - **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters
 
 **[EVPPIs.qmd](scripts/QMD/report/EVPPIs.qmd)** - Value of Information Analysis
-- **Sources**: 02, 03, 06, 07, 08, 12, 13
-- **Requires**: PSA results (script 12) and EVPPI results (script 13)
+- **Sources**: 02, 03
+- **Requires**: PSA results (script 10) and EVPPI results (script 11)
 - **Shows**: Expected value of perfect information (EVPI), expected value of perfect partial information (EVPPI) for parameter groups
 
 **[scenario_effect.qmd](scripts/QMD/report/scenario_effect.qmd)** - Scenario Analysis
-- **Sources**: 02, 03, 06, 07, 08, scenario analysis scripts
+- **Sources**: 02, 03; loads scenario results generated by script 12
 - **Shows**: Alternative scenario results (e.g., different time horizons, discount rates)
 
 **[biosimilar_scenario.qmd](scripts/QMD/report/biosimilar_scenario.qmd)** - Biosimilar Nivolumab Pricing Scenario
-- **Sources**: 02, 03, 06, 07
+- **Sources**: 02, 03, 04, 05
 - **Shows**: ICER comparison for base case vs biosimilar pricing (EUR 13,923 vs EUR 4,641/dose) for the single joint economic model
 
 **[enriched_population.qmd](scripts/QMD/report/enriched_population.qmd)** - Enriched Population Analysis
-- **Sources**: 02, 03, 10b
+- **Sources**: 02, 03, 08b
 - **Shows**: Enriched (biomarker-positive) ICERs vs base case for CRP and TMB/BRAF
 - **Note**: Not cached; re-runs on each render. Requires sampling cache.
 
 **[biomarker_decomposition.qmd](scripts/QMD/report/biomarker_decomposition.qmd)** - Biomarker Effect Decomposition
-- **Sources**: 02, 03, 06, 07, 08, 10, 12
+- **Sources**: 02, 03, 04, 05
 - **Shows**: Decomposition of biomarker effects on cost-effectiveness outcomes
 
 **[biomarker_distributions.qmd](scripts/QMD/report/biomarker_distributions.qmd)** - Biomarker Distributions
@@ -667,8 +667,8 @@ Key points for the signature:
 
 ### Common Quarto Report Issues
 
-1. **"Object not found" errors**: Run the required analysis scripts first (especially 02, 03, 06-13)
-2. **Sampling cache missing**: Run [08_sampling.R](scripts/R/analysis/08_sampling.R) to generate sampling models
+1. **"Object not found" errors**: Run the required analysis scripts first (especially 02-11, in sequence)
+2. **Sampling cache missing**: Run [06_sampling.R](scripts/R/analysis/06_sampling.R) to generate sampling models
 3. **Rendering hangs**: Some reports (especially CEA, EVPPI) may take minutes to render due to re-sourcing analysis scripts
 4. **Stale caches after model changes**: Economic survival model or strategy-set changes require regeneration of sampling, PSA, EVPPI, scenario, and snapshot outputs.
 5. **Results changed after methodological updates**: If cost-effectiveness results differ from earlier versions, check if methodological fixes were applied. Issues #69 and #70 (Nov 2024) changed survival prediction methodology from reference patient to population averaging/individual sampling. This **should** change results - it's a methodological improvement. Regenerate both sampling cache and PSA cache after these fixes. See issue #64 for impact documentation approach.
@@ -681,7 +681,7 @@ The analysis uses several cache systems to speed up computation:
 
 **Location**: `data/tidy/sampling_models_n*.rds`
 **Purpose**: Cached correlated PFS/OS survival model fits
-**Generation**: Script [08_sampling.R](scripts/R/analysis/08_sampling.R) (~first run takes time)
+**Generation**: Script [06_sampling.R](scripts/R/analysis/06_sampling.R) (~first run takes time)
 **Size**: Hundreds of MB
 **When to regenerate**: Delete cache file when:
 - Survival model formulas change
@@ -695,15 +695,15 @@ The analysis uses several cache systems to speed up computation:
 cache_file <- here("data", "tidy",
                    paste0("sampling_models_n", n_samples, "_full.rds"))
 file.remove(cache_file)
-# Re-run 08_sampling.R
-source("scripts/R/analysis/08_sampling.R")
+# Re-run 06_sampling.R
+source("scripts/R/analysis/06_sampling.R")
 ```
 
 ### 2. PSA Cache (Analysis Results)
 
 **Location**: `data/tidy/psa_obj_{ipd|correct}.rds` and `psa_params_{ipd|correct}.rds`
 **Purpose**: Cached PSA simulation results (5000 runs)
-**Generation**: Script [12_PSA.R](scripts/R/analysis/12_PSA.R) (~20-60 minutes first run)
+**Generation**: Script [10_PSA.R](scripts/R/analysis/10_PSA.R) (~20-60 minutes first run)
 **Size**: ~660 KB total
 **When to regenerate**: Delete cache files when:
 - Economic model logic changes ([model_fun.R](scripts/R/functions/model_fun.R), [calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R), or [model_configs.R](scripts/R/functions/model_configs.R))
@@ -718,29 +718,29 @@ source("scripts/R/analysis/08_sampling.R")
 # Delete PSA cache files (example for IPD utilities)
 file.remove(here("data", "tidy", "psa_obj_ipd.rds"))
 file.remove(here("data", "tidy", "psa_params_ipd.rds"))
-# Re-run 12_PSA.R
-source("scripts/R/analysis/12_PSA.R")
+# Re-run 10_PSA.R
+source("scripts/R/analysis/10_PSA.R")
 ```
 
 ### 3. EVPPI Cache
 
 **Location**: `data/tidy/evppi_results_{ipd|correct}.RData`
 **Purpose**: Cached EVPPI results for parameter groups
-**Generation**: Script [13_EVPPIs.R](scripts/R/analysis/13_EVPPIs.R)
+**Generation**: Script [11_EVPPIs.R](scripts/R/analysis/11_EVPPIs.R)
 **When to regenerate**: Delete cache file when PSA cache is regenerated or EVPPI parameter groupings change
 
 ### 4. Scenario EVPPI Cache
 
 **Location**: `data/tidy/scenario_evppi_results_{ipd|correct}.rds`
 **Purpose**: Cached scenario-based EVPPI analysis results
-**Generation**: Script [14_scenario_EVPPIs.R](scripts/R/analysis/14_scenario_EVPPIs.R)
+**Generation**: Script [12_scenario_EVPPIs.R](scripts/R/analysis/12_scenario_EVPPIs.R)
 **When to regenerate**: Delete cache file when PSA cache is regenerated or scenario definitions change
 
 ### Cache Workflow
 
-1. **First run**: [08_sampling.R](scripts/R/analysis/08_sampling.R) generates sampling cache
-2. **PSA uses sampling cache**: [12_PSA.R](scripts/R/analysis/12_PSA.R) generates PSA cache
-3. **EVPPI uses PSA cache**: [13_EVPPIs.R](scripts/R/analysis/13_EVPPIs.R) generates EVPPI cache
+1. **First run**: [06_sampling.R](scripts/R/analysis/06_sampling.R) generates sampling cache
+2. **PSA uses sampling cache**: [10_PSA.R](scripts/R/analysis/10_PSA.R) generates PSA cache
+3. **EVPPI uses PSA cache**: [11_EVPPIs.R](scripts/R/analysis/11_EVPPIs.R) generates EVPPI cache
 4. **Subsequent runs**: All load from cache (fast)
 5. **Manual invalidation**: Delete specific cache file(s) to regenerate
 
@@ -750,7 +750,7 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 ### Components
 
-- **[15_save_snapshot.R](scripts/R/analysis/15_save_snapshot.R)**: Saves single-model snapshots for the joint economic survival model. **Interactive and standalone, NOT part of the cache pipeline** — it reads the issue number and `baseline|fixed` from stdin, so run it as `Rscript scripts/R/analysis/15_save_snapshot.R <issue#> <baseline|fixed>` (sourcing it non-interactively just errors on the empty prompt). Optional; not required to regenerate report caches.
+- **[13_save_snapshot.R](scripts/R/analysis/13_save_snapshot.R)**: Saves single-model snapshots for the joint economic survival model. **Interactive and standalone, NOT part of the cache pipeline** — it reads the issue number and `baseline|fixed` from stdin, so run it as `Rscript scripts/R/analysis/13_save_snapshot.R <issue#> <baseline|fixed>` (sourcing it non-interactively just errors on the empty prompt). Optional; not required to regenerate report caches.
 - **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Utility functions for snapshot management
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots to quantify changes
 - **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Report documenting bug fix impacts

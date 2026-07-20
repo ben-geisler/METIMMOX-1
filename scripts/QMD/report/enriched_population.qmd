@@ -39,7 +39,7 @@ setup_report(
 )
 
 invisible(capture.output(
-  source(here::here("scripts/R/analysis/10b_enriched_population_analysis.R"))
+  source(here::here("scripts/R/analysis/08b_enriched_population_analysis.R"))
 ))
 
 ```

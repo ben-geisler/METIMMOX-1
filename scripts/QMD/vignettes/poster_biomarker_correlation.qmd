@@ -34,7 +34,7 @@ knitr::opts_knit$set(root.dir = here::here())
 
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "06", "07"),
+  sources = c("02", "03", "04", "05"),
   funs = c("model_fun", "calculate_outcomes", "prediction_functions",
            "report_format"),
   packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",

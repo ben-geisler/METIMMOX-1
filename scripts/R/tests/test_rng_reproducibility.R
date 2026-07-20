@@ -32,7 +32,7 @@ stopifnot(
 
 # Evaluate only the sampling function and cache helper so the analysis script's
 # cache-generation code is not executed.
-sampling_expressions <- parse("scripts/R/analysis/08_sampling.R")
+sampling_expressions <- parse("scripts/R/analysis/06_sampling.R")
 extract_assignment <- function(name) {
   matches <- vapply(sampling_expressions, function(expr) {
     is.call(expr) &&

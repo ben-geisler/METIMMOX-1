@@ -56,7 +56,7 @@ evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
 # RUN SCENARIOS
 # ===============================================================================
 
-# Assemble full evppi_params (matches 13_EVPPIs.R)
+# Assemble full evppi_params (matches 11_EVPPIs.R)
 evppi_params <- c(evppi_params_base, "p_crp", "p_tmb_braf")
 
 # Add interaction parameters if available
@@ -70,7 +70,7 @@ if (exists("get_interaction_evppi_params")) {
 }
 
 # Build parameter groups for joint EVPPI analysis
-# (matches the definitions in 08_sampling.R + 13_EVPPIs.R)
+# (matches the definitions in 06_sampling.R + 11_EVPPIs.R)
 scenario_param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
   test_costs = c("c_test_CT", "c_test_blood", "c_test_CRP", "c_test_NGS"),

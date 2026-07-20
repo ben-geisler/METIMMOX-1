@@ -6,10 +6,10 @@
 #   Saves results for the single joint economic survival model.
 #
 # USAGE:
-#   Rscript 15_save_snapshot.R <issue_number> <baseline|fixed>
+#   Rscript 13_save_snapshot.R <issue_number> <baseline|fixed>
 #
 # WORKFLOW:
-#   1. Before fixing bug: Rscript 15_save_snapshot.R 64 baseline
+#   1. Before fixing bug: Rscript 13_save_snapshot.R 64 baseline
 #      Alternative:
 #      Set the command line arguments
 #commandArgs <- function(trailingOnly = TRUE) {
@@ -18,9 +18,9 @@
 #  }
 #}
 #      Then source the script
-#source("scripts/R/analysis/15_save_snapshot.R")
+#source("scripts/R/analysis/13_save_snapshot.R")
 #   2. Fix the bug and commit changes
-#   3. After fixing bug:  Rscript 15_save_snapshot.R 64 fixed
+#   3. After fixing bug:  Rscript 13_save_snapshot.R 64 fixed
 #   4. Generate report:   quarto render scripts/QMD/technical_docs/bug_fix_impact.qmd
 #
 # OUTPUT FILES:
@@ -45,7 +45,7 @@ source(here::here("scripts/R/functions/snapshot_utils.R"))
 cat("\n=== Save Analysis Snapshot ===\n\n")
 cat("This script will run the complete analysis and save a snapshot.\n")
 cat("The snapshot will be used to compare results before and after bug fixes.\n\n")
-cat("Usage: Rscript 15_save_snapshot.R <issue_number> <baseline|fixed>\n\n")
+cat("Usage: Rscript 13_save_snapshot.R <issue_number> <baseline|fixed>\n\n")
 
 # Try to get issue number and status from command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -87,14 +87,14 @@ source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 cat("[2/5] Running 03_biomarker_strategies.R...\n")
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
 
-cat("[3/5] Running 06_parametric_survival_analysis.R...\n")
-source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+cat("[3/5] Running 04_parametric_survival_analysis.R...\n")
+source(here::here("scripts/R/analysis/04_parametric_survival_analysis.R"))
 
-cat("[4/5] Running 07_basecase_input_parameters.R...\n")
-source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+cat("[4/5] Running 05_basecase_input_parameters.R...\n")
+source(here::here("scripts/R/analysis/05_basecase_input_parameters.R"))
 
-cat("[5/5] Running 08_sampling.R (may take time if cache doesn't exist)...\n")
-source(here::here("scripts/R/analysis/08_sampling.R"))
+cat("[5/5] Running 06_sampling.R (may take time if cache doesn't exist)...\n")
+source(here::here("scripts/R/analysis/06_sampling.R"))
 
 # Save parameters for recovery after re-sourcing (survives rm(list = ls()))
 Sys.setenv(SNAPSHOT_WTP = as.character(WTP))
@@ -284,7 +284,7 @@ cat("  - Metadata (git commit, R version, package versions, parameters)\n")
 if (snapshot_status == "baseline") {
   cat("\nNext steps:\n")
   cat("  1. Fix the bug and commit your changes\n")
-  cat("  2. Run: Rscript scripts/R/analysis/15_save_snapshot.R",
+  cat("  2. Run: Rscript scripts/R/analysis/13_save_snapshot.R",
       issue_number, "fixed\n")
   cat("  3. Generate report: quarto render",
       "scripts/QMD/technical_docs/bug_fix_impact.qmd\n")

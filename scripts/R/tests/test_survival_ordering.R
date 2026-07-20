@@ -6,7 +6,7 @@ library(here)
 run_survival_ordering_test <- function() {
   source("scripts/R/analysis/02_setup_and_global_variables.R", local = environment())
   source("scripts/R/analysis/03_biomarker_strategies.R", local = environment())
-  source("scripts/R/analysis/06_parametric_survival_analysis.R", local = environment())
+  source("scripts/R/analysis/04_parametric_survival_analysis.R", local = environment())
 
   stopifnot(
     length(time_points) == 521L,
@@ -16,7 +16,7 @@ run_survival_ordering_test <- function() {
     all(basecase_ordering_check$details$ordered)
   )
 
-  source("scripts/R/analysis/07_basecase_input_parameters.R", local = environment())
+  source("scripts/R/analysis/05_basecase_input_parameters.R", local = environment())
   source("scripts/R/functions/model_fun.R", local = environment())
   source("scripts/R/functions/calculate_outcomes.R", local = environment())
 

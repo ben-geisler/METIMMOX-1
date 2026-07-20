@@ -54,7 +54,7 @@ source(here("scripts/R/functions/prediction_functions.R"))
 
 # Source parametric survival analysis
 suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/04_parametric_survival_analysis.R"))
 }))
 
 # Get treatment level references

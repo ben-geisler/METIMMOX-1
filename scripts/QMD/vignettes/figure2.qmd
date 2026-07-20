@@ -30,8 +30,8 @@ theme_set(theme_minimal() +
 suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
+  source(here("scripts/R/analysis/04_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/05_basecase_input_parameters.R"))
   source(here("scripts/R/functions/model_fun.R"))
   source(here("scripts/R/functions/calculate_outcomes.R"))
 }))

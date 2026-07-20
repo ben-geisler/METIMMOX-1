@@ -38,7 +38,7 @@ suppressMessages(suppressWarnings({
   source(here("scripts/R/analysis/03_biomarker_strategies.R"))
 }))
 
-# Create data_complete (same logic as 06_parametric_survival_analysis.R)
+# Create data_complete (same logic as 04_parametric_survival_analysis.R)
 data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp",
                                                "tmb_braf", "OSwk", "Death",
                                                "PFSwk", "Progression")]), ]

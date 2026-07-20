@@ -65,7 +65,7 @@ if (length(time_points) != time_points_length) {
 
 # Check if PSA object exists
 if (!exists("psa_obj")) {
-  stop("PSA object not found. Please run 12_PSA.R first to create the PSA object.")
+  stop("PSA object not found. Please run 10_PSA.R first to create the PSA object.")
 }
 
 # ===============================================================================
@@ -122,9 +122,9 @@ if (interaction_params_available) {
       "interaction coefficients\n")
 }
 
-# Verify param_groups exists (defined in 08_sampling.R)
+# Verify param_groups exists (defined in 06_sampling.R)
 if (!exists("param_groups")) {
-  stop("'param_groups' not found. Run 08_sampling.R first to define parameter groups.")
+  stop("'param_groups' not found. Run 06_sampling.R first to define parameter groups.")
 }
 
 # Add interaction parameter groups (if available)

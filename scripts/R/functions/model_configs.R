@@ -115,7 +115,7 @@ get_control_formula <- function(outcome) {
 #' Get model formulas for survival analysis
 #'
 #' Returns the shared formulas under a single \code{full} formula set, as consumed
-#' by 06_parametric_survival_analysis.R and para_model_fit_table.R.
+#' by 04_parametric_survival_analysis.R and para_model_fit_table.R.
 #'
 #' @return Named list with one \code{full} element.
 #' @export

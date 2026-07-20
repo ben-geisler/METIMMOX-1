@@ -121,8 +121,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
   #   - n_samples: Number of resampled models (from 02_setup_and_global_variables.R)
-  #   - sampling_models: Resampled survival models (from 08_sampling.R)
-  #   - data_complete: Full analysis cohort (from 06_parametric_survival_analysis.R)
+  #   - sampling_models: Resampled survival models (from 06_sampling.R)
+  #   - data_complete: Full analysis cohort (from 04_parametric_survival_analysis.R)
   #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
   # These must exist in the global environment before calling model_fun in PSA mode.
 

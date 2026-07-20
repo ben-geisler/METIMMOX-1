@@ -139,7 +139,7 @@ for (i in 1:nrow(dsa_ranges)) {
 cat("Combining results...\n")
 dsa_results <- do.call(rbind, all_results)
 
-# Add parameter group information (param_groups from 08_sampling.R)
+# Add parameter group information (param_groups from 06_sampling.R)
 dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
   if (p == "base_case") return("base_case")
   for (g in names(param_groups)) {
@@ -331,7 +331,7 @@ if (has_models) {
 
 } else {
   cat("Warning: Required fitted models not found for the economic model.\n")
-  cat("Run 06_parametric_survival_analysis.R first.\n")
+  cat("Run 04_parametric_survival_analysis.R first.\n")
   cat("Skipping survival model structural sensitivity analysis.\n")
   model_sensitivity_df <- NULL
   model_impact_summary <- NULL

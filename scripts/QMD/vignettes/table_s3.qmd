@@ -40,7 +40,7 @@ suppressMessages(suppressWarnings({
 
 # Use the joint economic model for distribution selection
 suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+  source(here("scripts/R/analysis/04_parametric_survival_analysis.R"))
 }))
 ```
 

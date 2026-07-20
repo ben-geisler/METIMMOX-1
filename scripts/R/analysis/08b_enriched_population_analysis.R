@@ -102,11 +102,11 @@ refresh_single_model_inputs <- function(verbose = TRUE) {
   }
 
   suppressMessages(suppressWarnings(
-    source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
+    source(here::here("scripts/R/analysis/04_parametric_survival_analysis.R"))
   ))
 
   suppressMessages(suppressWarnings(
-    source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
+    source(here::here("scripts/R/analysis/05_basecase_input_parameters.R"))
   ))
 }
 

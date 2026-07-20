@@ -85,7 +85,7 @@ collect_metadata <- function(issue_number) {
 
 #' Generate Snapshot Filename
 #'
-#' Creates standardized filenames used by 15_save_snapshot.R.
+#' Creates standardized filenames used by 13_save_snapshot.R.
 #'
 #' @param type File type ("snapshot" or "psa").
 #' @param issue_number GitHub issue number.

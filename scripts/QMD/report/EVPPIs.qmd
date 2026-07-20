@@ -57,7 +57,7 @@ This report summarizes expected value of information results for the single join
 
 ```{r evpi-summary}
 if (is.null(psa_obj)) {
-  cat("PSA cache not found. Run scripts/R/analysis/12_PSA.R before rendering this report.")
+  cat("PSA cache not found. Run scripts/R/analysis/10_PSA.R before rendering this report.")
 } else {
   psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
     mutate(
@@ -104,7 +104,7 @@ knitr::kable(
 
 ```{r evppi-table}
 if (is.null(evppi_results) || nrow(evppi_results) == 0) {
-  cat("EVPPI cache not found. Run scripts/R/analysis/13_EVPPIs.R before rendering this report.")
+  cat("EVPPI cache not found. Run scripts/R/analysis/11_EVPPIs.R before rendering this report.")
 } else {
   evppi_display <- evppi_results %>%
     arrange(desc(evppi)) %>%

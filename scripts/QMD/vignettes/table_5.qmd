@@ -58,7 +58,7 @@ if (nrow(display_df) > 0) {
       general_title = "Notes: "
     )
 } else {
-  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+  cat("PSA cache not available. Run scripts/R/analysis/10_PSA.R first.")
 }
 ```
 
