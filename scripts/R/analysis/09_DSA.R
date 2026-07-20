@@ -3,6 +3,19 @@ if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, dampack)
 
+# Script 06 defines these groups in the sequential pipeline. Keep script 09
+# runnable on its own (including from reports that intentionally skip sampling).
+if (!exists("param_groups")) {
+  param_groups <- list(
+    drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
+    test_costs = c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood"),
+    other_costs = c("c_other_visit", "c_other_baseline",
+                    "c_other_follow", "c_other_last"),
+    utilities = c("u_np", "u_p"),
+    prevalence = c("p_crp", "p_tmb_braf")
+  )
+}
+
 # Load functions
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))

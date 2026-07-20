@@ -29,18 +29,12 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
-
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
   funs = c("report_format"),
   packages = c("here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyr",
                "scales", "survival", "flexsurv"),
-  set_knitr = FALSE,
   set_theme = FALSE
 )
 

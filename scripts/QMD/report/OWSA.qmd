@@ -33,24 +33,11 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "04", "05"),
+  sources = c("02", "03", "04", "05", "09"),
   funs = c("report_format"),
-  set_theme = FALSE
+  set_theme = FALSE,
+  quiet_sources = TRUE
 )
-
-param_groups <- list(
-  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood"),
-  other_costs = c("c_other_visit", "c_other_baseline",
-                  "c_other_follow", "c_other_last"),
-  utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tmb_braf")
-)
-
-invisible(capture.output(
-  source(here::here("scripts/R/analysis/09_DSA.R"))
-))
-
 ```
 
 # Overview

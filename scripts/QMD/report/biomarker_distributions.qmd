@@ -33,16 +33,14 @@ execute:
 ```{r setup}
 #| include: false
 
-# Load required packages
-if (!require("pacman")) install.packages("pacman")
-library(pacman)
-p_load(here, knitr, kableExtra, dplyr, tableone, vcd)
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  packages = c("here", "knitr", "kableExtra", "dplyr", "tableone", "vcd"),
+  set_theme = FALSE
+)
 
 # Set knitr options for PDF
 options(knitr.table.format = "latex")
-
-# Set working directory to project root
-knitr::opts_knit$set(root.dir = here::here())
 ```
 
 ```{r load-data}

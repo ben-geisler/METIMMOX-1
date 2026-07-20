@@ -31,28 +31,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-# Set global knitr options
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  fig.width = 8,
-  fig.height = 6,
-  dpi = 300,
-  out.width = "100%"
-)
-
-# Set working directory to project root
-knitr::opts_knit$set(root.dir = here::here())
-
 # Load required libraries and shared Cox extraction helpers.
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
+  sources = c("02", "03"),
   funs = c("cox_extract"),
   packages = c("here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyverse",
-               "survival", "coxphf", "glmnet", "vcd"),
-  set_knitr = FALSE,
+               "survival", "survminer", "coxphf", "glmnet", "vcd"),
   set_theme = FALSE
 )
 
@@ -67,17 +52,6 @@ theme_set(theme_minimal() +
     legend.text = element_text(size = 10),
     strip.text = element_text(size = 11, face = "bold")
   ))
-```
-
-```{r load-data, include=FALSE}
-# Source analysis scripts for data loading
-if (file.exists(here("scripts/R/analysis/02_setup_and_global_variables.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/02_setup_and_global_variables.R"))))
-}
-
-if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
-  suppressMessages(suppressWarnings(source(here("scripts/R/analysis/03_biomarker_strategies.R"))))
-}
 ```
 
 ```{r helper-functions, include=FALSE}
@@ -862,8 +836,6 @@ tlr_by_arm %>%
 ### Kaplan-Meier Curves Stratified by TLR
 
 ```{r km-tlr, fig.height=5, fig.width=10}
-pacman::p_load(survminer)
-
 km_os_tlr  <- survfit(Surv(OSwk, Death)       ~ tlr_num, data = data_complete)
 km_pfs_tlr <- survfit(Surv(PFSwk, Progression) ~ tlr_num, data = data_complete)
 

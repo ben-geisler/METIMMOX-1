@@ -29,13 +29,22 @@ REPORT_PACKAGES <- c(
 #' @param packages Character vector of packages to attach (default REPORT_PACKAGES).
 #' @param set_knitr Logical; set the common knitr chunk and root-dir options.
 #' @param set_theme Logical; apply the shared minimal ggplot theme.
+#' @param quiet_sources Logical; capture and discard console output emitted while
+#'   sourcing analysis scripts and function files. Messages and warnings are
+#'   suppressed regardless.
 #' @return Invisibly NULL.
 #' @export
 setup_report <- function(sources = character(0),
                          funs = character(0),
                          packages = REPORT_PACKAGES,
                          set_knitr = TRUE,
-                         set_theme = TRUE) {
+                         set_theme = TRUE,
+                         quiet_sources = FALSE) {
+
+  if (!is.logical(quiet_sources) || length(quiet_sources) != 1L ||
+      is.na(quiet_sources)) {
+    stop("quiet_sources must be TRUE or FALSE.")
+  }
 
   if (!require("pacman")) install.packages("pacman")
   pacman::p_load(char = packages)
@@ -63,6 +72,14 @@ setup_report <- function(sources = character(0),
   analysis_dir <- here::here("scripts", "R", "analysis")
   fun_dir <- here::here("scripts", "R", "functions")
 
+  source_report_file <- function(path) {
+    if (quiet_sources) {
+      invisible(utils::capture.output(source(path)))
+    } else {
+      source(path)
+    }
+  }
+
   suppressMessages(suppressWarnings({
     for (num in sources) {
       matches <- list.files(analysis_dir, pattern = paste0("^", num, "_.*\\.R$"),
@@ -70,14 +87,14 @@ setup_report <- function(sources = character(0),
       if (length(matches) == 0) {
         stop("No analysis script found for prefix '", num, "' in ", analysis_dir)
       }
-      source(matches[1])
+      source_report_file(matches[1])
     }
     for (fn in funs) {
       fn_path <- file.path(fun_dir, paste0(fn, ".R"))
       if (!file.exists(fn_path)) {
         stop("Function file not found: ", fn_path)
       }
-      source(fn_path)
+      source_report_file(fn_path)
     }
   }))
 

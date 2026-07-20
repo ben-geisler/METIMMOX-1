@@ -13,20 +13,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales, cowplot,
-  flexsurv, survival
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = c("prediction_functions"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "cowplot",
+               "flexsurv", "survival"),
+  set_theme = FALSE
 )
 
 theme_set(theme_minimal() +
@@ -40,23 +33,6 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-# Source analysis scripts
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-# Source prediction functions
-source(here("scripts/R/functions/prediction_functions.R"))
-
-# Source parametric survival analysis
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/04_parametric_survival_analysis.R"))
-}))
-
 # Get treatment level references
 exp_rx <- levels(data_complete$Rx)[2]
 ctrl_rx <- levels(data_complete$Rx)[1]

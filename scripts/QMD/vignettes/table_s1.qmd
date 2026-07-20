@@ -13,31 +13,15 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, knitr, kableExtra, tableone
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "tableone"),
+  set_theme = FALSE
 )
 ```
 
 ```{r load-data, include=FALSE}
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
 data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
                                                "tmb_braf", "OSwk", "Death",
                                                "PFSwk", "Progression")]), ]

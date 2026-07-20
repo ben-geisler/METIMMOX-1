@@ -33,15 +33,11 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03"),
+  sources = c("02", "03", "08b"),
   funs = c("report_format"),
-  set_theme = FALSE
+  set_theme = FALSE,
+  quiet_sources = TRUE
 )
-
-invisible(capture.output(
-  source(here::here("scripts/R/analysis/08b_enriched_population_analysis.R"))
-))
-
 ```
 
 # Overview

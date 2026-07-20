@@ -26,12 +26,6 @@ execute:
 # Outputs: figs/poster_forest.png, tables/poster_cea.csv,
 #          tables/poster_forest_data.csv
 # ==============================================================================
-knitr::opts_chunk$set(
-  echo = FALSE, warning = FALSE, message = FALSE,
-  fig.align = "center", dpi = 300
-)
-knitr::opts_knit$set(root.dir = here::here())
-
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
@@ -39,7 +33,6 @@ setup_report(
            "report_format"),
   packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
                "scales", "dampack", "knitr", "kableExtra"),
-  set_knitr = FALSE,
   set_theme = FALSE
 )
 
