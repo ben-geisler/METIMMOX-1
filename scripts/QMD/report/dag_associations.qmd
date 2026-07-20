@@ -317,7 +317,8 @@ ci_results <- dplyr::bind_rows(
     df = data,
     formula = Age ~ TxTMB_fac | tmb_braf_fac,
     item = "Age _||_ TxTMB | {TMB_BRAF}",
-    test_label = "Conditional permutation test"
+    test_label = "Conditional permutation test",
+    seed = analysis_seed
   ),
   run_fisher_test(
     df = data,

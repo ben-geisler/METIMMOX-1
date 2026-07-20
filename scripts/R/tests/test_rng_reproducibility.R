@@ -187,4 +187,43 @@ stopifnot(all(vapply(forwarding_wrappers, function(name) {
         fixed = TRUE)
 }, logical(1))))
 
+# Report-level stochastic blocks must use the shared analysis seed. The
+# permutation helper is shared by the DAG report and its Table S1 vignette, so
+# seeding inside the helper also makes their independently rendered p-values
+# identical.
+assoc_env <- new.env(parent = globalenv())
+sys.source("scripts/R/functions/assoc_tests.R", envir = assoc_env)
+
+stopifnot(
+  identical(formals(assoc_env$run_permutation_test)$seed, 123L),
+  grepl(
+    "set.seed(seed)",
+    paste(deparse(body(assoc_env$run_permutation_test)), collapse = " "),
+    fixed = TRUE
+  )
+)
+
+dag_report <- paste(
+  readLines("scripts/QMD/report/dag_associations.qmd", warn = FALSE),
+  collapse = "\n"
+)
+dag_table <- paste(
+  readLines("scripts/QMD/vignettes/clin_effect_table_s1.qmd", warn = FALSE),
+  collapse = "\n"
+)
+figure_one <- paste(
+  readLines("scripts/QMD/vignettes/figure1.qmd", warn = FALSE),
+  collapse = "\n"
+)
+
+stopifnot(
+  grepl("seed = analysis_seed", dag_report, fixed = TRUE),
+  grepl("seed = analysis_seed", dag_table, fixed = TRUE),
+  grepl(
+    "set.seed(analysis_seed)\n  boot_indices <- sample",
+    figure_one,
+    fixed = TRUE
+  )
+)
+
 cat("RNG reproducibility and cache seed validation tests passed.\n")

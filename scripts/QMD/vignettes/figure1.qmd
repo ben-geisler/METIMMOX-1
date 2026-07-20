@@ -173,6 +173,7 @@ for (model_name in "joint") {
   sampling_models_cache <- readRDS(cache_pattern)
 
   n_available <- min(n_boot_subset, sampling_models_cache$crp$n_samples)
+  set.seed(analysis_seed)
   boot_indices <- sample(seq_len(sampling_models_cache$crp$n_samples), n_available)
 
   ci_data[[model_name]] <- list()

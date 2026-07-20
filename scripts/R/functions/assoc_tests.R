@@ -114,8 +114,9 @@ run_firth_logistic_test <- function(df, formula, term, item, test_label) {
   )
 }
 
-run_permutation_test <- function(df, formula, item, test_label) {
+run_permutation_test <- function(df, formula, item, test_label, seed = 123L) {
   dat <- complete_data(df, all.vars(formula))
+  set.seed(seed)
   perm <- coin::independence_test(
     formula,
     data = dat,
