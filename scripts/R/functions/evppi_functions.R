@@ -409,11 +409,26 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
           next
         }
 
-        # Find the interaction coefficient by pattern matching
-        # flexsurvreg appends the factor level to the configured biomarker ID.
-        pattern <- paste0("^", biomarker, ".*:Rx")
-        matching_names <- grep(pattern, names(coefs), value = TRUE,
-                               ignore.case = TRUE)
+        # Find the treatment-by-biomarker interaction coefficient.
+        #
+        # Term ORDER is not stable and must not be assumed. The economic
+        # formula is "... + Rx + crp * Rx + tmb_braf * Rx", so Rx appears
+        # before the biomarker in the term expansion and R labels the
+        # interaction "Rx:crp", not "crp:Rx". Combined with flexsurvreg
+        # appending factor levels, the real name is
+        # "RxExperimental arm:crp1". Anchored patterns such as
+        # "^crp.*:Rx" (or the earlier "crp.*:Rx") never match it, which
+        # silently dropped every b_*_rx_* row from the EVPPI tables.
+        #
+        # Match structurally instead: an interaction term (contains ":")
+        # mentioning both Rx and the biomarker, each at a term boundary so
+        # one biomarker ID cannot match another's as a substring.
+        coef_names <- names(coefs)
+        matching_names <- coef_names[
+          grepl(":", coef_names, fixed = TRUE) &
+            grepl(paste0("(^|:)", biomarker), coef_names) &
+            grepl("(^|:)Rx", coef_names)
+        ]
 
         if (length(matching_names) > 0) {
           values[i] <- coefs[matching_names[1]]
