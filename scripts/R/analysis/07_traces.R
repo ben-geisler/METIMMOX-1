@@ -7,15 +7,6 @@ p_load(here, ggplot2, reshape2)
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 
-# Ensure consistent time indexing
-if (!exists("time_points_length")) {
-  time_points_length <- length(time_points)
-}
-# Validate time_points consistency
-if (length(time_points) != time_points_length) {
-  stop("time_points length inconsistency detected")
-}
-
 # Generate traces by running the model with return_traces = TRUE
 cat("Generating state occupancy traces for all strategies...\n")
 

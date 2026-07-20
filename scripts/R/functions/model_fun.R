@@ -296,10 +296,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
   }
   
-  # Create discount factors over time
   expected_length <- time_horizon + 1
-  v_dw_c <- 1 / (1 + params$dr_costs)^(seq(0, time_horizon) / 52)
-  v_dw_e <- 1 / (1 + params$dr_effects)^(seq(0, time_horizon) / 52)
+  weights <- discount_weights(params, expected_length)
+  v_dw_c <- weights$cost
+  v_dw_e <- weights$effect
 
   # Helper to validate survival curve length
   validate_curve_length <- function(curve, name) {
@@ -368,18 +368,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     pfs_control, os_control, control_strategy, "control"
   )
 
-  # Calculate state occupancy for partitioned survival model
-  # Progression-free: PFS curve
-  # Progressed: OS - PFS (ensures non-negative)
-  # Dead: 1 - OS
-  p_pf_control <- pfs_control
-  p_p_control <- pmax(os_control - pfs_control, 0)
-  p_d_control <- 1 - os_control
-  
-  # Force initial state to be 100% progression-free (all patients start alive)
-  p_pf_control[1] <- 1.0
-  p_p_control[1] <- 0.0
-  p_d_control[1] <- 0.0
+  control_states <- partitioned_survival_states(os_control, pfs_control)
+  p_pf_control <- control_states$p_pf
+  p_p_control <- control_states$p_p
+  p_d_control <- control_states$p_d
   
   # Calculate control QALYs and costs
   control_results <- calculate_outcomes(
@@ -433,15 +425,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       pfs_pos, os_pos, biomarker, "positive"
     )
 
-    # Calculate positive state occupancy
-    p_pf_pos <- pfs_pos
-    p_p_pos <- pmax(os_pos - pfs_pos, 0)
-    p_d_pos <- 1 - os_pos
-    
-    # Force initial state to be 100% progression-free
-    p_pf_pos[1] <- 1.0
-    p_p_pos[1] <- 0.0
-    p_d_pos[1] <- 0.0
+    pos_states <- partitioned_survival_states(os_pos, pfs_pos)
+    p_pf_pos <- pos_states$p_pf
+    p_p_pos <- pos_states$p_p
+    p_d_pos <- pos_states$p_d
     
     # -----------------------------------------------------------------------
     # BIOMARKER NEGATIVE SUBGROUP (receives standard treatment)
@@ -457,15 +444,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       pfs_neg, os_neg, biomarker, "negative"
     )
 
-    # Calculate negative state occupancy
-    p_pf_neg <- pfs_neg
-    p_p_neg <- pmax(os_neg - pfs_neg, 0)
-    p_d_neg <- 1 - os_neg
-    
-    # Force initial state to be 100% progression-free
-    p_pf_neg[1] <- 1.0
-    p_p_neg[1] <- 0.0
-    p_d_neg[1] <- 0.0
+    neg_states <- partitioned_survival_states(os_neg, pfs_neg)
+    p_pf_neg <- neg_states$p_pf
+    p_p_neg <- neg_states$p_p
+    p_d_neg <- neg_states$p_d
     
     # -----------------------------------------------------------------------
     # CALCULATE OUTCOMES FOR EACH SUBGROUP

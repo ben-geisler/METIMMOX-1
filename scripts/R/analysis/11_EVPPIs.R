@@ -53,16 +53,6 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
   }
 }
 
-# Ensure consistent time indexing
-if (!exists("time_points_length")) {
-  time_points_length <- length(time_points)
-}
-
-# Validate time_points consistency
-if (length(time_points) != time_points_length) {
-  stop("time_points length inconsistency detected")
-}
-
 # Check if PSA object exists
 if (!exists("psa_obj")) {
   stop("PSA object not found. Please run 10_PSA.R first to create the PSA object.")
@@ -105,34 +95,23 @@ cat("  - EVPI (dampack::calc_evpi):", round(evpi_manual, 2), "\n")
 # RUN EVPPI ANALYSIS
 # ===============================================================================
 
-# Define parameters for EVPPI analysis from the shared uncertainty specification.
+# Configure parameters and groups from the shared uncertainty specification.
 if (!exists("param_distributions")) {
   stop("'param_distributions' not found. Run 06_sampling.R first.")
 }
-evppi_params <- names(param_distributions)
-
-# Add interaction parameters if available
-if (interaction_params_available) {
-  interaction_evppi_params <- get_interaction_evppi_params()
-  interaction_evppi_params <- intersect(
-    interaction_evppi_params, colnames(psa_params)
-  )
-  evppi_params <- c(evppi_params, interaction_evppi_params)
-  cat("EVPPI parameters include", length(interaction_evppi_params),
-      "interaction coefficients\n")
-}
-
-# Verify param_groups exists (defined in 06_sampling.R)
 if (!exists("param_groups")) {
   stop("'param_groups' not found. Run 06_sampling.R first to define parameter groups.")
 }
-
-# Add interaction parameter groups (if available)
-if (interaction_params_available) {
-  param_groups <- add_interaction_param_groups(param_groups)
-  cat("Added interaction parameter groups to param_groups\n")
-  cat("Total param_groups:", length(param_groups), "\n")
-}
+evppi_config <- configure_evppi_analysis(
+  param_distributions, param_groups,
+  include_interactions = interaction_params_available,
+  available_params = colnames(psa_params)
+)
+evppi_params <- evppi_config$params
+param_groups <- evppi_config$groups
+rm(evppi_config)
+cat("EVPPI parameters:", length(evppi_params),
+    "| parameter groups:", length(param_groups), "\n")
 
 # Run EVPPI analysis
 evppi_results <- run_evppi_analysis(

@@ -426,3 +426,56 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     pfs_os_violations = pfs_os_violations
   ))
 }
+
+
+#' Generate PSA draws, run the model, and create a row-aligned PSA object
+#'
+#' @param l_params_base Base-case parameter list
+#' @param param_distributions Named parameter distributions
+#' @param strategies Strategy identifiers
+#' @param time_horizon Model time horizon
+#' @param cl Cycle length
+#' @param n_sim Requested simulations
+#' @param seed RNG seed
+#' @param currency Currency label passed to `dampack::make_psa_obj()`
+#' @param additional_params Optional draw-aligned columns, such as interaction coefficients
+#' @param fallback_threshold Maximum initial fallback rate
+#' @return List containing `psa_obj`, retained `psa_params`, and `psa_results`
+build_psa_obj <- function(l_params_base, param_distributions, strategies,
+                          time_horizon, cl, n_sim, seed = 123L,
+                          currency = "€", additional_params = NULL,
+                          fallback_threshold = 0.02) {
+  psa_params <- generate_psa_samples(param_distributions, n_sim, seed)
+  if (!is.null(additional_params)) {
+    if (nrow(additional_params) != n_sim) {
+      stop("additional_params must contain exactly n_sim rows")
+    }
+    psa_params <- cbind(psa_params, additional_params)
+    attr(psa_params, "seed") <- seed
+  }
+
+  psa_results <- run_psa_analysis(
+    psa_params, l_params_base, param_distributions, strategies,
+    time_horizon, cl, n_sim, fallback_threshold
+  )
+  psa_params <- psa_params[psa_results$retained_iterations, , drop = FALSE]
+  attr(psa_params, "seed") <- seed
+
+  psa_obj <- dampack::make_psa_obj(
+    cost = as.data.frame(psa_results$cost),
+    effect = as.data.frame(psa_results$effect),
+    strategies = strategies,
+    currency = currency
+  )
+  metadata <- c(
+    requested_n_sim = "requested_n_sim", fallback_count = "fallback_count",
+    dropped_count = "dropped_count", dropped_iterations = "dropped_iterations",
+    failed_draw_policy = "failed_draw_policy",
+    replacement_model_policy = "replacement_model_policy"
+  )
+  for (field in names(metadata)) {
+    psa_obj[[field]] <- if (field == "requested_n_sim") n_sim else psa_results[[metadata[[field]]]]
+  }
+
+  list(psa_obj = psa_obj, psa_params = psa_params, psa_results = psa_results)
+}

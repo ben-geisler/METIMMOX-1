@@ -18,15 +18,6 @@ source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/create_tornado_plot.R"))
 source(here::here("scripts/R/functions/prediction_functions.R"))
 
-# Ensure consistent time indexing
-if (!exists("time_points_length")) {
-  time_points_length <- length(time_points)
-}
-# Validate time_points consistency
-if (length(time_points) != time_points_length) {
-  stop("time_points length inconsistency detected")
-}
-
 # Define parameters to vary in sensitivity analysis (matches EVPPI parameters).
 dsa_pars <- names(param_distributions)
 prevalence_params <- param_groups$prevalence
@@ -43,32 +34,13 @@ dsa_ranges <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Cap utility values at 1.0
 utility_params <- param_groups$utilities
-for (param in utility_params) {
-  idx <- which(dsa_ranges$pars == param)
-  if (length(idx) > 0) {
-    dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
-  }
-}
-
-# Cap prevalence values between 0 and 1
-for (param in prevalence_params) {
-  idx <- which(dsa_ranges$pars == param)
-  if (length(idx) > 0) {
-    dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
-    dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
-  }
-}
-
-# Ensure cost parameters are non-negative (Issue #48)
 cost_params <- param_groups$all_costs
-for (param in cost_params) {
-  idx <- which(dsa_ranges$pars == param)
-  if (length(idx) > 0) {
-    dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0)
-  }
-}
+bounds <- data.frame(pars = dsa_pars, lower = -Inf, upper = Inf)
+bounds$lower[bounds$pars %in% c(cost_params, prevalence_params)] <- 0
+bounds$upper[bounds$pars %in% c(utility_params, prevalence_params)] <- 1
+dsa_ranges$min <- pmax(dsa_ranges$min, bounds$lower)
+dsa_ranges$max <- pmin(dsa_ranges$max, bounds$upper)
 
 # Validate all ranges have min < max (Issue #48)
 # Note: min = max is allowed for zero-valued parameters (e.g., c_test_blood = 0)
@@ -112,29 +84,20 @@ cat("Optimal strategy in base case:", base_optimal, "\n\n")
 # For each parameter, run the model at min and max values
 for (i in seq_len(nrow(dsa_ranges))) {
   param_name <- dsa_ranges$pars[i]
-  param_min <- dsa_ranges$min[i]
-  param_max <- dsa_ranges$max[i]
-  
-  cat("Testing parameter:", param_name, "- Min:", param_min, "Max:", param_max, "\n")
-  
-  # Create parameter sets for min and max values
-  params_min <- dsa_basecase
-  params_min[[param_name]] <- param_min
-  params_min <- sync_biomarker_test_costs(params_min)
-  
-  params_max <- dsa_basecase
-  params_max[[param_name]] <- param_max
-  params_max <- sync_biomarker_test_costs(params_max)
-  
-  # Run model with min value
-  result_min <- model_fun(params_min)
-  all_results[[result_counter]] <- format_results(result_min, param_name, "min", param_min)
-  result_counter <- result_counter + 1
-  
-  # Run model with max value
-  result_max <- model_fun(params_max)
-  all_results[[result_counter]] <- format_results(result_max, param_name, "max", param_max)
-  result_counter <- result_counter + 1
+  cat("Testing parameter:", param_name, "- Min:", dsa_ranges$min[i],
+      "Max:", dsa_ranges$max[i], "\n")
+
+  for (side in c("min", "max")) {
+    param_value <- dsa_ranges[[side]][i]
+    params_side <- dsa_basecase
+    params_side[[param_name]] <- param_value
+    params_side <- sync_biomarker_test_costs(params_side)
+    result_side <- model_fun(params_side)
+    all_results[[result_counter]] <- format_results(
+      result_side, param_name, side, param_value
+    )
+    result_counter <- result_counter + 1
+  }
 }
 
 # Combine all results into a single data frame
@@ -255,80 +218,47 @@ if (has_models) {
     best_dist <- models$best_fit$os_distribution
     cat("\nBase case distribution:", best_dist, "\n")
 
-    # For each strategy, find min and max NMB across distributions
-    model_impact_summary <- data.frame()
-    for (strat in strategies) {
+    # Convert each distribution set to the same paired endpoint shape as DSA.
+    model_endpoints <- do.call(rbind, lapply(strategies, function(strat) {
       strat_results <- model_sensitivity_df[model_sensitivity_df$Strategy == strat, ]
-
-      if (nrow(strat_results) > 0) {
-        base_nmb_strat <- strat_results$NMB[strat_results$Distribution == best_dist]
-
-        # Handle case where base distribution might not be in results
-        if (length(base_nmb_strat) == 0) {
-          base_nmb_strat <- dsa_results$NMB[dsa_results$Parameter == "base_case" &
-                                              dsa_results$Strategy == strat]
-        }
-
-        min_nmb <- min(strat_results$NMB)
-        max_nmb <- max(strat_results$NMB)
-        min_dist <- strat_results$Distribution[which.min(strat_results$NMB)]
-        max_dist <- strat_results$Distribution[which.max(strat_results$NMB)]
-
-        model_impact_summary <- rbind(model_impact_summary, data.frame(
-          Strategy = strat,
-          Parameter = "Survival_Model",
-          Base_NMB = base_nmb_strat,
-          Min_NMB = min_nmb,
-          Max_NMB = max_nmb,
-          Min_diff = min_nmb - base_nmb_strat,
-          Max_diff = max_nmb - base_nmb_strat,
-          Range = max_nmb - min_nmb,
-          Min_Dist = min_dist,
-          Max_Dist = max_dist,
-          group = "survival_model",
-          stringsAsFactors = FALSE
-        ))
+      if (nrow(strat_results) == 0) return(NULL)
+      base_nmb_strat <- strat_results$NMB[strat_results$Distribution == best_dist]
+      if (length(base_nmb_strat) == 0) {
+        base_nmb_strat <- dsa_results$NMB[
+          dsa_results$Parameter == "base_case" & dsa_results$Strategy == strat]
       }
-    }
+      do.call(rbind, lapply(c("min", "max"), function(side) {
+        endpoint <- if (side == "min") which.min(strat_results$NMB) else which.max(strat_results$NMB)
+        data.frame(
+          Strategy = strat, Cost = NA, Effect = NA,
+          NMB = strat_results$NMB[endpoint], Parameter = "Survival_Model",
+          Value = side, ParamValue = NA, group = "survival_model",
+          NMB_diff = strat_results$NMB[endpoint] - base_nmb_strat,
+          Distribution = strat_results$Distribution[endpoint],
+          Base_NMB = base_nmb_strat, stringsAsFactors = FALSE
+        )
+      }))
+    }))
+    model_ranges <- summarise_param_ranges(model_endpoints)
+    min_endpoints <- model_endpoints[model_endpoints$Value == "min", ]
+    max_endpoints <- model_endpoints[model_endpoints$Value == "max", ]
+    min_endpoints <- min_endpoints[match(model_ranges$Strategy, min_endpoints$Strategy), ]
+    max_endpoints <- max_endpoints[match(model_ranges$Strategy, max_endpoints$Strategy), ]
+    model_impact_summary <- transform(
+      model_ranges,
+      Base_NMB = min_endpoints$Base_NMB,
+      Min_NMB = min_endpoints$NMB, Max_NMB = max_endpoints$NMB,
+      Min_Dist = min_endpoints$Distribution,
+      Max_Dist = max_endpoints$Distribution,
+      group = "survival_model"
+    )
 
     cat("\nSurvival model sensitivity analysis complete.\n")
     cat("NMB range by strategy:\n")
     print(model_impact_summary[, c("Strategy", "Min_Dist", "Min_NMB", "Max_Dist", "Max_NMB", "Range")])
 
-    # Add survival model results to dsa_results for tornado diagram
-    for (strat in strategies) {
-      strat_summary <- model_impact_summary[model_impact_summary$Strategy == strat, ]
-
-      if (nrow(strat_summary) > 0) {
-        # Add "min" entry
-        dsa_results <- rbind(dsa_results, data.frame(
-          Strategy = strat,
-          Cost = NA,  # Not used for tornado
-          Effect = NA,
-          NMB = strat_summary$Min_NMB,
-          Parameter = "Survival_Model",
-          Value = "min",
-          ParamValue = NA,
-          group = "survival_model",
-          NMB_diff = strat_summary$Min_diff,
-          stringsAsFactors = FALSE
-        ))
-
-        # Add "max" entry
-        dsa_results <- rbind(dsa_results, data.frame(
-          Strategy = strat,
-          Cost = NA,
-          Effect = NA,
-          NMB = strat_summary$Max_NMB,
-          Parameter = "Survival_Model",
-          Value = "max",
-          ParamValue = NA,
-          group = "survival_model",
-          NMB_diff = strat_summary$Max_diff,
-          stringsAsFactors = FALSE
-        ))
-      }
-    }
+    # Add the paired structural endpoints to the common DSA/tornado data.
+    dsa_results <- rbind(dsa_results, model_endpoints[, names(dsa_results)])
 
   } else {
     cat("Warning: No survival model sensitivity results generated.\n")
@@ -376,31 +306,22 @@ cat("\nChecking if optimal strategy changes with parameter variations:\n")
 changes_found <- FALSE
 
 for (param_name in dsa_pars) {
-  # Get results for min value
-  min_results <- dsa_results[dsa_results$Parameter == param_name & 
-                               dsa_results$Value == "min", ]
-  if (nrow(min_results) > 0) {
-    min_optimal <- min_results$Strategy[which.max(min_results$NMB)]
-  } else {
-    next
+  side_optimal <- setNames(character(2), c("min", "max"))
+  for (side in names(side_optimal)) {
+    side_results <- dsa_results[
+      dsa_results$Parameter == param_name & dsa_results$Value == side, ]
+    if (nrow(side_results) == 0) break
+    side_optimal[side] <- side_results$Strategy[which.max(side_results$NMB)]
   }
-  
-  # Get results for max value
-  max_results <- dsa_results[dsa_results$Parameter == param_name & 
-                               dsa_results$Value == "max", ]
-  if (nrow(max_results) > 0) {
-    max_optimal <- max_results$Strategy[which.max(max_results$NMB)]
-  } else {
-    next
-  }
-  
+  if (any(side_optimal == "")) next
+
   # Check if optimal strategy changes
-  if (min_optimal != base_optimal || max_optimal != base_optimal) {
+  if (any(side_optimal != base_optimal)) {
     changes_found <- TRUE
     cat("Parameter:", param_name, "\n")
     cat("  Base optimal strategy:", base_optimal, "\n")
-    cat("  Optimal at min value:", min_optimal, "\n")
-    cat("  Optimal at max value:", max_optimal, "\n\n")
+    cat("  Optimal at min value:", side_optimal["min"], "\n")
+    cat("  Optimal at max value:", side_optimal["max"], "\n\n")
   }
 }
 
@@ -410,54 +331,14 @@ if (!changes_found) {
 
 # Create a summary table of parameter impact for all strategies
 cat("\nSummary of parameter impact on NMB for all strategies:\n")
-impact_summary <- data.frame()
-
-# For each strategy, get the top 3 most impactful parameters
-for (strat in strategies) {
-  # Extract results for this strategy
-  strat_results <- dsa_results[dsa_results$Strategy == strat & 
-                                 dsa_results$Parameter != "base_case", ]
-  
-  # Calculate impact for each parameter
-  param_impact <- data.frame()
-  for (param in unique(strat_results$Parameter)) {
-    min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-    max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-    
-    # Skip if we don't have both min and max
-    if (nrow(min_row) == 0 || nrow(max_row) == 0) next
-    
-    min_diff <- min_row$NMB_diff
-    max_diff <- max_row$NMB_diff
-    range <- abs(max_diff - min_diff)
-    
-    param_impact <- rbind(param_impact, data.frame(
-      Parameter = param,
-      Range = range
-    ))
-  }
-  
-  # Sort by impact
-  if (nrow(param_impact) > 0) {
-    param_impact <- param_impact[order(-param_impact$Range), ]
-    
-    # Get top 3 parameters (or fewer if there are fewer parameters)
-    top_n <- min(3, nrow(param_impact))
-    top_params <- param_impact[1:top_n, ]
-    
-    # Add to summary
-    for (i in seq_len(top_n)) {
-      impact_summary <- rbind(impact_summary, data.frame(
-        Strategy = strat,
-        Rank = i,
-        Parameter = top_params$Parameter[i],
-        Impact = top_params$Range[i]
-      ))
-    }
-  }
-}
+param_ranges <- summarise_param_ranges(dsa_results)
+impact_summary <- do.call(rbind, lapply(strategies, function(strat) {
+  top <- param_ranges[param_ranges$Strategy == strat, ]
+  top <- head(top[order(-top$Range), ], 3)
+  if (nrow(top) == 0) return(NULL)
+  data.frame(Strategy = strat, Rank = seq_len(nrow(top)),
+             Parameter = top$Parameter, Impact = top$Range)
+}))
 
 # Print impact summary
 print(impact_summary)

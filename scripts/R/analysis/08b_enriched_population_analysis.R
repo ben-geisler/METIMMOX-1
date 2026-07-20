@@ -24,7 +24,7 @@
 
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here, dampack, dplyr, scales, flexsurv)
+p_load(here, dampack, dplyr, flexsurv)
 
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
@@ -34,60 +34,6 @@ source(here::here("scripts/R/functions/prediction_functions.R"))
 # ===============================================================================
 # HELPER FUNCTIONS
 # ===============================================================================
-
-#' Calculate simple pairwise ICERs (each strategy vs control)
-#'
-#' @param results Data frame with Strategy, Cost, Effect columns from model_fun()
-#' @return Data frame with pairwise incremental costs, effects, ICERs, and status
-calculate_pairwise_icers <- function(results) {
-  control_cost <- results$Cost[results$Strategy == "control"]
-  control_effect <- results$Effect[results$Strategy == "control"]
-
-  if (length(control_cost) != 1 || length(control_effect) != 1) {
-    stop("Control strategy must appear exactly once in model results.")
-  }
-
-  pairwise_df <- data.frame(
-    Strategy = results$Strategy,
-    Cost = results$Cost,
-    Effect = results$Effect,
-    Inc_Cost = results$Cost - control_cost,
-    Inc_Effect = results$Effect - control_effect,
-    stringsAsFactors = FALSE
-  )
-
-  pairwise_df$ICER <- ifelse(
-    pairwise_df$Strategy == get_control_strategy(),
-    NA_real_,
-    pairwise_df$Inc_Cost / pairwise_df$Inc_Effect
-  )
-
-  pairwise_df$Status <- ifelse(
-    pairwise_df$Strategy == "control",
-    "Reference",
-    ifelse(pairwise_df$Inc_Cost > 0 & pairwise_df$Inc_Effect <= 0,
-           "Dominated",
-           ifelse(pairwise_df$Inc_Cost < 0 & pairwise_df$Inc_Effect > 0,
-                  "Cost-saving",
-                  "Non-dominated"))
-  )
-
-  pairwise_df
-}
-
-#' Get display labels for economic biomarkers
-#'
-#' @param biomarkers Character vector of biomarker IDs
-#' @return Character vector of display labels
-get_biomarker_labels <- function(biomarkers) {
-  label_map <- strategy_display_name(get_biomarkers())
-
-  unname(ifelse(
-    biomarkers %in% names(label_map),
-    label_map[biomarkers],
-    biomarkers
-  ))
-}
 
 #' Refresh survival fits and base-case inputs for the single model
 #'
@@ -153,26 +99,6 @@ generate_enriched_control_curves <- function(biomarker_name) {
   )
 }
 
-#' Compute state occupancy from survival curves with constraints
-#'
-#' @param os OS survival vector
-#' @param pfs PFS survival vector
-#' @param label Label for warning messages
-#' @return List with p_pf, p_p, p_d vectors
-compute_state_occupancy <- function(os, pfs, label = "") {
-  pfs <- pmin(pfs, os)
-
-  p_pf <- pfs
-  p_p <- pmax(os - pfs, 0)
-  p_d <- 1 - os
-
-  p_pf[1] <- 1.0
-  p_p[1] <- 0.0
-  p_d[1] <- 0.0
-
-  list(p_pf = p_pf, p_p = p_p, p_d = p_d)
-}
-
 #' Run enriched population analysis for the single economic model
 #'
 #' For each economic biomarker, computes:
@@ -193,8 +119,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
     cat("Generating enriched population curves (biomarker-positive control)...\n")
   }
 
-  v_dw_c <- 1 / (1 + l_params_base$dr_costs)^(seq(0, time_horizon) / 52)
-  v_dw_e <- 1 / (1 + l_params_base$dr_effects)^(seq(0, time_horizon) / 52)
+  weights <- discount_weights(l_params_base, time_horizon + 1)
 
   enriched_rows <- list()
 
@@ -202,8 +127,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
 
     os_exp <- l_params_base$p_os[[paste0(biomarker, "_pos_OS")]]
     pfs_exp <- l_params_base$p_pfs[[paste0(biomarker, "_pos_PFS")]]
-    states_exp <- compute_state_occupancy(os_exp, pfs_exp,
-                                          paste0(biomarker, "+ exp"))
+    states_exp <- partitioned_survival_states(os_exp, pfs_exp, TRUE)
 
     exp_outcomes <- calculate_outcomes(
       params = l_params_base,
@@ -212,14 +136,15 @@ run_enriched_analysis <- function(verbose = TRUE) {
       p_d = states_exp$p_d,
       treatment_type = "experimental",
       biomarker = biomarker,
-      v_dw_c = v_dw_c,
-      v_dw_e = v_dw_e,
+      v_dw_c = weights$cost,
+      v_dw_e = weights$effect,
       cl = cl
     )
 
     ctrl_curves <- generate_enriched_control_curves(biomarker)
-    states_ctrl <- compute_state_occupancy(ctrl_curves$os, ctrl_curves$pfs,
-                                           paste0(biomarker, "+ ctrl"))
+    states_ctrl <- partitioned_survival_states(
+      ctrl_curves$os, ctrl_curves$pfs, TRUE
+    )
 
     ctrl_outcomes <- calculate_outcomes(
       params = l_params_base,
@@ -228,33 +153,20 @@ run_enriched_analysis <- function(verbose = TRUE) {
       p_d = states_ctrl$p_d,
       treatment_type = "standard",
       biomarker = biomarker,
-      v_dw_c = v_dw_c,
-      v_dw_e = v_dw_e,
+      v_dw_c = weights$cost,
+      v_dw_e = weights$effect,
       cl = cl
     )
 
-    inc_cost <- exp_outcomes$costs_total - ctrl_outcomes$costs_total
-    inc_effect <- exp_outcomes$qalys_total - ctrl_outcomes$qalys_total
-
-    status <- if (inc_cost > 0 & inc_effect <= 0) {
-      "Dominated"
-    } else if (inc_cost < 0 & inc_effect > 0) {
-      "Cost-saving"
-    } else {
-      "Non-dominated"
-    }
-
-    enriched_rows[[biomarker]] <- data.frame(
-      Strategy = biomarker,
-      Cost = exp_outcomes$costs_total,
-      Effect = exp_outcomes$qalys_total,
+    pairwise <- calculate_pairwise_icers(data.frame(
+      Strategy = c(get_control_strategy(), biomarker),
+      Cost = c(ctrl_outcomes$costs_total, exp_outcomes$costs_total),
+      Effect = c(ctrl_outcomes$qalys_total, exp_outcomes$qalys_total)
+    ))[2, ]
+    enriched_rows[[biomarker]] <- transform(
+      pairwise,
       Ctrl_Cost = ctrl_outcomes$costs_total,
-      Ctrl_Effect = ctrl_outcomes$qalys_total,
-      Inc_Cost = inc_cost,
-      Inc_Effect = inc_effect,
-      ICER = inc_cost / inc_effect,
-      Status = status,
-      stringsAsFactors = FALSE
+      Ctrl_Effect = ctrl_outcomes$qalys_total
     )
   }
 
@@ -265,118 +177,36 @@ run_enriched_analysis <- function(verbose = TRUE) {
     cat("Enriched analysis complete.\n")
   }
 
+  biomarkers <- get_biomarkers()
+  base_rows <- base_pairwise[match(biomarkers, base_pairwise$Strategy), ]
+  enriched_rows <- enriched_pairwise[match(biomarkers, enriched_pairwise$Strategy), ]
+  enriched_comparison <- data.frame(
+    Biomarker = unname(strategy_display_name(biomarkers)),
+    Prevalence = strategies_df$prevalence[match(biomarkers, strategies_df$id)],
+    Base_Cost = base_rows$Cost, Base_Effect = base_rows$Effect,
+    Base_ICER = base_rows$ICER, Base_Status = base_rows$Status,
+    Enr_Cost = enriched_rows$Cost, Enr_Effect = enriched_rows$Effect,
+    Enr_Ctrl_Cost = enriched_rows$Ctrl_Cost,
+    Enr_Ctrl_Effect = enriched_rows$Ctrl_Effect,
+    Enr_ICER = enriched_rows$ICER, Enr_Status = enriched_rows$Status,
+    Pct_Change = ifelse(
+      base_rows$Status == "Non-dominated" &
+        enriched_rows$Status == "Non-dominated" &
+        is.finite(base_rows$ICER) & base_rows$ICER != 0 &
+        is.finite(enriched_rows$ICER),
+      (enriched_rows$ICER - base_rows$ICER) / abs(base_rows$ICER) * 100,
+      NA_real_
+    )
+  )
+
   list(
     base_results = base_result$base_results,
     base_pairwise = base_pairwise,
     base_icer_obj = base_result$icer_obj,
     enriched_pairwise = enriched_pairwise,
+    comparison = enriched_comparison,
     model_config = base_result$model_config
   )
-}
-
-# ===============================================================================
-# FORMATTING FUNCTIONS
-# ===============================================================================
-
-#' Format enriched vs base case comparison table
-#'
-#' @param result List from run_enriched_analysis()
-#' @return Data frame with comparison metrics
-format_enriched_comparison_table <- function(result) {
-
-  biomarkers <- get_biomarkers()
-  biomarker_labels <- get_biomarker_labels(biomarkers)
-
-  rows <- lapply(seq_along(biomarkers), function(i) {
-    bm <- biomarkers[i]
-
-    base_row <- result$base_pairwise[result$base_pairwise$Strategy == bm, ]
-    enriched_row <- result$enriched_pairwise[result$enriched_pairwise$Strategy == bm, ]
-
-    if (nrow(base_row) != 1 || nrow(enriched_row) != 1) {
-      stop("Could not find base/enriched results for biomarker: ", bm)
-    }
-
-    base_icer <- base_row$ICER
-    enr_icer <- enriched_row$ICER
-    pct_change <- if (base_row$Status == "Non-dominated" &&
-                      enriched_row$Status == "Non-dominated" &&
-                      !is.na(base_icer) && !is.na(enr_icer) &&
-                      base_icer != 0 &&
-                      is.finite(base_icer) && is.finite(enr_icer)) {
-      (enr_icer - base_icer) / abs(base_icer) * 100
-    } else {
-      NA_real_
-    }
-
-    data.frame(
-      Biomarker = biomarker_labels[i],
-      Prevalence = strategies_df$prevalence[strategies_df$id == bm],
-      Base_Cost = base_row$Cost,
-      Base_Effect = base_row$Effect,
-      Base_ICER = base_row$ICER,
-      Base_Status = base_row$Status,
-      Enr_Cost = enriched_row$Cost,
-      Enr_Effect = enriched_row$Effect,
-      Enr_Ctrl_Cost = enriched_row$Ctrl_Cost,
-      Enr_Ctrl_Effect = enriched_row$Ctrl_Effect,
-      Enr_ICER = enriched_row$ICER,
-      Enr_Status = enriched_row$Status,
-      Pct_Change = pct_change,
-      stringsAsFactors = FALSE
-    )
-  })
-
-  do.call(rbind, rows)
-}
-
-#' Format enriched comparison table for display
-#'
-#' @param comparison_df Data frame from format_enriched_comparison_table()
-#' @return Formatted data frame suitable for printing or kable
-format_enriched_for_display <- function(comparison_df) {
-
-  display_df <- comparison_df
-
-  display_df$Prevalence <- sprintf("%.1f%%", display_df$Prevalence * 100)
-
-  cost_cols <- grep("^(Base_Cost|Enr_Cost|Enr_Ctrl_Cost)$",
-                    names(display_df), value = TRUE)
-  for (col in cost_cols) {
-    display_df[[col]] <- scales::dollar(display_df[[col]],
-                                        prefix = "EUR ", accuracy = 1)
-  }
-
-  effect_cols <- grep("^(Base_Effect|Enr_Effect|Enr_Ctrl_Effect)$",
-                      names(display_df), value = TRUE)
-  for (col in effect_cols) {
-    display_df[[col]] <- sprintf("%.3f", display_df[[col]])
-  }
-
-  icer_cols <- grep("^(Base_ICER|Enr_ICER)$",
-                    names(display_df), value = TRUE)
-  for (icer_col in icer_cols) {
-    status_col <- gsub("ICER", "Status", icer_col)
-    display_df[[icer_col]] <- ifelse(
-      display_df[[status_col]] == "Dominated",
-      "Dominated",
-      ifelse(display_df[[status_col]] == "Reference",
-             "--",
-             ifelse(is.na(display_df[[icer_col]]) |
-                      !is.finite(as.numeric(display_df[[icer_col]])),
-                    "--",
-                    scales::dollar(as.numeric(display_df[[icer_col]]),
-                                   prefix = "EUR ", accuracy = 1)))
-    )
-  }
-
-  display_df$Pct_Change <- ifelse(
-    is.na(display_df$Pct_Change),
-    "--",
-    sprintf("%+.1f%%", as.numeric(display_df$Pct_Change))
-  )
-
-  display_df[, !grepl("^(Base_Status|Enr_Status)$", names(display_df))]
 }
 
 # ===============================================================================
@@ -390,33 +220,4 @@ cat("Biomarker-positive experimental vs biomarker-positive control\n")
 cat(rep("=", 80), "\n", sep = "")
 
 enriched_results <- run_enriched_analysis(verbose = TRUE)
-
-enriched_comparison <- format_enriched_comparison_table(enriched_results)
-enriched_display <- format_enriched_for_display(enriched_comparison)
-
-cat("\n")
-cat(rep("=", 80), "\n", sep = "")
-cat("RESULTS: Base Case vs Enriched Population ICERs\n")
-cat("(Base case: vs overall control | Enriched: vs biomarker-positive control)\n")
-cat(rep("=", 80), "\n\n")
-
-summary_cols <- c("Biomarker", "Prevalence", "Base_ICER",
-                  "Enr_ICER", "Pct_Change")
-print(enriched_display[, summary_cols], row.names = FALSE)
-
-cat("\n")
-cat(rep("=", 80), "\n", sep = "")
-cat("DETAILED RESULTS: Enriched Cohort Costs and QALYs\n")
-cat(rep("=", 80), "\n\n")
-
-cat("Enriched experimental (biomarker-positive on FLOX + nivolumab) vs\n")
-cat("Enriched control (biomarker-positive on FLOX only)\n\n")
-
-detail_cols <- c("Biomarker", "Enr_Cost", "Enr_Effect",
-                 "Enr_Ctrl_Cost", "Enr_Ctrl_Effect", "Enr_ICER")
-print(enriched_display[, detail_cols], row.names = FALSE)
-
-cat("\nNote: Enriched population uses biomarker-positive patients for BOTH arms.\n")
-cat("Experimental arm: biomarker-positive on FLOX + nivolumab.\n")
-cat("Control arm: biomarker-positive on FLOX only (counterfactual).\n")
-cat("Both arms incur the biomarker test cost.\n")
+enriched_comparison <- enriched_results$comparison

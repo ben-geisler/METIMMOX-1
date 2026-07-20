@@ -14,16 +14,6 @@ source(here::here("scripts/R/functions/psa_functions.R"))
 source(here::here("scripts/R/functions/evppi_functions.R"))
 source(here::here("scripts/R/functions/scenario_analysis.R"))
 
-# Ensure consistent time indexing
-if (!exists("time_points_length")) {
-  time_points_length <- length(time_points)
-}
-
-# Validate time_points consistency
-if (length(time_points) != time_points_length) {
-  stop("time_points length inconsistency detected")
-}
-
 # ===============================================================================
 # DEFINE SCENARIOS
 # ===============================================================================
@@ -54,27 +44,13 @@ if (!exists("param_distributions") || !exists("param_groups")) {
 # RUN SCENARIOS
 # ===============================================================================
 
-# Assemble full evppi_params (matches 11_EVPPIs.R)
-evppi_params <- names(param_distributions)
-
-# Add interaction parameters if available
-if (exists("get_interaction_evppi_params")) {
-  interaction_evppi_params <- get_interaction_evppi_params()
-  if (length(interaction_evppi_params) > 0) {
-    evppi_params <- c(evppi_params, interaction_evppi_params)
-    cat("Scenario EVPPI includes", length(interaction_evppi_params),
-        "interaction parameters\n")
-  }
-}
-
-# Build parameter groups for joint EVPPI analysis from the same specification.
-scenario_param_groups <- param_groups
-
-# Add interaction parameter groups if available
-if (exists("add_interaction_param_groups")) {
-  scenario_param_groups <- add_interaction_param_groups(scenario_param_groups)
-  cat("Total param_groups:", length(scenario_param_groups), "\n")
-}
+# Assemble full EVPPI parameters and groups using the same configuration as script 11.
+evppi_config <- configure_evppi_analysis(param_distributions, param_groups)
+evppi_params <- evppi_config$params
+scenario_param_groups <- evppi_config$groups
+rm(evppi_config)
+cat("Scenario EVPPI parameters:", length(evppi_params),
+    "| parameter groups:", length(scenario_param_groups), "\n")
 
 cat("\n=== RUNNING ALL SCENARIOS FOR THE JOINT ECONOMIC MODEL ===\n\n")
 

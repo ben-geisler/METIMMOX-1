@@ -79,6 +79,27 @@ run_basecase <- function(params = NULL, verbose = TRUE) {
   )
 }
 
+#' Calculate pairwise ICERs against the control strategy
+#'
+#' @param results Data frame with Strategy, Cost, and Effect columns
+#' @return Results with incremental outcomes, ICER, and pairwise status
+calculate_pairwise_icers <- function(results) {
+  control <- results[results$Strategy == get_control_strategy(), ]
+  if (nrow(control) != 1) stop("Control strategy must appear exactly once.")
+  out <- transform(
+    results,
+    Inc_Cost = Cost - control$Cost,
+    Inc_Effect = Effect - control$Effect
+  )
+  out$ICER <- out$Inc_Cost / out$Inc_Effect
+  out$ICER[out$Strategy == get_control_strategy()] <- NA_real_
+  out$Status <- "Non-dominated"
+  out$Status[out$Inc_Cost > 0 & out$Inc_Effect <= 0] <- "Dominated"
+  out$Status[out$Inc_Cost < 0 & out$Inc_Effect > 0] <- "Cost-saving"
+  out$Status[out$Strategy == get_control_strategy()] <- "Reference"
+  out
+}
+
 #' Load the single-model PSA cache
 #'
 #' @param util_label Utility-source label. Defaults to global utility_source_label.

@@ -16,6 +16,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "08b"),
+  funs = "report_format",
   packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
                "flexsurv", "survival"),
   set_theme = FALSE,
@@ -24,10 +25,20 @@ setup_report(
 ```
 
 ```{r display-table}
-display_df <- enriched_display %>%
-  select(Biomarker, Prevalence, Base_Cost, Base_Effect, Base_ICER,
-         Enr_Cost, Enr_Effect, Enr_Ctrl_Cost, Enr_Ctrl_Effect, Enr_ICER,
-         Pct_Change)
+display_df <- enriched_comparison %>%
+  transmute(
+    Biomarker,
+    Prevalence = sprintf("%.1f%%", Prevalence * 100),
+    Base_Cost = format_eur(Base_Cost),
+    Base_Effect = sprintf("%.3f", Base_Effect),
+    Base_ICER = format_icer(Base_ICER, Base_Status),
+    Enr_Cost = format_eur(Enr_Cost),
+    Enr_Effect = sprintf("%.3f", Enr_Effect),
+    Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
+    Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_ICER = format_icer(Enr_ICER, Enr_Status),
+    Pct_Change = ifelse(is.na(Pct_Change), "--", sprintf("%+.1f%%", Pct_Change))
+  )
 
 kable(
   display_df,

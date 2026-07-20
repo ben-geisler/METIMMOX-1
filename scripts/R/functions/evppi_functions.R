@@ -511,3 +511,29 @@ add_interaction_param_groups <- function(existing_groups) {
 
   return(existing_groups)
 }
+
+
+#' Assemble the parameter vector and groups used by EVPPI analyses
+#'
+#' @param param_distributions Named non-survival parameter distributions
+#' @param param_groups Named non-survival parameter groups
+#' @param include_interactions Whether to add treatment-biomarker interactions
+#' @param available_params Optional names available in a realized PSA data frame
+#' @return List with `params` and `groups`
+configure_evppi_analysis <- function(param_distributions, param_groups,
+                                     include_interactions = TRUE,
+                                     available_params = NULL) {
+  params <- names(param_distributions)
+  groups <- param_groups
+
+  if (include_interactions) {
+    interaction_params <- get_interaction_evppi_params()
+    if (!is.null(available_params)) {
+      interaction_params <- intersect(interaction_params, available_params)
+    }
+    params <- unique(c(params, interaction_params))
+    groups <- add_interaction_param_groups(groups)
+  }
+
+  list(params = params, groups = groups)
+}

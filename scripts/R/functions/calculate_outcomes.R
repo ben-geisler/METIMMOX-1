@@ -1,3 +1,24 @@
+#' Build partitioned-survival state occupancy vectors
+#'
+#' @param os Overall-survival probabilities
+#' @param pfs Progression-free-survival probabilities
+#' @param enforce_order Whether to cap PFS at OS before deriving states
+#' @return List containing progression-free, progressed, and dead occupancy
+partitioned_survival_states <- function(os, pfs, enforce_order = FALSE) {
+  if (enforce_order) pfs <- pmin(pfs, os)
+  states <- list(p_pf = pfs, p_p = pmax(os - pfs, 0), p_d = 1 - os)
+  states$p_pf[1] <- 1
+  states$p_p[1] <- states$p_d[1] <- 0
+  states
+}
+
+#' Create cost and effect discount weights for model cycles
+discount_weights <- function(params, n_cycles) {
+  years <- (seq_len(n_cycles) - 1) / 52
+  list(cost = 1 / (1 + params$dr_costs)^years,
+       effect = 1 / (1 + params$dr_effects)^years)
+}
+
 # Helper function to calculate costs and QALYs based on state occupancy
 calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker, v_dw_c, v_dw_e, cl) {
   # Number of cycles

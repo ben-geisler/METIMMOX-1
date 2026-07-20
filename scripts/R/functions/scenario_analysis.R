@@ -68,58 +68,31 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   )
   scenario_param_dist$c_drug_nivo <- c(list(dist = "gamma"), nivo_gamma)
 
-  # Generate PSA samples with updated distributions
-  scenario_psa_params <- generate_psa_samples(
-    scenario_param_dist,
-    n_sim,
-    seed = seed
-  )
-
-  # Append interaction coefficients from sampling_models (if available)
+  # Add draw-aligned interaction coefficients when sampling models are available.
+  interaction_coefs <- NULL
   if (exists("extract_interaction_coefficients") &&
       exists("sampling_models") && !is.null(sampling_models)) {
     interaction_coefs <- extract_interaction_coefficients(
       sampling_models = sampling_models,
       n_sim = n_sim
     )
-    if (!is.null(interaction_coefs) &&
-        nrow(interaction_coefs) == n_sim) {
-      scenario_psa_params <- cbind(scenario_psa_params, interaction_coefs)
+    if (!is.null(interaction_coefs) && nrow(interaction_coefs) != n_sim) {
+      interaction_coefs <- NULL
     }
   }
-  attr(scenario_psa_params, "seed") <- seed
 
-  # Run PSA
-  psa_results <- run_psa_analysis(
-    psa_params = scenario_psa_params,
+  psa_build <- build_psa_obj(
     l_params_base = scenario_params,
     param_distributions = scenario_param_dist,
     strategies = strategies,
     time_horizon = time_horizon,
     cl = cl,
-    n_sim = n_sim
+    n_sim = n_sim,
+    seed = seed,
+    additional_params = interaction_coefs
   )
-
-  scenario_seed_attr <- attr(scenario_psa_params, "seed")
-  scenario_psa_params <- scenario_psa_params[
-    psa_results$retained_iterations, , drop = FALSE
-  ]
-  attr(scenario_psa_params, "seed") <- scenario_seed_attr
-
-  # Create PSA object
-  psa_obj <- dampack::make_psa_obj(
-    cost = as.data.frame(psa_results$cost),
-    effect = as.data.frame(psa_results$effect),
-    strategies = strategies,
-    currency = "€"
-  )
-
-  psa_obj$requested_n_sim <- n_sim
-  psa_obj$fallback_count <- psa_results$fallback_count
-  psa_obj$dropped_count <- psa_results$dropped_count
-  psa_obj$dropped_iterations <- psa_results$dropped_iterations
-  psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
-  psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
+  psa_obj <- psa_build$psa_obj
+  scenario_psa_params <- psa_build$psa_params
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))

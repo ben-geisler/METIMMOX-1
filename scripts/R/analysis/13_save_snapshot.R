@@ -160,38 +160,19 @@ if (is.null(psa_obj)) {
   if (exists("sampling_models") && !is.null(sampling_models)) {
     cat("PSA cache not found - generating PSA...\n")
 
-    psa_params_gen <- generate_psa_samples(
-      param_distributions,
-      n_sim,
-      seed = analysis_seed
-    )
-    psa_results <- run_psa_analysis(
-      psa_params = psa_params_gen,
+    psa_build <- build_psa_obj(
       l_params_base = l_params_base,
       param_distributions = param_distributions,
       strategies = strategies,
       time_horizon = time_horizon,
       cl = cl,
-      n_sim = n_sim
-    )
-    psa_seed_attr <- attr(psa_params_gen, "seed")
-    psa_params_gen <- psa_params_gen[
-      psa_results$retained_iterations, , drop = FALSE
-    ]
-    attr(psa_params_gen, "seed") <- psa_seed_attr
-    psa_obj <- dampack::make_psa_obj(
-      cost = as.data.frame(psa_results$cost),
-      effect = as.data.frame(psa_results$effect),
-      strategies = strategies,
+      n_sim = n_sim,
+      seed = analysis_seed,
       currency = "EUR"
     )
-
-    psa_obj$requested_n_sim <- n_sim
-    psa_obj$fallback_count <- psa_results$fallback_count
-    psa_obj$dropped_count <- psa_results$dropped_count
-    psa_obj$dropped_iterations <- psa_results$dropped_iterations
-    psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
-    psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
+    psa_obj <- psa_build$psa_obj
+    psa_params_gen <- psa_build$psa_params
+    rm(psa_build)
 
     tryCatch({
       saveRDS(psa_obj, cache_file_obj)

@@ -8,16 +8,6 @@ source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/psa_functions.R"))
 
-# Ensure consistent time indexing
-if (!exists("time_points_length")) {
-  time_points_length <- length(time_points)
-}
-
-# Validate time_points consistency
-if (length(time_points) != time_points_length) {
-  stop("time_points length inconsistency detected")
-}
-
 # Define cache file paths with utility source label
 cache_file_obj <- psa_obj_path()
 cache_file_params <- psa_params_path()
@@ -107,25 +97,20 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
 if (!psa_cached) {
   cat("\n=== Generating new PSA results ===\n")
 
-  # Generate PSA samples
-  cat("Generating PSA samples for", n_sim, "simulations\n")
-  psa_params <- generate_psa_samples(
-    param_distributions,
-    n_sim,
-    seed = psa_seed
-  )
-
-  # Run the PSA
   cat("Starting PSA with", n_sim, "simulations\n")
-  psa_results <- run_psa_analysis(
-    psa_params = psa_params,
+  psa_build <- build_psa_obj(
     l_params_base = l_params_base,
     param_distributions = param_distributions,
     strategies = strategies,
     time_horizon = time_horizon,
     cl = cl,
-    n_sim = n_sim
+    n_sim = n_sim,
+    seed = psa_seed
   )
+  psa_obj <- psa_build$psa_obj
+  psa_params <- psa_build$psa_params
+  psa_results <- psa_build$psa_results
+  rm(psa_build)
 
   cat(sprintf(
     "PSA fallback diagnostic: %d/%d initial iterations (%.2f%%; maximum permitted %.2f%%)\n",
@@ -137,26 +122,6 @@ if (!psa_cached) {
     "PSA dropped-draw diagnostic: %d unrecoverable iteration(s); effective n_sim = %d\n",
     psa_results$dropped_count, psa_results$n_sim
   ))
-
-  # Apply the same row filter to the parameter draws used by downstream EVPPI.
-  psa_seed_attr <- attr(psa_params, "seed")
-  psa_params <- psa_params[psa_results$retained_iterations, , drop = FALSE]
-  attr(psa_params, "seed") <- psa_seed_attr
-
-  # Create the PSA object using dampack's make_psa_obj function
-  psa_obj <- dampack::make_psa_obj(
-    cost = as.data.frame(psa_results$cost),
-    effect = as.data.frame(psa_results$effect),
-    strategies = strategies,
-    currency = "€"
-  )
-
-  psa_obj$requested_n_sim <- n_sim
-  psa_obj$fallback_count <- psa_results$fallback_count
-  psa_obj$dropped_count <- psa_results$dropped_count
-  psa_obj$dropped_iterations <- psa_results$dropped_iterations
-  psa_obj$failed_draw_policy <- psa_results$failed_draw_policy
-  psa_obj$replacement_model_policy <- psa_results$replacement_model_policy
 
   cat("\n=== PSA generation complete ===\n")
 } else {
