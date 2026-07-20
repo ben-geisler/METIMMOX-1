@@ -1,5 +1,6 @@
 # White-box regression tests for WB-004 / BB-SW / BB-EQ2.
 
+source("scripts/R/functions/model_configs.R")
 source("scripts/R/functions/calculate_outcomes.R")
 
 make_params <- function() {

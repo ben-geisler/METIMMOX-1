@@ -38,10 +38,10 @@ suppressMessages(suppressWarnings({
 ```
 
 ```{r run-dsa, include=FALSE}
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", unique(unname(biomarker_cost_key())), "c_test_CT",
               "c_test_blood", "c_other_visit", "c_other_baseline",
               "c_other_follow", "c_other_last", "u_np", "u_p",
-              "p_crp", "p_tmb_braf")
+              unname(biomarker_prevalence_key()))
 
 dsa_ranges <- data.frame(
   pars = dsa_pars,
@@ -54,7 +54,7 @@ for (param in c("u_np", "u_p")) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
 }
-for (param in c("p_crp", "p_tmb_braf")) {
+for (param in unname(biomarker_prevalence_key())) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
@@ -66,8 +66,10 @@ for (param in dsa_pars[grepl("^c_", dsa_pars)]) {
 
 base_result <- model_fun(l_params_base)
 base_result$NMB <- base_result$Effect * WTP - base_result$Cost
-base_inmb <- base_result$NMB[base_result$Strategy == "crp"] -
-  base_result$NMB[base_result$Strategy == "control"]
+target_strategy <- "crp"
+control_strategy <- get_control_strategy()
+base_inmb <- base_result$NMB[base_result$Strategy == target_strategy] -
+  base_result$NMB[base_result$Strategy == control_strategy]
 
 tornado_data <- data.frame()
 for (i in seq_len(nrow(dsa_ranges))) {
@@ -75,18 +77,13 @@ for (i in seq_len(nrow(dsa_ranges))) {
   for (value_type in c("min", "max")) {
     params_varied <- l_params_base
     params_varied[[param_name]] <- dsa_ranges[[value_type]][i]
-    if (param_name == "c_test_CRP") {
-      params_varied$c_test_biomarker$crp <- params_varied$c_test_CRP
-    }
-    if (param_name == "c_test_NGS") {
-      params_varied$c_test_biomarker$tmb_braf <- params_varied$c_test_NGS
-    }
+    params_varied <- sync_biomarker_test_costs(params_varied)
 
     result <- model_fun(params_varied)
     result$NMB <- result$Effect * WTP - result$Cost
 
-    inmb <- result$NMB[result$Strategy == "crp"] -
-      result$NMB[result$Strategy == "control"]
+    inmb <- result$NMB[result$Strategy == target_strategy] -
+      result$NMB[result$Strategy == control_strategy]
 
     tornado_data <- rbind(tornado_data, data.frame(
       Parameter = param_name,

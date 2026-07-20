@@ -47,7 +47,9 @@ cat("\n")
 # ===============================================================================
 # Cost, utility, prevalence, and interaction parameters for the single economic model.
 
-evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
+biomarker_cost_params <- unique(unname(biomarker_cost_key()))
+prevalence_params <- unname(biomarker_prevalence_key())
+evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params,
                        "c_test_CT", "u_np", "u_p", "c_other_last",
                        "c_test_blood", "c_other_visit", "c_other_baseline",
                        "c_other_follow")
@@ -57,7 +59,7 @@ evppi_params_base <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS",
 # ===============================================================================
 
 # Assemble full evppi_params (matches 11_EVPPIs.R)
-evppi_params <- c(evppi_params_base, "p_crp", "p_tmb_braf")
+evppi_params <- c(evppi_params_base, prevalence_params)
 
 # Add interaction parameters if available
 if (exists("get_interaction_evppi_params")) {
@@ -73,14 +75,14 @@ if (exists("get_interaction_evppi_params")) {
 # (matches the definitions in 06_sampling.R + 11_EVPPIs.R)
 scenario_param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CT", "c_test_blood", "c_test_CRP", "c_test_NGS"),
+  test_costs = c("c_test_CT", "c_test_blood", biomarker_cost_params),
   other_costs = c("c_other_visit", "c_other_baseline",
                   "c_other_follow", "c_other_last"),
   all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                "c_test_blood", "c_test_CRP", "c_test_NGS", "c_other_visit",
+                "c_test_blood", biomarker_cost_params, "c_other_visit",
                 "c_other_baseline", "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tmb_braf")
+  prevalence = prevalence_params
 )
 
 # Add interaction parameter groups if available

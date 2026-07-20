@@ -55,6 +55,45 @@ psa_failed_draw_policy <- function() {
   "cyclic_other_models_drop_unreplaced_v2"
 }
 
+#' Get keys used to aggregate survival-ordering warnings
+#' @return Named list of empty integer vectors.
+pfs_os_violation_groups <- function() {
+  biomarkers <- get_biomarkers()
+  subgroup_keys <- unlist(lapply(
+    biomarkers,
+    function(x) paste(x, c("positive", "negative"), sep = "_")
+  ))
+  setNames(replicate(1L + length(subgroup_keys), integer(0), simplify = FALSE),
+           c(get_control_strategy(), subgroup_keys))
+}
+
+#' Convert a structured survival-ordering warning to an aggregation key
+#' @param warning_condition A `survival_ordering_warning` condition.
+#' @return Character scalar.
+pfs_os_violation_key <- function(warning_condition) {
+  if (identical(warning_condition$subgroup, "control")) {
+    return(warning_condition$strategy)
+  }
+  paste(warning_condition$strategy, warning_condition$subgroup, sep = "_")
+}
+
+#' Create display labels for survival-ordering aggregation groups
+#' @return Named character vector.
+pfs_os_violation_labels <- function() {
+  control_strategy <- get_control_strategy()
+  biomarkers <- get_biomarkers()
+  labels <- setNames(
+    paste0("  ", unname(strategy_display_name(control_strategy))),
+    control_strategy
+  )
+  for (biomarker in biomarkers) {
+    display_name <- unname(strategy_display_name(biomarker))
+    labels[[paste0(biomarker, "_positive")]] <- paste0("  ", display_name, "+")
+    labels[[paste0(biomarker, "_negative")]] <- paste0("  ", display_name, "-")
+  }
+  labels
+}
+
 #' List replacement survival-model indices for a failed PSA draw
 #'
 #' The cache contains exactly `n_sim` resampled survival models, all of which
@@ -106,13 +145,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
   # Track PFS > OS constraint violations (Issue #76)
   # Instead of printing thousands of warnings, we aggregate and summarize
-  pfs_os_violations <- list(
-    control = integer(0),
-    crp_pos = integer(0),
-    crp_neg = integer(0),
-    tmb_braf_pos = integer(0),
-    tmb_braf_neg = integer(0)
-  )
+  pfs_os_violations <- pfs_os_violation_groups()
 
   # Track iterations that used fallback to base case (Issue #79)
   # These will be replaced with additional successful simulations
@@ -132,8 +165,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
     # Keep the data-driven diagnostic-cost lookup aligned with sampled scalars.
-    sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
-    sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
+    sim_params <- sync_biomarker_test_costs(sim_params)
     
     # Use withCallingHandlers to capture warnings, tryCatch for errors
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
@@ -148,22 +180,14 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
           sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
         )
       }, warning = function(w) {
-        # Parse PFS > OS constraint warnings and track them (Issue #76)
-        msg <- conditionMessage(w)
-        if (grepl("PFS > OS constraint enforced", msg)) {
-          # Extract which subgroup triggered the warning
-          if (grepl("\\(control\\)", msg)) {
-            pfs_os_violations$control <<- c(pfs_os_violations$control, i)
-          } else if (grepl("\\(crp\\+\\)", msg)) {
-            pfs_os_violations$crp_pos <<- c(pfs_os_violations$crp_pos, i)
-          } else if (grepl("\\(crp-\\)", msg)) {
-            pfs_os_violations$crp_neg <<- c(pfs_os_violations$crp_neg, i)
-          } else if (grepl("\\(tmb_braf\\+\\)", msg)) {
-            pfs_os_violations$tmb_braf_pos <<- c(pfs_os_violations$tmb_braf_pos, i)
-          } else if (grepl("\\(tmb_braf-\\)", msg)) {
-            pfs_os_violations$tmb_braf_neg <<- c(pfs_os_violations$tmb_braf_neg, i)
+        # Route structured PFS > OS warnings without parsing their message text.
+        if (inherits(w, "survival_ordering_warning")) {
+          violation_key <- pfs_os_violation_key(w)
+          if (!violation_key %in% names(pfs_os_violations)) {
+            stop("Unknown survival-ordering warning subgroup: ", violation_key)
           }
-          # Suppress the warning (don't print it)
+          pfs_os_violations[[violation_key]] <<-
+            c(pfs_os_violations[[violation_key]], i)
           invokeRestart("muffleWarning")
         }
         # Let other warnings through
@@ -275,8 +299,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         for (param_name in names(param_distributions)) {
           sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
         }
-        sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
-        sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
+        sim_params <- sync_biomarker_test_costs(sim_params)
 
         # Try to run with a different resampled model
         tryCatch({
@@ -374,13 +397,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cat("Breakdown by subgroup:\n")
 
     # Only print subgroups that had violations
-    subgroup_names <- c(
-      control = "  Control",
-      crp_pos = "  CRP+",
-      crp_neg = "  CRP-",
-      tmb_braf_pos = "  TMB/BRAF+",
-      tmb_braf_neg = "  TMB/BRAF-"
-    )
+    subgroup_names <- pfs_os_violation_labels()
 
     for (subgroup in names(pfs_os_violations)) {
       n_violations <- length(pfs_os_violations[[subgroup]])
@@ -405,6 +422,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     failed_draw_policy = psa_failed_draw_policy(),
     replacement_model_policy = "cyclic_next_10_other_cached_models_v1",
     fallback_rate = fallback_rate,
-    fallback_threshold = fallback_threshold
+    fallback_threshold = fallback_threshold,
+    pfs_os_violations = pfs_os_violations
   ))
 }

@@ -19,10 +19,12 @@ if (length(time_points) != time_points_length) {
 }
 
 # Define parameters to vary in sensitivity analysis (matches EVPPI parameters)
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
+biomarker_cost_params <- unique(unname(biomarker_cost_key()))
+prevalence_params <- unname(biomarker_prevalence_key())
+dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params, "c_test_CT",
               "c_test_blood", "c_other_visit", "c_other_baseline",
               "c_other_follow", "c_other_last", "u_np", "u_p",
-              "p_crp", "p_tmb_braf")
+              prevalence_params)
 
 # Use base case values as starting point
 dsa_basecase <- l_params_base
@@ -46,7 +48,6 @@ for (param in utility_params) {
 }
 
 # Cap prevalence values between 0 and 1
-prevalence_params <- c("p_crp", "p_tmb_braf")
 for (param in prevalence_params) {
   idx <- which(dsa_ranges$pars == param)
   if (length(idx) > 0) {
@@ -56,7 +57,7 @@ for (param in prevalence_params) {
 }
 
 # Ensure cost parameters are non-negative (Issue #48)
-cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
+cost_params <- c("c_drug_nivo", "c_drug_FLOX", biomarker_cost_params, "c_test_CT",
                  "c_test_blood", "c_other_visit", "c_other_baseline",
                  "c_other_follow", "c_other_last")
 for (param in cost_params) {
@@ -116,13 +117,11 @@ for (i in seq_len(nrow(dsa_ranges))) {
   # Create parameter sets for min and max values
   params_min <- dsa_basecase
   params_min[[param_name]] <- param_min
-  if (param_name == "c_test_CRP") params_min$c_test_biomarker$crp <- param_min
-  if (param_name == "c_test_NGS") params_min$c_test_biomarker$tmb_braf <- param_min
+  params_min <- sync_biomarker_test_costs(params_min)
   
   params_max <- dsa_basecase
   params_max[[param_name]] <- param_max
-  if (param_name == "c_test_CRP") params_max$c_test_biomarker$crp <- param_max
-  if (param_name == "c_test_NGS") params_max$c_test_biomarker$tmb_braf <- param_max
+  params_max <- sync_biomarker_test_costs(params_max)
   
   # Run model with min value
   result_min <- model_fun(params_min)
@@ -215,8 +214,11 @@ if (has_models) {
       test_params <- l_params_base
 
       # Update control survival curves
-      test_params$p_os$control_OS <- test_predictions$control$os
-      test_params$p_pfs$control_PFS <- test_predictions$control$pfs
+      control_strategy <- get_control_strategy()
+      test_params$p_os[[paste0(control_strategy, "_OS")]] <-
+        test_predictions[[control_strategy]]$os
+      test_params$p_pfs[[paste0(control_strategy, "_PFS")]] <-
+        test_predictions[[control_strategy]]$pfs
 
       # Update biomarker strategy survival curves
       biomarkers_to_loop <- get_biomarkers()

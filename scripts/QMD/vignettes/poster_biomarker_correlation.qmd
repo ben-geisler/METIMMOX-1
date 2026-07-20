@@ -50,14 +50,34 @@ with_poster_model_config <- function(strategies, biomarkers, code) {
   model_env <- environment(model_fun)
   original_get_strategies <- get("get_strategies", envir = model_env)
   original_get_biomarkers <- get("get_biomarkers", envir = model_env)
+  original_biomarker_cost_key <- get("biomarker_cost_key", envir = model_env)
+  original_strategy_display_name <- get("strategy_display_name", envir = model_env)
   force(strategies)
   force(biomarkers)
 
   assign("get_strategies", function() strategies, envir = model_env)
   assign("get_biomarkers", function() biomarkers, envir = model_env)
+  assign("biomarker_cost_key", function(selected = biomarkers) {
+    key_map <- c(
+      original_biomarker_cost_key(canonical_biomarkers),
+      tlr = "c_test_TLR"
+    )
+    unknown <- setdiff(selected, names(key_map))
+    if (length(unknown) > 0L) stop("Unknown poster biomarkers: ", paste(unknown, collapse = ", "))
+    key_map[selected]
+  }, envir = model_env)
+  assign("strategy_display_name", function(selected = strategies) {
+    label_map <- c(
+      original_strategy_display_name(canonical_strategies),
+      tlr = "TLR"
+    )
+    label_map[selected]
+  }, envir = model_env)
   on.exit({
     assign("get_strategies", original_get_strategies, envir = model_env)
     assign("get_biomarkers", original_get_biomarkers, envir = model_env)
+    assign("biomarker_cost_key", original_biomarker_cost_key, envir = model_env)
+    assign("strategy_display_name", original_strategy_display_name, envir = model_env)
   }, add = TRUE)
 
   force(code)
@@ -196,6 +216,8 @@ l_params_base3$p_pfs <- p_pfs3
 l_params_base3$p_crp      <- prev[["crp"]]
 l_params_base3$p_tlr      <- prev[["tlr"]]
 l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
+l_params_base3$c_test_TLR <- 0
+l_params_base3 <- sync_biomarker_test_costs(l_params_base3)
 
 res3  <- suppressWarnings(model_fun(l_params_base3, determpsa = "det"))
 icer3 <- dampack::calculate_icers(cost = res3$Cost, effect = res3$Effect, strategies = res3$Strategy)
@@ -298,8 +320,7 @@ run_panel <- function(d_row, dp, panel) {
   for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_CRP","c_test_NGS",
                "c_other_visit","c_other_baseline","c_other_follow","c_other_last",
                "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
-  p$c_test_biomarker$crp <- p$c_test_CRP
-  p$c_test_biomarker$tmb_braf <- p$c_test_NGS
+  p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
   oc <- curve_draw(dp$ctrl_os, XC$ctrl, "weibull"); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, "lognormal")
   if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"

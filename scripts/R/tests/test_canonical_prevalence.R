@@ -14,9 +14,9 @@ predict.mock_survival_model <- function(object, newdata, type, times, ...) {
 }
 
 run_canonical_prevalence_test <- function() {
+  source("scripts/R/functions/model_configs.R", local = environment())
   source("scripts/R/functions/prediction_functions.R", local = environment())
 
-  get_biomarkers <- function() c("crp", "tmb_braf")
   data_complete <- data.frame(
     Rx = factor(
       c("control", "experimental", "control", "experimental"),

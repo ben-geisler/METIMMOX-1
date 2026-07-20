@@ -45,20 +45,19 @@ time_points <- seq(0, time_horizon, by = 1)
 # Ensure categorical variables are properly coded as factors
 # Note: sex is converted to factor in script 03 before subsets are created
 # This prevents type mismatch in resampled models (issue #72)
-if ("crp" %in% names(data) && !is.null(data$crp)) {
-  data$crp <- as.factor(data$crp)
-}
 if ("tlr" %in% names(data) && !is.null(data$tlr)) {
   data$tlr <- as.factor(data$tlr)
 }
-if ("tmb_braf" %in% names(data) && !is.null(data$tmb_braf)) {
-  data$tmb_braf <- as.factor(data$tmb_braf)
+for (biomarker in get_biomarkers()) {
+  if (biomarker %in% names(data) && !is.null(data[[biomarker]])) {
+    data[[biomarker]] <- as.factor(data[[biomarker]])
+  }
 }
 
 # Remove rows with missing values required for economic survival modeling.
 # TLR is intentionally not part of this complete-case filter.
 required_model_vars <- c(
-  "Age", "sex", "Rx", "crp", "tmb_braf",
+  "Age", "sex", "Rx", get_biomarkers(),
   "OSwk", "Death", "PFSwk", "Progression"
 )
 data_complete <- data[complete.cases(data[, required_model_vars]), ]

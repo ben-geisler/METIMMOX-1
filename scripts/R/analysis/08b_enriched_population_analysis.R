@@ -57,7 +57,7 @@ calculate_pairwise_icers <- function(results) {
   )
 
   pairwise_df$ICER <- ifelse(
-    pairwise_df$Strategy == "control",
+    pairwise_df$Strategy == get_control_strategy(),
     NA_real_,
     pairwise_df$Inc_Cost / pairwise_df$Inc_Effect
   )
@@ -80,10 +80,7 @@ calculate_pairwise_icers <- function(results) {
 #' @param biomarkers Character vector of biomarker IDs
 #' @return Character vector of display labels
 get_biomarker_labels <- function(biomarkers) {
-  label_map <- c(
-    crp = "CRP",
-    tmb_braf = "TMB/BRAF"
-  )
+  label_map <- strategy_display_name(get_biomarkers())
 
   unname(ifelse(
     biomarkers %in% names(label_map),

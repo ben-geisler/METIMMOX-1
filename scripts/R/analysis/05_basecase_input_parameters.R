@@ -24,31 +24,29 @@ l_visit <- rep(0, time_points_length)
 l_visit[1] <- 1  # baseline
 l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
 
-# Map survival curves directly into a list structure
-# Economic strategies include CRP and TMB/BRAF only
-p_os <- list(
-  control_OS = predictions$control$os,
-  crp_pos_OS = predictions$crp$biomarker_positive$os,
-  crp_neg_OS = predictions$crp$biomarker_negative$os,
-  tmb_braf_pos_OS = predictions$tmb_braf$biomarker_positive$os,
-  tmb_braf_neg_OS = predictions$tmb_braf$biomarker_negative$os,
-  crp_weighted_OS = predictions$crp$os,      # Population-marginalized
-  tmb_braf_weighted_OS = predictions$tmb_braf$os  # Population-marginalized
-)
-
-p_pfs <- list(
-  control_PFS = predictions$control$pfs,
-  crp_pos_PFS = predictions$crp$biomarker_positive$pfs,
-  crp_neg_PFS = predictions$crp$biomarker_negative$pfs,
-  tmb_braf_pos_PFS = predictions$tmb_braf$biomarker_positive$pfs,
-  tmb_braf_neg_PFS = predictions$tmb_braf$biomarker_negative$pfs,
-  crp_weighted_PFS = predictions$crp$pfs,    # Population-marginalized
-  tmb_braf_weighted_PFS = predictions$tmb_braf$pfs  # Population-marginalized
-)
+# Map configured strategy predictions into the curve keys consumed by model_fun().
+control_strategy <- get_control_strategy()
+p_os <- setNames(list(predictions[[control_strategy]]$os),
+                 paste0(control_strategy, "_OS"))
+p_pfs <- setNames(list(predictions[[control_strategy]]$pfs),
+                  paste0(control_strategy, "_PFS"))
+for (biomarker in get_biomarkers()) {
+  prediction <- predictions[[biomarker]]
+  p_os[[paste0(biomarker, "_pos_OS")]] <- prediction$biomarker_positive$os
+  p_os[[paste0(biomarker, "_neg_OS")]] <- prediction$biomarker_negative$os
+  p_os[[paste0(biomarker, "_weighted_OS")]] <- prediction$os
+  p_pfs[[paste0(biomarker, "_pos_PFS")]] <- prediction$biomarker_positive$pfs
+  p_pfs[[paste0(biomarker, "_neg_PFS")]] <- prediction$biomarker_negative$pfs
+  p_pfs[[paste0(biomarker, "_weighted_PFS")]] <- prediction$pfs
+}
 
 # Biomarker diagnostic costs are distinct from routine monitoring costs.
 c_test_CRP <- 16
 c_test_NGS <- 2518
+biomarker_test_costs <- lapply(
+  biomarker_cost_key(),
+  function(cost_key) get(cost_key)
+)
 
 # Compile all parameters into a list for the model function
 l_params_base <- list(
@@ -76,7 +74,7 @@ l_params_base <- list(
   # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
   c_test_CRP = c_test_CRP, # one-time CRP biomarker test (independent of routine blood monitoring)
   c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
-  c_test_biomarker = list(crp = c_test_CRP, tmb_braf = c_test_NGS),
+  c_test_biomarker = biomarker_test_costs,
   
   # Other costs
   c_other_visit = 33,     # cost of standard outpatient visit
@@ -94,10 +92,13 @@ l_params_base <- list(
   
   # Survival curves
   p_os = p_os,
-  p_pfs = p_pfs,
+  p_pfs = p_pfs
   
-  # Biomarker prevalence - using values from strategies_df
-  # Economic strategies include CRP and TMB/BRAF only
-  p_crp = strategies_df$prevalence[strategies_df$id == "crp"],
-  p_tmb_braf = strategies_df$prevalence[strategies_df$id == "tmb_braf"]
+  # Biomarker prevalence parameters are appended below from configured IDs.
 )
+
+for (biomarker in get_biomarkers()) {
+  prevalence_key <- biomarker_prevalence_key(biomarker)
+  l_params_base[[prevalence_key]] <-
+    strategies_df$prevalence[strategies_df$id == biomarker]
+}

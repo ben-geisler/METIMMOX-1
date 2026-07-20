@@ -6,11 +6,7 @@
 # ===============================================================================
 
 #' Canonical economic-strategy display labels
-strategy_labels <- c(
-  control = "Standard of Care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
+strategy_labels <- with(get_strategy_metadata(), setNames(report_label, id))
 
 #' Convert economic-strategy identifiers to display labels
 #'
@@ -27,7 +23,7 @@ strategy_label <- function(x) {
 #'
 #' Unknown identifiers are returned unchanged.
 biomarker_label <- function(x) {
-  labels <- c(crp = "CRP", tmb_braf = "TMB/BRAF", tlr = "TLR")
+  labels <- c(strategy_display_name(get_biomarkers()), tlr = "TLR")
   x_chr <- as.character(x)
   out <- x_chr
   known <- !is.na(x_chr) & x_chr %in% names(labels)

@@ -74,13 +74,8 @@ for(strategy in strategies) {
   all_strategies_df <- rbind(all_strategies_df, df_long)
 }
 
-# Create strategy labels for faceting
-# Labels are dynamic based on number of strategies (Model B excludes TLR)
-strategy_labels <- if (length(strategies) == 3) {
-  c("Standard of Care", "CRP Strategy", "TMB/BRAF Strategy")
-} else {
-  c("Standard of Care", "CRP Strategy", "TLR Strategy", "TMB/BRAF Strategy")
-}
+# Create strategy labels for faceting from keyed configuration metadata.
+strategy_labels <- get_strategy_metadata(strategies)$trace_label
 all_strategies_df$Strategy <- factor(all_strategies_df$Strategy,
                                      levels = strategies,
                                      labels = strategy_labels)

@@ -51,14 +51,17 @@ run_survival_ordering_test <- function() {
     warning = function(w) {
       if (grepl("PFS > OS constraint enforced", conditionMessage(w),
                 fixed = TRUE)) {
-        psa_warning <<- conditionMessage(w)
+        psa_warning <<- w
         invokeRestart("muffleWarning")
       }
     }
   )
   stopifnot(
     !is.null(psa_warning),
-    grepl("max excess=", psa_warning, fixed = TRUE),
+    inherits(psa_warning, "survival_ordering_warning"),
+    identical(psa_warning$strategy, get_control_strategy()),
+    identical(psa_warning$subgroup, "control"),
+    grepl("max excess=", conditionMessage(psa_warning), fixed = TRUE),
     all(is.finite(psa_result$Cost)),
     all(is.finite(psa_result$Effect))
   )

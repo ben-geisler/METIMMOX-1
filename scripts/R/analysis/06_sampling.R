@@ -251,16 +251,17 @@ if (file.exists(cache_file)) {
       sampling_models <- NULL
     } else {
       cat("Cache loaded successfully!\n")
-      cat("- Control samples:", sampling_models$control$n_samples, "\n")
+      control_strategy <- get_control_strategy()
+      cat("- Control samples:", sampling_models[[control_strategy]]$n_samples, "\n")
       cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
-      cat("- Created:", format(sampling_models$control$creation_time), "\n")
-      cat("- Distributions: OS", sampling_models$control$dist_os,
-          "| PFS", sampling_models$control$dist_pfs, "\n")
-      cat("- RNG seed:", sampling_models$control$seed, "\n")
+      cat("- Created:", format(sampling_models[[control_strategy]]$creation_time), "\n")
+      cat("- Distributions: OS", sampling_models[[control_strategy]]$dist_os,
+          "| PFS", sampling_models[[control_strategy]]$dist_pfs, "\n")
+      cat("- RNG seed:", sampling_models[[control_strategy]]$seed, "\n")
 
       # Check if n_samples matches
-      if (sampling_models$control$n_samples != n_samples) {
-        cat("WARNING: Cached models (", sampling_models$control$n_samples,
+      if (sampling_models[[control_strategy]]$n_samples != n_samples) {
+        cat("WARNING: Cached models (", sampling_models[[control_strategy]]$n_samples,
             ") != requested (", n_samples, ")\n")
         cat("Will use cached models. Delete cache file to regenerate.\n")
       }
@@ -292,7 +293,7 @@ if (is.null(sampling_models)) {
   # Sample control models with age and sex adjustments
   cat("\nSampling control strategy...\n")
   control_dists <- resolve_best_distributions(biomarker = NULL)
-  sampling_models$control <- sample_correlated_survival(
+  sampling_models[[get_control_strategy()]] <- sample_correlated_survival(
     formula_os = control_os_formula,
     formula_pfs = control_pfs_formula,
     data = data_control,
@@ -341,7 +342,8 @@ cat("\n=== Sampling model structure ready ===\n")
 cat("- Model:", model_config$label, "\n")
 cat("- Biomarker strategies: CRP, TMB/BRAF\n")
 cat("- Formulas defined in: scripts/R/functions/model_configs.R\n")
-cat("- Number of resampled models:", sampling_models$control$n_samples, "\n")
+cat("- Number of resampled models:",
+    sampling_models[[get_control_strategy()]]$n_samples, "\n")
 cat("- PFS and OS are CORRELATED within each resampled model\n")
 
 # ===============================================================================
@@ -457,11 +459,13 @@ dist_c_test_CT <- c(list(dist = "gamma"),
 dist_c_test_blood <- c(list(dist = "gamma"), 
                        get_gamma_params(l_params_base$c_test_blood, cv_costs))
 
-dist_c_test_CRP <- c(list(dist = "gamma"),
-                     get_gamma_params(l_params_base$c_test_CRP, cv_costs))
-
-dist_c_test_NGS <- c(list(dist = "gamma"), 
-                     get_gamma_params(l_params_base$c_test_NGS, cv_costs))
+biomarker_cost_keys <- unique(unname(biomarker_cost_key()))
+biomarker_cost_distributions <- setNames(
+  lapply(biomarker_cost_keys, function(cost_key) {
+    c(list(dist = "gamma"), get_gamma_params(l_params_base[[cost_key]], cv_costs))
+  }),
+  biomarker_cost_keys
+)
 
 # Other costs - gamma distributions
 dist_c_other_visit <- c(list(dist = "gamma"), 
@@ -492,19 +496,24 @@ dist_u_p <- c(list(dist = "beta"), get_beta_params(l_params_base$u_p, cv_utiliti
 
 # Prevalence parameters - beta distributions (bounded between 0 and 1)
 cv_prevalence <- 0.15  # 15% CV for prevalence (same as utilities)
-dist_p_crp <- c(list(dist = "beta"), get_beta_params(l_params_base$p_crp, cv_prevalence))
-dist_p_tmb_braf <- c(list(dist = "beta"), get_beta_params(l_params_base$p_tmb_braf, cv_prevalence))
+prevalence_keys <- unname(biomarker_prevalence_key())
+prevalence_distributions <- setNames(
+  lapply(prevalence_keys, function(prevalence_key) {
+    c(list(dist = "beta"),
+      get_beta_params(l_params_base[[prevalence_key]], cv_prevalence))
+  }),
+  prevalence_keys
+)
 
 # Create comprehensive parameter distributions list
 # Note: Survival curves are NOT in this list - they come from bootstrap samples
-param_distributions <- list(
+param_distributions <- c(list(
   # Cost parameters
   c_drug_nivo = dist_c_drug_nivo,
   c_drug_FLOX = dist_c_drug_FLOX,
   c_test_CT = dist_c_test_CT,
-  c_test_blood = dist_c_test_blood,
-  c_test_CRP = dist_c_test_CRP,
-  c_test_NGS = dist_c_test_NGS,
+  c_test_blood = dist_c_test_blood
+), biomarker_cost_distributions, list(
   c_other_visit = dist_c_other_visit,
   c_other_baseline = dist_c_other_baseline,
   c_other_follow = dist_c_other_follow,
@@ -512,24 +521,20 @@ param_distributions <- list(
 
   # Utility parameters
   u_np = dist_u_np,
-  u_p = dist_u_p,
-
-  # Prevalence parameters
-  p_crp = dist_p_crp,
-  p_tmb_braf = dist_p_tmb_braf
-)
+  u_p = dist_u_p
+), prevalence_distributions)
 
 # Parameter groups for sensitivity analysis (EVPPI)
 param_groups <- list(
   drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CT", "c_test_blood", "c_test_CRP", "c_test_NGS"),
+  test_costs = c("c_test_CT", "c_test_blood", biomarker_cost_keys),
   other_costs = c("c_other_visit", "c_other_baseline",
                   "c_other_follow", "c_other_last"),
   all_costs = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
+                biomarker_cost_keys, "c_other_visit", "c_other_baseline",
                 "c_other_follow", "c_other_last"),
   utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tmb_braf")
+  prevalence = prevalence_keys
 )
 
 # ===============================================================================
@@ -698,6 +703,7 @@ generate_psa_control_predictions <- function(sampling_model_list,
 cat("\n=== Parameter distributions configured ===\n")
 cat("- Cost parameters: Gamma distributions (CV =", cv_costs, ")\n")
 cat("- Utility parameters: Beta distributions (CV =", cv_utilities, ")\n")
-cat("- Survival parameters: Correlated resampled models (n =", sampling_models$control$n_samples, ")\n")
+cat("- Survival parameters: Correlated resampled models (n =",
+    sampling_models[[get_control_strategy()]]$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")
 cat("\nReady for PSA analysis\n")

@@ -370,20 +370,8 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
     return(NULL)
   }
 
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
   outcomes <- c("os", "pfs")
-
-  # Coefficient name patterns for each biomarker
-  # flexsurvreg encodes factor levels: crp -> crp1, tmb_braf -> tmb_braf1
-  coef_patterns <- list(
-    crp = "crp.*:Rx",
-    tmb_braf = "tmb_braf.*:Rx"
-  )
 
   result <- data.frame(row.names = seq_len(n_sim))
 
@@ -422,7 +410,8 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
         }
 
         # Find the interaction coefficient by pattern matching
-        pattern <- coef_patterns[[biomarker]]
+        # flexsurvreg appends the factor level to the configured biomarker ID.
+        pattern <- paste0("^", biomarker, ".*:Rx")
         matching_names <- grep(pattern, names(coefs), value = TRUE,
                                ignore.case = TRUE)
 
@@ -480,12 +469,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
 #'
 #' @return Character vector of parameter names (e.g., "b_crp_rx_os")
 get_interaction_evppi_params <- function() {
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
   outcomes <- c("os", "pfs")
 
   params <- character(0)
@@ -515,12 +499,7 @@ add_interaction_param_groups <- function(existing_groups) {
   }
 
   # Per-biomarker groups (OS + PFS together, 2 params each - feasible)
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
 
   for (biomarker in biomarkers) {
     bio_params <- grep(paste0("^b_", biomarker, "_rx_"),

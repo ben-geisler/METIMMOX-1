@@ -34,10 +34,11 @@ scatter_all <- data.frame()
 if (!is.null(psa_obj)) {
   cost_df <- as.data.frame(psa_obj$cost)
   effect_df <- if (!is.null(psa_obj$effect)) as.data.frame(psa_obj$effect) else as.data.frame(psa_obj$effectiveness)
-  for (strategy in intersect(c("crp", "tmb_braf"), psa_obj$strategies)) {
+  control_strategy <- get_control_strategy()
+  for (strategy in intersect(get_biomarkers(), psa_obj$strategies)) {
     scatter_all <- rbind(scatter_all, data.frame(
-      inc_effect = effect_df[[strategy]] - effect_df[["control"]],
-      inc_cost = cost_df[[strategy]] - cost_df[["control"]],
+      inc_effect = effect_df[[strategy]] - effect_df[[control_strategy]],
+      inc_cost = cost_df[[strategy]] - cost_df[[control_strategy]],
       Strategy = strategy_labels[[strategy]],
       stringsAsFactors = FALSE
     ))

@@ -80,6 +80,7 @@ generate_population_averaged_predictions <- function(models, strategies_df,
 
   # Initialize predictions list
   predictions <- list()
+  control_strategy <- get_control_strategy()
 
   # -------------------------------------------------------------------------
   # CONTROL STRATEGY: All patients receive standard of care
@@ -104,8 +105,8 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   control_os <- rowMeans(os_matrix, na.rm = TRUE)
   control_pfs <- rowMeans(pfs_matrix, na.rm = TRUE)
 
-  predictions$control <- list(
-    strategy = "control",
+  predictions[[control_strategy]] <- list(
+    strategy = control_strategy,
     os = control_os,
     pfs = control_pfs
   )
@@ -115,11 +116,7 @@ generate_population_averaged_predictions <- function(models, strategies_df,
   # -------------------------------------------------------------------------
 
   # Determine which economic biomarkers to process
-  biomarkers_to_predict <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")  # Fallback
-  }
+  biomarkers_to_predict <- get_biomarkers()
 
   # Prevalence is an economic-model input and must use the same canonical
   # cohort definition as l_params_base. Do not infer it from data_complete,
@@ -248,8 +245,7 @@ generate_population_averaged_endpoint_curves <- function(model, data_complete,
                                                           time_points) {
   exp_rx <- levels(data_complete$Rx)[2]
   ctrl_rx <- levels(data_complete$Rx)[1]
-  biomarkers <- if (exists("get_biomarkers")) get_biomarkers() else
-    c("crp", "tmb_braf")
+  biomarkers <- get_biomarkers()
 
   average_prediction <- function(newdata, rx_level) {
     newdata$Rx <- factor(rx_level, levels = levels(data_complete$Rx))
@@ -259,7 +255,10 @@ generate_population_averaged_endpoint_curves <- function(model, data_complete,
     rowMeans(extract_all_survival_probabilities(prediction), na.rm = TRUE)
   }
 
-  curves <- list(control = average_prediction(data_complete, ctrl_rx))
+  curves <- setNames(
+    list(average_prediction(data_complete, ctrl_rx)),
+    get_control_strategy()
+  )
   for (biomarker in biomarkers) {
     status <- as.numeric(as.character(data_complete[[biomarker]]))
     positive_data <- data_complete[status == 1, , drop = FALSE]
@@ -317,9 +316,10 @@ check_endpoint_curve_ordering <- function(os_curves, pfs_curves,
 # The subgroup checks are stricter than checking only prevalence-weighted strategy
 # curves: if every subgroup is ordered, each weighted strategy is ordered too.
 check_population_survival_ordering <- function(predictions, tolerance = 0) {
-  curve_sets <- list(control = predictions$control)
+  control_strategy <- get_control_strategy()
+  curve_sets <- setNames(list(predictions[[control_strategy]]), control_strategy)
 
-  strategy_names <- setdiff(names(predictions), "control")
+  strategy_names <- setdiff(names(predictions), control_strategy)
   for (strategy_name in strategy_names) {
     strategy <- predictions[[strategy_name]]
     curve_sets[[paste0(strategy_name, "_positive")]] <- strategy$biomarker_positive

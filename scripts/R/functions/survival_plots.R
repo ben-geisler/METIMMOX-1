@@ -103,8 +103,8 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
   # Create storage list for plots
   survival_plots <- list()
   
-  # Get biomarker names (excluding control)
-  biomarkers <- strategies_df$id[strategies_df$id != "control"]
+  # Get economic biomarker names from the central configuration.
+  biomarkers <- get_biomarkers()
   
   # Generate plots for each biomarker and outcome
   for (biomarker in biomarkers) {

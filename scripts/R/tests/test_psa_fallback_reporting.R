@@ -1,5 +1,6 @@
 # White-box regression tests for WB-011 / CS-008.
 
+source("scripts/R/functions/model_configs.R")
 source("scripts/R/functions/psa_functions.R")
 
 make_params <- function() {
