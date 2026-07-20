@@ -103,14 +103,14 @@ calculate_pairwise_icers <- function(results) {
 #' Load the single-model PSA cache
 #'
 #' @param util_label Utility-source label. Defaults to global utility_source_label.
-#' @param cache_dir Directory containing PSA cache files.
+#' @param directory Directory containing PSA cache files.
 #' @param verbose Logical, print progress messages.
 #' @return dampack PSA object, or NULL if the cache is not available.
 load_psa_cache <- function(util_label = NULL,
-                           cache_dir = here::here("data", "tidy"),
+                           directory = cache_dir(),
                            verbose = TRUE) {
 
-  cache_file <- psa_obj_path(util_label, cache_dir)
+  cache_file <- psa_obj_path(util_label, directory)
 
   if (!file.exists(cache_file)) {
     warning("PSA cache not found: ", cache_file)
@@ -132,14 +132,14 @@ load_psa_cache <- function(util_label = NULL,
 #' Load the single-model PSA parameter cache
 #'
 #' @param util_label Utility-source label. Defaults to global utility_source_label.
-#' @param cache_dir Directory containing PSA cache files.
+#' @param directory Directory containing PSA cache files.
 #' @param verbose Logical, print progress messages.
 #' @return Data frame of PSA parameters, or NULL if the cache is not available.
 load_psa_params_cache <- function(util_label = NULL,
-                                  cache_dir = here::here("data", "tidy"),
+                                  directory = cache_dir(),
                                   verbose = TRUE) {
 
-  cache_file <- psa_params_path(util_label, cache_dir)
+  cache_file <- psa_params_path(util_label, directory)
 
   if (!file.exists(cache_file)) {
     warning("PSA parameter cache not found: ", cache_file)

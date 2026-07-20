@@ -37,7 +37,7 @@ setup_report(
   set_theme = FALSE
 )
 
-snapshots_dir <- here::here("data", "output", "snapshots")
+snapshots_dir <- snapshot_path()
 snapshot_files <- if (dir.exists(snapshots_dir)) {
   list.files(snapshots_dir, pattern = "^snapshot_.*\\.rds$", full.names = FALSE)
 } else {

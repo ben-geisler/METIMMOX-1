@@ -23,7 +23,7 @@ setup_report(
 ```
 
 ```{r load-data, include=FALSE}
-cache_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+cache_file <- psa_obj_path()
 psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
 
 scatter_data <- data.frame()

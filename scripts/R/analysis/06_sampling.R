@@ -12,14 +12,14 @@ time_points_length <- length(time_points)
 # ===============================================================================
 
 # Define cache directory and file paths
-cache_dir <- here("data", "tidy")
-if (!dir.exists(cache_dir)) {
-  dir.create(cache_dir, recursive = TRUE)
-  cat("Created sampling cache directory:", cache_dir, "\n")
+sampling_cache_dir <- cache_dir()
+if (!dir.exists(sampling_cache_dir)) {
+  dir.create(sampling_cache_dir, recursive = TRUE)
+  cat("Created sampling cache directory:", sampling_cache_dir, "\n")
 }
 
 # Create cache file path based on n_samples
-cache_file <- sampling_cache_path(n_samples, cache_dir)
+cache_file <- sampling_cache_path(n_samples)
 sampling_seed <- analysis_seed
 
 # ===============================================================================

@@ -23,7 +23,7 @@ setup_report(
 ```
 
 ```{r load-data, include=FALSE}
-base_psa_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+base_psa_file <- psa_obj_path()
 base_psa <- if (file.exists(base_psa_file)) readRDS(base_psa_file) else NULL
 
 scenario_file <- scenario_evppi_path()

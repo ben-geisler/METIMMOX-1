@@ -137,8 +137,7 @@ ci_data <- list()
 
 for (model_name in "joint") {
   # Single joint economic model; sampling cache has no structure label
-  cache_pattern <- here("data", "tidy",
-    paste0("sampling_models_n", n_samples, "_full.rds"))
+  cache_pattern <- sampling_cache_path()
 
   if (!file.exists(cache_pattern)) {
     cat("Sampling cache not found - skipping bootstrap CI\n")

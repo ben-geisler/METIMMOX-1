@@ -216,15 +216,13 @@ snapshot_filename <- paste0("snapshot_", issue_number, "_",
                             snapshot_status, "_", commit, ".rds")
 psa_filename <- paste0("psa_", issue_number, "_",
                         snapshot_status, "_", commit, ".rds")
-snapshots_dir <- here::here("data", "output", "snapshots")
-
 cat("\nSaving snapshot file...\n")
-snapshot_path <- file.path(snapshots_dir, snapshot_filename)
-saveRDS(snapshot, snapshot_path)
-cat("  Saved:", snapshot_path, "\n")
+snapshot_file <- snapshot_path(snapshot_filename)
+saveRDS(snapshot, snapshot_file)
+cat("  Saved:", snapshot_file, "\n")
 
 cat("Saving PSA object...\n")
-psa_path <- file.path(snapshots_dir, psa_filename)
+psa_path <- snapshot_path(psa_filename)
 if (!is.null(psa_obj)) {
   saveRDS(psa_obj, psa_path)
   cat("  Saved:", psa_path, "\n")

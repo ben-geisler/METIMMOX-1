@@ -1,6 +1,10 @@
 # Snapshot Utility Functions
 # Helper functions for managing single-model result snapshots for bug fix impact analysis.
 
+if (!exists("snapshot_path", mode = "function")) {
+  source(here::here("scripts/R/functions/cache_paths.R"))
+}
+
 #' Get Git Commit Hash
 #'
 #' Retrieves the current git commit hash (short version).
@@ -166,7 +170,7 @@ parse_snapshot_filename <- function(filename) {
 #' @param snapshots_dir Directory containing snapshots.
 #' @return Data frame with snapshot information.
 list_snapshots <- function(issue_number,
-                           snapshots_dir = here::here("data", "output", "snapshots")) {
+                           snapshots_dir = snapshot_path()) {
   if (!dir.exists(snapshots_dir)) {
     message("Snapshot directory not found: ", snapshots_dir)
     return(data.frame(
@@ -212,7 +216,7 @@ list_snapshots <- function(issue_number,
 #' @param snapshots_dir Directory containing snapshots.
 #' @return Snapshot object.
 load_snapshot <- function(filename,
-                          snapshots_dir = here::here("data", "output", "snapshots")) {
+                          snapshots_dir = snapshot_path()) {
   filepath <- file.path(snapshots_dir, filename)
 
   if (!file.exists(filepath)) {
@@ -248,7 +252,7 @@ load_snapshot <- function(filename,
 #' @param snapshots_dir Directory containing snapshots.
 #' @return List with snapshot and psa filenames, or NULL if no match.
 find_snapshot_pair <- function(snapshot_file,
-                               snapshots_dir = here::here("data", "output", "snapshots")) {
+                               snapshots_dir = snapshot_path()) {
   info <- parse_snapshot_filename(snapshot_file)
 
   if (is.na(info$type) || info$type != "snapshot") {
@@ -279,7 +283,7 @@ find_snapshot_pair <- function(snapshot_file,
 #' @param snapshots_dir Directory containing snapshots.
 #' @return List with before and after snapshot pairs.
 select_snapshots_for_comparison <- function(issue_number,
-                                            snapshots_dir = here::here("data", "output", "snapshots")) {
+                                            snapshots_dir = snapshot_path()) {
   snapshot_info <- list_snapshots(issue_number, snapshots_dir)
   snapshot_files <- snapshot_info[snapshot_info$type == "snapshot", ]
 

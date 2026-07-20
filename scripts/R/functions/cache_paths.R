@@ -16,7 +16,22 @@
 # ===============================================================================
 
 #' Directory holding tidy caches
-.cache_dir <- function() here::here("data", "tidy")
+#'
+#' @return Absolute path to the tidy-cache directory.
+#' @export
+cache_dir <- function() here::here("data", "tidy")
+
+#' Path to the snapshot directory or a file within it
+#'
+#' @param filename Optional snapshot filename. When omitted, returns the
+#'   snapshot directory.
+#' @param directory Directory containing snapshots.
+#' @return Absolute path to the snapshot directory or requested file.
+#' @export
+snapshot_path <- function(filename = NULL,
+                          directory = here::here("data", "output", "snapshots")) {
+  if (is.null(filename)) directory else file.path(directory, filename)
+}
 
 #' Resolve the utility-source label ("ipd" or "correct")
 #'
@@ -35,48 +50,48 @@ resolve_util_label <- function(label = NULL) {
 #' Path to the correlated survival-sampling cache
 #'
 #' @param n Sample size; defaults to the global n_samples.
-#' @param cache_dir Directory containing the cache.
+#' @param directory Directory containing the cache.
 #' @export
-sampling_cache_path <- function(n = NULL, cache_dir = .cache_dir()) {
+sampling_cache_path <- function(n = NULL, directory = cache_dir()) {
   if (is.null(n)) {
     if (!exists("n_samples", inherits = TRUE)) {
       stop("n_samples is not set; pass n explicitly.")
     }
     n <- get("n_samples", inherits = TRUE)
   }
-  file.path(cache_dir, paste0("sampling_models_n", n, "_full.rds"))
+  file.path(directory, paste0("sampling_models_n", n, "_full.rds"))
 }
 
 #' Path to the PSA results cache (dampack PSA object)
 #' @param label Utility-source label (see resolve_util_label).
-#' @param cache_dir Directory containing the cache.
+#' @param directory Directory containing the cache.
 #' @export
-psa_obj_path <- function(label = NULL, cache_dir = .cache_dir()) {
-  file.path(cache_dir, paste0("psa_obj_", resolve_util_label(label), ".rds"))
+psa_obj_path <- function(label = NULL, directory = cache_dir()) {
+  file.path(directory, paste0("psa_obj_", resolve_util_label(label), ".rds"))
 }
 
 #' Path to the PSA parameter-sample cache
 #' @inheritParams psa_obj_path
 #' @export
-psa_params_path <- function(label = NULL, cache_dir = .cache_dir()) {
-  file.path(cache_dir, paste0("psa_params_", resolve_util_label(label), ".rds"))
+psa_params_path <- function(label = NULL, directory = cache_dir()) {
+  file.path(directory, paste0("psa_params_", resolve_util_label(label), ".rds"))
 }
 
 #' Path to the EVPPI results cache
 #' @inheritParams psa_obj_path
 #' @export
-evppi_path <- function(label = NULL, cache_dir = .cache_dir()) {
-  file.path(cache_dir, paste0("evppi_results_", resolve_util_label(label), ".RData"))
+evppi_path <- function(label = NULL, directory = cache_dir()) {
+  file.path(directory, paste0("evppi_results_", resolve_util_label(label), ".RData"))
 }
 
 #' Path to the scenario-EVPPI results cache
 #'
 #' @param label Utility-source label (see resolve_util_label).
-#' @param cache_dir Directory containing the cache.
+#' @param directory Directory containing the cache.
 #' @export
-scenario_evppi_path <- function(label = NULL, cache_dir = .cache_dir()) {
+scenario_evppi_path <- function(label = NULL, directory = cache_dir()) {
   file.path(
-    cache_dir,
+    directory,
     paste0("scenario_evppi_results_", resolve_util_label(label), ".rds")
   )
 }

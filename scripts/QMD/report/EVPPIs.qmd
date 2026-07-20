@@ -40,8 +40,7 @@ setup_report(
 
 evppi_results <- NULL
 evpi_manual <- NA_real_
-evppi_cache_file <- here::here("data", "tidy",
-                               paste0("evppi_results_", utility_source_label, ".RData"))
+evppi_cache_file <- evppi_path()
 if (file.exists(evppi_cache_file)) {
   load(evppi_cache_file)
 }
