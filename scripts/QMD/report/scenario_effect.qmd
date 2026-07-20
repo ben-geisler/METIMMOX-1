@@ -34,7 +34,8 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("cea_helpers", "report_format"),
+  # psa_functions supplies psa_failed_draw_policy(), used by the cache check below.
+  funs = c("cea_helpers", "report_format", "psa_functions"),
   set_theme = FALSE
 )
 
@@ -48,11 +49,18 @@ if (!file.exists(scenario_cache_file)) {
 scenario_cache <- readRDS(scenario_cache_file)
 cache_source <- basename(scenario_cache_file)
 
+# Compare against the accessor rather than a literal. The identifier is bumped
+# whenever the failed-draw policy changes (it is currently
+# "cyclic_other_models_drop_unreplaced_v2"), and a hard-coded copy here silently
+# rejects every freshly generated cache.
 if (!is.null(scenario_cache) &&
-    !identical(scenario_cache$failed_draw_policy, "drop_unreplaced_v1")) {
+    !identical(scenario_cache$failed_draw_policy, psa_failed_draw_policy())) {
+  cached_policy <- scenario_cache$failed_draw_policy
+  if (is.null(cached_policy)) cached_policy <- "none"
   stop(
-    "Scenario cache uses legacy failed-draw handling; rerun ",
-    "12_scenario_EVPPIs.R before rendering this report."
+    "Scenario cache uses failed-draw policy '", cached_policy,
+    "' but this build expects '", psa_failed_draw_policy(),
+    "'; rerun 12_scenario_EVPPIs.R before rendering this report."
   )
 }
 
