@@ -12,7 +12,6 @@
 #   psa_params_{label}.rds                     PSA parameter draws      (12/15)
 #   evppi_results_{label}.RData                EVPPI results            (13)
 #   scenario_evppi_results_{label}.rds         scenario EVPPI           (14)
-#   scenario_evppi_results_{label}_PREVIEW.rds scenario EVPPI preview   (14b)
 # where {label} is "ipd" or "correct".
 # ===============================================================================
 
@@ -73,15 +72,12 @@ evppi_path <- function(label = NULL, cache_dir = .cache_dir()) {
 #' Path to the scenario-EVPPI results cache
 #'
 #' @param label Utility-source label (see resolve_util_label).
-#' @param preview If TRUE, the reduced-iteration preview cache.
 #' @param cache_dir Directory containing the cache.
 #' @export
-scenario_evppi_path <- function(label = NULL, preview = FALSE,
-                                cache_dir = .cache_dir()) {
-  suffix <- if (isTRUE(preview)) "_PREVIEW" else ""
+scenario_evppi_path <- function(label = NULL, cache_dir = .cache_dir()) {
   file.path(
     cache_dir,
-    paste0("scenario_evppi_results_", resolve_util_label(label), suffix, ".rds")
+    paste0("scenario_evppi_results_", resolve_util_label(label), ".rds")
   )
 }
 

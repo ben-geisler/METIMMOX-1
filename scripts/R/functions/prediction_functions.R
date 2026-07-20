@@ -34,6 +34,39 @@ extract_all_survival_probabilities <- function(pred_object) {
   return(surv_matrix)
 }
 
+# Generate a population-average survival curve from a fitted flexsurv model.
+# Supports both current tidypredict-style output and the legacy list-of-frames
+# structure used by older flexsurv versions.
+predict_pop_avg <- function(model, newdata, time_pts) {
+  tryCatch({
+    pred <- predict(
+      model, newdata = newdata, type = "survival", times = time_pts
+    )
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    }
+    if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      }
+      return(surv_probs)
+    }
+    NULL
+  }, error = function(e) NULL)
+}
+
+# Convert a survfit object to the minimal data frame used by report plots.
+extract_km_data <- function(km_fit) {
+  data.frame(
+    time = km_fit$time,
+    surv = km_fit$surv,
+    stringsAsFactors = FALSE
+  )
+}
+
 # Main function for population-averaged predictions across all strategies
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,

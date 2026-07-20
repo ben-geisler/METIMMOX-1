@@ -34,12 +34,9 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
+  funs = c("report_format"),
   set_theme = FALSE
 )
-
-biomarker_label <- function(x) {
-  dplyr::recode(x, crp = "CRP", tmb_braf = "TMB/BRAF", .default = x)
-}
 
 curve_df <- function(biomarker, endpoint = c("os", "pfs")) {
   endpoint <- match.arg(endpoint)

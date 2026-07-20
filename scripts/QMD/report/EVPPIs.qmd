@@ -34,7 +34,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("cea_helpers"),
+  funs = c("cea_helpers", "report_format"),
   set_theme = FALSE
 )
 
@@ -47,11 +47,6 @@ if (file.exists(evppi_cache_file)) {
 }
 
 psa_obj <- load_psa_cache(verbose = FALSE)
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 # Overview

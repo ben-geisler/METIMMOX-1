@@ -26,15 +26,14 @@ suppressMessages(suppressWarnings(
 ```
 
 ```{r load-data, include=FALSE}
-cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
-preview_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
-evppi_cache <- if (file.exists(cache_file)) {
-  readRDS(cache_file)
-} else if (file.exists(preview_file)) {
-  readRDS(preview_file)
-} else {
-  NULL
+cache_file <- scenario_evppi_path()
+if (!file.exists(cache_file)) {
+  stop(
+    "Full scenario cache not found: ", cache_file, ". Run ",
+    "scripts/R/analysis/14_scenario_EVPPIs.R before rendering Table S7."
+  )
 }
+evppi_cache <- readRDS(cache_file)
 
 evppi_grouped <- data.frame()
 if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {

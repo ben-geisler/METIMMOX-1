@@ -19,25 +19,17 @@ knitr::opts_chunk$set(
 )
 knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, dagitty, ggdag, ggtext)
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  funs = c("dag_helpers"),
+  packages = c("here", "ggplot2", "dplyr", "dagitty", "ggdag", "ggtext"),
+  set_knitr = FALSE,
+  set_theme = FALSE
+)
 ```
 
 ```{r dag-simple-define, include=FALSE}
-dag_simple <- dagitty('dag {
-bb="0,0,1,1"
-Demo     [pos="0.280,0.100"]
-TMB_BRAF [pos="0.150,0.400"]
-CRP      [pos="0.150,0.750"]
-T        [exposure,pos="0.050,0.575"]
-Survival [outcome,pos="0.750,0.575"]
-
-Demo -> TMB_BRAF
-Demo -> Survival
-TMB_BRAF -> Survival
-CRP -> Survival
-T -> Survival
-}')
+# `dag_simple` is provided by dag_helpers.R.
 ```
 
 ```{r dag-simple-plot, fig.width=9, fig.height=6}

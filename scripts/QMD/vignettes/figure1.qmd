@@ -267,15 +267,6 @@ data_crp_guided <- rbind(
 km_crp_os <- survfit(Surv(OSwk, Death) ~ 1, data = data_crp_guided)
 km_crp_pfs <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_crp_guided)
 
-# Helper to extract KM data for ggplot
-extract_km_data <- function(km_fit) {
-  data.frame(
-    time = km_fit$time,
-    surv = km_fit$surv,
-    stringsAsFactors = FALSE
-  )
-}
-
 km_data_list <- list(
   control_os = extract_km_data(km_control_os),
   control_pfs = extract_km_data(km_control_pfs),

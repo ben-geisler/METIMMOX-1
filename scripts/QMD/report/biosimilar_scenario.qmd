@@ -34,31 +34,9 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
-  funs = c("model_fun", "calculate_outcomes"),
+  funs = c("model_fun", "calculate_outcomes", "report_format"),
   set_theme = FALSE
 )
-
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP-guided",
-    tmb_braf = "TMB/BRAF-guided",
-    .default = x
-  )
-}
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
-
-format_icer <- function(x, status) {
-  if (status %in% c("Reference", "ref")) return("--")
-  if (status %in% c("D", "ED", "Dominated")) return("Dominated")
-  if (is.na(x) || !is.finite(x)) return("--")
-  scales::dollar(x, prefix = "EUR ", accuracy = 1)
-}
 
 run_pairwise <- function(params) {
   results <- model_fun(params, determpsa = "det")

@@ -20,25 +20,14 @@ knitr::opts_knit$set(root.dir = here::here())
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
-  funs = c("model_fun", "calculate_outcomes", "cea_helpers"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format"),
   set_knitr = FALSE, set_theme = FALSE
 )
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 ```{r build-table, include=FALSE}
 basecase <- run_basecase(verbose = FALSE)
 icer_df <- as.data.frame(basecase$icer_obj)
-
-strategy_labels <- c(
-  control = "Standard care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
 
 display_df <- icer_df %>%
   filter(Strategy %in% names(strategy_labels)) %>%
@@ -48,11 +37,7 @@ display_df <- icer_df %>%
     QALYs = sprintf("%.3f", Effect),
     Inc_Cost = format_eur(Inc_Cost),
     Inc_QALYs = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
-    ICER = case_when(
-      Status %in% c("D", "ED", "Dominated") ~ "Dominated",
-      is.na(ICER) ~ "--",
-      TRUE ~ format_eur(ICER)
-    )
+    ICER = format_icer(ICER, Status)
   ) %>%
   select(Strategy, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER, Status)
 ```

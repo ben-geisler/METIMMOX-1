@@ -93,27 +93,7 @@ biomarker_defs <- list(
 os_model <- models$best_fit$os
 pfs_model <- models$best_fit$pfs
 
-# Helper for population-averaged predictions
-predict_pop_avg <- function(model, newdata, time_pts) {
-  tryCatch({
-    pred <- predict(model, newdata = newdata, type = "survival", times = time_pts)
-    if (".pred" %in% names(pred)) {
-      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
-      surv_matrix <- do.call(cbind, surv_probs)
-      return(rowMeans(surv_matrix, na.rm = TRUE))
-    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
-      surv_probs <- sapply(pred, function(x) x$est)
-      if (is.matrix(surv_probs)) return(rowMeans(surv_probs, na.rm = TRUE))
-      else return(surv_probs)
-    }
-    return(NULL)
-  }, error = function(e) NULL)
-}
-
-# Extract KM data helper
-extract_km_data <- function(km_fit) {
-  data.frame(time = km_fit$time, surv = km_fit$surv, stringsAsFactors = FALSE)
-}
+# Population-averaging and KM extraction helpers come from prediction_functions.R.
 ```
 
 ```{r create-panels, include=FALSE}

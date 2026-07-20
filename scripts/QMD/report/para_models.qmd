@@ -34,13 +34,10 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
+  funs = c("report_format"),
   packages = c(REPORT_PACKAGES, "survminer"),
   set_theme = FALSE
 )
-
-biomarker_label <- function(x) {
-  dplyr::recode(x, crp = "CRP", tmb_braf = "TMB/BRAF", .default = x)
-}
 
 coef_table <- function(fit, outcome, distribution) {
   if (is.null(fit)) return(NULL)

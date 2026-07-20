@@ -32,11 +32,13 @@ execute:
 
 ```{r setup}
 #| include: false
-if (!require("pacman")) install.packages("pacman")
-library(pacman)
-p_load(here, knitr, kableExtra, dagitty, ggdag, ggplot2, dplyr, ggtext)
-
-knitr::opts_knit$set(root.dir = here::here())
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  funs = c("dag_helpers"),
+  packages = c("here", "knitr", "kableExtra", "dagitty", "ggdag", "ggplot2",
+               "dplyr", "ggtext"),
+  set_theme = FALSE
+)
 ```
 
 # Introduction
@@ -91,47 +93,7 @@ if (knitr::is_latex_output()) {
 ```{r dag-define}
 #| include: false
 
-dag <- dagitty('dag {
-bb="0,0,1,1"
-Age [pos="0.100,0.100"]
-Sex [pos="0.280,0.100"]
-U [latent,pos="0.750,0.080"]
-TMB_BRAF [pos="0.200,0.380"]
-CRP [pos="0.720,0.320"]
-T [exposure,pos="0.050,0.680"]
-TxTMB [pos="0.350,0.560"]
-TxCRP [pos="0.760,0.560"]
-TLR [pos="0.560,0.560"]
-PFS [outcome,pos="0.720,0.760"]
-OS [outcome,pos="0.900,0.920"]
-
-Age -> TMB_BRAF
-Age -> OS
-Sex -> TMB_BRAF
-U -> TMB_BRAF
-U -> CRP
-U -> PFS
-U -> OS
-TMB_BRAF -> PFS
-TMB_BRAF -> OS
-TMB_BRAF -> TLR
-TMB_BRAF -> TxTMB
-CRP -> PFS
-CRP -> OS
-CRP -> TLR
-CRP -> TxCRP
-T -> PFS
-T -> OS
-T -> TLR
-T -> TxTMB
-T -> TxCRP
-TxTMB -> PFS
-TxTMB -> OS
-TxCRP -> PFS
-TxCRP -> OS
-TLR -> PFS
-PFS -> OS
-}')
+# `dag` is provided by dag_helpers.R.
 ```
 
 ```{r dag-plot}
@@ -150,76 +112,7 @@ tidy_dag$data <- tidy_dag$data |>
   )
 
 # Colour palette
-pal <- c(
-  "exposure" = "#2166ac",
-  "outcome"  = "#b2182b",
-  "latent"   = "#1b7837"
-)
-
-plot_dag <- function(tidy_dag_obj, caption_pal) {
-  node_data <- node_status(tidy_dag_obj)$data |>
-    distinct(name, x, y, status)
-  x_range <- range(node_data$x, na.rm = TRUE)
-  y_range <- range(node_data$y, na.rm = TRUE)
-  x_pad <- diff(x_range) * 0.10
-  y_pad <- diff(y_range) * 0.10
-
-  ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
-    # Solid edges represent established causal relationships in the DAG.
-    geom_dag_edges_link(
-      data = function(d) dplyr::filter(d, !is.na(to), !hyp)
-    ) +
-    # Dashed edges highlight hypothesised interaction effects.
-    geom_dag_edges_link(
-      data = function(d) dplyr::filter(d, !is.na(to), hyp),
-      edge_linetype = "dashed"
-    ) +
-    geom_dag_node(
-      data = node_data,
-      mapping = aes(x = x, y = y, colour = status, fill = status),
-      size = 24,
-      inherit.aes = FALSE
-    ) +
-    geom_dag_text(
-      data = node_data,
-      mapping = aes(x = x, y = y, label = name),
-      colour = "white",
-      size = 3.0,
-      inherit.aes = FALSE
-    ) +
-    coord_equal(
-      xlim = c(x_range[1] - x_pad, x_range[2] + x_pad),
-      ylim = c(y_range[1] - y_pad, y_range[2] + y_pad),
-      clip = "off"
-    ) +
-    theme_dag() +
-    scale_color_manual(
-      name     = "Node type",
-      values   = caption_pal,
-      na.value = "grey55",
-      breaks   = c("exposure", "latent", "outcome"),
-      labels   = c("exposure" = "Exposure (T)",
-                   "latent"   = "Latent (U)",
-                   "outcome"  = "Outcome (PFS, OS)")
-    ) +
-    scale_fill_manual(
-      name     = "Node type",
-      values   = caption_pal,
-      na.value = "grey55",
-      breaks   = c("exposure", "latent", "outcome"),
-      labels   = c("exposure" = "Exposure (T)",
-                   "latent"   = "Latent (U)",
-                   "outcome"  = "Outcome (PFS, OS)")
-    ) +
-    theme(
-      legend.position   = "bottom",
-      legend.text       = element_text(size = 10),
-      legend.title      = element_text(size = 10, face = "bold"),
-      plot.margin       = margin(10, 10, 10, 10)
-    )
-}
-
-plot_dag(tidy_dag, pal)
+plot_dag(tidy_dag, dag_palette)
 ```
 
 # Causal Analysis
@@ -260,15 +153,7 @@ indep <- impliedConditionalIndependencies(dag)
 if (length(indep) == 0) {
   cat("The DAG implies no testable conditional independencies (saturated structure).\n")
 } else {
-  fmt_ci <- function(s) {
-    z <- s$Z
-    if (length(z) == 0) {
-      sprintf("%s _||_ %s", s$X, s$Y)
-    } else {
-      sprintf("%s _||_ %s  |  {%s}", s$X, s$Y, paste(sort(z), collapse = ", "))
-    }
-  }
-  indep_df <- data.frame(Statement = sapply(indep, fmt_ci))
+  indep_df <- data.frame(Statement = sapply(indep, format_ci_statement))
   tbl2 <- kable(indep_df,
                col.names = "Implied conditional independence  (X _||_ Y | {Z})",
                caption   = "Conditional independencies implied by the causal DAG",
@@ -288,45 +173,7 @@ This sensitivity DAG removes the `Age -> TMB_BRAF` and `Sex -> TMB_BRAF` edges w
 ```{r dag-sens-define}
 #| include: false
 
-dag_sens <- dagitty('dag {
-bb="0,0,1,1"
-Age [pos="0.100,0.100"]
-Sex [pos="0.280,0.100"]
-U [latent,pos="0.750,0.080"]
-TMB_BRAF [pos="0.200,0.380"]
-CRP [pos="0.720,0.320"]
-T [exposure,pos="0.050,0.680"]
-TxTMB [pos="0.350,0.560"]
-TxCRP [pos="0.760,0.560"]
-TLR [pos="0.560,0.560"]
-PFS [outcome,pos="0.720,0.760"]
-OS [outcome,pos="0.900,0.920"]
-
-Age -> OS
-U -> TMB_BRAF
-U -> CRP
-U -> PFS
-U -> OS
-TMB_BRAF -> PFS
-TMB_BRAF -> OS
-TMB_BRAF -> TLR
-TMB_BRAF -> TxTMB
-CRP -> PFS
-CRP -> OS
-CRP -> TLR
-CRP -> TxCRP
-T -> PFS
-T -> OS
-T -> TLR
-T -> TxTMB
-T -> TxCRP
-TxTMB -> PFS
-TxTMB -> OS
-TxCRP -> PFS
-TxCRP -> OS
-TLR -> PFS
-PFS -> OS
-}')
+# `dag_sens` is provided by dag_helpers.R.
 ```
 
 ## Sensitivity DAG
@@ -346,7 +193,7 @@ tidy_dag_sens$data <- tidy_dag_sens$data |>
     hyp  = !is.na(to) & name %in% c("TxTMB", "TxCRP") & to %in% c("PFS", "OS")
   )
 
-plot_dag(tidy_dag_sens, pal)
+plot_dag(tidy_dag_sens, dag_palette)
 ```
 
 ## Sensitivity Causal Analysis
@@ -370,15 +217,7 @@ indep_sens <- impliedConditionalIndependencies(dag_sens)
 if (length(indep_sens) == 0) {
   cat("The sensitivity DAG implies no testable conditional independencies (saturated structure).\n")
 } else {
-  fmt_ci <- function(s) {
-    z <- s$Z
-    if (length(z) == 0) {
-      sprintf("%s _||_ %s", s$X, s$Y)
-    } else {
-      sprintf("%s _||_ %s  |  {%s}", s$X, s$Y, paste(sort(z), collapse = ", "))
-    }
-  }
-  indep_sens_df <- data.frame(Statement = sapply(indep_sens, fmt_ci))
+  indep_sens_df <- data.frame(Statement = sapply(indep_sens, format_ci_statement))
   tbl3 <- kable(
     indep_sens_df,
     col.names = "Implied conditional independence  (X _||_ Y | {Z})",
@@ -400,20 +239,7 @@ The following DAG presents the same causal assumptions in a condensed form inten
 ```{r dag-simple-define}
 #| include: false
 
-dag_simple <- dagitty('dag {
-bb="0,0,1,1"
-Demo     [pos="0.280,0.100"]
-TMB_BRAF [pos="0.150,0.400"]
-CRP      [pos="0.150,0.750"]
-T        [exposure,pos="0.050,0.575"]
-Survival [outcome,pos="0.750,0.575"]
-
-Demo -> TMB_BRAF
-Demo -> Survival
-TMB_BRAF -> Survival
-CRP -> Survival
-T -> Survival
-}')
+# `dag_simple` is provided by dag_helpers.R.
 ```
 
 ```{r dag-simple-plot}

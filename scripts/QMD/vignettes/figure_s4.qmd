@@ -17,12 +17,14 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.align = "center", dpi = 300)
 knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, scales, dampack)
-
-suppressMessages(suppressWarnings(
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02"),
+  funs = c("report_format"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "dampack"),
+  set_knitr = FALSE,
+  set_theme = FALSE
+)
 ```
 
 ```{r data, include=FALSE}
@@ -30,11 +32,6 @@ cache_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rd
 psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
 ceac_data <- if (!is.null(psa_obj)) dampack::ceac(seq(0, 150000, by = 2000), psa_obj) else data.frame()
 
-strategy_labels <- c(
-  control = "Standard of Care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
 ```
 
 ```{r figure, fig.width=9, fig.height=6}

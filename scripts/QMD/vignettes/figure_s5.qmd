@@ -20,7 +20,7 @@ knitr::opts_knit$set(root.dir = here::here())
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
-  funs = c("model_fun", "calculate_outcomes", "cea_helpers"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format"),
   set_knitr = FALSE, set_theme = FALSE
 )
 ```
@@ -28,12 +28,6 @@ setup_report(
 ```{r data, include=FALSE}
 basecase <- run_basecase(verbose = FALSE)
 icer_df <- as.data.frame(basecase$icer_obj)
-
-strategy_labels <- c(
-  control = "Standard care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
 
 plot_df <- icer_df %>%
   filter(Strategy %in% names(strategy_labels)) %>%
@@ -52,7 +46,7 @@ p_frontier <- ggplot(plot_df, aes(x = Effect, y = Cost)) +
   {if (nrow(frontier) > 1) geom_line(data = frontier, color = "gray40", linetype = "dashed")} +
   geom_point(aes(color = Label, shape = Frontier), size = 4) +
   geom_text(aes(label = Label), hjust = -0.05, vjust = -0.7, size = 3.2) +
-  scale_color_manual(values = c("Standard care" = "gray50",
+  scale_color_manual(values = c("Standard of Care" = "gray50",
                                 "CRP-guided" = "#E69F00",
                                 "TMB/BRAF-guided" = "#0072B2"),
                      name = NULL) +

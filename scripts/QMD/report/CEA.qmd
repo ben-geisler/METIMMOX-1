@@ -34,30 +34,8 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
-  funs = c("model_fun", "calculate_outcomes", "cea_helpers")
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format")
 )
-
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP-guided",
-    tmb_braf = "TMB/BRAF-guided",
-    .default = x
-  )
-}
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
-
-format_icer <- function(x, status = NULL) {
-  if (!is.null(status) && status %in% c("D", "ED", "Dominated")) return("Dominated")
-  if (!is.null(status) && status %in% c("Reference", "ref")) return("--")
-  if (is.na(x) || !is.finite(x)) return("--")
-  scales::dollar(x, prefix = "EUR ", accuracy = 1)
-}
 
 basecase <- run_basecase(verbose = FALSE)
 base_results <- basecase$base_results

@@ -32,19 +32,16 @@ knitr::opts_chunk$set(
 )
 knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, survival, flexsurv, coxphf, dplyr, ggplot2, scales, dampack,
-               knitr, kableExtra)
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
-  source(here("scripts/R/functions/model_fun.R"))
-  source(here("scripts/R/functions/calculate_outcomes.R"))
-  source(here("scripts/R/functions/prediction_functions.R"))
-}))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "06", "07"),
+  funs = c("model_fun", "calculate_outcomes", "prediction_functions",
+           "report_format"),
+  packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
+               "scales", "dampack", "knitr", "kableExtra"),
+  set_knitr = FALSE,
+  set_theme = FALSE
+)
 ```
 
 ```{r cohort, include=FALSE}
@@ -177,8 +174,7 @@ l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
 res3  <- suppressWarnings(model_fun(l_params_base3, determpsa = "det"))
 icer3 <- dampack::calculate_icers(cost = res3$Cost, effect = res3$Effect, strategies = res3$Strategy)
 
-label_strategy <- c(control = "Standard of Care", crp = "CRP-guided",
-                    tlr = "TLR-guided", tmb_braf = "TMB/BRAF-guided")
+label_strategy <- c(strategy_labels, tlr = "TLR-guided")
 cea_tbl <- as.data.frame(icer3) %>%
   mutate(Strategy = label_strategy[as.character(Strategy)],
          NMB = Effect * WTP - Cost)
@@ -186,8 +182,6 @@ write.csv(cea_tbl, here("tables", "poster_cea.csv"), row.names = FALSE)
 ```
 
 ```{r cea-display}
-fmt_eur <- function(x) ifelse(is.na(x) | !is.finite(x), "--",
-                              scales::dollar(x, prefix = "EUR ", accuracy = 1))
 cea_display <- cea_tbl %>%
   transmute(
     Strategy,
@@ -308,8 +302,7 @@ c1 <- dampack::ceac(wtp_range, mk_psa(cs, es)); c1$Panel <- "One biomarker (mode
 c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- "Two biomarkers (joint, correlation-adjusted)"
 ceac_df <- rbind(as.data.frame(c1), as.data.frame(c2))
 names(ceac_df)[names(ceac_df) == "Proportion"] <- "Probability"
-ceac_df$Strategy <- c(control="Standard of Care", crp="CRP-guided",
-                      tmb_braf="TMB/BRAF-guided")[as.character(ceac_df$Strategy)]
+ceac_df$Strategy <- strategy_label(as.character(ceac_df$Strategy))
 write.csv(ceac_df, here("tables", "poster_ceac_data.csv"), row.names = FALSE)
 ```
 

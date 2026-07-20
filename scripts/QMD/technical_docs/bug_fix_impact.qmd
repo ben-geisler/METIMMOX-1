@@ -34,14 +34,14 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       dpi = 300, out.width = "100%")
 knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, dplyr, ggplot2, scales)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/functions/snapshot_utils.R"))
-}))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("snapshot_utils", "report_format"),
+  packages = c("here", "knitr", "kableExtra", "dplyr", "ggplot2", "scales"),
+  set_knitr = FALSE,
+  set_theme = FALSE
+)
 
 snapshots_dir <- here::here("data", "output", "snapshots")
 snapshot_files <- if (dir.exists(snapshots_dir)) {
@@ -77,20 +77,6 @@ if (!is.null(comparison_pair)) {
   after_snapshot <- load_snapshot(comparison_pair$after$snapshot, snapshots_dir)
 }
 
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP-guided",
-    tmb_braf = "TMB/BRAF-guided",
-    .default = x
-  )
-}
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 # Snapshot Inventory

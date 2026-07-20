@@ -34,6 +34,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "06", "07"),
+  funs = c("report_format"),
   set_theme = FALSE
 )
 
@@ -50,20 +51,6 @@ invisible(capture.output(
   source(here::here("scripts/R/analysis/11_DSA.R"))
 ))
 
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP-guided",
-    tmb_braf = "TMB/BRAF-guided",
-    .default = x
-  )
-}
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 # Overview

@@ -46,14 +46,14 @@ knitr::opts_chunk$set(
 # Set working directory to project root
 knitr::opts_knit$set(root.dir = here::here())
 
-# Load required libraries
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, knitr, kableExtra, ggplot2, dplyr, tidyverse,
-  survival,   # Surv object, cox.zph for Schoenfeld, ridge()
-  coxphf,     # Firth-corrected Cox regression + coxphftest
-  glmnet,     # Ridge regression fallback (alpha=0)
-  vcd         # Cramér's V calculation
+# Load required libraries and shared Cox extraction helpers.
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  funs = c("cox_extract"),
+  packages = c("here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyverse",
+               "survival", "coxphf", "glmnet", "vcd"),
+  set_knitr = FALSE,
+  set_theme = FALSE
 )
 
 # Set ggplot theme
@@ -84,47 +84,6 @@ if (file.exists(here("scripts/R/analysis/03_biomarker_strategies.R"))) {
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
-
-#' Fit Firth-corrected Cox model with profile likelihood CIs
-fit_firth_cox <- function(formula, data, label = "model") {
-  tryCatch({
-    coxphf(
-      formula = formula,
-      data = data,
-      firth = TRUE,
-      pl = TRUE,        # Profile likelihood CIs
-      maxit = 500,      # 100 was too tight for the TMB/BRAF:Rx PFS PLRT (converges at iter ~102)
-      maxstep = 0.1
-    )
-  }, error = function(e) {
-    warning(paste("coxphf failed for", label, ":", e$message))
-    NULL
-  })
-}
-
-#' Extract results from coxphf (full table, interactions grouped at top)
-#' Note: coxphf ci.lower and ci.upper are ALREADY exponentiated (HR scale)
-extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
-  if (is.null(model)) return(NULL)
-
-  results <- data.frame(
-    Term = names(model$coefficients),
-    HR = exp(model$coefficients),
-    CI_Lower = model$ci.lower,  # Already on HR scale, do NOT exp()
-    CI_Upper = model$ci.upper,  # Already on HR scale, do NOT exp()
-    P_Value = model$prob,
-    stringsAsFactors = FALSE
-  )
-
-  if (reorder_interactions) {
-    # Put interaction terms at top
-    is_interaction <- grepl(":", results$Term)
-    results <- rbind(results[is_interaction, ], results[!is_interaction, ])
-  }
-
-  rownames(results) <- NULL
-  results
-}
 
 #' Extract results from standard Cox model (full table, interactions grouped at top)
 extract_coxph_results <- function(model, reorder_interactions = TRUE) {
@@ -741,16 +700,6 @@ if (!is.null(results_pfs)) {
 ## Forest Plot
 
 ```{r forest-plot, fig.height=4, fig.width=8}
-# Extract interaction HRs from unified model results
-get_interaction_hr <- function(results_df, pattern) {
-  if (is.null(results_df)) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
-  idx <- grep(pattern, results_df$Term)
-  if (length(idx) == 0) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
-  list(HR        = results_df$HR[idx[1]],
-       CI_Lower  = results_df$CI_Lower[idx[1]],
-       CI_Upper  = results_df$CI_Upper[idx[1]])
-}
-
 hr_crp_os  <- get_interaction_hr(results_os,  "crp_num.*Rx|Rx.*crp_num")
 hr_tmb_os  <- get_interaction_hr(results_os,  "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 hr_crp_pfs <- get_interaction_hr(results_pfs, "crp_num.*Rx|Rx.*crp_num")
@@ -797,16 +746,6 @@ Ridge regression (L2-penalized Cox, alpha = 0) shrinks all coefficients toward z
 # RIDGE REGRESSION SENSITIVITY ANALYSIS (unified model)
 # Penalize main effects (CRP, TMB/BRAF); interaction terms are unpenalized
 # =============================================================================
-
-extract_ridge_interaction <- function(model, term_pattern) {
-  if (is.null(model)) return(list(HR = NA, SE = NA))
-  summ <- summary(model)
-  coef_table <- summ$coefficients
-  idx <- grep(term_pattern, rownames(coef_table))
-  if (length(idx) == 0) return(list(HR = NA, SE = NA))
-  list(HR = exp(coef_table[idx[1], "coef"]),
-       SE = coef_table[idx[1], "se(coef)"])
-}
 
 tryCatch({
   ridge_os <- coxph(

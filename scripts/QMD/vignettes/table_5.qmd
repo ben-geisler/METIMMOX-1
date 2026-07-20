@@ -20,21 +20,13 @@ knitr::opts_knit$set(root.dir = here::here())
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("cea_helpers"),
+  funs = c("cea_helpers", "report_format"),
   set_knitr = FALSE, set_theme = FALSE
 )
-
-format_eur <- function(x) scales::dollar(x, prefix = "EUR ", accuracy = 1)
 ```
 
 ```{r load-psa, include=FALSE}
 psa_obj <- load_psa_cache(verbose = FALSE)
-
-strategy_labels <- c(
-  control = "Standard care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
 
 display_df <- if (!is.null(psa_obj)) {
   create_psa_summary_table(psa_obj, wtp = WTP) %>%

@@ -19,11 +19,13 @@ knitr::opts_chunk$set(
 )
 knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales,
-  survival,   # Surv object, ridge()
-  coxphf      # Firth-corrected Cox regression
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("cox_extract"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "survival", "coxphf"),
+  set_knitr = FALSE,
+  set_theme = FALSE
 )
 
 theme_set(theme_minimal() +
@@ -35,13 +37,6 @@ theme_set(theme_minimal() +
   )
 )
 
-# Data + biomarker definitions (Cox fitting needs nothing else)
-suppressMessages(suppressWarnings(
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-))
-suppressMessages(suppressWarnings(
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-))
 ```
 
 This vignette consolidates the treatment-by-biomarker interaction hazard ratios from
@@ -52,67 +47,6 @@ estimated by both **Firth-corrected Cox** regression and **ridge Cox** regressio
 Model formulas and extraction logic mirror `scripts/QMD/report/clinical_effectiveness.qmd`.
 
 ```{r helpers, include=FALSE}
-# =============================================================================
-# HELPER FUNCTIONS (copied from clinical_effectiveness.qmd; report-local)
-# =============================================================================
-
-#' Fit Firth-corrected Cox model with profile likelihood CIs
-fit_firth_cox <- function(formula, data, label = "model") {
-  tryCatch({
-    coxphf(
-      formula = formula,
-      data = data,
-      firth = TRUE,
-      pl = TRUE,        # Profile likelihood CIs
-      maxit = 500,
-      maxstep = 0.1
-    )
-  }, error = function(e) {
-    warning(paste("coxphf failed for", label, ":", e$message))
-    NULL
-  })
-}
-
-#' Extract results from coxphf (ci.lower/ci.upper are ALREADY on the HR scale)
-extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
-  if (is.null(model)) return(NULL)
-  results <- data.frame(
-    Term = names(model$coefficients),
-    HR = exp(model$coefficients),
-    CI_Lower = model$ci.lower,  # Already on HR scale, do NOT exp()
-    CI_Upper = model$ci.upper,  # Already on HR scale, do NOT exp()
-    P_Value = model$prob,
-    stringsAsFactors = FALSE
-  )
-  if (reorder_interactions) {
-    is_interaction <- grepl(":", results$Term)
-    results <- rbind(results[is_interaction, ], results[!is_interaction, ])
-  }
-  rownames(results) <- NULL
-  results
-}
-
-#' Pull an interaction HR + profile-likelihood CI from a coxphf results table
-get_interaction_hr <- function(results_df, pattern) {
-  if (is.null(results_df)) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
-  idx <- grep(pattern, results_df$Term)
-  if (length(idx) == 0) return(list(HR = NA, CI_Lower = NA, CI_Upper = NA))
-  list(HR        = results_df$HR[idx[1]],
-       CI_Lower  = results_df$CI_Lower[idx[1]],
-       CI_Upper  = results_df$CI_Upper[idx[1]])
-}
-
-#' Pull an interaction HR + SE from a ridge coxph model
-extract_ridge_interaction <- function(model, term_pattern) {
-  if (is.null(model)) return(list(HR = NA, SE = NA))
-  summ <- summary(model)
-  coef_table <- summ$coefficients
-  idx <- grep(term_pattern, rownames(coef_table))
-  if (length(idx) == 0) return(list(HR = NA, SE = NA))
-  list(HR = exp(coef_table[idx[1], "coef"]),
-       SE = coef_table[idx[1], "se(coef)"])
-}
-
 #' Convert a ridge {HR, SE} list into {HR, CI_Lower, CI_Upper} using a Wald
 #' 95% interval on the log scale: exp(log(HR) +/- 1.96 * SE).
 ridge_to_hr_ci <- function(ridge_res) {
