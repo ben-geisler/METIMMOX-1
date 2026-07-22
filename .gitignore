@@ -51,6 +51,8 @@ Rplots.pdf
 /scripts/QMD/report/*.pdf
 /scripts/QMD/technical_docs/*.pdf
 /scripts/QMD/vignettes/*.html
+# Exception: the bug-fix impact report is tracked as reviewer-facing PR evidence.
+!/scripts/QMD/technical_docs/bug_fix_impact.pdf
 
 # Orphaned CommonMark render assets (no tracked Markdown references)
 /scripts/QMD/report/CEA_files/
