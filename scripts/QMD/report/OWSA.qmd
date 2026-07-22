@@ -31,49 +31,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, dplyr, ggplot2, scales,
-               survival, flexsurv, dampack)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-}))
-
-param_groups <- list(
-  drug_costs = c("c_drug_nivo", "c_drug_FLOX"),
-  test_costs = c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood"),
-  other_costs = c("c_other_visit", "c_other_baseline",
-                  "c_other_follow", "c_other_last"),
-  utilities = c("u_np", "u_p"),
-  prevalence = c("p_crp", "p_tmb_braf")
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "09"),
+  funs = c("report_format"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
 )
-
-invisible(capture.output(
-  source(here::here("scripts/R/analysis/11_DSA.R"))
-))
-
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP-guided",
-    tmb_braf = "TMB/BRAF-guided",
-    .default = x
-  )
-}
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 # Overview

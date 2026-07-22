@@ -31,33 +31,28 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "08b"),
+  funs = c("report_format"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, ggplot2, dplyr, scales, tidyr,
-               survival, flexsurv, dampack)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-invisible(capture.output(
-  source(here::here("scripts/R/analysis/10b_enriched_population_analysis.R"))
-))
-
-strategy_label <- function(x) {
-  dplyr::recode(
-    x,
-    control = "Standard of Care",
-    crp = "CRP",
-    tmb_braf = "TMB/BRAF",
-    .default = x
+enriched_display <- enriched_comparison %>%
+  transmute(
+    Biomarker,
+    Prevalence = sprintf("%.1f%%", Prevalence * 100),
+    Base_Cost = format_eur(Base_Cost),
+    Base_Effect = sprintf("%.3f", Base_Effect),
+    Base_ICER = format_icer(Base_ICER, Base_Status),
+    Enr_Cost = format_eur(Enr_Cost),
+    Enr_Effect = sprintf("%.3f", Enr_Effect),
+    Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
+    Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_ICER = format_icer(Enr_ICER, Enr_Status),
+    Pct_Change = ifelse(is.na(Pct_Change), "--", sprintf("%+.1f%%", Pct_Change))
   )
-}
 ```
 
 # Overview
@@ -72,7 +67,7 @@ Economic biomarkers are CRP and TMB/BRAF.
 prev_df <- strategies_df %>%
   filter(id %in% get_biomarkers()) %>%
   transmute(
-    Biomarker = strategy_label(id),
+    Biomarker = biomarker_label(id),
     Prevalence = sprintf("%.1f%%", prevalence * 100),
     `N Positive` = sapply(id, function(bm) sum(data[[bm]] == 1, na.rm = TRUE))
   )
@@ -130,7 +125,7 @@ plot_df <- enriched_comparison %>%
     Analysis = recode(Analysis,
                       Base_ICER = "Base case",
                       Enr_ICER = "Enriched population"),
-    Biomarker = strategy_label(tolower(gsub("/", "_", Biomarker)))
+    Biomarker = biomarker_label(tolower(gsub("/", "_", Biomarker)))
   )
 
 ggplot(plot_df, aes(x = Biomarker, y = ICER, fill = Analysis)) +

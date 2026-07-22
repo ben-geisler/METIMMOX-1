@@ -1,30 +1,35 @@
+#' Summarize paired DSA endpoints into parameter ranges
+#'
+#' @param results_df DSA results containing min/max rows and NMB differences
+#' @param strategy_name Optional strategy to select
+#' @return Data frame with one row per strategy and parameter
+summarise_param_ranges <- function(results_df, strategy_name = NULL) {
+  x <- results_df[results_df$Parameter != "base_case", ]
+  if (!is.null(strategy_name)) x <- x[x$Strategy == strategy_name, ]
+  groups <- split(x, interaction(x$Strategy, x$Parameter, drop = TRUE))
+  rows <- lapply(groups, function(group) {
+    endpoints <- match(c("min", "max"), group$Value)
+    if (anyNA(endpoints)) return(NULL)
+    diffs <- group$NMB_diff[endpoints]
+    data.frame(
+      Strategy = group$Strategy[1], Parameter = group$Parameter[1],
+      Min_diff = diffs[1], Max_diff = diffs[2],
+      Range = abs(diff(diffs)), stringsAsFactors = FALSE
+    )
+  })
+  rows <- Filter(Negate(is.null), rows)
+  if (length(rows) == 0) {
+    return(data.frame(Strategy = character(), Parameter = character(),
+                      Min_diff = numeric(), Max_diff = numeric(), Range = numeric()))
+  }
+  do.call(rbind, rows)
+}
+
 # Function to create tornado plot for a specific strategy
 create_tornado_plot <- function(strategy_name, results_df) {
   cat("Creating tornado plot for strategy:", strategy_name, "\n")
-  strat_results <- results_df[results_df$Strategy == strategy_name & 
-                                results_df$Parameter != "base_case", ]
-  
-  # Reshape data for easier plotting
-  tornado_data <- data.frame()
-  for (param in unique(strat_results$Parameter)) {
-    min_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "min", ]
-    max_row <- strat_results[strat_results$Parameter == param & 
-                               strat_results$Value == "max", ]
-    
-    # Skip if we don't have both min and max
-    if (nrow(min_row) == 0 || nrow(max_row) == 0) next
-    
-    min_diff <- min_row$NMB_diff
-    max_diff <- max_row$NMB_diff
-    
-    tornado_data <- rbind(tornado_data, data.frame(
-      Parameter = param,
-      Min_diff = min_diff,
-      Max_diff = max_diff,
-      Range = abs(max_diff - min_diff)
-    ))
-  }
+  tornado_data <- summarise_param_ranges(results_df, strategy_name)
+  tornado_data <- tornado_data[, c("Parameter", "Min_diff", "Max_diff", "Range")]
   
   # Sort by range for tornado plot (descending order)
   tornado_data <- tornado_data[order(-tornado_data$Range), ]

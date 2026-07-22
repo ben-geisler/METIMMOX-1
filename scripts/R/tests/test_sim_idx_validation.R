@@ -26,9 +26,9 @@ p_load(here, survival, flexsurv, dplyr)
 # Source required analysis scripts
 source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
 source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-source(here::here("scripts/R/analysis/08_sampling.R"))
+source(here::here("scripts/R/analysis/04_parametric_survival_analysis.R"))
+source(here::here("scripts/R/analysis/05_basecase_input_parameters.R"))
+source(here::here("scripts/R/analysis/06_sampling.R"))
 
 # Source model functions
 source(here::here("scripts/R/functions/model_fun.R"))

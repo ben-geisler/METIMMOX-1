@@ -31,25 +31,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, ggplot2, dplyr, tidyr, scales,
-               survival, flexsurv, survminer)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here::here("scripts/R/analysis/07_basecase_input_parameters.R"))
-}))
-
-biomarker_label <- function(x) {
-  dplyr::recode(x, crp = "CRP", tmb_braf = "TMB/BRAF", .default = x)
-}
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("report_format"),
+  packages = c(REPORT_PACKAGES, "survminer"),
+  set_theme = FALSE
+)
 
 coef_table <- function(fit, outcome, distribution) {
   if (is.null(fit)) return(NULL)

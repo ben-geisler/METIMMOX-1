@@ -29,19 +29,12 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, dplyr, tidyr, survival, flexsurv)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-}))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  packages = c("here", "knitr", "kableExtra", "dplyr", "tidyr", "survival", "flexsurv"),
+  set_theme = FALSE
+)
 
 extract_model_coefs <- function(fit, endpoint, distribution) {
   if (is.null(fit)) return(NULL)
@@ -65,7 +58,7 @@ extract_model_coefs <- function(fit, endpoint, distribution) {
 
 This technical appendix lists every fitted parametric distribution for the single joint economic survival model. Overall survival (OS) and progression-free survival (PFS) are not selected independently. The base-case pair is the pair with the lowest combined AIC among candidates that preserve OS $\geq$ PFS for control and every economic biomarker subgroup at every weekly time point over the modeled horizon.
 
-With the current data and 10-year horizon, this ordering-constrained procedure selects **gamma for OS and gamma for PFS**. The manuscript's gamma and Model-A/B/C statements are retained only as historical descriptions; they do not define the executable selection procedure or the current single-model structure.
+With the current data and 10-year horizon, this ordering-constrained procedure selects **gamma for OS and gamma for PFS**.
 
 ```{r formula-table}
 formula_df <- data.frame(

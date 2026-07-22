@@ -1,3 +1,50 @@
+#' Build partitioned-survival state occupancy vectors
+#'
+#' @param os Overall-survival probabilities
+#' @param pfs Progression-free-survival probabilities
+#' @param curve_label Label identifying the curve in an ordering-violation error.
+#'   When supplied, OS >= PFS is asserted. Callers that have already run
+#'   model_fun()'s enforce_survival_ordering() leave this NULL.
+#' @return List containing progression-free, progressed, and dead occupancy
+partitioned_survival_states <- function(os, pfs, curve_label = NULL) {
+  if (!is.null(curve_label)) {
+    violation_idx <- which(pfs > os)
+    if (length(violation_idx) > 0) {
+      stop(
+        "Survival ordering invariant failed for ", curve_label,
+        ": PFS exceeded OS at ", length(violation_idx), " time points",
+        "; max excess=",
+        signif(max(pfs[violation_idx] - os[violation_idx]), 4),
+        ". Refit using ordering-constrained distribution selection."
+      )
+    }
+  }
+  states <- list(p_pf = pfs, p_p = pmax(os - pfs, 0), p_d = 1 - os)
+  states$p_pf[1] <- 1
+  states$p_p[1] <- states$p_d[1] <- 0
+  states
+}
+
+#' Create cost and effect discount weights for model cycles
+#'
+#' @param params Parameter list supplying dr_costs and dr_effects.
+#' @param n_cycles Number of model cycles (time_horizon + 1).
+#' @param cl Cycle length in years; defaults to params$cl. Discounting must use
+#'   the model's actual cycle length rather than assuming weekly cycles, so that
+#'   changing cl rescales the horizon correctly instead of silently discounting
+#'   over the wrong number of years.
+#' @return List with cost and effect discount weight vectors.
+discount_weights <- function(params, n_cycles, cl = params$cl) {
+  if (is.null(cl) || !is.numeric(cl) || length(cl) != 1L ||
+      !is.finite(cl) || cl <= 0) {
+    stop("discount_weights() requires a positive numeric cycle length 'cl'; ",
+         "pass it explicitly or set params$cl.")
+  }
+  years <- (seq_len(n_cycles) - 1) * cl
+  list(cost = 1 / (1 + params$dr_costs)^years,
+       effect = 1 / (1 + params$dr_effects)^years)
+}
+
 # Helper function to calculate costs and QALYs based on state occupancy
 calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker, v_dw_c, v_dw_e, cl) {
   # Number of cycles
@@ -22,7 +69,6 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   
   # Define quarterly cycles for follow-up costs
   quarterly_cycles <- seq(13, n_cycles, by = 13)
-  quarterly_cycles <- quarterly_cycles[quarterly_cycles <= n_cycles]
   
   # Calculate QALYs
   qalys_pf <- p_pf * params$u_np * cl

@@ -36,13 +36,17 @@
 # Provides clear error messages when parameters are misconfigured.
 # ===============================================================================
 
-validate_model_params <- function(params, time_horizon) {
+validate_model_params <- function(params) {
+  biomarkers <- get_biomarkers()
+  biomarker_cost_params <- unique(unname(biomarker_cost_key(biomarkers)))
+  prevalence_params <- unname(biomarker_prevalence_key(biomarkers))
+
   # Required scalar parameters - economic biomarker prevalence values
   required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                        "c_test_blood", "c_test_CRP", "c_test_NGS", "c_other_visit",
+                        "c_test_blood", biomarker_cost_params, "c_other_visit",
                         "c_other_baseline", "c_other_follow", "c_other_last",
-                        "p_crp", "p_tmb_braf")
+                        prevalence_params)
 
   # Required list parameters
   required_lists <- c("p_os", "p_pfs", "c_test_biomarker")
@@ -60,7 +64,7 @@ validate_model_params <- function(params, time_horizon) {
 
   # Validate cost parameters are non-negative
   cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                   "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
+                   biomarker_cost_params, "c_other_visit", "c_other_baseline",
                    "c_other_follow", "c_other_last")
   for (p in cost_params) {
     if (params[[p]] < 0) {
@@ -69,25 +73,20 @@ validate_model_params <- function(params, time_horizon) {
   }
 
   # Validate the data-driven diagnostic-cost mapping used by each biomarker strategy.
-  required_biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  missing_biomarker_costs <- setdiff(required_biomarkers,
+  missing_biomarker_costs <- setdiff(biomarkers,
                                      names(params$c_test_biomarker))
   if (length(missing_biomarker_costs) > 0) {
     stop("Missing diagnostic-test costs for biomarkers: ",
          paste(missing_biomarker_costs, collapse = ", "))
   }
   invalid_biomarker_costs <- vapply(
-    params$c_test_biomarker[required_biomarkers],
+    params$c_test_biomarker[biomarkers],
     function(x) !is.numeric(x) || length(x) != 1 || is.na(x) || x < 0,
     logical(1)
   )
   if (any(invalid_biomarker_costs)) {
     stop("Diagnostic-test costs must be non-negative numeric scalars for: ",
-         paste(required_biomarkers[invalid_biomarker_costs], collapse = ", "))
+         paste(biomarkers[invalid_biomarker_costs], collapse = ", "))
   }
 
   # Validate utilities are in [0, 1]
@@ -99,8 +98,7 @@ validate_model_params <- function(params, time_horizon) {
   }
 
   # Validate prevalence parameters are in [0, 1]
-  prev_params <- c("p_crp", "p_tmb_braf")
-  for (p in prev_params) {
+  for (p in prevalence_params) {
     if (params[[p]] < 0 || params[[p]] > 1) {
       stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
     }
@@ -121,23 +119,18 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
   #   - n_samples: Number of resampled models (from 02_setup_and_global_variables.R)
-  #   - sampling_models: Resampled survival models (from 08_sampling.R)
-  #   - data_complete: Full analysis cohort (from 06_parametric_survival_analysis.R)
+  #   - sampling_models: Resampled survival models (from 06_sampling.R)
+  #   - data_complete: Full analysis cohort (from 04_parametric_survival_analysis.R)
   #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
   # These must exist in the global environment before calling model_fun in PSA mode.
 
-  # Get economic strategies and biomarkers from central config
-  if (exists("get_strategies")) {
-    strat_names <- get_strategies()
-    biomarkers_to_run <- get_biomarkers()
-  } else {
-    # Fallback for backward compatibility
-    strat_names <- c("control", "crp", "tmb_braf")
-    biomarkers_to_run <- c("crp", "tmb_braf")
-  }
+  # Get economic strategies and biomarkers from central config.
+  strat_names <- get_strategies()
+  control_strategy <- get_control_strategy()
+  biomarkers_to_run <- get_biomarkers()
 
   # Validate input parameters (Issue #47)
-  validate_model_params(params, time_horizon)
+  validate_model_params(params)
 
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
@@ -174,10 +167,12 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Check if any resampled models for this sim_idx are failed (using originals)
     # This helps track iterations where resampled model fitting failed and the
     # original model was substituted, which reduces uncertainty estimation
-    control_failed <- isTRUE(sampling_models$control$samples[[sim_idx]]$failed)
-    biomarker_failed <- any(sapply(biomarkers_to_run, function(bm) {
+    control_failed <- isTRUE(
+      sampling_models[[control_strategy]]$samples[[sim_idx]]$failed
+    )
+    biomarker_failed <- any(vapply(biomarkers_to_run, function(bm) {
       isTRUE(sampling_models[[bm]]$samples[[sim_idx]]$failed)
-    }))
+    }, logical(1)))
     if (control_failed || biomarker_failed) {
       fallback_used <- TRUE
     }
@@ -185,7 +180,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # -----------------------------------------------------------------------
     # CONTROL STRATEGY: Population-averaged predictions over FULL population
     # -----------------------------------------------------------------------
-    # Uses generate_psa_control_predictions() to predict for ALL patients in
+    # Uses the shared population-averaging helper to predict for ALL patients in
     # data_complete (both arms), matching the base case methodology which
     # also averages over the full population. The control model only uses
     # Age + sex, so treatment arm assignment is irrelevant.
@@ -193,19 +188,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     tryCatch({
       # Use population averaging over FULL population (data_complete)
       # to match base case which also uses data_complete for control predictions
-      os_control <- generate_psa_control_predictions(
-        sampling_model_list = sampling_models$control,
+      os_control <- generate_psa_population_averaged_predictions(
+        sampling_model_list = sampling_models[[control_strategy]],
         outcome = "os",
         sample_idx = sim_idx,
-        data_control_original = data_complete,
+        data_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 
-      pfs_control <- generate_psa_control_predictions(
-        sampling_model_list = sampling_models$control,
+      pfs_control <- generate_psa_population_averaged_predictions(
+        sampling_model_list = sampling_models[[control_strategy]],
         outcome = "pfs",
         sample_idx = sim_idx,
-        data_control_original = data_complete,
+        data_original = data_complete,
         time_points = seq(0, time_horizon)
       )
 
@@ -217,8 +212,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         fallback_used <- TRUE  # Issue #79: Track fallback
       } else {
         # Update params with population-averaged predictions
-        params$p_os$control_OS <- os_control
-        params$p_pfs$control_PFS <- pfs_control
+        params$p_os[[paste0(control_strategy, "_OS")]] <- os_control
+        params$p_pfs[[paste0(control_strategy, "_PFS")]] <- pfs_control
       }
 
     }, error = function(e) {
@@ -301,10 +296,12 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
   }
   
-  # Create discount factors over time
   expected_length <- time_horizon + 1
-  v_dw_c <- 1 / (1 + params$dr_costs)^(seq(0, time_horizon) / 52)
-  v_dw_e <- 1 / (1 + params$dr_effects)^(seq(0, time_horizon) / 52)
+  # Discount on this call's cycle length, the same cl calculate_outcomes() uses
+  # for QALYs, rather than params$cl (which test fixtures may omit).
+  weights <- discount_weights(params, expected_length, cl)
+  v_dw_c <- weights$cost
+  v_dw_e <- weights$effect
 
   # Helper to validate survival curve length
   validate_curve_length <- function(curve, name) {
@@ -318,10 +315,17 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # Resampled PSA fits are selected upstream and may still cross, so retain the
   # clamp only there as a last-resort safety net and emit a structured warning
   # that psa_functions.R can aggregate.
-  enforce_survival_ordering <- function(pfs, os, curve_label) {
+  enforce_survival_ordering <- function(pfs, os, strategy, subgroup) {
     violation_idx <- which(pfs > os)
     if (length(violation_idx) == 0) {
       return(pfs)
+    }
+
+    display_name <- unname(strategy_display_name(strategy))
+    curve_label <- if (subgroup == "control") {
+      tolower(display_name)
+    } else {
+      paste0(strategy, if (subgroup == "positive") "+" else "-")
     }
 
     if (determpsa != "psa") {
@@ -332,13 +336,21 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       )
     }
 
-    warning(
-      "PFS > OS constraint enforced at ", length(violation_idx),
-      " time points (", curve_label, ")",
-      if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "",
-      "; max excess=", signif(max(pfs[violation_idx] - os[violation_idx]), 4),
-      call. = FALSE
-    )
+    max_excess <- max(pfs[violation_idx] - os[violation_idx])
+    warning(warningCondition(
+      paste0(
+        "PFS > OS constraint enforced at ", length(violation_idx),
+        " time points (", curve_label, ")",
+        if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "",
+        "; max excess=", signif(max_excess, 4)
+      ),
+      class = "survival_ordering_warning",
+      strategy = strategy,
+      subgroup = subgroup,
+      n_violations = length(violation_idx),
+      max_excess = max_excess,
+      sim_idx = sim_idx
+    ))
     pmin(pfs, os)
   }
 
@@ -347,25 +359,21 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # =========================================================================
 
   # Get control survival curves (either base case or from resampling)
-  os_control <- params$p_os[["control_OS"]]
-  pfs_control <- params$p_pfs[["control_PFS"]]
-  validate_curve_length(os_control, "control_OS")
-  validate_curve_length(pfs_control, "control_PFS")
+  control_os_key <- paste0(control_strategy, "_OS")
+  control_pfs_key <- paste0(control_strategy, "_PFS")
+  os_control <- params$p_os[[control_os_key]]
+  pfs_control <- params$p_pfs[[control_pfs_key]]
+  validate_curve_length(os_control, control_os_key)
+  validate_curve_length(pfs_control, control_pfs_key)
 
-  pfs_control <- enforce_survival_ordering(pfs_control, os_control, "control")
+  pfs_control <- enforce_survival_ordering(
+    pfs_control, os_control, control_strategy, "control"
+  )
 
-  # Calculate state occupancy for partitioned survival model
-  # Progression-free: PFS curve
-  # Progressed: OS - PFS (ensures non-negative)
-  # Dead: 1 - OS
-  p_pf_control <- pfs_control
-  p_p_control <- pmax(os_control - pfs_control, 0)
-  p_d_control <- 1 - os_control
-  
-  # Force initial state to be 100% progression-free (all patients start alive)
-  p_pf_control[1] <- 1.0
-  p_p_control[1] <- 0.0
-  p_d_control[1] <- 0.0
+  control_states <- partitioned_survival_states(os_control, pfs_control)
+  p_pf_control <- control_states$p_pf
+  p_p_control <- control_states$p_p
+  p_d_control <- control_states$p_d
   
   # Calculate control QALYs and costs
   control_results <- calculate_outcomes(
@@ -381,12 +389,12 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   )
   
   # Store results for control
-  results$Cost[results$Strategy == "control"] <- control_results$costs_total
-  results$Effect[results$Strategy == "control"] <- control_results$qalys_total
+  results$Cost[results$Strategy == control_strategy] <- control_results$costs_total
+  results$Effect[results$Strategy == control_strategy] <- control_results$qalys_total
   
   # Store traces for control if requested
   if(return_traces) {
-    traces$control <- list(
+    traces[[control_strategy]] <- list(
       cycles = seq(0, time_horizon),
       p_pf = p_pf_control,
       p_p = p_p_control,
@@ -416,18 +424,13 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(pfs_pos, paste0(biomarker, "_pos_PFS"))
 
     pfs_pos <- enforce_survival_ordering(
-      pfs_pos, os_pos, paste0(biomarker, "+")
+      pfs_pos, os_pos, biomarker, "positive"
     )
 
-    # Calculate positive state occupancy
-    p_pf_pos <- pfs_pos
-    p_p_pos <- pmax(os_pos - pfs_pos, 0)
-    p_d_pos <- 1 - os_pos
-    
-    # Force initial state to be 100% progression-free
-    p_pf_pos[1] <- 1.0
-    p_p_pos[1] <- 0.0
-    p_d_pos[1] <- 0.0
+    pos_states <- partitioned_survival_states(os_pos, pfs_pos)
+    p_pf_pos <- pos_states$p_pf
+    p_p_pos <- pos_states$p_p
+    p_d_pos <- pos_states$p_d
     
     # -----------------------------------------------------------------------
     # BIOMARKER NEGATIVE SUBGROUP (receives standard treatment)
@@ -440,18 +443,13 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     validate_curve_length(pfs_neg, paste0(biomarker, "_neg_PFS"))
 
     pfs_neg <- enforce_survival_ordering(
-      pfs_neg, os_neg, paste0(biomarker, "-")
+      pfs_neg, os_neg, biomarker, "negative"
     )
 
-    # Calculate negative state occupancy
-    p_pf_neg <- pfs_neg
-    p_p_neg <- pmax(os_neg - pfs_neg, 0)
-    p_d_neg <- 1 - os_neg
-    
-    # Force initial state to be 100% progression-free
-    p_pf_neg[1] <- 1.0
-    p_p_neg[1] <- 0.0
-    p_d_neg[1] <- 0.0
+    neg_states <- partitioned_survival_states(os_neg, pfs_neg)
+    p_pf_neg <- neg_states$p_pf
+    p_p_neg <- neg_states$p_p
+    p_d_neg <- neg_states$p_d
     
     # -----------------------------------------------------------------------
     # CALCULATE OUTCOMES FOR EACH SUBGROUP

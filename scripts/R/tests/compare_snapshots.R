@@ -21,11 +21,10 @@ snapshot_pairs <- select_snapshots_for_comparison(issue_number)
 
 cat("\nLoading snapshots...\n")
 
-snapshots_dir <- here::here("data", "output", "snapshots")
-before_snapshot <- load_snapshot(snapshot_pairs$before$snapshot, snapshots_dir)
-after_snapshot <- load_snapshot(snapshot_pairs$after$snapshot, snapshots_dir)
-before_psa <- load_snapshot(snapshot_pairs$before$psa, snapshots_dir)
-after_psa <- load_snapshot(snapshot_pairs$after$psa, snapshots_dir)
+before_snapshot <- load_snapshot(snapshot_pairs$before$snapshot)
+after_snapshot <- load_snapshot(snapshot_pairs$after$snapshot)
+before_psa <- load_snapshot(snapshot_pairs$before$psa)
+after_psa <- load_snapshot(snapshot_pairs$after$psa)
 
 if (!inherits(before_psa, "psa") || !inherits(after_psa, "psa")) {
   stop("Snapshot comparison expects single-model dampack PSA objects.")

@@ -17,7 +17,7 @@ This repository contains the R code for a cost-effectiveness analysis comparing 
 
 Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
 
-The deployed analysis uses one joint economic survival model (`Age + sex + Rx + crp*Rx + tmb_braf*Rx`) for both biomarker-guided strategies. Historical "Model A/B/C" specifications are not alternative structures in the executable model.
+The deployed analysis uses one joint economic survival model (`Age + sex + Rx + crp*Rx + tmb_braf*Rx`) for both biomarker-guided strategies.
 
 ## Target Audience
 
@@ -29,7 +29,7 @@ This repository is designed for **health economists** and researchers developing
 METIMMOX-1/
 ├── scripts/
 │   ├── R/
-│   │   ├── analysis/      # Numbered analysis scripts (01-15, main workflow)
+│   │   ├── analysis/      # Numbered analysis scripts (01-13)
 │   │   ├── functions/     # Reusable model functions
 │   │   ├── tests/         # Validation and diagnostic scripts
 │   │   └── archive/       # Deprecated code (for reference)
@@ -45,12 +45,19 @@ METIMMOX-1/
 
 ### Key Files
 
-- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-15) containing the core decision-analytic model workflow
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `multi_model_cea.R` (single-model CEA execution and summary helpers; legacy filename), and sensitivity analysis utilities
+- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-13) containing the core decision-analytic model workflow and optional extended analyses
+- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
 - **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
 - **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
 - **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses
 - **Tests** (`scripts/R/tests/`): Validation, diagnostic, and convergence testing scripts
+
+The shared report and clinical-analysis helper modules introduced in B2 are:
+
+- `assoc_tests.R`: association tests and result formatting used by DAG reports and vignettes
+- `cox_extract.R`: Firth-corrected Cox fitting and tidy coefficient extraction
+- `dag_helpers.R`: shared DAG specifications, preparation, and plotting
+- `report_format.R`: shared strategy/biomarker labels and economic-result number formatting
 
 ## Installation
 
@@ -120,26 +127,34 @@ source("scripts/R/analysis/02_setup_and_global_variables.R")
 source("scripts/R/analysis/03_biomarker_strategies.R")
 
 # Survival analysis
-source("scripts/R/analysis/06_parametric_survival_analysis.R")
-source("scripts/R/analysis/07_basecase_input_parameters.R")
+source("scripts/R/analysis/04_parametric_survival_analysis.R")
+source("scripts/R/analysis/05_basecase_input_parameters.R")
 
 # Survival resampling (first run generates cache - takes time)
-source("scripts/R/analysis/08_sampling.R")
+source("scripts/R/analysis/06_sampling.R")
 
 # Model execution
-source("scripts/R/analysis/09_traces.R")
-source("scripts/R/analysis/10_basecase_analysis.R")
+source("scripts/R/analysis/07_traces.R")
+source("scripts/R/analysis/08_basecase_analysis.R")
 
 # Sensitivity analyses
-source("scripts/R/analysis/11_DSA.R")   # Deterministic sensitivity analysis
-source("scripts/R/analysis/12_PSA.R")   # Probabilistic sensitivity analysis
-source("scripts/R/analysis/13_EVPPIs.R") # Expected value of perfect partial information
+source("scripts/R/analysis/09_DSA.R")   # Deterministic sensitivity analysis
+source("scripts/R/analysis/10_PSA.R")   # Probabilistic sensitivity analysis
+source("scripts/R/analysis/11_EVPPIs.R") # Expected value of perfect partial information
 ```
 
 **Notes**:
-- Scripts 04-05 are supplementary RMarkdown files, not part of the main pipeline
+- The obsolete `04_baseline_characteristics.Rmd` and `05_QALYs.Rmd` exploratory notebooks are retained in `scripts/R/archive/`; their reusable EQ-5D-5L scoring functions are in `scripts/R/functions/eq5d5l_utility.R`
 - The clinical trial dataset is confidential and not included in this repository
-- First runs of scripts 08 (sampling) and 12 (PSA) generate caches and may take significant time; subsequent runs are much faster
+- First runs of scripts 06 (sampling) and 10 (PSA) generate caches and may take significant time; subsequent runs are much faster
+
+### Treatment-Schedule Semantics
+
+Treatment schedule vectors are aligned to the zero-origin weekly grid `time_points <- seq(0, time_horizon, by = 1)`. R vector position `i` therefore represents modeled week `i - 1`; the numeric subscripts used to construct a schedule are vector positions, not week labels.
+
+- Nivolumab in the experimental arm: modeled weeks 4, 6, 12, 14, 28, 30, 36, and 38 (R positions 5, 7, 13, 15, 29, 31, 37, and 39)
+- FLOX in the experimental arm: modeled weeks 0, 2, 8, 10, 24, 26, 32, and 34 (R positions 1, 3, 9, 11, 25, 27, 33, and 35)
+- FLOX in the control arm: modeled weeks 0, 2, 4, 6, 8, 10, 12, 14, 24, 26, 28, 30, 32, 34, 36, and 38
 
 ### Optional and Extended Analyses
 
@@ -147,13 +162,29 @@ Additional analysis scripts provide extended functionality:
 
 ```r
 # Extended analyses (optional)
-source("scripts/R/analysis/14_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
-source("scripts/R/analysis/15_save_snapshot.R")    # Save results for bug fix impact assessment
+source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+
+# Standalone snapshot utility (run from a terminal, not with source())
+# Rscript scripts/R/analysis/13_save_snapshot.R <issue_number> <baseline|fixed>
 ```
 
 **When to use**:
-- `14_scenario_EVPPIs.R`: For scenario-specific value of information analysis
-- `15_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
+- `12_scenario_EVPPIs.R`: For scenario-specific value of information analysis
+- `13_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
+
+### Retired Files
+
+The B1 cleanup deleted these obsolete or superseded files:
+
+- `scripts/R/analysis/14b_scenario_preview.R`
+- `scripts/R/functions/para_model_fit_table.R`
+- `scripts/R/tests/diagnose_prediction_failures.R`
+- `scripts/R/tests/test_psa_error_rate.R`
+- `scripts/R/tests/test_sampling_convergence_rate.R`
+- `scripts/R/tests/test_sex_variable_fix.R`
+- `scripts/R/tests/tlr.R`
+
+The full scenario cache produced by `12_scenario_EVPPIs.R` is the only supported scenario output. The former `scripts/R/tests/fit_independent_biomarker_models.R` was moved to `scripts/R/archive/fit_independent_biomarker_models.R` rather than deleted.
 
 ### Generating Reports
 
@@ -185,7 +216,7 @@ Clinical/DAG/descriptive reports may be rendered to all declared formats. Econom
 8. **biomarker_decomposition.qmd** - Biomarker effect decomposition analysis
 9. **biomarker_distributions.qmd** - Biomarker distribution and prevalence sensitivity
 
-**Prerequisites**: All analysis scripts (02-13) must be run first to generate required data objects.
+**Prerequisites**: Run the scripts required by each report; the full core analysis runs scripts 02-11 in sequence, while scenario outputs additionally require script 12.
 
 ## Key Features
 

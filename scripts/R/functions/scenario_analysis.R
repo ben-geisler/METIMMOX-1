@@ -47,9 +47,11 @@ define_scenarios <- function(base_wtp = 51000,
 #' @param time_horizon Time horizon
 #' @param cl Cluster for parallel processing
 #' @param n_sim Number of simulations
+#' @param seed RNG seed used for PSA and EVPPI stochastic blocks
 #' @return List with psa_obj and psa_params
 run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
-                             strategies, time_horizon, cl, n_sim) {
+                             strategies, time_horizon, cl, n_sim,
+                             seed = 123L) {
 
   cat("\n  Running PSA for nivolumab cost:", c_drug_nivo, "\n")
 
@@ -66,40 +68,31 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   )
   scenario_param_dist$c_drug_nivo <- c(list(dist = "gamma"), nivo_gamma)
 
-  # Generate PSA samples with updated distributions
-  scenario_psa_params <- generate_psa_samples(scenario_param_dist, n_sim)
-
-  # Append interaction coefficients from sampling_models (if available)
+  # Add draw-aligned interaction coefficients when sampling models are available.
+  interaction_coefs <- NULL
   if (exists("extract_interaction_coefficients") &&
       exists("sampling_models") && !is.null(sampling_models)) {
     interaction_coefs <- extract_interaction_coefficients(
       sampling_models = sampling_models,
       n_sim = n_sim
     )
-    if (!is.null(interaction_coefs) &&
-        nrow(interaction_coefs) == n_sim) {
-      scenario_psa_params <- cbind(scenario_psa_params, interaction_coefs)
+    if (!is.null(interaction_coefs) && nrow(interaction_coefs) != n_sim) {
+      interaction_coefs <- NULL
     }
   }
 
-  # Run PSA
-  psa_results <- run_psa_analysis(
-    psa_params = scenario_psa_params,
+  psa_build <- build_psa_obj(
     l_params_base = scenario_params,
     param_distributions = scenario_param_dist,
     strategies = strategies,
     time_horizon = time_horizon,
     cl = cl,
-    n_sim = n_sim
+    n_sim = n_sim,
+    seed = seed,
+    additional_params = interaction_coefs
   )
-
-  # Create PSA object
-  psa_obj <- dampack::make_psa_obj(
-    cost = as.data.frame(psa_results$cost),
-    effect = as.data.frame(psa_results$effect),
-    strategies = strategies,
-    currency = "€"
-  )
+  psa_obj <- psa_build$psa_obj
+  scenario_psa_params <- psa_build$psa_params
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))
@@ -118,9 +111,11 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
 #' @param evppi_params Parameters to analyze for EVPPI (should be fully
 #'   assembled by caller, including prevalence and interaction params)
 #' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @param seed RNG seed used for grouped-parameter subsampling
 #' @return List with PSA object, PSA params, EVPPI results, and scenario info
 run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
-                               evppi_params, param_groups = NULL) {
+                               evppi_params, param_groups = NULL,
+                               seed = 123L) {
 
   cat("\n", rep("=", 80), "\n", sep = "")
   cat("Running EVPPI for Scenario:", scenario_row$scenario_name, "\n")
@@ -135,7 +130,8 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
     psa_params = psa_params,
     wtp = scenario_row$wtp,
     evppi_params = evppi_params,
-    param_groups = param_groups
+    param_groups = param_groups,
+    seed = seed
   )
 
   # Add scenario information to results
@@ -169,11 +165,12 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
 #' @param n_sim Number of simulations
 #' @param evppi_params Parameters to analyze for EVPPI
 #' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @param seed RNG seed used for PSA and EVPPI stochastic blocks
 #' @return List with PSA object and EVPPI results
 run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
                                   param_distributions, strategies,
                                   time_horizon, cl, n_sim, evppi_params,
-                                  param_groups = NULL) {
+                                  param_groups = NULL, seed = 123L) {
 
   # Run PSA for this scenario's cost configuration
   psa_result <- run_scenario_psa(
@@ -183,7 +180,8 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
     strategies = strategies,
     time_horizon = time_horizon,
     cl = cl,
-    n_sim = n_sim
+    n_sim = n_sim,
+    seed = seed
   )
 
   # Run EVPPI using the PSA results
@@ -192,7 +190,8 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
     psa_obj = psa_result$psa_obj,
     psa_params = psa_result$psa_params,
     evppi_params = evppi_params,
-    param_groups = param_groups
+    param_groups = param_groups,
+    seed = seed
   ))
 }
 
@@ -212,10 +211,12 @@ run_scenario_analysis <- function(scenario_row, psa_params, l_params_base,
 #' @param n_sim Number of simulations
 #' @param evppi_params Parameters to analyze for EVPPI
 #' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @param seed RNG seed used for PSA and EVPPI stochastic blocks
 #' @return List with all scenario results
 run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
                               param_distributions, strategies, time_horizon,
-                              cl, n_sim, evppi_params, param_groups = NULL) {
+                              cl, n_sim, evppi_params, param_groups = NULL,
+                              seed = 123L) {
 
   all_results <- list()
 
@@ -246,17 +247,19 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
       strategies = strategies,
       time_horizon = time_horizon,
       cl = cl,
-      n_sim = n_sim
+      n_sim = n_sim,
+      seed = seed
     )
 
     # Run EVPPI for each scenario in this cost group (varying WTP)
-    for (j in 1:nrow(cost_group)) {
+    for (j in seq_len(nrow(cost_group))) {
       scenario_results <- run_scenario_evppi(
         scenario_row = cost_group[j, ],
         psa_obj = psa_result$psa_obj,
         psa_params = psa_result$psa_params,
         evppi_params = evppi_params,
-        param_groups = param_groups
+        param_groups = param_groups,
+        seed = seed
       )
 
       all_results[[cost_group$scenario_id[j]]] <- scenario_results

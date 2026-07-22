@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-06-18
+2026-07-20
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -148,7 +148,7 @@ The `PFS -> OS` edge was represented by a Firth Cox model for `OS` with
 |:---|:---|:---|:---|:---|:---|
 | Age -\> TMB_BRAF | Wilcoxon rank-sum | 69 | Median Age: TMB/BRAF=0=61.0, TMB/BRAF=1=65.0 | 0.450 | No association detected (p \>= 0.05) |
 | Age -\> OS | Firth Cox | 68 | 1.00 (95% CI 0.98 to 1.03) | 0.861 | No association detected (p \>= 0.05) |
-| Sex -\> TMB_BRAF | Fisher's exact | 69 | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
+| Sex -\> TMB_BRAF | Fisher’s exact | 69 | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
 | TMB_BRAF -\> PFS | Firth Cox | 68 | 0.40 (95% CI 0.21 to 0.75) | 0.004 | Association detected (p \< 0.05) |
 | TMB_BRAF -\> OS | Firth Cox | 68 | 0.68 (95% CI 0.40 to 1.13) | 0.139 | No association detected (p \>= 0.05) |
 | TMB_BRAF -\> TLR | Firth logistic | 65 | 0.92 (95% CI 0.34 to 2.52) | 0.877 | No association detected (p \>= 0.05) |
@@ -173,12 +173,12 @@ The four CI statements involving `T` double as randomisation checks. If
 any of them were significant, that would suggest baseline imbalance in
 this realized sample rather than a structural failure of the DAG.
 
-| Item                | p-value | Conclusion                            |
-|:--------------------|:--------|:--------------------------------------|
-| Age \_\|\|\_ T      | 0.172   | Compatible with randomization balance |
-| CRP \_\|\|\_ T      | 0.023   | Possible randomization imbalance      |
-| Sex \_\|\|\_ T      | 0.254   | Compatible with randomization balance |
-| T \_\|\|\_ TMB_BRAF | 1.000   | Compatible with randomization balance |
+| Item              | p-value | Conclusion                            |
+|:------------------|:--------|:--------------------------------------|
+| Age *\|\|* T      | 0.172   | Compatible with randomization balance |
+| CRP *\|\|* T      | 0.023   | Possible randomization imbalance      |
+| Sex *\|\|* T      | 0.254   | Compatible with randomization balance |
+| T *\|\|* TMB_BRAF | 1.000   | Compatible with randomization balance |
 
 Randomization balance checks implied by the DAG
 
@@ -196,19 +196,19 @@ conditional models or stratified tests.
 
 | CI statement | Test | N | Effect | p-value | Randomization check | Conclusion |
 |:---|:---|:---|:---|:---|:---|:---|
-| Age \_\|\|\_ CRP | Wilcoxon rank-sum | 71 | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
-| Age \_\|\|\_ Sex | Wilcoxon rank-sum | 74 | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
-| Age \_\|\|\_ T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with randomization balance |
-| Age \_\|\|\_ TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.03 (95% CI 0.98 to 1.08) | 0.292 | No | Compatible with DAG-implied CI |
-| Age \_\|\|\_ TxTMB \| {TMB_BRAF} | Conditional permutation test | 69 | Standardized Z = 0.77 | 0.457 | No | Compatible with DAG-implied CI |
-| CRP \_\|\|\_ Sex | Fisher's exact | 71 | 0.74 (95% CI 0.25 to 2.23) | 0.619 | No | Compatible with DAG-implied CI |
-| CRP \_\|\|\_ T | Fisher's exact (randomization check) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Possible randomization imbalance |
-| CRP \_\|\|\_ TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 68 | 21.67 (95% CI 2.23 to 210.11) | 0.007 | No | CI contradicted by data |
-| Sex \_\|\|\_ T | Fisher's exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with randomization balance |
-| Sex \_\|\|\_ TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 69 | 0.52 (95% CI 0.12 to 2.17) | 0.592 | No | Compatible with DAG-implied CI |
-| Sex \_\|\|\_ TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.13 (95% CI 0.40 to 3.21) | 0.812 | No | Compatible with DAG-implied CI |
-| TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF} | Firth logistic | 65 | 2.31 (95% CI 0.29 to 19.27) | 0.426 | No | Compatible with DAG-implied CI |
-| T \_\|\|\_ TMB_BRAF | Fisher's exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with randomization balance |
+| Age *\|\|* CRP | Wilcoxon rank-sum | 71 | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
+| Age *\|\|* Sex | Wilcoxon rank-sum | 74 | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
+| Age *\|\|* T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with randomization balance |
+| Age *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.03 (95% CI 0.98 to 1.08) | 0.292 | No | Compatible with DAG-implied CI |
+| Age *\|\|* TxTMB \| {TMB_BRAF} | Conditional permutation test | 69 | Standardized Z = 0.77 | 0.457 | No | Compatible with DAG-implied CI |
+| CRP *\|\|* Sex | Fisher’s exact | 71 | 0.74 (95% CI 0.25 to 2.23) | 0.619 | No | Compatible with DAG-implied CI |
+| CRP *\|\|* T | Fisher’s exact (randomization check) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Possible randomization imbalance |
+| CRP *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 68 | 21.67 (95% CI 2.23 to 210.11) | 0.007 | No | CI contradicted by data |
+| Sex *\|\|* T | Fisher’s exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with randomization balance |
+| Sex *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 69 | 0.52 (95% CI 0.12 to 2.17) | 0.592 | No | Compatible with DAG-implied CI |
+| Sex *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.13 (95% CI 0.40 to 3.21) | 0.812 | No | Compatible with DAG-implied CI |
+| TLR *\|\|* TxTMB \| {T, TMB_BRAF} | Firth logistic | 65 | 2.31 (95% CI 0.29 to 19.27) | 0.426 | No | Compatible with DAG-implied CI |
+| T *\|\|* TMB_BRAF | Fisher’s exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with randomization balance |
 
 Conditional-independence tests
 
@@ -232,19 +232,19 @@ Conditional-independence tests
 | Direct edge | PFS -\> OS | 0.98 (95% CI 0.97 to 0.99) | \<0.001 | Association detected (p \< 0.05) |
 | Direct edge | TxTMB -\> PFS | 0.37 (95% CI 0.11 to 1.24) | 0.106 | No association detected (p \>= 0.05) |
 | Direct edge | TxTMB -\> OS | 0.63 (95% CI 0.22 to 1.79) | 0.385 | No association detected (p \>= 0.05) |
-| Conditional independence | Age \_\|\|\_ CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
-| Conditional independence | Age \_\|\|\_ Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
-| Conditional independence | Age \_\|\|\_ T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with randomization balance |
-| Conditional independence | Age \_\|\|\_ TLR \| {CRP, TMB_BRAF} | 1.03 (95% CI 0.98 to 1.08) | 0.292 | Compatible with DAG-implied CI |
-| Conditional independence | Age \_\|\|\_ TxTMB \| {TMB_BRAF} | Standardized Z = 0.77 | 0.457 | Compatible with DAG-implied CI |
-| Conditional independence | CRP \_\|\|\_ Sex | 0.74 (95% CI 0.25 to 2.23) | 0.619 | Compatible with DAG-implied CI |
-| Conditional independence | CRP \_\|\|\_ T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Possible randomization imbalance |
-| Conditional independence | CRP \_\|\|\_ TxTMB \| {TMB_BRAF} | 21.67 (95% CI 2.23 to 210.11) | 0.007 | CI contradicted by data |
-| Conditional independence | Sex \_\|\|\_ T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with randomization balance |
-| Conditional independence | Sex \_\|\|\_ TxTMB \| {TMB_BRAF} | 0.52 (95% CI 0.12 to 2.17) | 0.592 | Compatible with DAG-implied CI |
-| Conditional independence | Sex \_\|\|\_ TLR \| {CRP, TMB_BRAF} | 1.13 (95% CI 0.40 to 3.21) | 0.812 | Compatible with DAG-implied CI |
-| Conditional independence | TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF} | 2.31 (95% CI 0.29 to 19.27) | 0.426 | Compatible with DAG-implied CI |
-| Conditional independence | T \_\|\|\_ TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with randomization balance |
+| Conditional independence | Age *\|\|* CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
+| Conditional independence | Age *\|\|* Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
+| Conditional independence | Age *\|\|* T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with randomization balance |
+| Conditional independence | Age *\|\|* TLR \| {CRP, TMB_BRAF} | 1.03 (95% CI 0.98 to 1.08) | 0.292 | Compatible with DAG-implied CI |
+| Conditional independence | Age *\|\|* TxTMB \| {TMB_BRAF} | Standardized Z = 0.77 | 0.457 | Compatible with DAG-implied CI |
+| Conditional independence | CRP *\|\|* Sex | 0.74 (95% CI 0.25 to 2.23) | 0.619 | Compatible with DAG-implied CI |
+| Conditional independence | CRP *\|\|* T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Possible randomization imbalance |
+| Conditional independence | CRP *\|\|* TxTMB \| {TMB_BRAF} | 21.67 (95% CI 2.23 to 210.11) | 0.007 | CI contradicted by data |
+| Conditional independence | Sex *\|\|* T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with randomization balance |
+| Conditional independence | Sex *\|\|* TxTMB \| {TMB_BRAF} | 0.52 (95% CI 0.12 to 2.17) | 0.592 | Compatible with DAG-implied CI |
+| Conditional independence | Sex *\|\|* TLR \| {CRP, TMB_BRAF} | 1.13 (95% CI 0.40 to 3.21) | 0.812 | Compatible with DAG-implied CI |
+| Conditional independence | TLR *\|\|* TxTMB \| {T, TMB_BRAF} | 2.31 (95% CI 0.29 to 19.27) | 0.426 | Compatible with DAG-implied CI |
+| Conditional independence | T *\|\|* TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with randomization balance |
 
 Consolidated summary of direct edge and conditional-independence tests
 
@@ -306,6 +306,6 @@ future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-06-18  
+**Report completed on:** 2026-07-20  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

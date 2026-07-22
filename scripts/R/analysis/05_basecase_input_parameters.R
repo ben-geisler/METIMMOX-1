@@ -1,0 +1,104 @@
+# Ensure time_points is the same as used in section 3
+time_points <- seq(0, time_horizon, by = 1)
+time_points_length <- length(time_points)
+
+# Create treatment schedules
+l_nivo <- rep(0, time_points_length)
+l_nivo[c(5, 7, 13, 15, 29, 31, 37, 39)] <- 1  
+
+l_FLOX_exp <- rep(0, time_points_length)
+l_FLOX_exp[c(1, 3, 9, 11, 25, 27, 33, 35)] <- 1
+
+l_FLOX_control <- rep(0, time_points_length)
+l_FLOX_control[c(1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39)] <- 1
+
+l_CT <- rep(0, time_points_length)
+l_CT[1] <- 1  # baseline
+l_CT[seq(13, time_points_length, by=12)] <- 1  # every 12 weeks
+
+l_blood <- rep(0, time_points_length)
+l_blood[1] <- 1  # baseline
+l_blood[seq(5, time_points_length, by=4)] <- 1  # every 4 weeks
+
+l_visit <- rep(0, time_points_length)
+l_visit[1] <- 1  # baseline
+l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
+
+# Map configured strategy predictions into the curve keys consumed by model_fun().
+control_strategy <- get_control_strategy()
+p_os <- setNames(list(predictions[[control_strategy]]$os),
+                 paste0(control_strategy, "_OS"))
+p_pfs <- setNames(list(predictions[[control_strategy]]$pfs),
+                  paste0(control_strategy, "_PFS"))
+for (biomarker in get_biomarkers()) {
+  prediction <- predictions[[biomarker]]
+  p_os[[paste0(biomarker, "_pos_OS")]] <- prediction$biomarker_positive$os
+  p_os[[paste0(biomarker, "_neg_OS")]] <- prediction$biomarker_negative$os
+  p_os[[paste0(biomarker, "_weighted_OS")]] <- prediction$os
+  p_pfs[[paste0(biomarker, "_pos_PFS")]] <- prediction$biomarker_positive$pfs
+  p_pfs[[paste0(biomarker, "_neg_PFS")]] <- prediction$biomarker_negative$pfs
+  p_pfs[[paste0(biomarker, "_weighted_PFS")]] <- prediction$pfs
+}
+
+# Biomarker diagnostic costs are distinct from routine monitoring costs.
+c_test_CRP <- 16
+c_test_NGS <- 2518
+biomarker_test_costs <- lapply(
+  biomarker_cost_key(),
+  function(cost_key) get(cost_key)
+)
+
+# Compile all parameters into a list for the model function
+l_params_base <- list(
+  # Time parameters
+  cl = cl,
+  time_horizon = time_horizon,
+  
+  # Discount rates
+  dr_costs = dr,
+  dr_effects = dr,
+  
+  # Utilities - determined by UTILITY_SOURCE switch (set in 02_setup_and_global_variables.R)
+  # IPD-derived: u_np = 0.9077, u_p = 0.9005 (from METIMMOX trial)
+  # CORRECT trial: u_np = 0.73, u_p = 0.59 (Gourzoulidis et al. 2018)
+  u_np = if (UTILITY_SOURCE == 0) 0.9077 else 0.73,
+  u_p  = if (UTILITY_SOURCE == 0) 0.9005 else 0.59,
+  
+  # Drug costs
+  c_drug_nivo = 13923,   # cost of nivolumab per administration
+  c_drug_FLOX = 427,    # cost of FLOX per administration
+  
+  # Test costs
+  c_test_CT = 386,      # cost of CT scan
+  c_test_blood = 16,    # routine CBC and chemistry monitoring; 8.77 NOKs per parameter except basic chemistry panel which is 4.40 NOKs per parameter;
+  # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
+  c_test_CRP = c_test_CRP, # one-time CRP biomarker test (independent of routine blood monitoring)
+  c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
+  c_test_biomarker = biomarker_test_costs,
+  
+  # Other costs
+  c_other_visit = 33,     # cost of standard outpatient visit
+  c_other_baseline = 530,  # cost of comprehensive baseline visit
+  c_other_follow = 33,    # cost of follow-up visits (quarterly)
+  c_other_last = 13803,     # cost of end-of-life care
+  
+  # Treatment schedules
+  l_nivo = l_nivo,
+  l_FLOX_exp = l_FLOX_exp,
+  l_FLOX_control = l_FLOX_control,
+  l_CT = l_CT,
+  l_blood = l_blood,
+  l_visit = l_visit,
+  
+  # Survival curves
+  p_os = p_os,
+  p_pfs = p_pfs
+  
+  # Biomarker prevalence parameters are appended below from configured IDs.
+)
+
+for (biomarker in get_biomarkers()) {
+  prevalence_key <- biomarker_prevalence_key(biomarker)
+  l_params_base[[prevalence_key]] <-
+    strategies_df$prevalence[strategies_df$id == biomarker]
+}

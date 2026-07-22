@@ -50,54 +50,27 @@ data_crp$strategy <- "crp"
 data_tlr$strategy <- "tlr"
 data_tmb_braf$strategy <- "tmb_braf"
 
-# Define key vectors - use helper functions if available (from model_configs.R)
-# Otherwise fall back to hardcoded values for backward compatibility
-if (exists("get_strategies")) {
-  strategies <- get_strategies()
-  biomarkers <- get_biomarkers()
-} else {
-  strategies <- c("control", "crp", "tmb_braf")
-  biomarkers <- c("crp", "tmb_braf")
-}
+# Define key vectors from the central economic-model configuration.
+strategies <- get_strategies()
+biomarkers <- get_biomarkers()
 
-# Create a comprehensive strategy dataframe with all relevant information
-strategies_df <- data.frame(
-  id = strategies,
-  name = c("Standard of care: FLOX chemotherapy only", 
-           "Biomarker-guided: C-reactive protein", 
-           "Biomarker-guided: tumor mutation burden or BRAF mutation"),
-  description = c(
-    "Standard of care - All patients receive only FLOX chemotherapy",
-    "C-reactive protein with cut-off of <5 for biomarker-positive status. If CRP-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if CRP-negative: chemotherapy only",
-    "Combined biomarker: either Tumor Mutation Burden >= 9 or BRAF V600 mutation positive (both from next-generation sequencing). If TMB/BRAF-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if TMB/BRAF-negative: chemotherapy only"
-  ),
-  # Store prevalence rates in dataframe
-  prevalence = c(1.0, p_crp, p_tmb_braf),
-  n_patients = c(nrow(data_control), 
-                 nrow(data_crp), 
-                 nrow(data_tmb_braf)),
-  stringsAsFactors = FALSE
+# Join keyed metadata and calculated values by strategy ID. This remains correct
+# if the configured strategy order changes.
+strategy_metadata <- get_strategy_metadata(strategies)
+prevalence_by_strategy <- c(
+  setNames(1, get_control_strategy()),
+  setNames(vapply(biomarkers, function(x) get(paste0("p_", x)), numeric(1)),
+           biomarkers)
+)
+n_by_strategy <- setNames(
+  vapply(strategies, function(x) nrow(get(paste0("data_", x))), integer(1)),
+  strategies
+)
+strategies_df <- transform(
+  strategy_metadata,
+  prevalence = unname(prevalence_by_strategy[id]),
+  n_patients = unname(n_by_strategy[id])
 )
 
 # Print the final dataframe
 print(strategies_df)
-
-# Clean up intermediate variables
-rm(list = setdiff(ls(), c(
-  # Main datasets
-  "data", "data_control", "data_crp", "data_tlr", "data_tmb_braf",
-  # Model parameters and structure
-  "strategies", "biomarkers", "strategies_df",
-  # Biomarker prevalence
-  "p_crp", "p_tlr", "p_tmb_braf",
-  # Other essential variables from 02_setup_and_global_variables.R
-  "time_horizon", "cl", "WTP", "DSA_mult", "n_samples", "n_sim", "dr",
-  # Population parameters for EVPPI scaling
-  "annual_incidence_norway", "research_horizon_years", "discount_rate_research",
-  # Model configuration switches
-  "USE_BOTH_MODELS", "UTILITY_SOURCE", "utility_source_label",
-  # Model config helper functions
-  "get_strategies", "get_biomarkers", "get_model_configs", "get_current_model_config",
-  "get_strategy_formula", "get_control_formula", "get_model_formulas",
-  "print_model_config", "ALL_STRATEGIES", "ALL_BIOMARKERS"
-)))

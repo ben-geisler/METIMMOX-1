@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-06-18
+2026-07-20
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -688,6 +688,6 @@ on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-06-18  
+**Report completed on:** 2026-07-20  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.3

@@ -8,9 +8,11 @@
 #' @param wtp Willingness-to-pay threshold
 #' @param n_inner Number of inner loop simulations
 #' @param n_grid Number of grid points for parameter values
+#' @param seed RNG seed used before subsampling multi-parameter combinations
 #' @return List with EVPPI results and diagnostics
 calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp, 
-                                     n_inner = 1000, n_grid = 500) {
+                                     n_inner = 1000, n_grid = 500,
+                                     seed = 123L) {
   
   cat("Calculating EVPPI for parameter(s):", paste(param_names, collapse = ", "), "\n")
   
@@ -105,6 +107,8 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
       max_combos <- n_grid  # Cap at n_grid evaluation points
       all_param_values <- psa_params[, param_names, drop = FALSE]
       if (nrow(all_param_values) > max_combos) {
+        # Make the subset independent of prior EVPPI groups and scenarios.
+        set.seed(seed)
         sample_idx <- sample(nrow(all_param_values), max_combos)
         param_combinations <- all_param_values[sample_idx, , drop = FALSE]
       } else {
@@ -116,7 +120,7 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
     # Calculate expected NMB for each parameter combination
     expected_nmbs <- numeric(nrow(param_combinations))
     
-    for (i in 1:nrow(param_combinations)) {
+    for (i in seq_len(nrow(param_combinations))) {
       param_values_combo <- as.numeric(param_combinations[i, ])
       
       # Find closest simulations (using Euclidean distance)
@@ -183,9 +187,10 @@ calculate_evppi_improved <- function(psa_obj, psa_params, param_names, wtp,
 #' @param wtp Willingness-to-pay threshold
 #' @param evppi_params Vector of parameter names to analyze
 #' @param param_groups Optional named list of parameter groups for joint EVPPI
+#' @param seed RNG seed used for grouped-parameter subsampling
 #' @return Data frame with EVPPI results for all parameters and groups
 run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
-                               param_groups = NULL) {
+                               param_groups = NULL, seed = 123L) {
   
   # Calculate NMB and EVPI for diagnostics
   cost_matrix <- as.matrix(psa_obj$cost)
@@ -240,7 +245,8 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
   if (length(params_with_variation) > 0) {
     for (param in params_with_variation) {
       result <- calculate_evppi_improved(psa_obj, psa_params, param, 
-                                         wtp = wtp, n_inner = 1000, n_grid = 500)
+                                         wtp = wtp, n_inner = 1000, n_grid = 500,
+                                         seed = seed)
       
       evppi_percent <- if (result$evpi > 0) (result$evppi / result$evpi) * 100 else 0
       
@@ -276,7 +282,8 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
             "(", paste(group_params, collapse = ", "), ")\n")
 
         result <- calculate_evppi_improved(psa_obj, psa_params, group_params,
-                                           wtp = wtp, n_inner = 1000, n_grid = 100)
+                                           wtp = wtp, n_inner = 1000, n_grid = 100,
+                                           seed = seed)
 
         evppi_percent <- if (result$evpi > 0) {
           (result$evppi / result$evpi) * 100
@@ -353,7 +360,7 @@ calculate_population_evppi <- function(evppi_per_patient,
 #' These can be appended to psa_params for EVPPI analysis of treatment effect
 #' modification parameters.
 #'
-#' @param sampling_models List of resampled models (global variable from 08_sampling.R)
+#' @param sampling_models List of resampled models (global variable from 06_sampling.R)
 #' @param n_sim Number of PSA iterations (must match length of sampling_models$*$samples)
 #' @return Data frame with n_sim rows and columns for each extracted interaction
 #'   coefficient (b_<biomarker>_rx_<outcome>). Returns NULL if extraction fails.
@@ -363,22 +370,10 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
     return(NULL)
   }
 
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
   outcomes <- c("os", "pfs")
 
-  # Coefficient name patterns for each biomarker
-  # flexsurvreg encodes factor levels: crp -> crp1, tmb_braf -> tmb_braf1
-  coef_patterns <- list(
-    crp = "crp.*:Rx",
-    tmb_braf = "tmb_braf.*:Rx"
-  )
-
-  result <- data.frame(row.names = 1:n_sim)
+  result <- data.frame(row.names = seq_len(n_sim))
 
   cat("\n=== Extracting interaction coefficients from sampling models ===\n")
 
@@ -397,7 +392,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
       n_failed <- 0
       n_missing <- 0
 
-      for (i in 1:n_sim) {
+      for (i in seq_len(n_sim)) {
         sample_i <- strategy_models$samples[[i]]
 
         if (is.null(sample_i)) {
@@ -414,10 +409,26 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
           next
         }
 
-        # Find the interaction coefficient by pattern matching
-        pattern <- coef_patterns[[biomarker]]
-        matching_names <- grep(pattern, names(coefs), value = TRUE,
-                               ignore.case = TRUE)
+        # Find the treatment-by-biomarker interaction coefficient.
+        #
+        # Term ORDER is not stable and must not be assumed. The economic
+        # formula is "... + Rx + crp * Rx + tmb_braf * Rx", so Rx appears
+        # before the biomarker in the term expansion and R labels the
+        # interaction "Rx:crp", not "crp:Rx". Combined with flexsurvreg
+        # appending factor levels, the real name is
+        # "RxExperimental arm:crp1". Anchored patterns such as
+        # "^crp.*:Rx" (or the earlier "crp.*:Rx") never match it, which
+        # silently dropped every b_*_rx_* row from the EVPPI tables.
+        #
+        # Match structurally instead: an interaction term (contains ":")
+        # mentioning both Rx and the biomarker, each at a term boundary so
+        # one biomarker ID cannot match another's as a substring.
+        coef_names <- names(coefs)
+        matching_names <- coef_names[
+          grepl(":", coef_names, fixed = TRUE) &
+            grepl(paste0("(^|:)", biomarker), coef_names) &
+            grepl("(^|:)Rx", coef_names)
+        ]
 
         if (length(matching_names) > 0) {
           values[i] <- coefs[matching_names[1]]
@@ -441,7 +452,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
   }
 
   # Remove columns that are entirely NA (coefficient not in model formula)
-  all_na_cols <- sapply(result, function(x) all(is.na(x)))
+  all_na_cols <- vapply(result, function(x) all(is.na(x)), logical(1))
   if (any(all_na_cols)) {
     cat("  Removing all-NA columns:",
         paste(names(result)[all_na_cols], collapse = ", "), "\n")
@@ -473,12 +484,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
 #'
 #' @return Character vector of parameter names (e.g., "b_crp_rx_os")
 get_interaction_evppi_params <- function() {
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
   outcomes <- c("os", "pfs")
 
   params <- character(0)
@@ -508,12 +514,7 @@ add_interaction_param_groups <- function(existing_groups) {
   }
 
   # Per-biomarker groups (OS + PFS together, 2 params each - feasible)
-  biomarkers <- if (exists("get_biomarkers")) {
-    get_biomarkers()
-  } else {
-    c("crp", "tmb_braf")
-  }
-  biomarkers <- intersect(biomarkers, c("crp", "tmb_braf"))
+  biomarkers <- get_biomarkers()
 
   for (biomarker in biomarkers) {
     bio_params <- grep(paste0("^b_", biomarker, "_rx_"),
@@ -524,4 +525,30 @@ add_interaction_param_groups <- function(existing_groups) {
   }
 
   return(existing_groups)
+}
+
+
+#' Assemble the parameter vector and groups used by EVPPI analyses
+#'
+#' @param param_distributions Named non-survival parameter distributions
+#' @param param_groups Named non-survival parameter groups
+#' @param include_interactions Whether to add treatment-biomarker interactions
+#' @param available_params Optional names available in a realized PSA data frame
+#' @return List with `params` and `groups`
+configure_evppi_analysis <- function(param_distributions, param_groups,
+                                     include_interactions = TRUE,
+                                     available_params = NULL) {
+  params <- names(param_distributions)
+  groups <- param_groups
+
+  if (include_interactions) {
+    interaction_params <- get_interaction_evppi_params()
+    if (!is.null(available_params)) {
+      interaction_params <- intersect(interaction_params, available_params)
+    }
+    params <- unique(c(params, interaction_params))
+    groups <- add_interaction_param_groups(groups)
+  }
+
+  list(params = params, groups = groups)
 }

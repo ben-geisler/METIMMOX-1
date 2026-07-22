@@ -13,30 +13,30 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", dpi = 300)
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, dplyr, knitr, kableExtra, scales, dampack,
-               flexsurv, survival)
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-invisible(capture.output(
-  source(here("scripts/R/analysis/10b_enriched_population_analysis.R"))
-))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "08b"),
+  funs = "report_format",
+  packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
+               "flexsurv", "survival"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
 ```
 
 ```{r display-table}
-detail_cols <- c("Biomarker", "Enr_Cost", "Enr_Effect",
-                 "Enr_Ctrl_Cost", "Enr_Ctrl_Effect", "Enr_ICER")
+detail_df <- enriched_comparison %>%
+  transmute(
+    Biomarker,
+    Enr_Cost = format_eur(Enr_Cost),
+    Enr_Effect = sprintf("%.3f", Enr_Effect),
+    Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
+    Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_ICER = format_icer(Enr_ICER, Enr_Status)
+  )
 
 kable(
-  enriched_display[, detail_cols],
+  detail_df,
   caption = "Table 6: Biomarker-enriched population results",
   format = "html",
   col.names = c("Biomarker", "Experimental Cost", "Experimental QALYs",

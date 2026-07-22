@@ -4,10 +4,14 @@
 #' 
 #' @param param_distributions List of parameter distributions with dist, shape, and rate/scale info
 #' @param n_sim Number of simulations
+#' @param seed RNG seed used immediately before drawing PSA parameters
 #' @return Data frame with sampled parameter values
-generate_psa_samples <- function(param_distributions, n_sim) {
+generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
   samples <- data.frame(sim = 1:n_sim)
-  
+
+  # Make draws independent of RNG use in earlier analysis or cache branches.
+  set.seed(seed)
+
   # Sample from each parameter distribution
   for (param_name in names(param_distributions)) {
     dist_info <- param_distributions[[param_name]]
@@ -30,8 +34,86 @@ generate_psa_samples <- function(param_distributions, n_sim) {
                                      max = dist_info$max)
     }
   }
-  
+
+  attr(samples, "seed") <- seed
   return(samples)
+}
+
+#' Check whether cached PSA samples were generated with the requested seed
+#'
+#' @param psa_params Data frame returned by generate_psa_samples()
+#' @param seed Expected RNG seed
+#' @return Logical scalar
+psa_samples_seed_matches <- function(psa_params, seed = 123L) {
+  identical(attr(psa_params, "seed"), seed)
+}
+
+#' Return the failed-draw handling policy used by PSA caches
+#'
+#' @return Character policy identifier
+psa_failed_draw_policy <- function() {
+  "cyclic_other_models_drop_unreplaced_v2"
+}
+
+#' Get keys used to aggregate survival-ordering warnings
+#' @return Named list of empty integer vectors.
+pfs_os_violation_groups <- function() {
+  biomarkers <- get_biomarkers()
+  subgroup_keys <- unlist(lapply(
+    biomarkers,
+    function(x) paste(x, c("positive", "negative"), sep = "_")
+  ))
+  setNames(replicate(1L + length(subgroup_keys), integer(0), simplify = FALSE),
+           c(get_control_strategy(), subgroup_keys))
+}
+
+#' Convert a structured survival-ordering warning to an aggregation key
+#' @param warning_condition A `survival_ordering_warning` condition.
+#' @return Character scalar.
+pfs_os_violation_key <- function(warning_condition) {
+  if (identical(warning_condition$subgroup, "control")) {
+    return(warning_condition$strategy)
+  }
+  paste(warning_condition$strategy, warning_condition$subgroup, sep = "_")
+}
+
+#' Create display labels for survival-ordering aggregation groups
+#' @return Named character vector.
+pfs_os_violation_labels <- function() {
+  control_strategy <- get_control_strategy()
+  biomarkers <- get_biomarkers()
+  labels <- setNames(
+    paste0("  ", unname(strategy_display_name(control_strategy))),
+    control_strategy
+  )
+  for (biomarker in biomarkers) {
+    display_name <- unname(strategy_display_name(biomarker))
+    labels[[paste0(biomarker, "_positive")]] <- paste0("  ", display_name, "+")
+    labels[[paste0(biomarker, "_negative")]] <- paste0("  ", display_name, "-")
+  }
+  labels
+}
+
+#' List replacement survival-model indices for a failed PSA draw
+#'
+#' The cache contains exactly `n_sim` resampled survival models, all of which
+#' are assigned during the initial PSA pass. There is therefore no unused model
+#' bank for replacements. A failed non-survival parameter draw is instead
+#' re-paired with up to 10 *other* cached survival models, each used at most
+#' once for that draw, in deterministic cyclic order starting after its
+#' original model. If every candidate fails, the complete PSA draw is dropped.
+#'
+#' @param failed_i Index of the failed PSA draw
+#' @param n_sim Number of cached resampled survival models
+#' @param max_attempts Maximum distinct alternative models to return
+#' @return Integer vector of candidate model indices
+psa_replacement_candidates <- function(failed_i, n_sim, max_attempts = 10L) {
+  if (n_sim <= 1L) {
+    return(integer(0))
+  }
+
+  candidate_count <- min(as.integer(max_attempts), n_sim - 1L)
+  as.integer(((failed_i + seq_len(candidate_count) - 1L) %% n_sim) + 1L)
 }
 
 #' Run PSA analysis across all simulations
@@ -45,7 +127,8 @@ generate_psa_samples <- function(param_distributions, n_sim) {
 #' @param n_sim Number of simulations
 #' @param fallback_threshold Maximum permitted proportion of initial PSA
 #'   iterations using fallback before the analysis stops
-#' @return List with cost and effect matrices and fallback diagnostics
+#' @return List with cost and effect matrices, retained iteration indices, and
+#'   fallback/drop diagnostics
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                              strategies, time_horizon, cl, n_sim,
                              fallback_threshold = 0.02) {
@@ -62,13 +145,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
   # Track PFS > OS constraint violations (Issue #76)
   # Instead of printing thousands of warnings, we aggregate and summarize
-  pfs_os_violations <- list(
-    control = integer(0),
-    crp_pos = integer(0),
-    crp_neg = integer(0),
-    tmb_braf_pos = integer(0),
-    tmb_braf_neg = integer(0)
-  )
+  pfs_os_violations <- pfs_os_violation_groups()
 
   # Track iterations that used fallback to base case (Issue #79)
   # These will be replaced with additional successful simulations
@@ -79,7 +156,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   start_time <- Sys.time()
   
   # Run the model for each simulation
-  for (i in 1:n_sim) {
+  for (i in seq_len(n_sim)) {
     # Create parameter set for this simulation
     sim_params <- l_params_base
     
@@ -88,8 +165,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
     # Keep the data-driven diagnostic-cost lookup aligned with sampled scalars.
-    sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
-    sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
+    sim_params <- sync_biomarker_test_costs(sim_params)
     
     # Use withCallingHandlers to capture warnings, tryCatch for errors
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
@@ -104,22 +180,14 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
           sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
         )
       }, warning = function(w) {
-        # Parse PFS > OS constraint warnings and track them (Issue #76)
-        msg <- conditionMessage(w)
-        if (grepl("PFS > OS constraint enforced", msg)) {
-          # Extract which subgroup triggered the warning
-          if (grepl("\\(control\\)", msg)) {
-            pfs_os_violations$control <<- c(pfs_os_violations$control, i)
-          } else if (grepl("\\(crp\\+\\)", msg)) {
-            pfs_os_violations$crp_pos <<- c(pfs_os_violations$crp_pos, i)
-          } else if (grepl("\\(crp-\\)", msg)) {
-            pfs_os_violations$crp_neg <<- c(pfs_os_violations$crp_neg, i)
-          } else if (grepl("\\(tmb_braf\\+\\)", msg)) {
-            pfs_os_violations$tmb_braf_pos <<- c(pfs_os_violations$tmb_braf_pos, i)
-          } else if (grepl("\\(tmb_braf-\\)", msg)) {
-            pfs_os_violations$tmb_braf_neg <<- c(pfs_os_violations$tmb_braf_neg, i)
+        # Route structured PFS > OS warnings without parsing their message text.
+        if (inherits(w, "survival_ordering_warning")) {
+          violation_key <- pfs_os_violation_key(w)
+          if (!violation_key %in% names(pfs_os_violations)) {
+            stop("Unknown survival-ordering warning subgroup: ", violation_key)
           }
-          # Suppress the warning (don't print it)
+          pfs_os_violations[[violation_key]] <<-
+            c(pfs_os_violations[[violation_key]], i)
           invokeRestart("muffleWarning")
         }
         # Let other warnings through
@@ -198,32 +266,40 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   # Instead of mixing base case fallbacks with resampled model results,
   # run additional simulations to replace failed iterations
 
+  replaced_iterations <- integer(0)
+
   if (length(fallback_iterations) > 0) {
     cat(sprintf("\n--- Replacing %d fallback iterations (Issue #79) ---\n",
                 length(fallback_iterations)))
 
-    replacement_idx <- n_sim + 1  # Start with models beyond initial set
     replaced_count <- 0
-    max_attempts <- length(fallback_iterations) * 10  # Safety limit
-    attempt <- 0
+    total_attempts <- 0L
 
     for (failed_i in fallback_iterations) {
       success <- FALSE
 
+      # There are no models beyond the initial n_sim cached draws. Re-pair the
+      # failed economic-parameter draw with up to 10 other cached survival
+      # models, each at most once. Start after its original index to avoid
+      # favoring low indices and bound the work for an unrecoverable draw.
+      replacement_candidates <- psa_replacement_candidates(failed_i, n_sim)
+      max_attempts <- length(replacement_candidates)
+
+      # Each failed draw receives its own complete candidate scan. A shared
+      # counter would let early failures exhaust the budget for later failures.
+      attempt <- 0L
+
       while (!success && attempt < max_attempts) {
         attempt <- attempt + 1
-
-        # Use modulo to wrap around if we exceed available models
-        # This ensures we always have a valid model index
-        actual_sim_idx <- ((replacement_idx - 1) %% n_sim) + 1
+        total_attempts <- total_attempts + 1L
+        actual_sim_idx <- replacement_candidates[attempt]
 
         # Create parameter set (use same PSA samples as original iteration)
         sim_params <- l_params_base
         for (param_name in names(param_distributions)) {
           sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
         }
-        sim_params$c_test_biomarker$crp <- sim_params$c_test_CRP
-        sim_params$c_test_biomarker$tmb_braf <- sim_params$c_test_NGS
+        sim_params <- sync_biomarker_test_costs(sim_params)
 
         # Try to run with a different resampled model
         tryCatch({
@@ -238,24 +314,26 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
             )
           })
 
-          # Check if this one succeeded (no fallback)
-          if (!isTRUE(attr(sim_results, "fallback_used"))) {
+          # A replacement is valid only when it did not use fallback and
+          # returned exactly one complete result for every strategy.
+          strategy_rows <- match(strategies, sim_results$Strategy)
+          replacement_complete <-
+            all(!is.na(strategy_rows)) &&
+            all(is.finite(sim_results$Cost[strategy_rows])) &&
+            all(is.finite(sim_results$Effect[strategy_rows]))
+
+          if (!isTRUE(attr(sim_results, "fallback_used")) &&
+              replacement_complete) {
             # Replace the failed iteration's results
-            for (strat in strategies) {
-              strat_row <- which(sim_results$Strategy == strat)
-              if (length(strat_row) > 0) {
-                cost_matrix[failed_i, strat] <- sim_results$Cost[strat_row]
-                effect_matrix[failed_i, strat] <- sim_results$Effect[strat_row]
-              }
-            }
+            cost_matrix[failed_i, ] <- sim_results$Cost[strategy_rows]
+            effect_matrix[failed_i, ] <- sim_results$Effect[strategy_rows]
             success <- TRUE
             replaced_count <- replaced_count + 1
+            replaced_iterations <- c(replaced_iterations, failed_i)
           }
         }, error = function(e) {
           # This model also failed, try next
         })
-
-        replacement_idx <- replacement_idx + 1
       }
 
       if (!success) {
@@ -266,19 +344,44 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
     cat(sprintf("Successfully replaced %d of %d fallback iterations\n",
                 replaced_count, length(fallback_iterations)))
-    cat(sprintf("Models tried: %d (wrapped around %d times)\n",
-                replacement_idx - n_sim - 1,
-                (replacement_idx - n_sim - 1) %/% n_sim))
+    cat(sprintf(
+      paste0(
+        "Replacement model attempts: %d ",
+        "(policy: up to 10 other cached models, each at most once ",
+        "per failed draw)\n"
+      ),
+      total_attempts
+    ))
   }
 
-  # Replace any remaining NAs with column means (safety fallback)
-  na_count <- sum(is.na(cost_matrix))
-  if (na_count > 0) {
-    warning("Still have ", na_count, " NA values after replacement - using column means")
-    for (strat in strategies) {
-      cost_matrix[is.na(cost_matrix[, strat]), strat] <- mean(cost_matrix[, strat], na.rm = TRUE)
-      effect_matrix[is.na(effect_matrix[, strat]), strat] <- mean(effect_matrix[, strat], na.rm = TRUE)
-    }
+  # Drop entire draws that could not be replaced. Keeping base-case fallback
+  # values or mean-imputing individual cells would artificially reduce PSA
+  # variance and bias CEAC/EVPI/EVPPI estimates.
+  unreplaced_iterations <- setdiff(fallback_iterations, replaced_iterations)
+  incomplete_iterations <- which(
+    !apply(cost_matrix, 1L, function(x) all(is.finite(x))) |
+      !apply(effect_matrix, 1L, function(x) all(is.finite(x)))
+  )
+  dropped_iterations <- sort(unique(c(
+    unreplaced_iterations,
+    incomplete_iterations
+  )))
+  dropped_count <- length(dropped_iterations)
+  retained_iterations <- setdiff(seq_len(n_sim), dropped_iterations)
+
+  if (dropped_count > 0L) {
+    warning(
+      "Dropping ", dropped_count,
+      " PSA iteration(s) that remained invalid after replacement; ",
+      length(retained_iterations), " simulation(s) remain.",
+      call. = FALSE
+    )
+    cost_matrix <- cost_matrix[retained_iterations, , drop = FALSE]
+    effect_matrix <- effect_matrix[retained_iterations, , drop = FALSE]
+  }
+
+  if (length(retained_iterations) == 0L) {
+    stop("No valid PSA iterations remain after dropping failed draws.")
   }
 
   # Print summary of PFS > OS constraint violations (Issue #76)
@@ -294,13 +397,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cat("Breakdown by subgroup:\n")
 
     # Only print subgroups that had violations
-    subgroup_names <- c(
-      control = "  Control",
-      crp_pos = "  CRP+",
-      crp_neg = "  CRP-",
-      tmb_braf_pos = "  TMB/BRAF+",
-      tmb_braf_neg = "  TMB/BRAF-"
-    )
+    subgroup_names <- pfs_os_violation_labels()
 
     for (subgroup in names(pfs_os_violations)) {
       n_violations <- length(pfs_os_violations[[subgroup]])
@@ -318,7 +415,67 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cost = cost_matrix,
     effect = effect_matrix,
     fallback_count = fallback_count,
+    dropped_count = dropped_count,
+    dropped_iterations = dropped_iterations,
+    retained_iterations = retained_iterations,
+    n_sim = length(retained_iterations),
+    failed_draw_policy = psa_failed_draw_policy(),
+    replacement_model_policy = "cyclic_next_10_other_cached_models_v1",
     fallback_rate = fallback_rate,
-    fallback_threshold = fallback_threshold
+    fallback_threshold = fallback_threshold,
+    pfs_os_violations = pfs_os_violations
   ))
+}
+
+
+#' Generate PSA draws, run the model, and create a row-aligned PSA object
+#'
+#' @param l_params_base Base-case parameter list
+#' @param param_distributions Named parameter distributions
+#' @param strategies Strategy identifiers
+#' @param time_horizon Model time horizon
+#' @param cl Cycle length
+#' @param n_sim Requested simulations
+#' @param seed RNG seed
+#' @param currency Currency label passed to `dampack::make_psa_obj()`
+#' @param additional_params Optional draw-aligned columns, such as interaction coefficients
+#' @param fallback_threshold Maximum initial fallback rate
+#' @return List containing `psa_obj`, retained `psa_params`, and `psa_results`
+build_psa_obj <- function(l_params_base, param_distributions, strategies,
+                          time_horizon, cl, n_sim, seed = 123L,
+                          currency = "€", additional_params = NULL,
+                          fallback_threshold = 0.02) {
+  psa_params <- generate_psa_samples(param_distributions, n_sim, seed)
+  if (!is.null(additional_params)) {
+    if (nrow(additional_params) != n_sim) {
+      stop("additional_params must contain exactly n_sim rows")
+    }
+    psa_params <- cbind(psa_params, additional_params)
+    attr(psa_params, "seed") <- seed
+  }
+
+  psa_results <- run_psa_analysis(
+    psa_params, l_params_base, param_distributions, strategies,
+    time_horizon, cl, n_sim, fallback_threshold
+  )
+  psa_params <- psa_params[psa_results$retained_iterations, , drop = FALSE]
+  attr(psa_params, "seed") <- seed
+
+  psa_obj <- dampack::make_psa_obj(
+    cost = as.data.frame(psa_results$cost),
+    effect = as.data.frame(psa_results$effect),
+    strategies = strategies,
+    currency = currency
+  )
+  metadata <- c(
+    requested_n_sim = "requested_n_sim", fallback_count = "fallback_count",
+    dropped_count = "dropped_count", dropped_iterations = "dropped_iterations",
+    failed_draw_policy = "failed_draw_policy",
+    replacement_model_policy = "replacement_model_policy"
+  )
+  for (field in names(metadata)) {
+    psa_obj[[field]] <- if (field == "requested_n_sim") n_sim else psa_results[[metadata[[field]]]]
+  }
+
+  list(psa_obj = psa_obj, psa_params = psa_params, psa_results = psa_results)
 }

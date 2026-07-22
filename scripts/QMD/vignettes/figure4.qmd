@@ -1,5 +1,5 @@
 ---
-title: "Figure 4: Cost-Effectiveness Acceptability Curves"
+title: "Figures 4 and S4: Cost-Effectiveness Acceptability Curves"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -13,31 +13,27 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", dpi = 300)
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, scales, dampack)
-
-suppressMessages(suppressWarnings(
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02"),
+  funs = c("report_format"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "dampack"),
+  set_theme = FALSE
+)
 ```
 
 ```{r load-data, include=FALSE}
-base_psa_file <- here("data", "tidy", paste0("psa_obj_", utility_source_label, ".rds"))
+base_psa_file <- psa_obj_path()
 base_psa <- if (file.exists(base_psa_file)) readRDS(base_psa_file) else NULL
 
-scenario_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
-preview_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
-scenario_cache <- if (file.exists(scenario_file)) {
-  readRDS(scenario_file)
-} else if (file.exists(preview_file)) {
-  readRDS(preview_file)
-} else {
-  NULL
+scenario_file <- scenario_evppi_path()
+if (!file.exists(scenario_file)) {
+  stop(
+    "Full scenario cache not found: ", scenario_file, ". Run ",
+    "scripts/R/analysis/12_scenario_EVPPIs.R before rendering Figure 4."
+  )
 }
+scenario_cache <- readRDS(scenario_file)
 
 biosimilar_psa <- tryCatch(
   scenario_cache$all_scenario_results$s1_decreased_nivo$psa_obj,
@@ -45,35 +41,22 @@ biosimilar_psa <- tryCatch(
 )
 
 wtp_range <- seq(0, 150000, by = 2000)
-ceac_data <- data.frame()
-
-if (!is.null(base_psa)) {
-  tmp <- dampack::ceac(wtp = wtp_range, psa = base_psa)
-  tmp$Scenario <- "Base case"
-  ceac_data <- rbind(ceac_data, tmp)
-}
-if (!is.null(biosimilar_psa)) {
-  tmp <- dampack::ceac(wtp = wtp_range, psa = biosimilar_psa)
-  tmp$Scenario <- "Biosimilar pricing"
-  ceac_data <- rbind(ceac_data, tmp)
-}
-
-strategy_labels <- c(
-  control = "Standard of Care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
-```
-
-```{r figure, fig.width=9, fig.height=7}
-if (nrow(ceac_data) > 0) {
-  ceac_data <- ceac_data %>%
+get_ceac_data <- function(psa, scenario) {
+  if (is.null(psa)) return(data.frame())
+  result <- dampack::ceac(wtp = wtp_range, psa = psa)
+  result$Scenario <- scenario
+  result %>%
     filter(Strategy %in% names(strategy_labels)) %>%
     mutate(Strategy = factor(strategy_labels[Strategy], levels = strategy_labels))
+}
 
-  p_ceac <- ggplot(ceac_data, aes(x = WTP, y = Proportion, color = Strategy)) +
-    geom_line(linewidth = 0.8) +
-    facet_wrap(~Scenario, ncol = 1) +
+base_ceac_data <- get_ceac_data(base_psa, "Base case")
+biosimilar_ceac_data <- get_ceac_data(biosimilar_psa, "Biosimilar pricing")
+ceac_data <- rbind(base_ceac_data, biosimilar_ceac_data)
+
+make_ceac_plot <- function(data, linewidth, facet = FALSE, show_100k = FALSE) {
+  result <- ggplot(data, aes(x = WTP, y = Proportion, color = Strategy)) +
+    geom_line(linewidth = linewidth) +
     geom_vline(xintercept = WTP, linetype = "dotted", color = "gray40") +
     scale_x_continuous(labels = scales::label_currency(prefix = "EUR ", scale = 0.001,
                                                        suffix = "K")) +
@@ -86,10 +69,39 @@ if (nrow(ceac_data) > 0) {
          color = NULL) +
     theme_minimal() +
     theme(legend.position = "bottom", panel.grid.minor = element_blank())
+  if (facet) result <- result + facet_wrap(~Scenario, ncol = 1)
+  if (show_100k) {
+    result <- result + geom_vline(
+      xintercept = 100000,
+      linetype = "dotted",
+      color = "gray65"
+    )
+  }
+  result
+}
+```
 
+## Figure 4
+
+```{r figure-4, fig.width=9, fig.height=7}
+if (nrow(ceac_data) > 0) {
+  p_ceac <- make_ceac_plot(ceac_data, linewidth = 0.8, facet = TRUE)
   print(p_ceac)
 } else {
-  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+  cat("PSA cache not available. Run scripts/R/analysis/10_PSA.R first.")
+}
+```
+
+## Figure S4
+
+```{r figure-s4, fig.width=9, fig.height=6}
+if (nrow(base_ceac_data) > 0) {
+  p_ceac_s4 <- make_ceac_plot(
+    base_ceac_data,
+    linewidth = 0.85,
+    show_100k = TRUE
+  )
+  print(p_ceac_s4)
 }
 ```
 
@@ -100,6 +112,10 @@ if (exists("p_ceac")) {
   ggsave(here("figs", "figure4.png"), p_ceac, width = 9, height = 7,
          dpi = 300, bg = "white")
 }
+if (exists("p_ceac_s4")) {
+  ggsave(here("figs", "figure_s4.png"), p_ceac_s4, width = 9, height = 6,
+         dpi = 300, bg = "white")
+}
 ```
 
-Figure 4 has been saved to `figs/figure4.png`.
+Figures 4 and S4 have been saved to `figs/figure4.png` and `figs/figure_s4.png`.

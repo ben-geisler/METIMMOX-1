@@ -170,7 +170,7 @@
       "checklist_items": [
         "CHAOS-metadata Model version (history)"
       ],
-      "recommended_fix": "Add a single top-level CHANGELOG.md summarizing issue-numbered changes with semantic version tags, and re-run 15_save_snapshot.R so bug_fix_impact.qmd has current comparison content."
+      "recommended_fix": "Add a single top-level CHANGELOG.md summarizing issue-numbered changes with semantic version tags, and re-run 13_save_snapshot.R so bug_fix_impact.qmd has current comparison content."
     },
     {
       "id": "TR-COMP-011",
@@ -266,13 +266,13 @@
     {
       "id": "TR-COMP-017",
       "test": "AdViSHE C3: model traces inspected to test logic",
-      "target": "09_traces.R outputs; AGENTS.md 'Ensuring Non-Negative States'",
-      "inputs": "inventory.md script listing for 09_traces.R; figs/traces_*_state_occupancy.png (per environment.md folder tree); S01 AGENTS.md 'Important Modeling Considerations'",
+      "target": "07_traces.R outputs; AGENTS.md 'Ensuring Non-Negative States'",
+      "inputs": "inventory.md script listing for 07_traces.R; figs/traces_*_state_occupancy.png (per environment.md folder tree); S01 AGENTS.md 'Important Modeling Considerations'",
       "expected": "Documentation records whether model traces were inspected to test logic and where the trace evidence is reported",
-      "observed": "09_traces.R generates state-occupancy trace plots stored in figs/ (traces_all_strategies_state_occupancy.png etc.), and AGENTS.md separately documents non-negativity (p_p = pmax(os-pfs,0)) and initial-state (p_pf[1]=1) constraints as implementation considerations that traces would reveal violations of. Neither source explicitly frames trace generation/inspection as a validation activity with a stated pass/fail outcome or reviewer-facing report.",
+      "observed": "07_traces.R generates state-occupancy trace plots stored in figs/ (traces_all_strategies_state_occupancy.png etc.), and AGENTS.md separately documents non-negativity (p_p = pmax(os-pfs,0)) and initial-state (p_pf[1]=1) constraints as implementation considerations that traces would reveal violations of. Neither source explicitly frames trace generation/inspection as a validation activity with a stated pass/fail outcome or reviewer-facing report.",
       "verdict": "partial",
       "severity": "minor",
-      "location": "scripts/R/analysis/09_traces.R; figs/traces_*.png; S01 AGENTS.md 'Ensuring Non-Negative States'",
+      "location": "scripts/R/analysis/07_traces.R; figs/traces_*.png; S01 AGENTS.md 'Ensuring Non-Negative States'",
       "checklist_items": [
         "AdViSHE C3"
       ],
@@ -373,12 +373,12 @@
       "id": "TR-COMP-024",
       "test": "CDA-AMC 26: deterministic/single-simulation results accessible",
       "target": "CEA.qmd",
-      "inputs": "docs_extracted/CEA.txt sections 3-4; S01 AGENTS.md run_basecase()/10_basecase_analysis.R",
+      "inputs": "docs_extracted/CEA.txt sections 3-4; S01 AGENTS.md run_basecase()/08_basecase_analysis.R",
       "expected": "Deterministic/single-run results are clearly separated from probabilistic results and accessible in reviewer-usable terms",
-      "observed": "CEA.qmd Section 3 'Base Case Results' (deterministic, WTP=EUR51,000) is explicitly separated from Section 4 'Probabilistic Sensitivity Analysis'; AGENTS.md and inventory.md trace this to run_basecase()/10_basecase_analysis.R.",
+      "observed": "CEA.qmd Section 3 'Base Case Results' (deterministic, WTP=EUR51,000) is explicitly separated from Section 4 'Probabilistic Sensitivity Analysis'; AGENTS.md and inventory.md trace this to run_basecase()/08_basecase_analysis.R.",
       "verdict": "pass",
       "severity": "info",
-      "location": "docs_extracted/CEA.txt sections 3-4; scripts/R/analysis/10_basecase_analysis.R",
+      "location": "docs_extracted/CEA.txt sections 3-4; scripts/R/analysis/08_basecase_analysis.R",
       "checklist_items": [
         "CDA-AMC 26"
       ],
@@ -390,7 +390,7 @@
       "target": "AGENTS.md 'Key Functions'; model_configs.R documentation",
       "inputs": "S01 AGENTS.md 'Key Functions' section; inventory.md dependency graph (model_configs.R -> model_fun.R -> calculate_outcomes.R)",
       "expected": "A reviewer can trace from named input parameters through to final outputs using the documentation alone",
-      "observed": "AGENTS.md documents the function chain (get_current_model_config -> model_fun -> calculate_outcomes) and names the central parameter object (l_params_base, built at 07_basecase_input_parameters.R:51); inventory.md's parsed call graph corroborates this path. However, no single consolidated traceability table/diagram maps each specific input parameter to the specific output(s) it feeds; the trace must be reconstructed from source comments plus AGENTS.md prose across multiple files.",
+      "observed": "AGENTS.md documents the function chain (get_current_model_config -> model_fun -> calculate_outcomes) and names the central parameter object (l_params_base, built at 05_basecase_input_parameters.R:51); inventory.md's parsed call graph corroborates this path. However, no single consolidated traceability table/diagram maps each specific input parameter to the specific output(s) it feeds; the trace must be reconstructed from source comments plus AGENTS.md prose across multiple files.",
       "verdict": "partial",
       "severity": "minor",
       "location": "S01 AGENTS.md 'Key Functions'; scripts/R/functions/model_fun.R comments",
@@ -418,12 +418,12 @@
       "id": "TR-CONS-003",
       "test": "UTILITY_SOURCE default consistency across AGENTS.md, code, and manuscript",
       "target": "AGENTS.md 'Critical Global Variables' table vs scripts/R/analysis/02_setup_and_global_variables.R:59 and manuscript utility narrative",
-      "inputs": "AGENTS.md table row 'UTILITY_SOURCE | 0 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59)'; code line UTILITY_SOURCE <- 1; 07_basecase_input_parameters.R:63-64 wiring; manuscript Discussion citing utilities '0.91' / '0.90'; git blame commit 2ce4618 'default utilities CORRECT trial' (2026-02-26) which flipped the default after AGENTS.md's table was written, with AGENTS.md subsequently re-edited (commit ab7a079, 2026-06-19) without correcting the table",
+      "inputs": "AGENTS.md table row 'UTILITY_SOURCE | 0 | 0=IPD-derived (u_np=0.9077, u_p=0.9005), 1=CORRECT trial (u_np=0.73, u_p=0.59)'; code line UTILITY_SOURCE <- 1; 05_basecase_input_parameters.R:63-64 wiring; manuscript Discussion citing utilities '0.91' / '0.90'; git blame commit 2ce4618 'default utilities CORRECT trial' (2026-02-26) which flipped the default after AGENTS.md's table was written, with AGENTS.md subsequently re-edited (commit ab7a079, 2026-06-19) without correcting the table",
       "expected": "Documented default value matches the code's actual default, and matches the utility source implied by the manuscript's reported results",
       "observed": "AGENTS.md documents default 0 (IPD-derived, u_np=0.9077/u_p=0.9005); code's actual default is 1 (CORRECT trial, u_np=0.73/u_p=0.59); manuscript's reported/discussed utility values (0.91 progression-free, 0.90 progressed) correspond to the IPD default (0), not the code's current default (1). No document in the reviewed set states the correct current default. A fresh clone run with default settings will not reproduce the manuscript's utility inputs.",
       "verdict": "fail",
       "severity": "major",
-      "location": "AGENTS.md (Critical Global Variables table); scripts/R/analysis/02_setup_and_global_variables.R:59; scripts/R/analysis/07_basecase_input_parameters.R:63-64; manuscript/METIMMOX_CEA_LancetOncol_v4.md:102,174",
+      "location": "AGENTS.md (Critical Global Variables table); scripts/R/analysis/02_setup_and_global_variables.R:59; scripts/R/analysis/05_basecase_input_parameters.R:63-64; manuscript/METIMMOX_CEA_LancetOncol_v4.md:102,174",
       "checklist_items": [
         "CDA-AMC 26",
         "CDA-AMC 27",

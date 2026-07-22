@@ -4,11 +4,13 @@
 library(here)
 
 run_survival_ordering_test <- function() {
+  caller_owned_value <- "preserved"
   source("scripts/R/analysis/02_setup_and_global_variables.R", local = environment())
   source("scripts/R/analysis/03_biomarker_strategies.R", local = environment())
-  source("scripts/R/analysis/06_parametric_survival_analysis.R", local = environment())
+  source("scripts/R/analysis/04_parametric_survival_analysis.R", local = environment())
 
   stopifnot(
+    identical(caller_owned_value, "preserved"),
     length(time_points) == 521L,
     isTRUE(basecase_ordering_check$ordered),
     identical(basecase_ordering_check$n_violations, 0L),
@@ -16,7 +18,7 @@ run_survival_ordering_test <- function() {
     all(basecase_ordering_check$details$ordered)
   )
 
-  source("scripts/R/analysis/07_basecase_input_parameters.R", local = environment())
+  source("scripts/R/analysis/05_basecase_input_parameters.R", local = environment())
   source("scripts/R/functions/model_fun.R", local = environment())
   source("scripts/R/functions/calculate_outcomes.R", local = environment())
 
@@ -51,14 +53,17 @@ run_survival_ordering_test <- function() {
     warning = function(w) {
       if (grepl("PFS > OS constraint enforced", conditionMessage(w),
                 fixed = TRUE)) {
-        psa_warning <<- conditionMessage(w)
+        psa_warning <<- w
         invokeRestart("muffleWarning")
       }
     }
   )
   stopifnot(
     !is.null(psa_warning),
-    grepl("max excess=", psa_warning, fixed = TRUE),
+    inherits(psa_warning, "survival_ordering_warning"),
+    identical(psa_warning$strategy, get_control_strategy()),
+    identical(psa_warning$subgroup, "control"),
+    grepl("max excess=", conditionMessage(psa_warning), fixed = TRUE),
     all(is.finite(psa_result$Cost)),
     all(is.finite(psa_result$Effect))
   )

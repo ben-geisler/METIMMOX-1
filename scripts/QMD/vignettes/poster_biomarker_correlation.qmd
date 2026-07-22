@@ -26,25 +26,55 @@ execute:
 # Outputs: figs/poster_forest.png, tables/poster_cea.csv,
 #          tables/poster_forest_data.csv
 # ==============================================================================
-knitr::opts_chunk$set(
-  echo = FALSE, warning = FALSE, message = FALSE,
-  fig.align = "center", dpi = 300
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("model_fun", "calculate_outcomes", "prediction_functions",
+           "report_format"),
+  packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
+               "scales", "dampack", "knitr", "kableExtra"),
+  set_theme = FALSE
 )
-knitr::opts_knit$set(root.dir = here::here())
 
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, survival, flexsurv, coxphf, dplyr, ggplot2, scales, dampack,
-               knitr, kableExtra)
+# model_fun() and the prediction helpers resolve these accessors in their source
+# environment. Temporarily extend that environment for the poster-only TLR
+# analysis, then restore the exact canonical function objects even if it errors.
+with_poster_model_config <- function(strategies, biomarkers, code) {
+  model_env <- environment(model_fun)
+  original_get_strategies <- get("get_strategies", envir = model_env)
+  original_get_biomarkers <- get("get_biomarkers", envir = model_env)
+  original_biomarker_cost_key <- get("biomarker_cost_key", envir = model_env)
+  original_strategy_display_name <- get("strategy_display_name", envir = model_env)
+  force(strategies)
+  force(biomarkers)
 
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
-  source(here("scripts/R/functions/model_fun.R"))
-  source(here("scripts/R/functions/calculate_outcomes.R"))
-  source(here("scripts/R/functions/prediction_functions.R"))
-}))
+  assign("get_strategies", function() strategies, envir = model_env)
+  assign("get_biomarkers", function() biomarkers, envir = model_env)
+  assign("biomarker_cost_key", function(selected = biomarkers) {
+    key_map <- c(
+      original_biomarker_cost_key(canonical_biomarkers),
+      tlr = "c_test_TLR"
+    )
+    unknown <- setdiff(selected, names(key_map))
+    if (length(unknown) > 0L) stop("Unknown poster biomarkers: ", paste(unknown, collapse = ", "))
+    key_map[selected]
+  }, envir = model_env)
+  assign("strategy_display_name", function(selected = strategies) {
+    label_map <- c(
+      original_strategy_display_name(canonical_strategies),
+      tlr = "TLR"
+    )
+    label_map[selected]
+  }, envir = model_env)
+  on.exit({
+    assign("get_strategies", original_get_strategies, envir = model_env)
+    assign("get_biomarkers", original_get_biomarkers, envir = model_env)
+    assign("biomarker_cost_key", original_biomarker_cost_key, envir = model_env)
+    assign("strategy_display_name", original_strategy_display_name, envir = model_env)
+  }, add = TRUE)
+
+  force(code)
+}
 ```
 
 ```{r cohort, include=FALSE}
@@ -143,8 +173,14 @@ write.csv(forest_df, here("tables", "poster_forest_data.csv"), row.names = FALSE
 
 ```{r cea, include=FALSE}
 # Override strategy/biomarker sets so model_fun + predictions include TLR.
-get_strategies <- function() c("control","crp","tlr","tmb_braf")
-get_biomarkers <- function() c("crp","tlr","tmb_braf")
+canonical_strategies <- get_strategies()
+canonical_biomarkers <- get_biomarkers()
+poster_strategies <- append(canonical_strategies, "tlr",
+                            after = match("crp", canonical_strategies))
+poster_biomarkers <- append(canonical_biomarkers, "tlr",
+                            after = match("crp", canonical_biomarkers))
+
+with_poster_model_config(poster_strategies, poster_biomarkers, {
 
 m_os3  <- flexsurvreg(Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "weibull")
 m_pfs3 <- flexsurvreg(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "lognormal")
@@ -173,21 +209,21 @@ l_params_base3$p_pfs <- p_pfs3
 l_params_base3$p_crp      <- prev[["crp"]]
 l_params_base3$p_tlr      <- prev[["tlr"]]
 l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
+l_params_base3$c_test_TLR <- 0
+l_params_base3 <- sync_biomarker_test_costs(l_params_base3)
 
 res3  <- suppressWarnings(model_fun(l_params_base3, determpsa = "det"))
 icer3 <- dampack::calculate_icers(cost = res3$Cost, effect = res3$Effect, strategies = res3$Strategy)
 
-label_strategy <- c(control = "Standard of Care", crp = "CRP-guided",
-                    tlr = "TLR-guided", tmb_braf = "TMB/BRAF-guided")
+label_strategy <- c(strategy_labels, tlr = "TLR-guided")
 cea_tbl <- as.data.frame(icer3) %>%
   mutate(Strategy = label_strategy[as.character(Strategy)],
          NMB = Effect * WTP - Cost)
 write.csv(cea_tbl, here("tables", "poster_cea.csv"), row.names = FALSE)
+})
 ```
 
 ```{r cea-display}
-fmt_eur <- function(x) ifelse(is.na(x) | !is.finite(x), "--",
-                              scales::dollar(x, prefix = "EUR ", accuracy = 1))
 cea_display <- cea_tbl %>%
   transmute(
     Strategy,
@@ -209,7 +245,9 @@ kable(cea_display,
     "TLR is a post-randomization mediator, included here only to illustrate the poster point.",
     sprintf("Prevalence: CRP %.0f%%, TLR %.0f%%, TMB/BRAF %.0f%%.",
             100*prev[["crp"]], 100*prev[["tlr"]], 100*prev[["tmb_braf"]]),
-    "Utilities: CORRECT trial (UTILITY_SOURCE = 1). All guided strategies are dominated by standard care."),
+    sprintf("Utilities: %s (UTILITY_SOURCE = %d). All guided strategies are dominated by standard care.",
+            if (resolve_util_label() == "correct") "CORRECT trial" else "METIMMOX IPD",
+            UTILITY_SOURCE)),
     general_title = "Notes: ")
 ```
 
@@ -224,9 +262,8 @@ kable(cea_display,
 # Survival uncertainty is propagated by a parametric bootstrap (MVN draws on the
 # flexsurv coefficient vector). Shown at biosimilar nivolumab pricing, where the
 # decision is a close call and the modelling choice is economically visible (at
-# list price the two panels are essentially identical).
-get_strategies <- function() c("control","crp","tmb_braf")   # reset (TLR off for the CEAC)
-get_biomarkers <- function() c("crp","tmb_braf")
+# list price the two panels are essentially identical). The poster-only TLR
+# override above has already restored the canonical economic configuration.
 
 dc <- data_complete
 times_c <- seq(0, time_horizon)
@@ -267,7 +304,7 @@ curve_draw <- function(pars, Xm, dist) {
 }
 draw_pars <- function(mod) MASS::mvrnorm(1, coef(mod), vcov(mod))
 
-psa_params <- readRDS(here("data/tidy/psa_params_correct.rds"))
+psa_params <- readRDS(psa_params_path())
 NIVO_FACTOR <- 4641 / 13923            # biosimilar nivolumab price (repo biosimilar scenario)
 N <- 1000; set.seed(2026); idx <- sample(nrow(psa_params), N)
 
@@ -276,8 +313,7 @@ run_panel <- function(d_row, dp, panel) {
   for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_CRP","c_test_NGS",
                "c_other_visit","c_other_baseline","c_other_follow","c_other_last",
                "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
-  p$c_test_biomarker$crp <- p$c_test_CRP
-  p$c_test_biomarker$tmb_braf <- p$c_test_NGS
+  p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
   oc <- curve_draw(dp$ctrl_os, XC$ctrl, "weibull"); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, "lognormal")
   if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"
@@ -308,8 +344,7 @@ c1 <- dampack::ceac(wtp_range, mk_psa(cs, es)); c1$Panel <- "One biomarker (mode
 c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- "Two biomarkers (joint, correlation-adjusted)"
 ceac_df <- rbind(as.data.frame(c1), as.data.frame(c2))
 names(ceac_df)[names(ceac_df) == "Proportion"] <- "Probability"
-ceac_df$Strategy <- c(control="Standard of Care", crp="CRP-guided",
-                      tmb_braf="TMB/BRAF-guided")[as.character(ceac_df$Strategy)]
+ceac_df$Strategy <- strategy_label(as.character(ceac_df$Strategy))
 write.csv(ceac_df, here("tables", "poster_ceac_data.csv"), row.names = FALSE)
 ```
 

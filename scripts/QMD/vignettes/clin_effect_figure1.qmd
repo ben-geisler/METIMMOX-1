@@ -13,109 +13,18 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE, warning = FALSE, message = FALSE,
-  fig.align = "center", dpi = 300
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  funs = c("dag_helpers"),
+  packages = c("here", "ggplot2", "dplyr", "dagitty", "ggdag", "ggtext"),
+  set_theme = FALSE
 )
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, dagitty, ggdag, ggtext)
-```
-
-```{r dag-simple-define, include=FALSE}
-dag_simple <- dagitty('dag {
-bb="0,0,1,1"
-Demo     [pos="0.280,0.100"]
-TMB_BRAF [pos="0.150,0.400"]
-CRP      [pos="0.150,0.750"]
-T        [exposure,pos="0.050,0.575"]
-Survival [outcome,pos="0.750,0.575"]
-
-Demo -> TMB_BRAF
-Demo -> Survival
-TMB_BRAF -> Survival
-CRP -> Survival
-T -> Survival
-}')
 ```
 
 ```{r dag-simple-plot, fig.width=9, fig.height=6}
 #| fig-cap: "Figure 1. Simplified causal DAG for METIMMOX-1. Solid arrows denote assumed causal effects. The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction and latent-variable nodes are shown in the full DAG (Figure S1). Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
 
-tidy_dag_simple <- tidy_dagitty(dag_simple)
-tidy_dag_simple$data <- tidy_dag_simple$data |>
-  mutate(
-    y    = 1 - y,
-    yend = if_else(is.na(yend), NA_real_, 1 - yend),
-    hyp  = !is.na(to) & name == "T" & to == "Survival"
-  )
-
-pal_simple <- c("exposure" = "#2166ac", "outcome" = "#b2182b", "covariate" = "grey55")
-
-node_data_s <- node_status(tidy_dag_simple)$data |>
-  distinct(name, x, y, status) |>
-  mutate(
-    status = if_else(is.na(status), "covariate", status),
-    label  = case_when(
-      name == "Demo"     ~ "Age/<br>Sex",
-      name == "Survival" ~ "PFS/<br>OS",
-      name == "TMB_BRAF" ~ "TMB/<br><i>BRAF</i>",
-      TRUE               ~ name
-    )
-  )
-x_range_s <- range(node_data_s$x, na.rm = TRUE)
-y_range_s <- range(node_data_s$y, na.rm = TRUE)
-
-p <- ggplot(tidy_dag_simple$data, aes(x = x, y = y, xend = xend, yend = yend)) +
-  geom_dag_edges_link(
-    data = function(d) dplyr::filter(d, !is.na(to), !hyp)
-  ) +
-  geom_dag_edges_link(
-    data = function(d) dplyr::filter(d, !is.na(to), hyp),
-    edge_linetype = "dashed"
-  ) +
-  geom_dag_node(
-    data = node_data_s,
-    mapping = aes(x = x, y = y, colour = status, fill = status),
-    size = 24, inherit.aes = FALSE
-  ) +
-  ggtext::geom_richtext(
-    data = node_data_s,
-    mapping = aes(x = x, y = y, label = label),
-    colour = "white", size = 3.5,
-    fill = NA, label.color = NA,
-    label.padding = grid::unit(c(0, 0, 0, 0), "pt"),
-    inherit.aes = FALSE
-  ) +
-  coord_equal(
-    xlim = c(x_range_s[1] - diff(x_range_s) * 0.10, x_range_s[2] + diff(x_range_s) * 0.10),
-    ylim = c(y_range_s[1] - diff(y_range_s) * 0.10, y_range_s[2] + diff(y_range_s) * 0.10),
-    clip = "off"
-  ) +
-  theme_dag() +
-  scale_color_manual(
-    name   = NULL,
-    values = pal_simple,
-    breaks = c("exposure", "outcome", "covariate"),
-    labels = c("exposure"  = "Treatment",
-               "outcome"   = "Outcome",
-               "covariate" = "Covariates and biomarkers")
-  ) +
-  scale_fill_manual(
-    name   = NULL,
-    values = pal_simple,
-    breaks = c("exposure", "outcome", "covariate"),
-    labels = c("exposure"  = "Treatment",
-               "outcome"   = "Outcome",
-               "covariate" = "Covariates and biomarkers")
-  ) +
-  theme(
-    legend.position = "bottom",
-    legend.text     = element_text(size = 10),
-    plot.margin     = margin(10, 10, 10, 10)
-  )
-
+p <- plot_simple_dag()
 print(p)
 ```
 

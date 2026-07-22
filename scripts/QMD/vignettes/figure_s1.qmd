@@ -13,20 +13,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
-)
-
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, ggplot2, dplyr, scales, cowplot,
-  flexsurv, survival
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = c("prediction_functions"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "cowplot",
+               "flexsurv", "survival"),
+  set_theme = FALSE
 )
 
 theme_set(theme_minimal() +
@@ -40,21 +33,6 @@ theme_set(theme_minimal() +
 ```
 
 ```{r load-data, include=FALSE}
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-source(here("scripts/R/functions/prediction_functions.R"))
-
-# Fit the joint economic model gamma fits
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-}))
-
 # Get treatment levels
 exp_rx <- levels(data_complete$Rx)[2]
 ctrl_rx <- levels(data_complete$Rx)[1]
@@ -93,27 +71,7 @@ biomarker_defs <- list(
 os_model <- models$best_fit$os
 pfs_model <- models$best_fit$pfs
 
-# Helper for population-averaged predictions
-predict_pop_avg <- function(model, newdata, time_pts) {
-  tryCatch({
-    pred <- predict(model, newdata = newdata, type = "survival", times = time_pts)
-    if (".pred" %in% names(pred)) {
-      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
-      surv_matrix <- do.call(cbind, surv_probs)
-      return(rowMeans(surv_matrix, na.rm = TRUE))
-    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
-      surv_probs <- sapply(pred, function(x) x$est)
-      if (is.matrix(surv_probs)) return(rowMeans(surv_probs, na.rm = TRUE))
-      else return(surv_probs)
-    }
-    return(NULL)
-  }, error = function(e) NULL)
-}
-
-# Extract KM data helper
-extract_km_data <- function(km_fit) {
-  data.frame(time = km_fit$time, surv = km_fit$surv, stringsAsFactors = FALSE)
-}
+# Population-averaging and KM extraction helpers come from prediction_functions.R.
 ```
 
 ```{r create-panels, include=FALSE}

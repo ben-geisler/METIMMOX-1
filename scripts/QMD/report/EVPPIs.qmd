@@ -31,34 +31,21 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", fig.width = 8, fig.height = 6,
-                      dpi = 300, out.width = "100%")
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, knitr, kableExtra, ggplot2, dplyr, scales, dampack)
-
-suppressMessages(suppressWarnings({
-  source(here::here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here::here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here::here("scripts/R/functions/multi_model_cea.R"))
-}))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("cea_helpers", "report_format"),
+  set_theme = FALSE
+)
 
 evppi_results <- NULL
 evpi_manual <- NA_real_
-evppi_cache_file <- here::here("data", "tidy",
-                               paste0("evppi_results_", utility_source_label, ".RData"))
+evppi_cache_file <- evppi_path()
 if (file.exists(evppi_cache_file)) {
   load(evppi_cache_file)
 }
 
 psa_obj <- load_psa_cache(verbose = FALSE)
-
-format_eur <- function(x) {
-  ifelse(is.na(x) | !is.finite(x), "--",
-         scales::dollar(x, prefix = "EUR ", accuracy = 1))
-}
 ```
 
 # Overview
@@ -69,7 +56,7 @@ This report summarizes expected value of information results for the single join
 
 ```{r evpi-summary}
 if (is.null(psa_obj)) {
-  cat("PSA cache not found. Run scripts/R/analysis/12_PSA.R before rendering this report.")
+  cat("PSA cache not found. Run scripts/R/analysis/10_PSA.R before rendering this report.")
 } else {
   psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
     mutate(
@@ -116,7 +103,7 @@ knitr::kable(
 
 ```{r evppi-table}
 if (is.null(evppi_results) || nrow(evppi_results) == 0) {
-  cat("EVPPI cache not found. Run scripts/R/analysis/13_EVPPIs.R before rendering this report.")
+  cat("EVPPI cache not found. Run scripts/R/analysis/11_EVPPIs.R before rendering this report.")
 } else {
   evppi_display <- evppi_results %>%
     arrange(desc(evppi)) %>%

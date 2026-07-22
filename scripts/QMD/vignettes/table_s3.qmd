@@ -13,35 +13,12 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.align = "center",
-  dpi = 300
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "flexsurv", "survival"),
+  set_theme = FALSE
 )
-
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(
-  here, dplyr, knitr, kableExtra, flexsurv, survival
-)
-```
-
-```{r load-data, include=FALSE}
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-}))
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-}))
-
-# Use the joint economic model for distribution selection
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-}))
 ```
 
 ```{r extract-ic-tables, include=FALSE}

@@ -1,5 +1,3 @@
-# clear all objects from the work space
-rm(list = ls())
 # load faster binary format
 rds_path <- here::here("data", "tidy", "METIMMOX.rds")
 if (file.exists(rds_path)) {
@@ -26,7 +24,7 @@ WTP <- 51000       # CE threshold (in Euros)
 DSA_mult <- 0.2    # +/- 20% variations as standard for DSA
 n_samples <- 5000  # number of resampled models
 n_sim <- n_samples # number of PSA simulations
-set.seed(123)      #set seed for reproducibility
+analysis_seed <- 123L  # default passed explicitly to each stochastic block
 
 ## global discount rate
 dr = 0.04
@@ -43,9 +41,6 @@ research_horizon_years <- 10     # Time horizon for research value (years)
 discount_rate_research <- 0.035  # Discount rate for future research benefits (3.5%)
                                  # Standard rate for public health research in Norway
                                  # (slightly lower than 4% used for costs/QALYs)
-
-## switch to use either just the full model (0) or also the age- and sex-adjusted model
-USE_BOTH_MODELS <- 0
 
 ## Utility source switch
 ## Controls which health state utility values are used as base case
@@ -65,6 +60,12 @@ utility_source_label <- c("ipd", "correct")[UTILITY_SOURCE + 1]
 # This sources the central economic model configuration file which defines all
 # formulas and provides helper functions: get_strategies(), get_biomarkers(), etc.
 source(here::here("scripts/R/functions/model_configs.R"))
+
+# Source cache-path helpers (utility label + cached-object file locations).
+source(here::here("scripts/R/functions/cache_paths.R"))
+
+# Source the shared PSA/DSA/EVPPI parameter specification.
+source(here::here("scripts/R/functions/parameter_distributions.R"))
 
 # Set global strategy and biomarker vectors for backward compatibility.
 # Economic analyses include control, CRP, and TMB/BRAF only.

@@ -13,28 +13,23 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", dpi = 300)
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, scales)
-
-suppressMessages(suppressWarnings(
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-))
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02"),
+  packages = c("here", "ggplot2", "dplyr", "scales"),
+  set_theme = FALSE
+)
 ```
 
 ```{r load-data, include=FALSE}
-cache_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, ".rds"))
-preview_file <- here("data", "tidy", paste0("scenario_evppi_results_", utility_source_label, "_PREVIEW.rds"))
-evppi_cache <- if (file.exists(cache_file)) {
-  readRDS(cache_file)
-} else if (file.exists(preview_file)) {
-  readRDS(preview_file)
-} else {
-  NULL
+cache_file <- scenario_evppi_path()
+if (!file.exists(cache_file)) {
+  stop(
+    "Full scenario cache not found: ", cache_file, ". Run ",
+    "scripts/R/analysis/12_scenario_EVPPIs.R before rendering Figure 5."
+  )
 }
+evppi_cache <- readRDS(cache_file)
 
 evppi_grouped <- data.frame()
 if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
@@ -93,7 +88,7 @@ if (nrow(evppi_grouped) > 0) {
 
   print(p_evppi)
 } else {
-  cat("Scenario EVPPI cache not available. Run scripts/R/analysis/14_scenario_EVPPIs.R first.")
+  cat("Scenario EVPPI cache not available. Run scripts/R/analysis/12_scenario_EVPPIs.R first.")
 }
 ```
 

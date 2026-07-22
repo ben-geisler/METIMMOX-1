@@ -13,30 +13,16 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", dpi = 300)
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, dplyr, knitr, kableExtra, scales, dampack)
-
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here("scripts/R/functions/multi_model_cea.R"))
-}))
-
-format_eur <- function(x) scales::dollar(x, prefix = "EUR ", accuracy = 1)
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("cea_helpers", "report_format"),
+  set_theme = FALSE
+)
 ```
 
 ```{r load-psa, include=FALSE}
 psa_obj <- load_psa_cache(verbose = FALSE)
-
-strategy_labels <- c(
-  control = "Standard care",
-  crp = "CRP-guided",
-  tmb_braf = "TMB/BRAF-guided"
-)
 
 display_df <- if (!is.null(psa_obj)) {
   create_psa_summary_table(psa_obj, wtp = WTP) %>%
@@ -68,7 +54,7 @@ if (nrow(display_df) > 0) {
       general_title = "Notes: "
     )
 } else {
-  cat("PSA cache not available. Run scripts/R/analysis/12_PSA.R first.")
+  cat("PSA cache not available. Run scripts/R/analysis/10_PSA.R first.")
 }
 ```
 

@@ -13,12 +13,13 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
-                      fig.align = "center", dpi = 300)
-knitr::opts_knit$set(root.dir = here::here())
-
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(here, ggplot2, dplyr, tidyr, scales, flexsurv, survival)
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("model_fun", "calculate_outcomes"),
+  packages = c("here", "ggplot2", "dplyr", "tidyr", "scales", "flexsurv", "survival"),
+  set_theme = FALSE
+)
 
 theme_set(theme_minimal() +
   theme(legend.position = "bottom",
@@ -26,22 +27,11 @@ theme_set(theme_minimal() +
         axis.text = element_text(size = 9)))
 ```
 
-```{r load-analysis, include=FALSE}
-suppressMessages(suppressWarnings({
-  source(here("scripts/R/analysis/02_setup_and_global_variables.R"))
-  source(here("scripts/R/analysis/03_biomarker_strategies.R"))
-  source(here("scripts/R/analysis/06_parametric_survival_analysis.R"))
-  source(here("scripts/R/analysis/07_basecase_input_parameters.R"))
-  source(here("scripts/R/functions/model_fun.R"))
-  source(here("scripts/R/functions/calculate_outcomes.R"))
-}))
-```
-
 ```{r run-dsa, include=FALSE}
-dsa_pars <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CRP", "c_test_NGS", "c_test_CT",
-              "c_test_blood", "c_other_visit", "c_other_baseline",
-              "c_other_follow", "c_other_last", "u_np", "u_p",
-              "p_crp", "p_tmb_braf")
+parameter_config <- configure_parameter_distributions(l_params_base)
+param_distributions <- parameter_config$distributions
+param_groups <- parameter_config$groups
+dsa_pars <- names(param_distributions)
 
 dsa_ranges <- data.frame(
   pars = dsa_pars,
@@ -50,11 +40,11 @@ dsa_ranges <- data.frame(
   stringsAsFactors = FALSE
 )
 
-for (param in c("u_np", "u_p")) {
+for (param in param_groups$utilities) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
 }
-for (param in c("p_crp", "p_tmb_braf")) {
+for (param in param_groups$prevalence) {
   idx <- which(dsa_ranges$pars == param)
   dsa_ranges$min[idx] <- max(dsa_ranges$min[idx], 0.0)
   dsa_ranges$max[idx] <- min(dsa_ranges$max[idx], 1.0)
@@ -66,8 +56,10 @@ for (param in dsa_pars[grepl("^c_", dsa_pars)]) {
 
 base_result <- model_fun(l_params_base)
 base_result$NMB <- base_result$Effect * WTP - base_result$Cost
-base_inmb <- base_result$NMB[base_result$Strategy == "crp"] -
-  base_result$NMB[base_result$Strategy == "control"]
+target_strategy <- "crp"
+control_strategy <- get_control_strategy()
+base_inmb <- base_result$NMB[base_result$Strategy == target_strategy] -
+  base_result$NMB[base_result$Strategy == control_strategy]
 
 tornado_data <- data.frame()
 for (i in seq_len(nrow(dsa_ranges))) {
@@ -75,18 +67,13 @@ for (i in seq_len(nrow(dsa_ranges))) {
   for (value_type in c("min", "max")) {
     params_varied <- l_params_base
     params_varied[[param_name]] <- dsa_ranges[[value_type]][i]
-    if (param_name == "c_test_CRP") {
-      params_varied$c_test_biomarker$crp <- params_varied$c_test_CRP
-    }
-    if (param_name == "c_test_NGS") {
-      params_varied$c_test_biomarker$tmb_braf <- params_varied$c_test_NGS
-    }
+    params_varied <- sync_biomarker_test_costs(params_varied)
 
     result <- model_fun(params_varied)
     result$NMB <- result$Effect * WTP - result$Cost
 
-    inmb <- result$NMB[result$Strategy == "crp"] -
-      result$NMB[result$Strategy == "control"]
+    inmb <- result$NMB[result$Strategy == target_strategy] -
+      result$NMB[result$Strategy == control_strategy]
 
     tornado_data <- rbind(tornado_data, data.frame(
       Parameter = param_name,
