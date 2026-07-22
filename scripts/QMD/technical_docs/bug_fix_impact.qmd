@@ -3,7 +3,15 @@ title: "Bug Fix Impact Analysis"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
+format-links: false
 format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+    fig-width: 8
+    fig-height: 6
   pdf:
     toc: true
     toc-depth: 3
@@ -52,23 +60,107 @@ snapshot_info <- if (length(snapshot_files) > 0) {
   data.frame()
 }
 
-selected_issue <- if (nrow(snapshot_info) > 0) {
-  tail(unique(snapshot_info$issue), 1)
-} else {
-  NA_character_
+# ---- Assemble bug-fix impact comparisons ----------------------------------
+# Resolve the snapshot file for a given issue + status (newest if duplicated).
+snapshot_file_for <- function(issue, status) {
+  if (nrow(snapshot_info) == 0) return(NA_character_)
+  hit <- snapshot_info$type == "snapshot" &
+    snapshot_info$issue == issue &
+    !is.na(snapshot_info$status) & snapshot_info$status == status
+  if (!any(hit)) return(NA_character_)
+  cand <- snapshot_info[hit, ]
+  cand$filename[which.max(cand$mtime)]
 }
 
-comparison_pair <- if (!is.na(selected_issue)) {
-  tryCatch(select_snapshots_for_comparison(selected_issue, snapshots_dir),
-           error = function(e) NULL)
-} else {
-  NULL
+# Build one comparison, loading both snapshots; NULL if either is unavailable.
+make_comparison <- function(label, before_issue, before_status,
+                            after_issue, after_status) {
+  bf <- snapshot_file_for(before_issue, before_status)
+  af <- snapshot_file_for(after_issue, after_status)
+  if (is.na(bf) || is.na(af)) return(NULL)
+  before <- tryCatch(load_snapshot(bf, snapshots_dir), error = function(e) NULL)
+  after  <- tryCatch(load_snapshot(af, snapshots_dir), error = function(e) NULL)
+  if (is.null(before) || is.null(after)) return(NULL)
+  list(label = label, before_file = bf, after_file = af,
+       before = before, after = after)
 }
 
-before_snapshot <- after_snapshot <- NULL
-if (!is.null(comparison_pair)) {
-  before_snapshot <- load_snapshot(comparison_pair$before$snapshot, snapshots_dir)
-  after_snapshot <- load_snapshot(comparison_pair$after$snapshot, snapshots_dir)
+# Issues that have BOTH a baseline and a fixed snapshot, in numeric order.
+paired_issues <- character()
+if (nrow(snapshot_info) > 0) {
+  snap_only <- snapshot_info[snapshot_info$type == "snapshot", ]
+  issue_status <- split(snap_only$status, snap_only$issue)
+  paired_issues <- names(Filter(
+    function(s) all(c("baseline", "fixed") %in% s), issue_status))
+  paired_issues <- paired_issues[order(as.numeric(paired_issues))]
+}
+
+comparisons <- list()
+# Per-issue baseline -> fixed, one comparison per bug-fix issue.
+for (iss in paired_issues) {
+  comparisons[[length(comparisons) + 1]] <- make_comparison(
+    paste0("Issue ", iss, ": baseline vs fixed"),
+    iss, "baseline", iss, "fixed")
+}
+# Cumulative: earliest baseline -> latest fixed (only when >1 paired issue).
+if (length(paired_issues) > 1) {
+  first_iss <- paired_issues[1]
+  last_iss  <- paired_issues[length(paired_issues)]
+  comparisons[[length(comparisons) + 1]] <- make_comparison(
+    paste0("Cumulative: issue ", first_iss, " baseline vs issue ",
+           last_iss, " fixed"),
+    first_iss, "baseline", last_iss, "fixed")
+}
+comparisons <- Filter(Negate(is.null), comparisons)
+
+# ---- Impact-table builders (shared by every comparison) -------------------
+build_base_impact <- function(before, after) {
+  before$base_results %>%
+    select(Strategy, Cost_Before = Cost, Effect_Before = Effect) %>%
+    inner_join(
+      after$base_results %>%
+        select(Strategy, Cost_After = Cost, Effect_After = Effect),
+      by = "Strategy"
+    ) %>%
+    mutate(
+      Cost_Change = Cost_After - Cost_Before,
+      Effect_Change = Effect_After - Effect_Before,
+      Strategy = strategy_label(Strategy),
+      across(c(Cost_Before, Cost_After, Cost_Change), format_eur),
+      across(c(Effect_Before, Effect_After, Effect_Change), ~ sprintf("%.4f", .x))
+    )
+}
+
+build_nmb_impact <- function(before, after) {
+  inner_join(
+    before$nmb_at_wtp %>% select(Strategy, NMB_Before = NMB),
+    after$nmb_at_wtp %>% select(Strategy, NMB_After = NMB),
+    by = "Strategy"
+  ) %>%
+    mutate(
+      NMB_Change = NMB_After - NMB_Before,
+      Strategy = strategy_label(Strategy),
+      across(c(NMB_Before, NMB_After, NMB_Change), format_eur)
+    )
+}
+
+# Wide table needs a smaller font in PDF (scale_down is dropped by Quarto's
+# raw-table handling); HTML uses striped bootstrap styling.
+style_wide <- function(k) {
+  if (knitr::is_latex_output()) {
+    kableExtra::kable_styling(k, latex_options = "HOLD_position", font_size = 8)
+  } else {
+    kableExtra::kable_styling(k, bootstrap_options = c("striped", "hover"),
+                              full_width = FALSE)
+  }
+}
+style_narrow <- function(k) {
+  if (knitr::is_latex_output()) {
+    kableExtra::kable_styling(k, latex_options = "HOLD_position")
+  } else {
+    kableExtra::kable_styling(k, bootstrap_options = c("striped", "hover"),
+                              full_width = FALSE)
+  }
 }
 
 ```
@@ -92,93 +184,64 @@ if (nrow(snapshot_info) == 0) {
 }
 ```
 
-# Selected Comparison
+# Impact Comparisons
 
-```{r selected}
-if (is.null(comparison_pair)) {
-  cat("No baseline/fixed or earliest/latest snapshot pair was available for comparison.")
+```{r overview}
+if (length(comparisons) == 0) {
+  cat("No baseline/fixed snapshot pairs were available for comparison.")
 } else {
-  pair_df <- data.frame(
-    Role = c("Before", "After"),
-    Snapshot = c(comparison_pair$before$snapshot, comparison_pair$after$snapshot),
-    PSA = c(comparison_pair$before$psa, comparison_pair$after$psa),
+  overview <- do.call(rbind, lapply(comparisons, function(cmp) data.frame(
+    Comparison = cmp$label,
+    Before = cmp$before_file,
+    After = cmp$after_file,
     stringsAsFactors = FALSE
-  )
+  )))
 
   knitr::kable(
-    pair_df,
+    overview,
     booktabs = TRUE,
-    align = c("l", "l", "l"),
-    caption = paste0("Selected snapshot pair for issue \\#", selected_issue)
+    align = "l",
+    caption = "Impact comparisons included in this report"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    style_wide()
 }
 ```
 
-# Base Case Impact
+Each comparison below reports the change in base case costs and QALYs, and in net monetary benefit at the willingness-to-pay threshold, from the *before* snapshot to the *after* snapshot.
 
-```{r base-impact}
-if (!is.null(before_snapshot) && !is.null(after_snapshot)) {
-  before <- before_snapshot$base_results
-  after <- after_snapshot$base_results
+```{r comparisons, results='asis'}
+for (cmp in comparisons) {
+  cat("\n\n## ", cmp$label, "\n\n")
 
-  impact <- before %>%
-    select(Strategy, Cost_Before = Cost, Effect_Before = Effect) %>%
-    inner_join(
-      after %>% select(Strategy, Cost_After = Cost, Effect_After = Effect),
-      by = "Strategy"
-    ) %>%
-    mutate(
-      Cost_Change = Cost_After - Cost_Before,
-      Effect_Change = Effect_After - Effect_Before,
-      Strategy = strategy_label(Strategy),
-      across(c(Cost_Before, Cost_After, Cost_Change), format_eur),
-      across(c(Effect_Before, Effect_After, Effect_Change), ~ sprintf("%.4f", .x))
-    )
-
-  knitr::kable(
-    impact,
+  base_tbl <- knitr::kable(
+    build_base_impact(cmp$before, cmp$after),
     booktabs = TRUE,
     align = c("l", "r", "r", "r", "r", "r", "r"),
     col.names = c("Strategy", "Cost Before", "QALYs Before",
                   "Cost After", "QALYs After", "Cost Change", "QALY Change"),
-    caption = "Base case impact by strategy"
+    caption = paste0("Base case impact -- ", cmp$label)
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
-}
-```
+    style_wide()
+  cat(as.character(base_tbl), "\n\n")
 
-```{r nmb-impact}
-if (!is.null(before_snapshot) && !is.null(after_snapshot)) {
-  before_nmb <- before_snapshot$nmb_at_wtp %>%
-    select(Strategy, NMB_Before = NMB)
-  after_nmb <- after_snapshot$nmb_at_wtp %>%
-    select(Strategy, NMB_After = NMB)
-
-  nmb_impact <- inner_join(before_nmb, after_nmb, by = "Strategy") %>%
-    mutate(
-      NMB_Change = NMB_After - NMB_Before,
-      Strategy = strategy_label(Strategy),
-      across(c(NMB_Before, NMB_After, NMB_Change), format_eur)
-    )
-
-  knitr::kable(
-    nmb_impact,
+  nmb_tbl <- knitr::kable(
+    build_nmb_impact(cmp$before, cmp$after),
     booktabs = TRUE,
     align = c("l", "r", "r", "r"),
     col.names = c("Strategy", "NMB Before", "NMB After", "NMB Change"),
-    caption = "Net monetary benefit impact"
+    caption = paste0("Net monetary benefit impact -- ", cmp$label)
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+    style_narrow()
+  cat(as.character(nmb_tbl), "\n\n")
 }
 ```
 
 # Interpretation
 
-This report expects the current single-model snapshot format produced by `scripts/R/analysis/13_save_snapshot.R`. If older snapshots contain obsolete multi-model components, `load_snapshot()` warns during render and the comparison table uses the top-level single-model results.
+This report compares baseline and fixed single-model snapshots for each bug-fix issue that has both, plus a cumulative comparison from the earliest baseline to the latest fixed snapshot. Snapshots are produced by the `13_save_snapshot.R` analysis script (in `scripts/R/analysis/`). If older snapshots contain obsolete multi-model components, `load_snapshot()` warns during render and the tables use the top-level single-model results.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 4.1
