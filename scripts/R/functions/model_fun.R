@@ -297,7 +297,9 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   }
   
   expected_length <- time_horizon + 1
-  weights <- discount_weights(params, expected_length)
+  # Discount on this call's cycle length, the same cl calculate_outcomes() uses
+  # for QALYs, rather than params$cl (which test fixtures may omit).
+  weights <- discount_weights(params, expected_length, cl)
   v_dw_c <- weights$cost
   v_dw_e <- weights$effect
 

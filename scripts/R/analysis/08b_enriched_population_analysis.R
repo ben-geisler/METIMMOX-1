@@ -119,7 +119,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
     cat("Generating enriched population curves (biomarker-positive control)...\n")
   }
 
-  weights <- discount_weights(l_params_base, time_horizon + 1)
+  weights <- discount_weights(l_params_base, time_horizon + 1, cl)
 
   enriched_rows <- list()
 

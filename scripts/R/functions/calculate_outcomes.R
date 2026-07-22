@@ -26,8 +26,21 @@ partitioned_survival_states <- function(os, pfs, curve_label = NULL) {
 }
 
 #' Create cost and effect discount weights for model cycles
-discount_weights <- function(params, n_cycles) {
-  years <- (seq_len(n_cycles) - 1) / 52
+#'
+#' @param params Parameter list supplying dr_costs and dr_effects.
+#' @param n_cycles Number of model cycles (time_horizon + 1).
+#' @param cl Cycle length in years; defaults to params$cl. Discounting must use
+#'   the model's actual cycle length rather than assuming weekly cycles, so that
+#'   changing cl rescales the horizon correctly instead of silently discounting
+#'   over the wrong number of years.
+#' @return List with cost and effect discount weight vectors.
+discount_weights <- function(params, n_cycles, cl = params$cl) {
+  if (is.null(cl) || !is.numeric(cl) || length(cl) != 1L ||
+      !is.finite(cl) || cl <= 0) {
+    stop("discount_weights() requires a positive numeric cycle length 'cl'; ",
+         "pass it explicitly or set params$cl.")
+  }
+  years <- (seq_len(n_cycles) - 1) * cl
   list(cost = 1 / (1 + params$dr_costs)^years,
        effect = 1 / (1 + params$dr_effects)^years)
 }
