@@ -1210,9 +1210,7 @@ lm_attrition %>%
 
 ### Characteristics of the Week-9 Landmark Cohorts by TLR Status
 
-The two tables below are the landmark-cohort equivalent of Table 1 in the main paper (Baseline Patient Characteristics and Biomarker Prevalence), restricted here to the patients who are still at risk at the week-9 landmark. Because the landmark analysis conditions on survival to the first on-treatment CT, these tables — rather than the full randomized Table 1 — describe the population actually contributing to the week-9 TLR models. A practical consequence is worth stating explicitly: no patient dies or is censored before week 9, so the **overall-survival at-risk set is identical to the full randomized (complete-case) cohort**. The OS table is therefore equivalent to the main paper's Table 1; only the progression-free-survival table describes a genuinely reduced population.
-
-The at-risk set is endpoint-specific: the **overall-survival** cohort keeps everyone alive at week 9, whereas the **progression-free-survival** cohort additionally drops patients who had already progressed by week 9. The PFS cohort is therefore smaller. Both tables are split by the TLR status that becomes defined at the week-9 scan, which fixes the denominators for the OS and PFS models that follow and makes the composition of the two TLR groups directly comparable.
+The two tables below describe the patients who enter the landmark analysis, overall and split by the TLR status that becomes defined at the week-9 scan. The at-risk set is endpoint-specific: the **overall-survival** cohort keeps everyone alive at week 9, whereas the **progression-free-survival** cohort additionally drops patients who had already progressed by week 9. The PFS cohort is therefore smaller. Reporting both fixes the denominators for the OS and PFS models that follow and makes the composition of the two TLR groups directly comparable.
 
 ```{r lm-characteristics, include=FALSE}
 # =============================================================================
