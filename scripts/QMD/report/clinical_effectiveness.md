@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-07-20
+2026-07-23
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -40,6 +40,8 @@ Ben Geisler
   - [Landmark Cohort and Attrition](#landmark-cohort-and-attrition)
   - [Descriptive Context (Landmark
     Cohort)](#descriptive-context-landmark-cohort)
+    - [Characteristics of the Week-9 Landmark Cohorts by TLR
+      Status](#characteristics-of-the-week-9-landmark-cohorts-by-tlr-status)
     - [TLR Prevalence by Treatment Arm at Week
       9](#tlr-prevalence-by-treatment-arm-at-week-9)
     - [Landmark Kaplan-Meier Curves Stratified by
@@ -424,6 +426,83 @@ render.
 
 ## Descriptive Context (Landmark Cohort)
 
+### Characteristics of the Week-9 Landmark Cohorts by TLR Status
+
+The two tables below are the landmark-cohort equivalent of Table 1 in
+the main paper (Baseline Patient Characteristics and Biomarker
+Prevalence), restricted here to the patients who are still at risk at
+the week-9 landmark. Because the landmark analysis conditions on
+survival to the first on-treatment CT, these tables — rather than the
+full randomized Table 1 — describe the population actually contributing
+to the week-9 TLR models. A practical consequence is worth stating
+explicitly: no patient dies or is censored before week 9, so the
+**overall-survival at-risk set is identical to the full randomized
+(complete-case) cohort**. The OS table is therefore equivalent to the
+main paper’s Table 1; only the progression-free-survival table describes
+a genuinely reduced population.
+
+The at-risk set is endpoint-specific: the **overall-survival** cohort
+keeps everyone alive at week 9, whereas the
+**progression-free-survival** cohort additionally drops patients who had
+already progressed by week 9. The PFS cohort is therefore smaller. Both
+tables are split by the TLR status that becomes defined at the week-9
+scan, which fixes the denominators for the OS and PFS models that follow
+and makes the composition of the two TLR groups directly comparable.
+
+#### Overall-survival at-risk set (OSwk \>= 9)
+
+| Characteristic                    | At-risk cohort | TLR-positive | TLR-negative |
+|:----------------------------------|---------------:|-------------:|-------------:|
+| n                                 |             65 |           41 |           24 |
+| Age, years, mean (SD)             |    64.0 (10.0) |   65.0 (9.9) |  62.2 (10.2) |
+| Female sex                        |     30 (46.2%) |   19 (46.3%) |   11 (45.8%) |
+| Control arm (FLOX)                |     29 (44.6%) |   22 (53.7%) |    7 (29.2%) |
+| Experimental arm (FLOX/nivolumab) |     36 (55.4%) |   19 (46.3%) |   17 (70.8%) |
+| Deaths (OS events)                |     56 (86.2%) |   32 (78.0%) |  24 (100.0%) |
+| Progressions (PFS events)         |     48 (73.8%) |   27 (65.9%) |   21 (87.5%) |
+| CRP-positive                      |     22 (33.8%) |   18 (43.9%) |    4 (16.7%) |
+| TMB/BRAF-positive                 |     29 (44.6%) |   18 (43.9%) |   11 (45.8%) |
+
+Characteristics of the week-9 OS landmark cohort (alive at week 9), by
+TLR status
+
+Because no patient dies or is censored before week 9, the OS at-risk set
+coincides with the full complete-case cohort (n = 65).
+
+#### Progression-free-survival at-risk set (PFSwk \>= 9)
+
+| Characteristic                    | At-risk cohort | TLR-positive | TLR-negative |
+|:----------------------------------|---------------:|-------------:|-------------:|
+| n                                 |             56 |           38 |           18 |
+| Age, years, mean (SD)             |     64.7 (9.6) |   65.6 (9.2) |  62.8 (10.5) |
+| Female sex                        |     26 (46.4%) |   18 (47.4%) |    8 (44.4%) |
+| Control arm (FLOX)                |     24 (42.9%) |   19 (50.0%) |    5 (27.8%) |
+| Experimental arm (FLOX/nivolumab) |     32 (57.1%) |   19 (50.0%) |   13 (72.2%) |
+| Deaths (OS events)                |     47 (83.9%) |   29 (76.3%) |  18 (100.0%) |
+| Progressions (PFS events)         |     43 (76.8%) |   27 (71.1%) |   16 (88.9%) |
+| CRP-positive                      |     20 (35.7%) |   16 (42.1%) |    4 (22.2%) |
+| TMB/BRAF-positive                 |     24 (42.9%) |   17 (44.7%) |    7 (38.9%) |
+
+Characteristics of the week-9 PFS landmark cohort (alive and
+progression-free at week 9), by TLR status
+
+The PFS at-risk set drops the 9 patient(s) who had already progressed
+(or were censored) by week 9, leaving n = 56.
+
+*Definitions:* percentages are column percentages; the “Deaths” and
+“Progressions” rows count events over the whole follow-up, not only
+after the landmark. CRP-positive = CRP \< 5 mg/L; TMB/BRAF-positive =
+TMB \>= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion
+reduction \>= 10% at the first on-treatment CT.
+
+**Note:** In both cohorts the two TLR groups are well matched on age,
+sex, and TMB/BRAF status, but differ sharply on treatment arm and CRP:
+the TLR-positive group is enriched for control-arm patients and for
+CRP-positivity, while every TLR-negative patient died during follow-up.
+These imbalances are the descriptive counterpart of the interaction
+estimates below and reinforce that TLR status is realised after
+randomization rather than being a baseline characteristic.
+
 ### TLR Prevalence by Treatment Arm at Week 9
 
 ### Landmark Kaplan-Meier Curves Stratified by TLR
@@ -688,6 +767,6 @@ on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-07-20  
+**Report completed on:** 2026-07-23  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.3
+**Report version:** 3.4
