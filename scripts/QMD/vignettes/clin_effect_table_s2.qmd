@@ -1,5 +1,5 @@
 ---
-title: "Table S1 (Clinical Effectiveness): DAG Association Tests — Consolidated Summary"
+title: "Table S2 (Clinical Effectiveness): DAG Association Tests — Consolidated Summary"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -136,9 +136,9 @@ kable(consolidated_summary_table,
 ```{r save-csv, include=FALSE}
 tables_dir <- here("tables")
 if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
-write.csv(consolidated_summary_table, file = here("tables", "clin_effect_table_s1.csv"),
+write.csv(consolidated_summary_table, file = here("tables", "clin_effect_table_s2.csv"),
           row.names = FALSE)
-cat("Saved to:", here("tables", "clin_effect_table_s1.csv"), "\n")
+cat("Saved to:", here("tables", "clin_effect_table_s2.csv"), "\n")
 ```
 
-Table saved to `tables/clin_effect_table_s1.csv`.
+Table saved to `tables/clin_effect_table_s2.csv`.

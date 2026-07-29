@@ -208,7 +208,7 @@ dag_report <- paste(
   collapse = "\n"
 )
 dag_table <- paste(
-  readLines("scripts/QMD/vignettes/clin_effect_table_s1.qmd", warn = FALSE),
+  readLines("scripts/QMD/vignettes/clin_effect_table_s2.qmd", warn = FALSE),
   collapse = "\n"
 )
 figure_one <- paste(

@@ -1,5 +1,5 @@
 ---
-title: "Figure S2 (Clinical Effectiveness): Sensitivity DAG (Excluding Age/Sex -> TMB/BRAF)"
+title: "Sensitivity DAG (Excluding Age/Sex -> TMB/BRAF) (Unpublished)"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -33,11 +33,11 @@ figs_dir <- here("figs")
 if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
 
 ggsave(
-  filename = here("figs", "clin_effect_figure_s2.png"),
+  filename = here("figs", "clin_effect_figure_sensitivity_dag.png"),
   plot = p,
   width = 9, height = 7, dpi = 300, bg = "white"
 )
-cat("Figure saved to:", here("figs", "clin_effect_figure_s2.png"), "\n")
+cat("Figure saved to:", here("figs", "clin_effect_figure_sensitivity_dag.png"), "\n")
 ```
 
-Figure saved to `figs/clin_effect_figure_s2.png`.
+Figure saved to `figs/clin_effect_figure_sensitivity_dag.png`.
