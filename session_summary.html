@@ -1,0 +1,140 @@
+<h1 id="session-summary-adversarial-review-fixes-and-issue-triage">Session summary — adversarial review, fixes, and
+  issue triage</h1>
+<p><strong>Date:</strong> 2026-07-19 to 2026-07-29
+  <strong>Branch:</strong> <code>refactor/simplify-legacy-scaffolding</code> → merged to <code>main</code> via PR #148
+  <strong>Model:</strong> Claude Fable 5
+</p>
+<p>This session began as an adversarial review of the R + QMD codebase (building on the
+  prior Opus/ValidateHE report in <code>report_Opus/</code>) and grew into verifying an existing
+  refactor, fixing three newly found correctness defects, regenerating all caches,
+  opening and merging PR #148, and triaging the open-issue backlog.</p>
+<hr>
+<h2 id="what-we-did">What we did</h2>
+<h3 id="1-verified-the-existing-refactor-issue-146-">1. Verified the existing refactor (issue #146)</h3>
+<p>Re-derived the prior refactor&#39;s fixes (labelled <code>147-A1</code>…<code>A13</code>,
+  <code>B1</code>…<code>B10</code>) against
+  the actual source rather than trusting commit messages. Confirmed the Opus report&#39;s</p>
+<p>#1 &quot;Fail&quot; finding (OS/PFS independent-AIC fitting with no ordering constraint) was
+  genuinely resolved by ordering-constrained joint distribution selection. Confirmed
+  the ~2,989-line reduction (20,202 → 17,213 R + QMD source, excl. archive) and, via
+  snapshot comparison, that it changed <strong>no</strong> result.</p>
+<h3 id="2-fixed-three-correctness-defects-the-review-found-issue-147-">2. Fixed three correctness defects the review
+  found (issue #147)</h3>
+<p>These were missed by both the Opus review and static inspection; they surfaced only
+  when caches were regenerated and reports rendered.</p>
+<ul>
+  <li><strong>A14 (<code>fc4ae5b</code>) — interaction-coefficient extraction returned 0%. CHANGES RESULTS.</strong>
+    <code>extract_interaction_coefficients()</code> matched <code>^crp.*:Rx</code>, but R names the term
+    <code>Rx:crp</code> (<code>RxExperimental arm:crp1</code>). It matched nothing, warned, and continued —
+    so the four <code>b_*_rx_*</code> rows were <em>absent</em> from every EVPPI table, not zero. Fixed to
+    match structurally (order-agnostic). Result: EVPPI table went <strong>20 → 26 rows</strong>, and
+    <strong><code>b_tmb_braf_rx_pfs</code> now carries 41.2% of total EVPI</strong> — the second-largest
+    parameter after <code>u_np</code>, previously invisible. Pre-existing defect, not an A13
+    regression.
+  </li>
+  <li><strong>A15 (<code>95cdaf0</code>) — <code>scenario_effect.qmd</code> could not render.</strong> It compared the
+    cache
+    <code>failed_draw_policy</code> against a stale string literal instead of calling
+    <code>psa_failed_draw_policy()</code>; it rejected every fresh cache. Now calls the accessor.
+  </li>
+  <li><strong>A7 (<code>1bb4d53</code>) — enriched-population path silently clamped OS ≥ PFS.</strong> Replaced the
+    silent <code>pmin(pfs, os)</code> with a labelled assertion matching <code>model_fun</code>. Latent
+    (0 violations under gamma/gamma), <strong>no result change</strong>.</li>
+</ul>
+<h3 id="3-fixed-the-discount-cycle-length-hardcode-issue-82-">3. Fixed the discount-cycle-length hardcode (issue #82)
+</h3>
+<ul>
+  <li><strong>A17 (<code>d2663a4</code>)</strong> — <code>discount_weights()</code> computed years as <code>/ 52</code>,
+    silently
+    assuming weekly cycles. Now takes <code>cl</code> explicitly and uses <code>* cl</code>. Verified the
+    deterministic base case is <strong>exactly</strong> unchanged (<code>max |dCost| = 0</code>,
+    <code>max |dEff| = 0</code>);
+    <code>x/52</code> vs <code>x*(1/52)</code> differ at ~1e-16 but cancel in the aggregated sums, so no cache
+    regeneration was needed.
+  </li>
+</ul>
+<h3 id="4-added-regression-tests-12-14-test-files-">4. Added regression tests (12 → 14 test files)</h3>
+<ul>
+  <li><code>test_interaction_coefficient_extraction.R</code>, <code>test_enriched_survival_ordering.R</code>,
+    <code>test_report_contracts.R</code> (A16, 163 checks covering the report/cache contracts that
+    A14/A15 slipped through), and <code>test_discount_weights_cycle_length.R</code>.
+  </li>
+  <li>Every new test was <strong>mutation-verified</strong>: reverting the corresponding fix makes it
+    fail with a message naming the fix.</li>
+</ul>
+<h3 id="5-regenerated-all-caches-from-corrected-code">5. Regenerated all caches from corrected code</h3>
+<p>Sampling (5000 models, 5 benign singular-matrix failures now correctly substituted),
+  PSA, EVPPI, and scenario EVPPI. PSA diagnostics confirmed the A1–A4 robustness work is
+  live: <strong>fallback 5/5000, all replaced, 0 dropped</strong>. Deleted 537 MB of orphaned
+  Model-A/B/C caches (<code>*_focused</code>/<code>*_joint</code>/<code>*_separate</code>).</p>
+<h3 id="6-snapshots-and-the-bug-fix-impact-report">6. Snapshots and the bug-fix impact report</h3>
+<ul>
+  <li>Corrected the <code>#147</code> baseline snapshot&#39;s stale <code>issue_number</code> metadata (146 → 147),
+    preserving its honest <code>git_commit</code> provenance and byte-identical results.</li>
+  <li>Rewrote <code>bug_fix_impact.qmd</code> to compare every baseline/fixed snapshot pair plus a
+    cumulative row; rendered to PDF <strong>and</strong> HTML and tracked both (with a scoped
+    <code>.gitignore</code> negation for the PDF, since the repo otherwise ignores rendered reports).
+  </li>
+</ul>
+<h3 id="7-pr-148-created-structured-merged">7. PR #148 — created, structured, merged</h3>
+<p>One PR splitting <strong>refactor (#146, no result change)</strong> from <strong>correctness fixes
+    (#147, one changes results)</strong>, with a commit-label key decoding the <code>147-*</code> tags, the
+  snapshot-delta tables, and the poster flagged as knowingly-failing. Rewrote both issue
+  bodies to match the split. Merged to <code>main</code>.</p>
+<h3 id="8-issue-triage-9-issues-closed">8. Issue triage — 9 issues closed</h3>
+<ul>
+  <li><strong>Closed by PR #148:</strong> #146, #147, plus #55, #50, #59 (verified already fixed by the
+    branch, <code>main</code> vs <code>HEAD</code> diff), and #82 (fixed in A17).</li>
+  <li><strong>#101</strong> (P0, &quot;3 models in para_models&quot;) closed as <strong>superseded</strong> — it asks
+    for the
+    Model A/B/C design #146 retired.</li>
+  <li><strong>8 more closed as already-resolved-in-main</strong>, each with a code-evidence comment:
+    #15, #51, #52, #53, #54, #57, #61, #63.</li>
+</ul>
+<hr>
+<h2 id="what-we-did-not-do">What we did NOT do</h2>
+<h3 id="left-failing-open-by-deliberate-decision">Left failing / open by deliberate decision</h3>
+<ul>
+  <li><strong><code>poster_biomarker_correlation.qmd</code> — left intentionally failing.</strong> It hard-codes a
+    weibull-OS/lognormal-PFS pair that violates OS ≥ PFS at <strong>251 of 521 time points</strong>
+    (the original WB-001 defect). <code>model_fun</code> now refuses it rather than clamping.
+    Fixing it means porting <code>curve_draw()</code> to the gamma/gamma pair, which changes the
+    poster&#39;s published numbers — a stats decision left to the author.</li>
+  <li><strong>Issue #145 — left open.</strong> Its code fixes are already in <code>main</code>; its bug #1 (OS/PFS
+    clamp) still has the poster instance above. Deliberately excluded from PR #148.</li>
+  <li><strong>Issue #124 — left open, needs a spec rewrite, not implementation.</strong> Its figure spec
+    references retired Model A/B/C panels; the underlying figures exist but the spec is
+    stale against the single-model design.</li>
+</ul>
+<h3 id="flagged-for-the-author-s-judgement-not-changed">Flagged for the author&#39;s judgement, not changed</h3>
+<ul>
+  <li><strong>Treatment-schedule week indexing</strong> (issue #49 / &quot;A12&quot;): schedules are hard-coded to
+    a 520-week horizon, and the week-vs-cycle indexing (weeks 4,6,12… vs the documented
+    5,7,13…) needs resolving against the trial protocol.</li>
+  <li><strong>12-vs-13-week schedules</strong>: CT every 12 weeks vs follow-up every 13 — may be two
+    legitimate schedules; not assumed a bug.</li>
+  <li><strong>Monitoring without visits</strong> after week 39; and the manuscript EVPPI section, which
+    now needs reading against the new <code>b_tmb_braf_rx_pfs</code> = 41.2% result.</li>
+</ul>
+<h3 id="open-issues-not-addressed-14-remain-">Open issues not addressed (14 remain)</h3>
+<ul>
+  <li><strong>Code:</strong> #36 (P1 — visit costs from Eline&#39;s DRG weights; would change results;
+    blocked on the DRG numbers), #60 (OS[1]==1 not asserted), #56 (CV values
+    undocumented), #49, #58 (identity comparisons remain), #66, #16, #6, #137 (kNN EVPPI
+    unvalidated against <code>voi</code>/<code>BCEA</code> — more relevant now that A14 made interaction EVPPI
+    real).</li>
+  <li><strong>Clinical/research:</strong> #29, #31 (Norwegian EQ-5D tariffs), #33, #34.</li>
+</ul>
+<hr>
+<h2 id="key-results-and-caveats">Key results and caveats</h2>
+<ul>
+  <li><strong>Deterministic base case unchanged throughout:</strong> control €21,055.79 / 1.3498 QALY,
+    CRP €53,790.65 / 1.3886, TMB/BRAF €63,235.05 / 1.3514. CRP ICER €843,973/QALY.</li>
+  <li><strong>The one result that moved (A14):</strong> the EVPPI/value-of-information table now includes
+    the treatment-by-biomarker interactions; <code>b_tmb_braf_rx_pfs</code> at 41.2% of EVPI was
+    absent from all prior results and <strong>should be reviewed before entering the manuscript.</strong></li>
+  <li><strong>PSA means shifted slightly</strong> (control −€99/−0.0047 QALY, CRP −€65/−0.0027,
+    TMB/BRAF −€155/−0.0072) — the expected fingerprint of the sampling/seeding/replacement
+    fixes touching only the stochastic layer.</li>
+  <li><strong>14/14 focused tests pass.</strong></li>
+</ul>
