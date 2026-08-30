@@ -566,6 +566,7 @@ Each report has specific dependencies:
 **Figure Vignettes** (in `scripts/QMD/vignettes/`):
 - **figure1-4.qmd**: Publication-ready figures
 - **suppl_figure_pfs_plots.qmd**: Supplementary PFS figures
+- **figure_pfs_os_curves.qmd**: OS and PFS in the same panel, one PNG per strategy (`figs/figure_pfs_os_curves_{soc,crp,tmb_braf}.png`). Overlays Kaplan-Meier step curves (complete-case data) on the base-case parametric curves from the `predictions` object; biomarker panels show positive (experimental arm) and negative (control arm) subgroups. Sources 02/03/04 only; unnumbered for now.
 
 **Clinical effectiveness vignettes** (in `scripts/QMD/vignettes/`): Files for the clinical effectiveness paper use the prefix `clin_effect_` followed by the paper figure/table label. Each vignette is self-contained (HTML, `embed-resources: true`) and saves its output to `figs/` (figures, via `ggsave`) or `tables/` (CSV, via `write.csv`). Naming examples:
 - `clin_effect_figure1.qmd` → `figs/clin_effect_figure1.png` (six-panel Kaplan-Meier grid: OS left / PFS right columns; CRP, TMB/BRAF, and TLR rows, with the TLR row on the week-9 landmark cohort)
