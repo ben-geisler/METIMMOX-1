@@ -67,9 +67,9 @@ event_summary <- data.frame(
   Deaths = c(sum(data$Death, na.rm = TRUE),
              sum(data_main$Death, na.rm = TRUE),
              sum(data_tlr$Death, na.rm = TRUE)),
-  Progressions = c(sum(data$Progression, na.rm = TRUE),
-                   sum(data_main$Progression, na.rm = TRUE),
-                   sum(data_tlr$Progression, na.rm = TRUE))
+  PFS_events = c(sum(data$Progression, na.rm = TRUE),
+                 sum(data_main$Progression, na.rm = TRUE),
+                 sum(data_tlr$Progression, na.rm = TRUE))
 )
 ```
 

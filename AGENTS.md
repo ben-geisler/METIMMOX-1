@@ -362,6 +362,8 @@ list(
 - File location: `data/tidy/METIMMOX.rds`
 - Required variables: `ID`, `PFSwk`, `Progression`, `OSwk`, `Death`, `Rx`, `Age`, `sex`, biomarker variables
 
+**PFS endpoint derivation** (issue #149, in [pfs_endpoint.R](scripts/R/functions/pfs_endpoint.R), called by [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_global_variables.R)): the trial export records exit-for-progression only (`Progression exit`) and time to that exit (`Days until progression`), so patients who died without a recorded progression would be censored for PFS. `derive_pfs_endpoint()` recodes `Progression` as progression OR death and `PFSwk` as time to progression if progressed, time to death if died progression-free, and follow-up time otherwise, matching the trial definition (Ree et al. 2024) and the partitioned-survival-model requirement that the progression-free state means alive and progression-free. The raw values are kept as `ProgressionExit` and `TTPwk`. Any report that reads `data/tidy/METIMMOX.rds` directly (currently `biomarker_distributions.qmd`) must call `derive_pfs_endpoint()` after renaming `Progression exit`.
+
 **Biomarker derivation** (in [03_biomarker_strategies.R](scripts/R/analysis/03_biomarker_strategies.R:6-9)):
 ```r
 data$crp <- as.numeric(data$CRP1cat == 1)
@@ -395,6 +397,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 
 **Model Configuration**:
 - **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for the economic strategies, biomarkers, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_current_model_config()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_control_formula()`, `get_model_formulas()`.
+- **[pfs_endpoint.R](scripts/R/functions/pfs_endpoint.R)**: Single source of truth for the composite PFS endpoint (progression or death). Auto-sourced by `02_setup_and_global_variables.R`. Key function: `derive_pfs_endpoint()`.
 - **[cache_paths.R](scripts/R/functions/cache_paths.R)**: Single source of truth for the utility-source label and cached-object file paths (sampling, PSA, EVPPI, scenario). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`.
 - **[report_setup.R](scripts/R/functions/report_setup.R)**: One-call Quarto report setup (knitr options, package loading, shared ggplot theme, and sourcing of analysis scripts/function files), used to remove duplicated setup boilerplate across the economic reports. Key function: `setup_report(sources, funs, packages, set_theme)`.
 

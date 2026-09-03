@@ -14,6 +14,14 @@ data$OSwk <- data$`Days until death/last follow up`/7
 names(data)[names(data) == "Progression exit"] <- "Progression"
 names(data)[names(data) == "Sex 0female"] <- "sex"
 
+# PFS endpoint (issue #149): the trial export flags exit-for-progression only and
+# censors deaths without progression. Recode PFS as progression OR death, with
+# time to death for patients who died progression-free, matching the trial
+# definition (Ree et al. 2024) and the partitioned-survival-model state
+# definition. Raw values are kept as ProgressionExit / TTPwk.
+source(here::here("scripts/R/functions/pfs_endpoint.R"))
+data <- derive_pfs_endpoint(data)
+
 # global variables
 ## time parameters
 cl <- 1/52         # 1 week cycle (not accounting for leap years)

@@ -59,6 +59,10 @@ data_full$sex <- data_full$Female
 
 # Rename Progression exit to Progression (as in 02_setup_and_global_variables.R)
 names(data_full)[names(data_full) == "Progression exit"] <- "Progression"
+
+# Derive the composite PFS endpoint (progression or death), as in 02 (issue #149)
+source(here("scripts/R/functions/pfs_endpoint.R"))
+data_full <- derive_pfs_endpoint(data_full)
 ```
 
 # Introduction
@@ -139,7 +143,7 @@ sample_df <- data.frame(
                      "Experimental arm (alternating FLOX/nivolumab)",
                      "",
                      "Deaths (OS events)",
-                     "Progressions (PFS events)",
+                     "PFS events (progression or death)",
                      "",
                      "CRP-positive (low CRP)",
                      "TLR-positive (early response)",

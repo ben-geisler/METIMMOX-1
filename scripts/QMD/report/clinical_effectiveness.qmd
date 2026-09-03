@@ -406,7 +406,7 @@ table1_df <- data.frame(
     "Control (FLOX alone)",
     "Experimental (FLOX/nivolumab)",
     "Deaths (OS events)",
-    "Progressions (PFS events)",
+    "PFS events (progression or death)",
     "CRP-positive (low CRP)",
     "TLR-positive (early response)",
     "TMB/BRAF-positive"
@@ -1245,7 +1245,7 @@ build_lm_characteristics <- function(df) {
   data.frame(
     Characteristic = c("n", "Age, years, mean (SD)", "Female sex",
                        "Control arm (FLOX)", "Experimental arm (FLOX/nivolumab)",
-                       "Deaths (OS events)", "Progressions (PFS events)",
+                       "Deaths (OS events)", "PFS events (progression or death)",
                        "CRP-positive", "TMB/BRAF-positive"),
     All     = summarise_lm_cohort(df),
     TLR_pos = summarise_lm_cohort(df[df$tlr_num == 1, ]),
@@ -1290,9 +1290,9 @@ render_lm_char_table(
 )
 ```
 
-The PFS at-risk set drops the `r nrow(data_lm_os) - nrow(data_lm_pfs)` patient(s) who had already progressed (or were censored) by week 9, leaving n = `r nrow(data_lm_pfs)`.
+The PFS at-risk set drops the `r nrow(data_lm_os) - nrow(data_lm_pfs)` patient(s) who had already progressed, died, or were censored by week 9, leaving n = `r nrow(data_lm_pfs)`.
 
-*Definitions:* percentages are column percentages; the "Deaths" and "Progressions" rows count events over the whole follow-up, not only after the landmark. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction >= 10% at the first on-treatment CT.
+*Definitions:* percentages are column percentages; the "Deaths" and "PFS events" rows count events over the whole follow-up, not only after the landmark. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction >= 10% at the first on-treatment CT.
 
 **Note:** In both cohorts the two TLR groups are well matched on age, sex, and TMB/BRAF status, but differ sharply on treatment arm and CRP: the TLR-positive group is enriched for control-arm patients and for CRP-positivity, while every TLR-negative patient died during follow-up. These imbalances are the descriptive counterpart of the interaction estimates below and reinforce that TLR status is realised after randomization rather than being a baseline characteristic.
 
@@ -1530,7 +1530,7 @@ Neither analysis resolves the most fundamental issue: TLR lies on the causal pat
 
 ## Primary interaction results
 
-Neither biomarker-treatment interaction reached conventional significance in the unified model. For **overall survival**, CRP × Rx yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR 0.93 (0.30–2.85, p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction showed a more directionally suggestive effect (HR 0.33, 0.07–2.15, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had roughly one-third the hazard of progression relative to CRP-positive controls, though the CI spans more than an order of magnitude. These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` progressions, `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
+Neither biomarker-treatment interaction reached conventional significance in the unified model. For **overall survival**, CRP × Rx yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR 0.93 (0.30–2.85, p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction showed a more directionally suggestive effect (HR 0.33, 0.07–2.15, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had roughly one-third the hazard of progression relative to CRP-positive controls, though the CI spans more than an order of magnitude. These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR 0.33) is consistent with the DAG association test showing CRP → PFS (HR 0.40, p = 0.004) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR 0.78) is considerably closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
 
@@ -1556,7 +1556,7 @@ A **week-9 landmark analysis** conditions on survival to the second (first on-tr
 
 # Summary
 
-**Study:** METIMMOX-1 biomarker subgroup analysis. N = `r n_total` complete cases, `r sum(data_complete$Death)` OS events, `r sum(data_complete$Progression)` PFS events.
+**Study:** METIMMOX-1 biomarker subgroup analysis. N = `r n_total` complete cases, `r sum(data_complete$Death)` OS events, `r sum(data_complete$Progression)` PFS events (progression or death).
 
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary (DAG-informed):** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` — pre-treatment biomarkers as effect modifiers; TLR omitted because it is post-randomization. **Exploratory responder analysis:** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and its treatment interaction, with CRP and TMB/BRAF retained as prognostic main-effect adjustments. Profile likelihood CIs, PLRT for interaction testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects in the primary model and the TLR terms (main effect + TLR:Rx) in the exploratory model.
 

@@ -55,6 +55,10 @@ METIMMOX$PFSmo <- METIMMOX$`Days until progression`*12/365
 
 METIMMOX$OSmo <-METIMMOX$`Days until death/last follow up`*12/365
 
+# NOTE (issue #149): "Days until progression" / "Progression exit" are the raw
+# trial variables (time to progression, deaths censored). The analysis PFS
+# endpoint (progression OR death) is derived in 02_setup_and_global_variables.R
+# via derive_pfs_endpoint(); reports reading this RDS directly must call it too.
 METIMMOX$PFSwk <- METIMMOX$`Days until progression`/7
 
 METIMMOX$OSwk <-METIMMOX$`Days until death/last follow up`/7
