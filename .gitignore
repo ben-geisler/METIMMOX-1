@@ -70,3 +70,7 @@ nul
 # Claude Code settings (but not CLAUDE.md documentation)
 .claude/
 .positai
+
+# Adversarial review reports (local working records, not tracked)
+/report_Fable5-1/
+/report_Opus/
