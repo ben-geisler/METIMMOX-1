@@ -1,0 +1,552 @@
+---
+title: "Parametric Survival Model Specification"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+# ===============================================================================
+# Parametric Survival Model Specification
+#
+# 1. Regression coefficients of the joint parametric survival model (one OS
+#    model and one PFS model) for every candidate distribution fitted in
+#    04_parametric_survival_analysis.R, with the selected gamma/gamma pair first.
+# 2. Contrast of the current ordering-constrained gamma (OS) / gamma (PFS) pair
+#    with the previously used unconstrained minimum-AIC pair, Weibull (OS) /
+#    log-normal (PFS), on the population-averaged subgroup curves.
+# 3. Gallery of all candidate distributions per subgroup, first unlabelled and
+#    then labelled, overlaid on the Kaplan-Meier estimates.
+#
+# Everything is derived from the objects created by script 04: `models`
+# (fitted flexsurvreg objects), `os_candidates` / `pfs_candidates` (population-
+# averaged subgroup curves for every distribution) and
+# `models$ordered_selection` (pair audit table).
+# ===============================================================================
+source(here::here("scripts/R/functions/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = c("prediction_functions", "report_format"),
+  packages = c("here", "knitr", "ggplot2", "dplyr", "tidyr", "scales",
+               "survival", "flexsurv"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+theme_set(theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, colour = "grey30"),
+    plot.caption = element_text(size = 8.5, colour = "grey30", hjust = 0),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 9),
+    strip.text = element_text(size = 10, face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(colour = "grey90", linewidth = 0.3),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+
+# ---- Distribution metadata ---------------------------------------------------
+# Order: selected pair first, then the two previously used families, then the
+# remaining candidates. `effect` states what exp(coefficient) means for the
+# location parameter on which flexsurv places the covariates.
+dist_meta <- data.frame(
+  dist   = c("gamma", "weibull", "weibullph", "lognormal", "exponential",
+             "llogis", "gompertz", "gengamma", "genf"),
+  label  = c("Gamma", "Weibull (AFT)", "Weibull (PH)", "Log-normal",
+             "Exponential", "Log-logistic", "Gompertz", "Generalised gamma",
+             "Generalised F"),
+  family = c("AFT", "AFT", "PH", "AFT", "PH", "AFT", "PH", "AFT", "AFT"),
+  effect = c("Rate ratio (TR = 1 / RR)", "Time ratio",
+             "Hazard ratio", "Time ratio", "Hazard ratio", "Time ratio",
+             "Hazard ratio", "Time ratio", "Time ratio"),
+  stringsAsFactors = FALSE
+)
+dist_label <- setNames(dist_meta$label, dist_meta$dist)
+
+sel_os  <- models$best_fit$os_distribution
+sel_pfs <- models$best_fit$pfs_distribution
+prev_os  <- "weibull"
+prev_pfs <- "lognormal"
+
+exp_rx  <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+
+max_follow_up_yr <- max(c(data_complete$OSwk, data_complete$PFSwk), na.rm = TRUE) / 52
+horizon_yr <- time_horizon / 52
+
+# ---- Subgroup labels (same treatment assignment as the economic model) --------
+subgroup_meta <- data.frame(
+  curve = c("control", "crp_positive", "crp_negative",
+            "tmb_braf_positive", "tmb_braf_negative"),
+  label = c("Standard of care (FLOX)", "CRP+ (FLOX + nivolumab)", "CRP- (FLOX)",
+            "TMB/BRAF+ (FLOX + nivolumab)", "TMB/BRAF- (FLOX)"),
+  stringsAsFactors = FALSE
+)
+subgroup_label <- setNames(subgroup_meta$label, subgroup_meta$curve)
+
+subgroup_data <- function(curve) {
+  d <- data_complete
+  if (curve == "control") return(d[d$Rx == ctrl_rx, ])
+  biomarker <- sub("_(positive|negative)$", "", curve)
+  status <- as.numeric(as.character(d[[biomarker]]))
+  if (grepl("_positive$", curve)) d[status == 1 & d$Rx == exp_rx, ]
+  else d[status == 0 & d$Rx == ctrl_rx, ]
+}
+subgroup_n <- sapply(subgroup_meta$curve, function(cv) nrow(subgroup_data(cv)))
+```
+
+```{r helpers, include=FALSE}
+pretty_param <- function(x) {
+  x <- gsub("RxExperimental arm", "Rx", x, fixed = TRUE)
+  x <- gsub("sex1", "Sex (male)", x, fixed = TRUE)
+  x <- gsub("crp1", "CRP+", x, fixed = TRUE)
+  x <- gsub("tmb_braf1", "TMB/BRAF+", x, fixed = TRUE)
+  x <- gsub(":", " x ", x, fixed = TRUE)
+  x
+}
+
+# Coefficient rows for one fitted flexsurvreg object. Baseline (ancillary and
+# location) parameters are reported on their natural scale as in fit$res;
+# covariate coefficients are on the estimation scale of the location parameter
+# (log scale for rate/scale parameters, identity for meanlog/mu), and are the
+# only rows that are exponentiated.
+fmt_num <- function(x) {
+  ifelse(is.finite(x) & abs(x) >= 1e4, sprintf("%.2e", x), sprintf("%.3f", x))
+}
+
+coef_rows <- function(fit, endpoint) {
+  if (is.null(fit)) return(NULL)
+  res <- as.data.frame(fit$res)
+  is_cov <- seq_len(nrow(res)) %in% fit$covpars
+  tab <- data.frame(
+    Endpoint = endpoint,
+    Parameter = pretty_param(rownames(res)),
+    Estimate = fmt_num(res$est),
+    SE = fmt_num(res$se),
+    `95% CI` = sprintf("[%s, %s]", fmt_num(res$`L95%`), fmt_num(res$`U95%`)),
+    `exp(Est.)` = ifelse(is_cov, sprintf("%.3f", exp(res$est)), ""),
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+  # Pad the header so that pandoc's relative column widths (derived from the
+  # pipe-table separator dashes) give the Parameter column enough room to hold
+  # the interaction labels on one line.
+  names(tab)[2] <- formatC("Parameter", width = -24, flag = "-")
+  tab
+}
+
+# Population-averaged subgroup curves for one endpoint and distribution, taken
+# from the candidate tables built in script 04 (the same curves used for the
+# ordering-constrained selection).
+candidate_curves <- function(endpoint, dist) {
+  cand <- if (endpoint == "OS") os_candidates else pfs_candidates
+  idx <- which(cand$distribution == dist)
+  if (length(idx) == 0) return(NULL)
+  curves <- cand$ordering_data[[idx]]
+  if (inherits(curves, "condition")) return(NULL)
+  bind_rows(lapply(names(curves), function(cv) {
+    data.frame(curve = cv, endpoint = endpoint, dist = dist,
+               years = time_points / 52, surv = curves[[cv]],
+               stringsAsFactors = FALSE)
+  }))
+}
+
+all_curves <- bind_rows(lapply(dist_meta$dist, function(d) {
+  bind_rows(candidate_curves("OS", d), candidate_curves("PFS", d))
+})) %>%
+  mutate(
+    subgroup = factor(subgroup_label[curve], levels = subgroup_meta$label),
+    endpoint = factor(endpoint, levels = c("OS", "PFS")),
+    dist_lab = factor(dist_label[dist], levels = dist_meta$label)
+  )
+
+# Observed Kaplan-Meier step data per subgroup and endpoint
+km_curve <- function(curve, endpoint) {
+  d <- subgroup_data(curve)
+  fit <- if (endpoint == "OS") survfit(Surv(OSwk, Death) ~ 1, data = d)
+         else survfit(Surv(PFSwk, Progression) ~ 1, data = d)
+  km <- extract_km_data(fit)
+  data.frame(curve = curve, endpoint = endpoint,
+             years = c(0, km$time) / 52, surv = c(1, km$surv),
+             stringsAsFactors = FALSE)
+}
+km_all <- bind_rows(lapply(subgroup_meta$curve, function(cv) {
+  bind_rows(km_curve(cv, "OS"), km_curve(cv, "PFS"))
+})) %>%
+  mutate(subgroup = factor(subgroup_label[curve], levels = subgroup_meta$label),
+         endpoint = factor(endpoint, levels = c("OS", "PFS")))
+
+endpoint_cols <- c(OS = "#2a78d6", PFS = "#eb6834")
+
+base_axes <- function(p) {
+  p +
+    geom_vline(xintercept = max_follow_up_yr, linetype = "dotted",
+               colour = "grey50", linewidth = 0.4) +
+    scale_x_continuous(breaks = seq(0, horizon_yr, by = 2),
+                       limits = c(0, horizon_yr),
+                       expand = expansion(mult = c(0, 0.02))) +
+    scale_y_continuous(labels = percent_format(accuracy = 1),
+                       breaks = seq(0, 1, by = 0.2), limits = c(0, 1),
+                       expand = expansion(mult = c(0, 0.02))) +
+    labs(x = "Years from randomisation", y = "Survival probability")
+}
+follow_up_note <- sprintf(
+  "Dotted vertical line: end of observed follow-up (%.1f years). Curves are shown to the %d-year model horizon.",
+  max_follow_up_yr, round(horizon_yr))
+```
+
+# Model specification
+
+The economic model uses **one joint parametric regression model per endpoint**: one for overall survival (OS) and one for progression-free survival (PFS). Both share the same linear predictor:
+
+```{r formulas, results='asis'}
+fml <- get_model_formulas()$full
+cat("```\n")
+fml_str <- function(f) paste(trimws(deparse(f, width.cutoff = 500)), collapse = " ")
+cat("OS : ", fml_str(fml$os), "\n", sep = "")
+cat("PFS: ", fml_str(fml$pfs), "\n", sep = "")
+cat("```\n")
+```
+
+The three strategies are **not three models**. They are three ways of setting the treatment indicator `Rx` in the same fitted model before predicting each patient's survival curve and averaging over the patients in the relevant subgroup (population averaging; see `generate_population_averaged_predictions()`):
+
+```{r strategy-table}
+strategy_use <- data.frame(
+  Strategy = c("Standard of care strategy", "CRP-guided strategy",
+               "TMB/BRAF-guided strategy"),
+  `Rx set per patient` = c(
+    "Control for every patient",
+    "Experimental if CRP+, else control",
+    "Experimental if TMB/BRAF+, else control"
+  ),
+  `Non-zero treatment terms` = c(
+    "None",
+    "Rx, Rx x CRP+ (and Rx x TMB/BRAF+ if TMB/BRAF+)",
+    "Rx, Rx x TMB/BRAF+ (and Rx x CRP+ if CRP+)"
+  ),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+knitr::kable(strategy_use, format = "pipe",
+             caption = "How the single joint model is used by each strategy")
+```
+
+Because every patient enters the prediction with their observed age, sex, and both biomarker values, the strategy only determines the value of `Rx` (and therefore which interaction terms are non-zero) for each patient; the age, sex, and biomarker main effects are always active. Prevalence-weighted strategy curves are then formed from the biomarker-positive and biomarker-negative subgroup curves.
+
+Nine parametric families were fitted to each endpoint (`r paste(dist_meta$label, collapse = ", ")`) on the complete-case data set (n = `r nrow(data_complete)`). The base case uses the pair with the smallest combined AIC among all pairs that satisfy OS >= PFS at every weekly time point for the control group and all four biomarker subgroups: **`r dist_label[sel_os]` for OS and `r dist_label[sel_pfs]` for PFS**.
+
+# Regression coefficients
+
+## Fit statistics
+
+```{r aic-table}
+aic_tab <- bind_rows(
+  os_candidates %>% transmute(Endpoint = "OS", dist = distribution, AIC),
+  pfs_candidates %>% transmute(Endpoint = "PFS", dist = distribution, AIC)
+) %>%
+  group_by(Endpoint) %>%
+  mutate(`dAIC` = AIC - min(AIC)) %>%
+  ungroup() %>%
+  mutate(Distribution = dist_label[dist]) %>%
+  select(Distribution, Endpoint, AIC, dAIC) %>%
+  pivot_wider(names_from = Endpoint, values_from = c(AIC, dAIC),
+              names_glue = "{Endpoint} {.value}") %>%
+  mutate(Distribution = factor(Distribution, levels = dist_meta$label)) %>%
+  arrange(Distribution) %>%
+  mutate(across(where(is.numeric), ~ sprintf("%.2f", .x)))
+
+knitr::kable(
+  aic_tab, format = "pipe",
+  align = c("l", rep("r", 4)),
+  caption = "AIC by distribution and endpoint (dAIC = difference from the best-fitting distribution for that endpoint). Weibull (AFT) and Weibull (PH) are reparametrisations of the same model and therefore share the same AIC and fitted curves."
+)
+```
+
+## Interpretation of the exponentiated coefficients
+
+`flexsurv` places covariates on the location parameter of each distribution. What the exponentiated coefficient (`exp(Est.)` in the tables below) means therefore depends on the family (AFT = accelerated failure time; PH = proportional hazards; TR = time ratio; RR = rate ratio):
+
+```{r effect-table}
+knitr::kable(
+  dist_meta %>%
+    transmute(Distribution = label, Family = family,
+              `Location parameter` = sapply(dist, function(d) models$full$os[[d]]$dlist$location),
+              `exp(coefficient) is a` = effect),
+  format = "pipe",
+  caption = "Location parameter and interpretation of exp(coefficient) by distribution"
+)
+```
+
+- **Time ratio** (AFT families): values above 1 lengthen survival times (Weibull AFT, log-logistic, log-normal, generalised gamma, generalised F).
+- **Hazard ratio** (PH families): values above 1 increase the hazard (exponential, Weibull PH, Gompertz).
+- **Rate ratio** (gamma): covariates act on the gamma rate parameter, so values above 1 *shorten* survival times; the equivalent time ratio is the reciprocal.
+
+Baseline parameters (`shape`, `rate`, `scale`, `meanlog`, `sdlog`, `mu`, `sigma`, `Q`, `P`) are shown on their natural scale and are not exponentiated (blank `exp(Est.)` column). Covariate coefficients are shown on the estimation scale of the location parameter. `Rx` is the experimental arm (alternating FLOX + nivolumab) versus the control arm (FLOX); `CRP+` and `TMB/BRAF+` are the biomarker-positive indicators; `Rx x CRP+` and `Rx x TMB/BRAF+` are the treatment-by-biomarker interactions that carry the biomarker-guided treatment benefit. Values with an absolute magnitude of 10,000 or more are shown in scientific notation; this only occurs for the generalised F fits, whose `P` parameter is estimated at its lower boundary (P = 0, where the generalised F reduces to the generalised gamma), so its confidence interval is not meaningful.
+
+## Coefficient tables by distribution
+
+```{r coef-tables, results='asis'}
+for (i in seq_len(nrow(dist_meta))) {
+  d <- dist_meta$dist[i]
+  tag <- if (d == sel_os && d == sel_pfs) " (selected for OS and PFS)"
+         else if (d == prev_os) " (previous OS distribution)"
+         else if (d == prev_pfs) " (previous PFS distribution)"
+         else ""
+  cat("\n\n### ", dist_meta$label[i], tag, "\n\n", sep = "")
+  tab <- bind_rows(coef_rows(models$full$os[[d]], "OS"),
+                   coef_rows(models$full$pfs[[d]], "PFS"))
+  if (is.null(tab) || nrow(tab) == 0) {
+    cat("Model did not converge for one or both endpoints.\n\n")
+    next
+  }
+  print(knitr::kable(
+    tab, format = "pipe",
+    align = c("l", "l", "r", "r", "r", "r"),
+    caption = sprintf("%s: OS and PFS regression coefficients; exp(Est.) is a %s",
+                      dist_meta$label[i], tolower(dist_meta$effect[i]))
+  ))
+  cat("\n\n")
+}
+```
+
+# Current versus previous distribution pair
+
+The previous base case used the unconstrained minimum-combined-AIC pair, **`r dist_label[prev_os]` for OS and `r dist_label[prev_pfs]` for PFS**. That pair fits the observed data marginally better but produces population-averaged PFS curves that exceed the OS curves in parts of the horizon, which is impossible in a partitioned survival model (the progressed-state occupancy OS - PFS would be negative). The current base case, **`r dist_label[sel_os]` / `r dist_label[sel_pfs]`**, is the best-fitting pair that respects OS >= PFS everywhere.
+
+```{r pair-table}
+pairs <- models$ordered_selection$pairs
+pick_pair <- function(os_d, pfs_d) {
+  pairs[pairs$os_distribution == os_d & pairs$pfs_distribution == pfs_d, ][1, ]
+}
+pair_rows <- bind_rows(
+  pick_pair(sel_os, sel_pfs) %>% mutate(Pair = "Current base case"),
+  pick_pair(prev_os, prev_pfs) %>% mutate(Pair = "Previous base case")
+)
+n_checks <- length(time_points) * nrow(subgroup_meta)
+pair_tab <- pair_rows %>%
+  transmute(
+    Pair = ifelse(Pair == "Current base case", "Current", "Previous"),
+    OS = dist_label[os_distribution],
+    PFS = dist_label[pfs_distribution],
+    AIC = sprintf("%.2f", combined_ic),
+    Ordered = ifelse(ordered, "Yes", "No"),
+    Violations = sprintf("%d / %d", n_violations, n_checks),
+    `Max gap` = sprintf("%.3f", pmax(max_pfs_minus_os, 0))
+  )
+knitr::kable(pair_tab, format = "pipe", align = c("l", "l", "l", rep("r", 4)),
+             caption = sprintf("Current and previous distribution pairs. AIC is the combined OS + PFS AIC (endpoint AICs are in the fit-statistics table); Ordered = OS >= PFS at every time point; Violations are counted over %d weekly time points x %d subgroups; Max gap is the largest PFS - OS difference. The ordering constraint costs %.2f AIC points.",
+                               length(time_points), nrow(subgroup_meta),
+                               models$best_fit$ordering_aic_penalty))
+```
+
+```{r violation-detail}
+prev_check <- check_endpoint_curve_ordering(
+  os_curves = os_candidates$ordering_data[[which(os_candidates$distribution == prev_os)]],
+  pfs_curves = pfs_candidates$ordering_data[[which(pfs_candidates$distribution == prev_pfs)]]
+)
+viol_tab <- prev_check$details %>%
+  transmute(
+    Subgroup = subgroup_label[curve],
+    `n` = subgroup_n[curve],
+    `Violating weeks` = n_violations,
+    `Max gap` = sprintf("%.3f", pmax(max_pfs_minus_os, 0))
+  )
+knitr::kable(viol_tab, format = "pipe", align = c("l", "r", "r", "r"),
+             caption = sprintf("Where the previous %s / %s pair violates OS >= PFS, by subgroup (of %d weekly time points each)",
+                               dist_label[prev_os], dist_label[prev_pfs], length(time_points)))
+```
+
+```{r pair-curves-data, include=FALSE}
+pair_curves <- bind_rows(
+  all_curves %>% filter((endpoint == "OS" & dist == sel_os) | (endpoint == "PFS" & dist == sel_pfs)) %>%
+    mutate(pair = sprintf("Current: %s OS / %s PFS", dist_label[sel_os], dist_label[sel_pfs])),
+  all_curves %>% filter((endpoint == "OS" & dist == prev_os) | (endpoint == "PFS" & dist == prev_pfs)) %>%
+    mutate(pair = sprintf("Previous: %s OS / %s PFS", dist_label[prev_os], dist_label[prev_pfs]))
+)
+pair_levels <- unique(pair_curves$pair)
+pair_curves$pair <- factor(pair_curves$pair, levels = pair_levels)
+
+p_pairs <- ggplot() +
+  geom_step(data = km_all,
+            aes(x = years, y = surv, colour = endpoint),
+            linewidth = 0.7, alpha = 0.35) +
+  geom_line(data = pair_curves,
+            aes(x = years, y = surv, colour = endpoint, linetype = pair),
+            linewidth = 0.9) +
+  facet_wrap(~ subgroup, ncol = 2) +
+  scale_colour_manual(values = endpoint_cols, name = "Endpoint") +
+  scale_linetype_manual(values = c("solid", "22"), name = NULL) +
+  labs(title = "Current versus previous parametric pair, by subgroup",
+       subtitle = "Faint steps: Kaplan-Meier (observed). Solid: current pair. Dashed: previous pair.",
+       caption = follow_up_note) +
+  guides(colour = guide_legend(order = 1, override.aes = list(alpha = 1)),
+         linetype = guide_legend(order = 2)) +
+  theme(legend.position = c(0.75, 0.12), legend.justification = c(0.5, 0.5),
+        legend.background = element_rect(fill = "white", colour = NA))
+p_pairs <- base_axes(p_pairs)
+
+gap_curves <- pair_curves %>%
+  select(curve, subgroup, pair, endpoint, years, surv) %>%
+  pivot_wider(names_from = endpoint, values_from = surv) %>%
+  mutate(gap = PFS - OS)
+
+p_gap <- ggplot(gap_curves, aes(x = years, y = gap, linetype = pair)) +
+  geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+  geom_vline(xintercept = max_follow_up_yr, linetype = "dotted",
+             colour = "grey50", linewidth = 0.4) +
+  geom_line(linewidth = 0.9, colour = "#444444") +
+  facet_wrap(~ subgroup, ncol = 2) +
+  scale_linetype_manual(values = c("solid", "22"), name = NULL) +
+  scale_x_continuous(breaks = seq(0, horizon_yr, by = 2), limits = c(0, horizon_yr),
+                     expand = expansion(mult = c(0, 0.02))) +
+  scale_y_continuous(labels = function(x) sprintf("%+.1f", 100 * x)) +
+  labs(title = "PFS minus OS over the model horizon",
+       subtitle = "Values above zero are ordering violations (negative progressed-state occupancy)",
+       caption = follow_up_note,
+       x = "Years from randomisation", y = "PFS - OS (percentage points)") +
+  theme(legend.position = c(0.75, 0.12), legend.justification = c(0.5, 0.5),
+        legend.background = element_rect(fill = "white", colour = NA))
+```
+
+```{r pair-curves-plot, fig.width=8.5, fig.height=10.5, fig.cap="Population-averaged OS and PFS curves under the current and previous distribution pairs for each modeled subgroup, overlaid on the Kaplan-Meier estimates."}
+p_pairs
+```
+
+```{r gap-plot, fig.width=8.5, fig.height=10.5, fig.cap="Difference between the PFS and OS curves under each distribution pair. The previous pair crosses above zero in every subgroup; the current pair does not."}
+p_gap
+```
+
+# All candidate distributions
+
+Each figure shows one subgroup with OS (left) and PFS (right); every candidate distribution is drawn together with the observed Kaplan-Meier curve. The unlabelled versions are presented first so that visual fit can be judged before the identity of each curve is revealed. Because Weibull (AFT) and Weibull (PH) are the same model, they coincide exactly and only eight distinct curves are visible in each panel.
+
+```{r gallery-helpers, include=FALSE}
+dist_cols <- c(
+  "Gamma" = "#000000", "Weibull (AFT)" = "#0072B2", "Weibull (PH)" = "#0072B2",
+  "Log-normal" = "#D55E00", "Exponential" = "#6A3D9A", "Log-logistic" = "#009E73",
+  "Gompertz" = "#CC79A7", "Generalised gamma" = "#E69F00", "Generalised F" = "#56B4E9"
+)
+dist_lty <- setNames(rep("solid", nrow(dist_meta)), dist_meta$label)
+dist_lty["Weibull (PH)"] <- "22"
+dist_lwd <- setNames(rep(0.7, nrow(dist_meta)), dist_meta$label)
+dist_lwd["Gamma"] <- 1.3
+
+gallery_plot <- function(curve, labelled) {
+  para <- all_curves[all_curves$curve == curve, ]
+  km <- km_all[km_all$curve == curve, ]
+  title <- sprintf("%s (n = %d)", subgroup_label[curve], subgroup_n[curve])
+  p <- ggplot()
+  if (labelled) {
+    p <- p +
+      geom_step(data = km, aes(x = years, y = surv), colour = "black",
+                linewidth = 0.8, alpha = 0.5) +
+      geom_line(data = para,
+                aes(x = years, y = surv, colour = dist_lab, linetype = dist_lab,
+                    linewidth = dist_lab)) +
+      scale_colour_manual(values = dist_cols, name = NULL, drop = FALSE) +
+      scale_linetype_manual(values = dist_lty, name = NULL, drop = FALSE) +
+      scale_linewidth_manual(values = dist_lwd, name = NULL, drop = FALSE) +
+      guides(colour = guide_legend(nrow = 3, byrow = TRUE)) +
+      labs(title = title,
+           subtitle = sprintf("All candidate distributions; %s (selected) in bold black. Faint black step: Kaplan-Meier.",
+                              dist_label[sel_os]),
+           caption = follow_up_note)
+  } else {
+    p <- p +
+      geom_line(data = para, aes(x = years, y = surv, group = dist),
+                colour = "grey45", linewidth = 0.7, alpha = 0.8) +
+      geom_step(data = km, aes(x = years, y = surv), colour = "black",
+                linewidth = 0.8) +
+      labs(title = title,
+           subtitle = "Nine candidate distributions (unlabelled, grey). Black step: Kaplan-Meier.",
+           caption = follow_up_note)
+  }
+  p <- p + facet_wrap(~ endpoint, ncol = 2)
+  base_axes(p)
+}
+```
+
+## Unlabelled curves
+
+```{r blind-soc, fig.width=9, fig.height=5, fig.cap="Unlabelled candidate distributions, standard of care."}
+gallery_plot("control", labelled = FALSE)
+```
+
+```{r blind-crp-pos, fig.width=9, fig.height=5, fig.cap="Unlabelled candidate distributions, CRP-positive patients on FLOX + nivolumab."}
+gallery_plot("crp_positive", labelled = FALSE)
+```
+
+```{r blind-crp-neg, fig.width=9, fig.height=5, fig.cap="Unlabelled candidate distributions, CRP-negative patients on FLOX."}
+gallery_plot("crp_negative", labelled = FALSE)
+```
+
+```{r blind-tmb-pos, fig.width=9, fig.height=5, fig.cap="Unlabelled candidate distributions, TMB/BRAF-positive patients on FLOX + nivolumab."}
+gallery_plot("tmb_braf_positive", labelled = FALSE)
+```
+
+```{r blind-tmb-neg, fig.width=9, fig.height=5, fig.cap="Unlabelled candidate distributions, TMB/BRAF-negative patients on FLOX."}
+gallery_plot("tmb_braf_negative", labelled = FALSE)
+```
+
+## Labelled curves
+
+```{r lab-soc, fig.width=9, fig.height=5.8, fig.cap="Labelled candidate distributions, standard of care."}
+gallery_plot("control", labelled = TRUE)
+```
+
+```{r lab-crp-pos, fig.width=9, fig.height=5.8, fig.cap="Labelled candidate distributions, CRP-positive patients on FLOX + nivolumab."}
+gallery_plot("crp_positive", labelled = TRUE)
+```
+
+```{r lab-crp-neg, fig.width=9, fig.height=5.8, fig.cap="Labelled candidate distributions, CRP-negative patients on FLOX."}
+gallery_plot("crp_negative", labelled = TRUE)
+```
+
+```{r lab-tmb-pos, fig.width=9, fig.height=5.8, fig.cap="Labelled candidate distributions, TMB/BRAF-positive patients on FLOX + nivolumab."}
+gallery_plot("tmb_braf_positive", labelled = TRUE)
+```
+
+```{r lab-tmb-neg, fig.width=9, fig.height=5.8, fig.cap="Labelled candidate distributions, TMB/BRAF-negative patients on FLOX."}
+gallery_plot("tmb_braf_negative", labelled = TRUE)
+```
+
+# Notes
+
+- All parametric curves are population-averaged predictions over the complete-case patients in each subgroup, using each patient's observed age, sex, and biomarker values, with `Rx` set as the strategy dictates. They are the same curves that `04_parametric_survival_analysis.R` uses for the ordering-constrained selection; for the selected pair they are identical to the base-case curves in `l_params_base`.
+- Kaplan-Meier curves are estimated on the same complete-case patients (control arm for standard of care and the biomarker-negative subgroups; experimental arm for the biomarker-positive subgroups).
+- The previous pair referred to in Section 3 is the unconstrained minimum-combined-AIC pair, which was the base case before the ordering constraint was introduced.
+- Coefficient estimates, standard errors, and confidence intervals are taken directly from `flexsurvreg` (`fit$res`).
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0

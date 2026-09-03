@@ -160,7 +160,7 @@ pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape
 
 Output format depends on report type, and this changes the render command:
 
-- **Clinical/DAG/descriptive** reports (`clinical_effectiveness`, `dag`, `dag_associations`, `biomarker_distributions`) declare `format:` with both `pdf:` and `gfm:` and render cleanly to **both** a `.pdf` and a readable `.md` (e.g. `scripts/QMD/report/clinical_effectiveness.md`).
+- **Clinical/DAG/descriptive** reports (`clinical_effectiveness`, `dag`, `dag_associations`, `biomarker_distributions`, `survival_model_specification`) declare `format:` with both `pdf:` and `gfm:` and render cleanly to **both** a `.pdf` and a readable `.md` (e.g. `scripts/QMD/report/clinical_effectiveness.md`).
 - **Economic** reports (`CEA`, `OWSA`, `EVPPIs`, `scenario_effect`, `biosimilar_scenario`, `enriched_population`, `biomarker_decomposition`, `input_parameters`, `para_models`) plus the survival technical docs use kableExtra HTML tables, so their **GFM pass fails** (`Functions that produce HTML output found in document targeting commonmark output`) and aborts the whole render, leaving a STALE `.pdf`. Render these with `--to pdf` and verify the text with `pdftotext` (no `.md` is produced).
 
 ```bash
@@ -557,6 +557,11 @@ Each report has specific dependencies:
 **[biomarker_distributions.qmd](scripts/QMD/report/biomarker_distributions.qmd)** - Biomarker Distributions
 - **Sources**: 02, 03
 - **Shows**: Biomarker prevalence and distribution analyses, including clinical-only TLR summaries
+
+**[survival_model_specification.qmd](scripts/QMD/report/survival_model_specification.qmd)** - Parametric Survival Model Specification
+- **Sources**: 02, 03, 04 (uses the `models`, `os_candidates`/`pfs_candidates`, and `models$ordered_selection` objects created by script 04; no refitting)
+- **Shows**: (1) regression coefficients of the single joint OS and PFS models for all nine candidate distributions (selected gamma/gamma first, then the previously used Weibull and log-normal), with exp(coefficient) interpreted per family (time ratio / hazard ratio / gamma rate ratio); (2) the current gamma/gamma pair versus the previous unconstrained Weibull-OS/log-normal-PFS pair on the population-averaged subgroup curves, with OS >= PFS violation counts and a PFS-minus-OS gap plot; (3) a gallery of all candidate distributions per subgroup (OS | PFS facets), unlabelled first and then labelled, over the Kaplan-Meier curves
+- **Render**: dual-format (`pdf` + `gfm`). Render `--to pdf` first and `--to gfm` second: the PDF pass deletes the `_files/` figure directory, so a combined render leaves the `.md` with dangling image links
 
 **Technical Documentation** (in `scripts/QMD/technical_docs/`):
 - **[age_effect_analysis.qmd](scripts/QMD/technical_docs/age_effect_analysis.qmd)**: Age effect on survival outcomes
