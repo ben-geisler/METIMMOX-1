@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-09-03
+2026-09-04
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -21,8 +21,8 @@ Ben Geisler
   - [Outcome chain (PFS -\> OS)](#outcome-chain-pfs---os)
   - [Edge summary table](#edge-summary-table)
 - [Conditional Independence Tests](#conditional-independence-tests)
-  - [Randomisation balance (marginal CIs involving
-    T)](#randomisation-balance-marginal-cis-involving-t)
+  - [Arm balance (marginal CIs involving
+    T)](#arm-balance-marginal-cis-involving-t)
   - [Structural CIs (conditional)](#structural-cis-conditional)
   - [CI summary table](#ci-summary-table)
 - [Consolidated Summary Table](#consolidated-summary-table)
@@ -167,24 +167,35 @@ Direct edge tests
 
 # Conditional Independence Tests
 
-## Randomisation balance (marginal CIs involving T)
+## Arm balance (marginal CIs involving T)
 
-The four CI statements involving `T` double as randomisation checks. If
-any of them were significant, that would suggest baseline imbalance in
-this realized sample rather than a structural failure of the DAG.
+The four CI statements involving `T` double as arm-balance checks. If
+any of them were significant, that would suggest imbalance between arms
+in this realized sample rather than a structural failure of the DAG.
+Age, Sex and TMB/BRAF are baseline characteristics, so their checks are
+randomisation checks in the strict sense. CRP is the week-4 value
+(before the first nivolumab dose, after two FLOX cycles common to both
+arms), so its check asks whether the arms were balanced on CRP at the
+point where the immunotherapy decision is made.
 
-| Item              | p-value | Conclusion                            |
-|:------------------|:--------|:--------------------------------------|
-| Age *\|\|* T      | 0.172   | Compatible with randomization balance |
-| CRP *\|\|* T      | 0.023   | Possible randomization imbalance      |
-| Sex *\|\|* T      | 0.254   | Compatible with randomization balance |
-| T *\|\|* TMB_BRAF | 1.000   | Compatible with randomization balance |
+| Item              | p-value | Conclusion                       |
+|:------------------|:--------|:---------------------------------|
+| Age *\|\|* T      | 0.172   | Compatible with arm balance      |
+| CRP *\|\|* T      | 0.023   | Arm imbalance in realised sample |
+| Sex *\|\|* T      | 0.254   | Compatible with arm balance      |
+| T *\|\|* TMB_BRAF | 1.000   | Compatible with arm balance      |
 
-Randomization balance checks implied by the DAG
+Arm balance checks implied by the DAG
 
-One randomization-balance check, `CRP _||_ T`, was significant on the
-raw scale (`p = 0.023`). The other three randomization checks remained
-non-significant.
+One arm-balance check, `CRP _||_ T`, was significant on the raw scale
+(`p = 0.023`): week-4 CRP-positivity was 17/36 in the experimental arm
+and 7/35 in the control arm. The baseline (cycle 1 day 1) CRP, which is
+not used in the analysis, was balanced (8/38 vs 7/35; Fisher p = 1), so
+randomisation itself was not at fault. Because both arms receive
+identical FLOX up to week 4 and nivolumab has not yet been given, the
+week-4 difference cannot be a treatment effect either; it is read as
+chance imbalance on a week-4 measurement in a small trial. The other
+three checks, all on baseline characteristics, remained non-significant.
 
 ## Structural CIs (conditional)
 
@@ -198,17 +209,17 @@ conditional models or stratified tests.
 |:---|:---|:---|:---|:---|:---|:---|
 | Age *\|\|* CRP | Wilcoxon rank-sum | 71 | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
 | Age *\|\|* Sex | Wilcoxon rank-sum | 74 | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
-| Age *\|\|* T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with randomization balance |
+| Age *\|\|* T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with arm balance |
 | Age *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.03 (95% CI 0.98 to 1.08) | 0.292 | No | Compatible with DAG-implied CI |
 | Age *\|\|* TxTMB \| {TMB_BRAF} | Conditional permutation test | 69 | Standardized Z = 0.77 | 0.457 | No | Compatible with DAG-implied CI |
 | CRP *\|\|* Sex | Fisher’s exact | 71 | 0.74 (95% CI 0.25 to 2.23) | 0.619 | No | Compatible with DAG-implied CI |
-| CRP *\|\|* T | Fisher’s exact (randomization check) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Possible randomization imbalance |
+| CRP *\|\|* T | Fisher’s exact (randomization check) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Arm imbalance in realised sample |
 | CRP *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 68 | 21.67 (95% CI 2.23 to 210.11) | 0.007 | No | CI contradicted by data |
-| Sex *\|\|* T | Fisher’s exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with randomization balance |
+| Sex *\|\|* T | Fisher’s exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with arm balance |
 | Sex *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 69 | 0.52 (95% CI 0.12 to 2.17) | 0.592 | No | Compatible with DAG-implied CI |
 | Sex *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.13 (95% CI 0.40 to 3.21) | 0.812 | No | Compatible with DAG-implied CI |
 | TLR *\|\|* TxTMB \| {T, TMB_BRAF} | Firth logistic | 65 | 2.31 (95% CI 0.29 to 19.27) | 0.426 | No | Compatible with DAG-implied CI |
-| T *\|\|* TMB_BRAF | Fisher’s exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with randomization balance |
+| T *\|\|* TMB_BRAF | Fisher’s exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with arm balance |
 
 Conditional-independence tests
 
@@ -234,17 +245,17 @@ Conditional-independence tests
 | Direct edge | TxTMB -\> OS | 0.63 (95% CI 0.22 to 1.79) | 0.385 | No association detected (p \>= 0.05) |
 | Conditional independence | Age *\|\|* CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
 | Conditional independence | Age *\|\|* Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
-| Conditional independence | Age *\|\|* T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with randomization balance |
+| Conditional independence | Age *\|\|* T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with arm balance |
 | Conditional independence | Age *\|\|* TLR \| {CRP, TMB_BRAF} | 1.03 (95% CI 0.98 to 1.08) | 0.292 | Compatible with DAG-implied CI |
 | Conditional independence | Age *\|\|* TxTMB \| {TMB_BRAF} | Standardized Z = 0.77 | 0.457 | Compatible with DAG-implied CI |
 | Conditional independence | CRP *\|\|* Sex | 0.74 (95% CI 0.25 to 2.23) | 0.619 | Compatible with DAG-implied CI |
-| Conditional independence | CRP *\|\|* T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Possible randomization imbalance |
+| Conditional independence | CRP *\|\|* T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Arm imbalance in realised sample |
 | Conditional independence | CRP *\|\|* TxTMB \| {TMB_BRAF} | 21.67 (95% CI 2.23 to 210.11) | 0.007 | CI contradicted by data |
-| Conditional independence | Sex *\|\|* T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with randomization balance |
+| Conditional independence | Sex *\|\|* T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with arm balance |
 | Conditional independence | Sex *\|\|* TxTMB \| {TMB_BRAF} | 0.52 (95% CI 0.12 to 2.17) | 0.592 | Compatible with DAG-implied CI |
 | Conditional independence | Sex *\|\|* TLR \| {CRP, TMB_BRAF} | 1.13 (95% CI 0.40 to 3.21) | 0.812 | Compatible with DAG-implied CI |
 | Conditional independence | TLR *\|\|* TxTMB \| {T, TMB_BRAF} | 2.31 (95% CI 0.29 to 19.27) | 0.426 | Compatible with DAG-implied CI |
-| Conditional independence | T *\|\|* TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with randomization balance |
+| Conditional independence | T *\|\|* TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with arm balance |
 
 Consolidated summary of direct edge and conditional-independence tests
 
@@ -257,9 +268,10 @@ pattern sits along the prognostic and disease-course portion of the DAG:
 low CRP was associated with lower hazards for both PFS and OS, TMB_BRAF
 was associated with lower PFS hazard, TLR was strongly associated with
 subsequent PFS, and longer PFS was tightly linked to longer OS. In other
-words, the data support the idea that baseline biomarkers and
-intermediate disease response are more informative than age or sex for
-the downstream survival relationships represented here.
+words, the data support the idea that the pre-immunotherapy biomarkers
+(week-4 CRP and baseline TMB/BRAF) and intermediate disease response are
+more informative than age or sex for the downstream survival
+relationships represented here.
 
 Treatment-related edges were still mixed. T -\> PFS, T -\> OS, and both
 TxTMB interaction terms remained non-significant, so the report still
@@ -267,18 +279,20 @@ does not provide strong evidence for treatment effect modification
 through the TMB/BRAF interaction node. However, the raw-p analysis now
 shows p \< 0.05 for both CRP -\> TLR (p = 0.028) and T -\> TLR (p =
 0.030), which suggests that tumour lesion reduction may be one route
-through which baseline inflammation and treatment assignment connect to
+through which week-4 inflammation and treatment assignment connect to
 later outcomes.
 
 Among the 13 conditional-independence tests, 11 were compatible with the
 DAG at p \>= 0.05 and 2 were contradicted by the data. Conditional
 independencies contradicted by the data at p \< 0.05: CRP *\|\|* T; CRP
 *\|\|* TxTMB \| {TMB_BRAF}. In practice, both violated statements
-involve CRP: CRP *\|\|* T had p = 0.023, suggesting possible baseline
-imbalance by treatment arm, and CRP *\|\|* TxTMB \| {TMB_BRAF} had p =
-0.007, suggesting residual dependence around the
-CRP-treatment-interaction part of the graph. That makes CRP the main
-place where the current DAG looks least secure in this dataset.
+involve CRP: CRP *\|\|* T had p = 0.023, reflecting a chance arm
+imbalance in week-4 CRP (baseline CRP was balanced, and no nivolumab has
+been given by week 4, so this is neither a randomisation failure nor a
+treatment effect), and CRP *\|\|* TxTMB \| {TMB_BRAF} had p = 0.007,
+which follows from the same arm imbalance because TxTMB is a function of
+T. That makes the week-4 CRP arm imbalance the main place where the
+current DAG looks least secure in this dataset.
 
 Interpretation should remain cautious. The latent node U is unobserved,
 TLR analyses depend on non-missing follow-up imaging, the available
@@ -306,6 +320,6 @@ future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-03  
+**Report completed on:** 2026-09-04  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

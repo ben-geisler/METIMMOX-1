@@ -147,13 +147,13 @@ km_plot <- function(data, time_col, event_col, group_col,
 # Only the left column shows the y-axis title; only the bottom row shows the
 # x-axis title.
 
-# Row 1 — CRP  (pre-treatment biomarker, clock from randomization)
+# Row 1 — CRP  (week-4 value, before first nivolumab dose; clock from randomization)
 p_os_crp  <- km_plot(data_complete, "OSwk",  "Death",       "grp_crp",
                      show_xlab = FALSE, show_ylab = TRUE,  tag = "a)")
 p_pfs_crp <- km_plot(data_complete, "PFSwk", "Progression", "grp_crp",
                      show_xlab = FALSE, show_ylab = FALSE, tag = "b)")
 
-# Row 2 — TMB/BRAF  (pre-treatment biomarker, clock from randomization)
+# Row 2 — TMB/BRAF  (baseline biomarker, clock from randomization)
 p_os_tmb  <- km_plot(data_complete, "OSwk",  "Death",       "grp_tmb",
                      show_xlab = FALSE, show_ylab = TRUE,  tag = "c)")
 p_pfs_tmb <- km_plot(data_complete, "PFSwk", "Progression", "grp_tmb",
@@ -169,7 +169,7 @@ p_pfs_tlr <- km_plot(data_tlr_lm_pfs, "PFSwk_lm", "Progression", "grp_tlr",
 ```
 
 ```{r panel, fig.width=14, fig.height=17}
-#| fig-cap: "Kaplan-Meier survival by biomarker status and treatment arm. Columns: overall survival (left) and progression-free survival (right). Rows: CRP and TMB/BRAF (pre-treatment biomarkers, with follow-up measured from randomization) and TLR (tumour lesion reduction, a post-randomization response shown on the week-9 landmark cohort with follow-up measured from the landmark). Within each panel, curves are stratified by treatment arm and biomarker status (Treated/Untreated x positive/negative); for TLR the treatment split is descriptive because response is measured after randomization. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction at the first on-treatment CT."
+#| fig-cap: "Kaplan-Meier survival by biomarker status and treatment arm. Columns: overall survival (left) and progression-free survival (right). Rows: CRP (week-4 value, measured before the first nivolumab dose after two FLOX cycles common to both arms) and TMB/BRAF (baseline), both with follow-up measured from randomization, and TLR (tumour lesion reduction, a post-randomization response shown on the week-9 landmark cohort with follow-up measured from the landmark). Within each panel, curves are stratified by treatment arm and biomarker status (Treated/Untreated x positive/negative); for TLR the treatment split is descriptive because response is measured after randomization. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction at the first on-treatment CT."
 
 # Column and row label grobs
 col_os  <- ggdraw() + draw_label("Overall Survival",

@@ -4,16 +4,18 @@ Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic MSS/
 
 ## Overview
 
-This repository contains the R code for a cost-effectiveness analysis comparing two pre-treatment biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
+This repository contains the R code for a cost-effectiveness analysis comparing two pre-immunotherapy biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
 
 **METIMMOX** stands for: **Colorectal Cancer METastasis - Shaping Anti-tumor IMMunity by OXaliplatin**
 
 ### Biomarker Strategies Evaluated
 
-1. **CRP Strategy**: C-reactive protein levels
-2. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation
+1. **CRP Strategy**: C-reactive protein <5 mg/L, measured at week 4 (cycle 3 day 1) after two FLOX cycles common to both arms and before the first nivolumab dose
+2. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation (baseline next-generation sequencing)
 
-**Clinical-only TLR analysis**: Tumor lesion reduction (TLR) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator rather than a pre-treatment treatment-selection biomarker.
+Both biomarkers are available before the decision to add immunotherapy is made. CRP is not a baseline (pre-randomization) measurement: the trial gives two cycles of FLOX to every patient before the first nivolumab dose, and the CRP used here is the value at that decision point (issue #150). The baseline (cycle 1 day 1) CRP is retained in the data as `CRP0` but is not used.
+
+**Clinical-only TLR analysis**: Tumor lesion reduction (TLR) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator measured on treatment rather than a treatment-selection biomarker.
 
 Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
 
@@ -222,7 +224,7 @@ Clinical/DAG/descriptive reports may be rendered to all declared formats. Econom
 
 ### Core Modeling
 - **Partitioned survival model** for cost-effectiveness analysis
-- **Biomarker-guided treatment strategies** comparing two pre-treatment biomarkers (CRP and TMB/BRAF) against standard of care
+- **Biomarker-guided treatment strategies** comparing two pre-immunotherapy biomarkers (week-4 CRP and baseline TMB/BRAF) against standard of care
 - **Microsatellite-stable (MSS) colorectal cancer** focus
 - **Parametric survival modeling** using multiple distributions (Weibull, exponential, gamma, etc.)
 

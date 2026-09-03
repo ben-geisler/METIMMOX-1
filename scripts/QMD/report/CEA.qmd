@@ -46,12 +46,14 @@ psa_obj <- load_psa_cache(verbose = FALSE)
 
 # Overview
 
-This cost-effectiveness analysis evaluates standard of care against two pre-treatment biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer:
+This cost-effectiveness analysis evaluates standard of care against two pre-immunotherapy biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer:
 
-- CRP-guided treatment selection
-- TMB/BRAF-guided treatment selection
+- CRP-guided treatment selection (CRP < 5 mg/L at week 4, before the first nivolumab dose)
+- TMB/BRAF-guided treatment selection (baseline next-generation sequencing)
 
-The economic survival model is a single joint model with CRP and TMB/BRAF treatment interactions. Economic strategies are restricted to pre-treatment biomarkers.
+The economic survival model is a single joint model with CRP and TMB/BRAF treatment interactions. Economic strategies are restricted to biomarkers that are available before the decision to add immunotherapy is made.
+
+**CRP timing.** CRP is not a baseline (pre-randomization) measurement. In the METIMMOX trial every patient received two cycles of FLOX before the first nivolumab dose, and the CRP used to define the CRP-guided strategy is the value measured at week 4 (cycle 3 day 1), i.e. at the point where the decision to add nivolumab is made. The model clock starts at randomization, but this has no economic consequence: up to week 4 both arms receive identical FLOX, monitoring and visits, and the week-4 blood test is already part of the monitoring schedule. Three patients without a week-4 CRP value died early (weeks 2.4, 15.7 and 20.9) and are excluded from the complete-case data on which the survival models are fitted, so the CRP subgroup curves are conditional on surviving to the week-4 measurement.
 
 # Economic Survival Model
 
@@ -190,7 +192,7 @@ if (is.null(psa_obj)) {
 
 # Summary
 
-The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy, and TMB/BRAF-guided immunotherapy.
+The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy (week-4 CRP, before the first nivolumab dose), and TMB/BRAF-guided immunotherapy (baseline NGS).
 
 ---
 

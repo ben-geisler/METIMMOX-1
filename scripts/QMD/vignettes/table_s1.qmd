@@ -76,7 +76,7 @@ kable(tab1_df,
     general = c(
       "Data from METIMMOX trial (NCT03388190). n=65 patients with complete biomarker data.",
       "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
-      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L); TLR-positive (>=10% reduction at first assessment); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E)."
+      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L at week 4, before the first nivolumab dose); TLR-positive (>=10% reduction at first assessment); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E)."
     ),
     general_title = "Notes: "
   )

@@ -1,6 +1,6 @@
 ## Project Overview
 
-METIMMOX-1 is a cost-effectiveness analysis comparing biomarker-guided immunotherapy strategies for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer. The analysis uses a partitioned survival model implemented in R to evaluate two pre-treatment biomarker strategies (CRP and TMB/BRAF) against standard of care. TLR is retained only for clinical effectiveness, DAG, and biomarker distribution analyses because it is a post-randomization mediator rather than a pre-treatment economic strategy.
+METIMMOX-1 is a cost-effectiveness analysis comparing biomarker-guided immunotherapy strategies for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer. The analysis uses a partitioned survival model implemented in R to evaluate two pre-immunotherapy biomarker strategies (week-4 CRP and baseline TMB/BRAF) against standard of care. TLR is retained only for clinical effectiveness, DAG, and biomarker distribution analyses because it is a post-randomization mediator measured on treatment rather than a treatment-selection biomarker.
 
 **Target Audience**: Health economists and researchers developing decision-analytic models in R.
 
@@ -272,12 +272,14 @@ There is no model-structure switch or multi-structure comparison layer. The econ
 
 ### Biomarker Strategies
 
-Two pre-treatment biomarkers are evaluated economically (defined in [03_biomarker_strategies.R](scripts/R/analysis/03_biomarker_strategies.R) and selected by [model_configs.R](scripts/R/functions/model_configs.R)):
+Two pre-immunotherapy biomarkers are evaluated economically (defined in [03_biomarker_strategies.R](scripts/R/analysis/03_biomarker_strategies.R) and selected by [model_configs.R](scripts/R/functions/model_configs.R)):
 
-1. **CRP** (C-reactive protein): Binary variable, cut-off <5
-2. **TMB/BRAF**: Combined biomarker (TMB >=9 mut/MB OR BRAF mutation)
+1. **CRP** (C-reactive protein): Binary variable, cut-off <5 mg/L, **week-4 value** (`CRP1cat`: cycle 3 day 1, trial visit 3), measured after the two FLOX cycles that both arms receive and before the first nivolumab dose
+2. **TMB/BRAF**: Combined biomarker (TMB >=9 mut/MB OR BRAF mutation), from baseline NGS
 
-**TLR** (tumor lesion reduction) is intentionally excluded from all economic analyses because it is a post-randomization mediator, not a pre-treatment treatment-selection biomarker. `data$tlr` and `p_tlr` may still be created for clinical effectiveness, DAG, and biomarker distribution reports that analyze TLR directly from the trial data.
+**CRP timing (issue #150)**: CRP is not a baseline (pre-randomization) measurement, but it is available before the immunotherapy decision, because every patient receives two FLOX cycles before the first nivolumab dose. Describe it as "week-4 CRP, before the first nivolumab dose", never as "baseline" or "pre-treatment" CRP. The true baseline value (`CRP0cat`, cycle 1 day 1) is derived in `01_data_prep.R` but unused. Consequences: (i) week-4 CRP prevalence differs by arm (17/36 experimental vs 7/35 control, Fisher p = 0.023) whereas baseline CRP is balanced (p = 1); the DAG report reads this as chance arm imbalance on a week-4 measurement in a small trial, not as a randomisation failure, and the DAG has no `T -> CRP` edge because nivolumab has not been given at week 4 and both arms receive identical FLOX until then; (ii) the 3 patients without a week-4 CRP are early deaths (weeks 2.4, 15.7, 20.9) and are dropped from the complete-case data; (iii) the model clock starts at randomization (t = 0) while the CRP decision is made at week 4; this has no economic consequence because both arms receive identical FLOX, monitoring, and visits up to that point, and the week-4 blood test is already in the monitoring schedule. No model code or cache depends on this framing.
+
+**TLR** (tumor lesion reduction) is intentionally excluded from all economic analyses because it is a post-randomization mediator measured on treatment, not a treatment-selection biomarker. `data$tlr` and `p_tlr` may still be created for clinical effectiveness, DAG, and biomarker distribution reports that analyze TLR directly from the trial data.
 
 Each economic biomarker strategy has:
 - **Biomarker-positive subgroup**: Receives experimental treatment (alternating FLOX + nivolumab)

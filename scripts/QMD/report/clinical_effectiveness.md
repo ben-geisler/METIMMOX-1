@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-03
+2026-09-04
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -71,13 +71,32 @@ immunotherapy candidates in metastatic MSS/pMMR colorectal cancer.
 
 The analysis uses **Firth-corrected Cox proportional hazards
 regression** with profile likelihood confidence intervals to assess
-treatment effect heterogeneity across two pre-treatment biomarkers
-identified by the causal DAG analysis:
+treatment effect heterogeneity across two biomarkers that are available
+before the decision to add immunotherapy, identified by the causal DAG
+analysis:
 
-- **CRP** (C-reactive protein): Low CRP (\<5 mg/L) at baseline — a
-  pre-treatment prognostic and potentially predictive marker
+- **CRP** (C-reactive protein): Low CRP (\<5 mg/L) at week 4 (cycle 3
+  day 1), measured after the two FLOX cycles that both arms receive and
+  before the first nivolumab dose — a prognostic and potentially
+  predictive marker
 - **TMB/BRAF**: High tumor mutational burden (≥9 mut/MB) or BRAF
-  mutation — a pre-treatment genomic marker
+  mutation — a baseline genomic marker
+
+**CRP timing.** CRP is not a baseline (pre-randomization) measurement:
+the value used throughout is the week-4 CRP at the start of nivolumab,
+matching the post-hoc CRP analysis of the trial paper. Because nivolumab
+has not yet been given at week 4 and both arms receive identical FLOX
+until then, the DAG carries no `T -> CRP` edge. Two consequences follow.
+First, week-4 CRP-positivity differs by arm (experimental 17/36, control
+7/35; Fisher p = 0.023) whereas baseline CRP was balanced (8/38 vs 7/35;
+p = 1); this is treated as chance imbalance on a week-4 measurement in a
+small trial, not as a failure of randomization, and is what the `CRP:Rx`
+interaction is estimated against. Second, the three patients with no
+week-4 CRP are early deaths (weeks 2.4, 15.7 and 20.9) and are excluded
+from the complete-case data, so the CRP subgroups are conditional on
+surviving to the week-4 measurement. The clock remains randomization; a
+landmark analysis at week 4 would drop no further patients from the CRP
+subgroups.
 
 **Model specification is motivated by the causal DAG** (see `dag.qmd`
 and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized
@@ -248,9 +267,9 @@ Unified Model - Progression-Free Survival: Standard Cox vs Firth
 
 ## Unified Model Results
 
-The unified DAG-informed model includes CRP and TMB/BRAF as
-pre-treatment biomarkers with their treatment interactions, adjusted for
-Age and Sex.
+The unified DAG-informed model includes CRP (week 4, before the first
+nivolumab dose) and TMB/BRAF (baseline) as pre-immunotherapy biomarkers
+with their treatment interactions, adjusted for Age and Sex.
 
 **Formula:**
 `Surv(time, event) ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx`
@@ -296,14 +315,14 @@ This section presents an **exploratory responder analysis** that
 includes TLR (Tumor Lesion Reduction) as an effect modifier in a Cox
 model with the same structural form as the primary analysis. Because TLR
 is measured post-randomization (at the first on-treatment CT scan), this
-is not a pre-treatment patient-selection analysis: TLR status is itself
-influenced by treatment, and the resulting TLR x Rx interaction is
-informative only as a hypothesis-generating, responder-stratified
-contrast. It cannot be used to guide treatment decisions at baseline.
-The primary causal-DAG-informed analysis remains the inferential anchor
-for predictive biomarker claims.
+is not a treatment-selection analysis: TLR status is itself influenced
+by treatment, and the resulting TLR x Rx interaction is informative only
+as a hypothesis-generating, responder-stratified contrast. It cannot be
+used to guide the decision to add immunotherapy, which is made before
+TLR is observed. The primary causal-DAG-informed analysis remains the
+inferential anchor for predictive biomarker claims.
 
-The model adjusts for the pre-treatment biomarkers **CRP** and
+The model adjusts for the pre-immunotherapy biomarkers **CRP** and
 **TMB/BRAF** as prognostic main effects (their treatment interactions
 belong to the primary analysis and are not re-estimated here). In the
 ridge sensitivity model, CRP and TMB/BRAF remain **unpenalized**
@@ -384,8 +403,8 @@ HR applies L2 shrinkage targeted at the TLR terms; if the ridge estimate
 is substantially closer to HR = 1.0 than the Firth estimate, the
 responder-stratified interaction is sensitive to regularization,
 consistent with a small-sample, partly tautological signal. Findings
-here are exploratory and should not be used for pre-treatment patient
-selection, since TLR is not measurable at baseline. They may motivate
+here are exploratory and should not be used for treatment selection,
+since TLR is not measurable before nivolumab starts. They may motivate
 landmark or formal causal-mediation analyses in future work.
 
 
@@ -646,19 +665,19 @@ under regularization and should not be over-interpreted.
 The exploratory responder model —
 `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the
 differential treatment effect between TLR-positive and TLR-negative
-subgroups while adjusting for the pre-treatment biomarkers as prognostic
-main effects. The Firth-estimated TLR × Rx HR was 2.47 (0.75-7.75) for
-overall survival and 1.49 (0.45-4.67) for progression-free survival. The
-OS estimate sits **above 1.0**, which directionally implies the
-(TLR-positive vs TLR-negative) hazard contrast is *worse* on the
-experimental arm than on the control arm — the opposite of a
-“TLR-positive predicts immunotherapy benefit” pattern. PFS is closer to
-null. Ridge shrinkage of the TLR terms gives 2.12 (SE: 0.58) (OS) and
-1.33 (SE: 0.58) (PFS): ridge moves the OS estimate modestly toward null
-but preserves the directional pattern, and barely changes the PFS
-estimate. PLRT p-values (0.135 OS, 0.504 PFS) do not reach conventional
-significance, consistent with the wide profile-likelihood CIs in this
-small sample.
+subgroups while adjusting for the pre-immunotherapy biomarkers as
+prognostic main effects. The Firth-estimated TLR × Rx HR was 2.47
+(0.75-7.75) for overall survival and 1.49 (0.45-4.67) for
+progression-free survival. The OS estimate sits **above 1.0**, which
+directionally implies the (TLR-positive vs TLR-negative) hazard contrast
+is *worse* on the experimental arm than on the control arm — the
+opposite of a “TLR-positive predicts immunotherapy benefit” pattern. PFS
+is closer to null. Ridge shrinkage of the TLR terms gives 2.12 (SE:
+0.58) (OS) and 1.33 (SE: 0.58) (PFS): ridge moves the OS estimate
+modestly toward null but preserves the directional pattern, and barely
+changes the PFS estimate. PLRT p-values (0.135 OS, 0.504 PFS) do not
+reach conventional significance, consistent with the wide
+profile-likelihood CIs in this small sample.
 
 The directional pattern is consistent with the descriptive imbalance:
 TLR-positive prevalence is 75.9% in the control arm and 52.8% in the
@@ -705,8 +724,9 @@ cases, 56 OS events, 60 PFS events (progression or death).
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary
 (DAG-informed):**
 `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` —
-pre-treatment biomarkers as effect modifiers; TLR omitted because it is
-post-randomization. **Exploratory responder analysis:**
+pre-immunotherapy biomarkers (week-4 CRP before the first nivolumab
+dose; baseline TMB/BRAF) as effect modifiers; TLR omitted because it is
+measured on treatment. **Exploratory responder analysis:**
 `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and
 its treatment interaction, with CRP and TMB/BRAF retained as prognostic
 main-effect adjustments. Profile likelihood CIs, PLRT for interaction
@@ -763,6 +783,6 @@ on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-03  
+**Report completed on:** 2026-09-04  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.4

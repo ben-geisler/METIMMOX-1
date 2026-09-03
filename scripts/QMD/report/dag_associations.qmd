@@ -522,18 +522,18 @@ render_table(
 
 # Conditional Independence Tests
 
-## Randomisation balance (marginal CIs involving T)
+## Arm balance (marginal CIs involving T)
 
-The four CI statements involving `T` double as randomisation checks. If any of them were significant, that would suggest baseline imbalance in this realized sample rather than a structural failure of the DAG.
+The four CI statements involving `T` double as arm-balance checks. If any of them were significant, that would suggest imbalance between arms in this realized sample rather than a structural failure of the DAG. Age, Sex and TMB/BRAF are baseline characteristics, so their checks are randomisation checks in the strict sense. CRP is the week-4 value (before the first nivolumab dose, after two FLOX cycles common to both arms), so its check asks whether the arms were balanced on CRP at the point where the immunotherapy decision is made.
 
 ```{r randomization-checks}
 render_table(
   randomization_checks,
-  caption = "Randomization balance checks implied by the DAG"
+  caption = "Arm balance checks implied by the DAG"
 )
 ```
 
-One randomization-balance check, `CRP _||_ T`, was significant on the raw scale (`p = 0.023`). The other three randomization checks remained non-significant.
+One arm-balance check, `CRP _||_ T`, was significant on the raw scale (`p = 0.023`): week-4 CRP-positivity was 17/36 in the experimental arm and 7/35 in the control arm. The baseline (cycle 1 day 1) CRP, which is not used in the analysis, was balanced (8/38 vs 7/35; Fisher p = 1), so randomisation itself was not at fault. Because both arms receive identical FLOX up to week 4 and nivolumab has not yet been given, the week-4 difference cannot be a treatment effect either; it is read as chance imbalance on a week-4 measurement in a small trial. The other three checks, all on baseline characteristics, remained non-significant.
 
 ## Structural CIs (conditional)
 
@@ -599,12 +599,12 @@ cat(paste0(
   "The direct-edge analysis found ", edge_n_sig,
   " of 16 tested edges with p < 0.05. ",
   supported_edge_text,
-  " The strongest supported pattern sits along the prognostic and disease-course portion of the DAG: low CRP was associated with lower hazards for both PFS and OS, TMB_BRAF was associated with lower PFS hazard, TLR was strongly associated with subsequent PFS, and longer PFS was tightly linked to longer OS. In other words, the data support the idea that baseline biomarkers and intermediate disease response are more informative than age or sex for the downstream survival relationships represented here.", "\n\n",
-  "Treatment-related edges were still mixed. T -> PFS, T -> OS, and both TxTMB interaction terms remained non-significant, so the report still does not provide strong evidence for treatment effect modification through the TMB/BRAF interaction node. However, the raw-p analysis now shows p < 0.05 for both CRP -> TLR (p = ", p_crp_tlr, ") and T -> TLR (p = ", p_t_tlr, "), which suggests that tumour lesion reduction may be one route through which baseline inflammation and treatment assignment connect to later outcomes.", "\n\n",
+  " The strongest supported pattern sits along the prognostic and disease-course portion of the DAG: low CRP was associated with lower hazards for both PFS and OS, TMB_BRAF was associated with lower PFS hazard, TLR was strongly associated with subsequent PFS, and longer PFS was tightly linked to longer OS. In other words, the data support the idea that the pre-immunotherapy biomarkers (week-4 CRP and baseline TMB/BRAF) and intermediate disease response are more informative than age or sex for the downstream survival relationships represented here.", "\n\n",
+  "Treatment-related edges were still mixed. T -> PFS, T -> OS, and both TxTMB interaction terms remained non-significant, so the report still does not provide strong evidence for treatment effect modification through the TMB/BRAF interaction node. However, the raw-p analysis now shows p < 0.05 for both CRP -> TLR (p = ", p_crp_tlr, ") and T -> TLR (p = ", p_t_tlr, "), which suggests that tumour lesion reduction may be one route through which week-4 inflammation and treatment assignment connect to later outcomes.", "\n\n",
   "Among the 13 conditional-independence tests, ", ci_n_ok,
   " were compatible with the DAG at p >= 0.05 and ", ci_n_fail,
   " were contradicted by the data. ", ci_violation_text,
-  " In practice, both violated statements involve CRP: CRP _||_ T had p = ", p_crp_t, ", suggesting possible baseline imbalance by treatment arm, and CRP _||_ TxTMB | {TMB_BRAF} had p = ", p_crp_txtmb, ", suggesting residual dependence around the CRP-treatment-interaction part of the graph. That makes CRP the main place where the current DAG looks least secure in this dataset.", "\n\n",
+  " In practice, both violated statements involve CRP: CRP _||_ T had p = ", p_crp_t, ", reflecting a chance arm imbalance in week-4 CRP (baseline CRP was balanced, and no nivolumab has been given by week 4, so this is neither a randomisation failure nor a treatment effect), and CRP _||_ TxTMB | {TMB_BRAF} had p = ", p_crp_txtmb, ", which follows from the same arm imbalance because TxTMB is a function of T. That makes the week-4 CRP arm imbalance the main place where the current DAG looks least secure in this dataset.", "\n\n",
   "Interpretation should remain cautious. The latent node U is unobserved, TLR analyses depend on non-missing follow-up imaging, the available repository extract is modest in size, and several tests are necessarily low-power. These checks therefore speak to empirical compatibility, not causal proof."
 ))
 ```

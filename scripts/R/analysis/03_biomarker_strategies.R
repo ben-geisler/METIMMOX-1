@@ -4,6 +4,10 @@ library(pacman)
 p_load(dplyr)
 
 # Create binary biomarker variables with simplified names
+# crp uses CRP1cat: the week-4 (cycle 3 day 1, visit 3) CRP < 5 mg/L indicator,
+# measured after two FLOX cycles common to both arms and before the first
+# nivolumab dose. It is the value available when the immunotherapy decision is
+# made (issue #150). CRP0cat (cycle 1 day 1) is the true baseline and is unused.
 data$crp <- as.numeric(data$CRP1cat == 1)
 data$tlr <- as.numeric(data$TLRcat == 1)
 data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))

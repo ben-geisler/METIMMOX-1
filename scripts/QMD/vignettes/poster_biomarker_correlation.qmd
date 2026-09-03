@@ -136,7 +136,7 @@ forest_df$estimator <- factor(forest_df$estimator,
                               levels = c("Single-biomarker (Firth Cox)","Joint (Firth Cox)"))
 ```
 
-> **Why TLR is excluded from the economic model.** Target lesion reduction (TLR) is shown below as an illustrative third candidate, but it is *not* used as an economic treatment-selection biomarker for two reasons. (1) It lies **on the causal pathway** between treatment and survival — a post-randomization mediator — so building a selection strategy on it (or conditioning on it) would bias the estimated treatment effect. (2) It is a **dynamic biomarker** measured on follow-up imaging, i.e. not available at baseline before immunotherapy starts, so it cannot inform a pre-treatment treatment-selection decision. Only the two baseline biomarkers, CRP and TMB/BRAF, enter the economic model.
+> **Why TLR is excluded from the economic model.** Target lesion reduction (TLR) is shown below as an illustrative third candidate, but it is *not* used as an economic treatment-selection biomarker for two reasons. (1) It lies **on the causal pathway** between treatment and survival — a post-randomization mediator — so building a selection strategy on it (or conditioning on it) would bias the estimated treatment effect. (2) It is a **dynamic biomarker** measured on follow-up imaging after nivolumab has started, so it cannot inform the treatment-selection decision. Only the two biomarkers available before that decision enter the economic model: TMB/BRAF (baseline NGS) and CRP (week-4 value, measured after two FLOX cycles common to both arms and before the first nivolumab dose).
 
 # Forest plot: prognostic main effects and predictive interactions
 
@@ -257,7 +257,7 @@ kable(cea_display,
 # Cost-effectiveness acceptability curves: single-biomarker vs joint modelling
 
 ```{r ceac-build, include=FALSE}
-# Two CEAC panels for the two PRE-TREATMENT economic biomarkers (CRP, TMB/BRAF):
+# Two CEAC panels for the two PRE-IMMUNOTHERAPY economic biomarkers (CRP, TMB/BRAF):
 #   Panel A  "one biomarker"  - each guided strategy from its OWN single-biomarker model
 #   Panel B  "two biomarkers" - both guided strategies from the joint model
 # Same control model and the SAME cached economic-parameter draws are used in both

@@ -42,9 +42,15 @@ METIMMOX$CT1tl <- as.numeric(METIMMOX$`TL LD...130`)
 METIMMOX$TLR <- METIMMOX$CT1tl / METIMMOX$`TL LD...121`
 METIMMOX$TLRcat <- as.factor(ifelse(METIMMOX$TLR <= 0.9, 1, 0))
 
+# CRP0: baseline CRP (lab block after "SEQ1 V1", cycle 1 day 1). Not used by the
+# economic model or the clinical reports.
 METIMMOX$CRP0 <- METIMMOX$`CRP...478`
 METIMMOX$CRP0cat <- as.factor(ifelse(METIMMOX$CRP0 < 5, 1, 0))
 
+# CRP1: week-4 CRP (lab block after "SEQ1 V3", cycle 3 day 1), measured after the
+# two FLOX cycles given to both arms and before the first nivolumab dose. This is
+# the CRP biomarker used throughout (data$crp in 03_biomarker_strategies.R);
+# see issue #150.
 METIMMOX$CRP1 <- METIMMOX$`CRP...540`
 METIMMOX$CRP1cat <- as.factor(ifelse(METIMMOX$CRP1 < 5, 1, 0))
 

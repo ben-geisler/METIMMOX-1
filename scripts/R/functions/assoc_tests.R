@@ -153,12 +153,12 @@ ci_support_label <- function(p_value, randomization_check) {
       p_value < 0.05,
       ifelse(
         randomization_check,
-        "Possible randomization imbalance",
+        "Arm imbalance in realised sample",
         "CI contradicted by data"
       ),
       ifelse(
         randomization_check,
-        "Compatible with randomization balance",
+        "Compatible with arm balance",
         "Compatible with DAG-implied CI"
       )
     )

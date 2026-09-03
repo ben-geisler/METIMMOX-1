@@ -67,7 +67,7 @@ node_defs <- data.frame(
     "Patient sex",
     "Unmeasured prognostic factors (latent)",
     "Combined biomarker: TMB >= 9 mut/MB or BRAF mutation",
-    "C-reactive protein (positive: CRP < 5 mg/L)",
+    "C-reactive protein at week 4, before the first nivolumab dose (positive: CRP < 5 mg/L)",
     "Treatment: alternating FLOX + nivolumab vs FLOX alone",
     "Interaction between treatment and TMB/BRAF status",
     "Interaction between treatment and CRP status",
@@ -87,6 +87,8 @@ if (knitr::is_latex_output()) {
   tbl
 }
 ```
+
+**CRP timing.** The CRP node is the week-4 value (cycle 3 day 1), measured after the two FLOX cycles that both arms receive and before the first nivolumab dose, not the baseline (pre-randomization) value. It is nevertheless drawn without a `T -> CRP` edge: at week 4 no nivolumab has been given and the two arms have received identical treatment, so treatment assignment cannot yet have affected CRP. CRP is therefore a pre-immunotherapy covariate in the DAG, unlike TLR, which is read from the first on-treatment CT after nivolumab has started and is modelled as a mediator (`T -> TLR`).
 
 # Causal Structure
 

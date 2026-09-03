@@ -124,7 +124,7 @@ kable(display_matrix,
     general = c(
       "Cramer's V measures association between categorical variables (range 0-1).",
       "Significance levels: * p<0.05, ** p<0.01, *** p<0.001.",
-      "CRP = C-reactive protein (<5 mg/L); TLR = target lesion reduction (>=10%); TMB/BRAF = TMB >=9 mut/Mb or BRAF V600E.",
+      "CRP = C-reactive protein (<5 mg/L at week 4, before the first nivolumab dose); TLR = target lesion reduction (>=10%); TMB/BRAF = TMB >=9 mut/Mb or BRAF V600E.",
       "Weak intercorrelations (V=0.278 for CRP-TLR) limit confounding between biomarkers across model specifications."
     ),
     general_title = "Notes: "

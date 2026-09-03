@@ -127,7 +127,7 @@ kable(consolidated_summary_table,
       "Data from METIMMOX trial (NCT03388190). Scripts 02 and 03 sourced.",
       "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
       "Firth-corrected Cox and logistic regression used throughout. Fisher's exact for 2x2 tables.",
-      "Randomization balance checks: Age||T, CRP||T, Sex||T, T||TMB_BRAF. No multiplicity correction applied."
+      "Arm balance checks: Age||T, CRP||T, Sex||T, T||TMB_BRAF. CRP is the week-4 value (before the first nivolumab dose), so CRP||T tests arm balance at the immunotherapy decision point, not randomization balance. No multiplicity correction applied."
     ),
     general_title = "Notes: "
   )

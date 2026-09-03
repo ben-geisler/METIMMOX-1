@@ -6,9 +6,14 @@
 # used for the CRP-guided and TMB/BRAF-guided strategies; the control arm is
 # age/sex-adjusted only.
 #
-# Economic analyses include standard of care plus two pre-treatment biomarker
-# strategies (CRP and TMB/BRAF). TLR is intentionally excluded here because it is a
-# post-randomization mediator, not a baseline treatment-selection biomarker.
+# Economic analyses include standard of care plus two pre-immunotherapy biomarker
+# strategies (CRP and TMB/BRAF), i.e. biomarkers that are available before the
+# decision to add nivolumab is made. TMB/BRAF comes from baseline NGS. CRP is
+# the week-4 value (cycle 3 day 1, trial visit 3; variable CRP1cat), measured
+# after the two FLOX cycles that both arms receive and before the first
+# nivolumab dose (issue #150). TLR is intentionally excluded here because it is
+# a post-randomization mediator measured on treatment, not a treatment-selection
+# biomarker.
 #
 # Usage:
 #   source(here::here("scripts/R/functions/model_configs.R"))
@@ -23,10 +28,10 @@ if (!require("survival")) {
 #' Standard-of-care strategy ID
 CONTROL_STRATEGY <- "control"
 
-#' Economic strategies: standard of care plus pre-treatment biomarker strategies
+#' Economic strategies: standard of care plus pre-immunotherapy biomarker strategies
 ALL_STRATEGIES <- c(CONTROL_STRATEGY, "crp", "tmb_braf")
 
-#' Pre-treatment biomarkers included in the economic model
+#' Pre-immunotherapy biomarkers included in the economic model
 ALL_BIOMARKERS <- c("crp", "tmb_braf")
 
 #' Keyed display metadata for economic strategies
@@ -46,7 +51,9 @@ STRATEGY_METADATA <- data.frame(
   description = c(
     "Standard of care - All patients receive only FLOX chemotherapy",
     paste0(
-      "C-reactive protein with cut-off of <5 for biomarker-positive status. ",
+      "C-reactive protein with cut-off of <5 mg/L for biomarker-positive status, ",
+      "measured at week 4 (cycle 3 day 1) after two FLOX cycles common to both ",
+      "arms and before the first nivolumab dose. ",
       "If CRP-positive: alternating two cycles each of FLOX (chemotherapy) ",
       "and nivolumab (anti-PD1 immunotherapy); if CRP-negative: chemotherapy only"
     ),
