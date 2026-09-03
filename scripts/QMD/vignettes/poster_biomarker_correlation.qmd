@@ -86,7 +86,10 @@ n3  <- nrow(d3)
 
 bms      <- c("crp","tlr","tmb_braf")
 bm_label <- c(crp = "CRP", tlr = "TLR (mediator)", tmb_braf = "TMB/BRAF")
-dist_for <- list(OS = "weibull", PFS = "lognormal")   # matches para_models AIC choice
+# Use the ordering-constrained pair selected by script 04 (currently gamma / gamma);
+# the former hard-coded Weibull / log-normal pair lets PFS exceed OS under the
+# progression-or-death PFS endpoint (issue #149).
+dist_for <- list(OS = models$best_fit$os_distribution, PFS = models$best_fit$pfs_distribution)
 surv_lhs <- list(OS = "Surv(OSwk, Death)", PFS = "Surv(PFSwk, Progression)")
 ```
 
@@ -182,8 +185,8 @@ poster_biomarkers <- append(canonical_biomarkers, "tlr",
 
 with_poster_model_config(poster_strategies, poster_biomarkers, {
 
-m_os3  <- flexsurvreg(Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "weibull")
-m_pfs3 <- flexsurvreg(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = "lognormal")
+m_os3  <- flexsurvreg(Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = dist_for$OS)
+m_pfs3 <- flexsurvreg(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = dist_for$PFS)
 
 prev <- sapply(bms, function(b) mean(as.numeric(as.character(d3[[b]]))))
 strategies_df3 <- data.frame(id = c("control", bms),
@@ -270,14 +273,14 @@ times_c <- seq(0, time_horizon)
 ctrl_rx <- levels(dc$Rx)[1]; exp_rx <- levels(dc$Rx)[2]
 fitc <- function(lhs, rhs, dist) flexsurvreg(as.formula(paste(lhs, rhs)), data = dc, dist = dist)
 mC <- list(
-  ctrl_os  = fitc("Surv(OSwk,Death)","~ Age + sex","weibull"),
-  ctrl_pfs = fitc("Surv(PFSwk,Progression)","~ Age + sex","lognormal"),
-  joint_os = fitc("Surv(OSwk,Death)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx","weibull"),
-  joint_pfs= fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx","lognormal"),
-  crp_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*crp","weibull"),
-  crp_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*crp","lognormal"),
-  tmb_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*tmb_braf","weibull"),
-  tmb_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*tmb_braf","lognormal"))
+  ctrl_os  = fitc("Surv(OSwk,Death)","~ Age + sex",dist_for$OS),
+  ctrl_pfs = fitc("Surv(PFSwk,Progression)","~ Age + sex",dist_for$PFS),
+  joint_os = fitc("Surv(OSwk,Death)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",dist_for$OS),
+  joint_pfs= fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",dist_for$PFS),
+  crp_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*crp",dist_for$OS),
+  crp_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*crp",dist_for$PFS),
+  tmb_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*tmb_braf",dist_for$OS),
+  tmb_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*tmb_braf",dist_for$PFS))
 
 Xof <- function(rhs, nd) model.matrix(as.formula(rhs), data = nd)
 set_rx <- function(nd, rx) { nd$Rx <- factor(rx, levels = levels(dc$Rx)); nd }
@@ -293,13 +296,19 @@ XC <- list(ctrl = Xof("~ Age + sex", set_rx(dc, ctrl_rx)),
 
 curve_draw <- function(pars, Xm, dist) {
   cn <- colnames(Xm)
-  loc <- if (dist == "weibull") "scale" else "meanlog"
-  anc <- if (dist == "weibull") "shape" else "sdlog"
+  # flexsurv location / ancillary parameter per family (coef() is on the log scale
+  # for positive parameters): Weibull scale/shape, log-normal meanlog/sdlog,
+  # gamma rate/shape (covariates act on the log rate).
+  loc <- switch(dist, weibull = "scale", lognormal = "meanlog", gamma = "rate",
+                stop("curve_draw(): unsupported distribution ", dist))
+  anc <- switch(dist, weibull = "shape", lognormal = "sdlog", gamma = "shape")
   beta <- setNames(numeric(length(cn)), cn)
   beta["(Intercept)"] <- pars[[loc]]; oth <- setdiff(cn, "(Intercept)"); beta[oth] <- pars[oth]
   lp <- as.numeric(Xm %*% beta); a <- exp(pars[[anc]])
-  M <- if (dist == "weibull") exp(-outer(times_c, exp(lp), function(t,s)(t/s)^a)) else
-                              1 - outer(times_c, lp, function(t,mu) pnorm((log(t)-mu)/a))
+  M <- switch(dist,
+    weibull   = exp(-outer(times_c, exp(lp), function(t,s)(t/s)^a)),
+    lognormal = 1 - outer(times_c, lp, function(t,mu) pnorm((log(t)-mu)/a)),
+    gamma     = 1 - outer(times_c, exp(lp), function(t,r) pgamma(t, shape = a, rate = r)))
   M[1, ] <- 1; rowMeans(M)
 }
 draw_pars <- function(mod) MASS::mvrnorm(1, coef(mod), vcov(mod))
@@ -315,20 +324,22 @@ run_panel <- function(d_row, dp, panel) {
                "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
   p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
-  oc <- curve_draw(dp$ctrl_os, XC$ctrl, "weibull"); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, "lognormal")
+  oc <- curve_draw(dp$ctrl_os, XC$ctrl, dist_for$OS); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, dist_for$PFS)
   if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"
     Xcp<-XC$j_crp_p;Xcn<-XC$j_crp_n;Xtp<-XC$j_tmb_p;Xtn<-XC$j_tmb_n
   } else { co<-"crp_os";cf<-"crp_pfs";to<-"tmb_os";tf<-"tmb_pfs"
     Xcp<-XC$s_crp_p;Xcn<-XC$s_crp_n;Xtp<-XC$s_tmb_p;Xtn<-XC$s_tmb_n }
-  p$p_os <- list(control_OS=oc, crp_pos_OS=curve_draw(dp[[co]],Xcp,"weibull"),
-                 crp_neg_OS=curve_draw(dp[[co]],Xcn,"weibull"),
-                 tmb_braf_pos_OS=curve_draw(dp[[to]],Xtp,"weibull"),
-                 tmb_braf_neg_OS=curve_draw(dp[[to]],Xtn,"weibull"))
-  p$p_pfs <- list(control_PFS=pc, crp_pos_PFS=curve_draw(dp[[cf]],Xcp,"lognormal"),
-                  crp_neg_PFS=curve_draw(dp[[cf]],Xcn,"lognormal"),
-                  tmb_braf_pos_PFS=curve_draw(dp[[tf]],Xtp,"lognormal"),
-                  tmb_braf_neg_PFS=curve_draw(dp[[tf]],Xtn,"lognormal"))
-  suppressWarnings(model_fun(p, determpsa = "det"))
+  p$p_os <- list(control_OS=oc, crp_pos_OS=curve_draw(dp[[co]],Xcp,dist_for$OS),
+                 crp_neg_OS=curve_draw(dp[[co]],Xcn,dist_for$OS),
+                 tmb_braf_pos_OS=curve_draw(dp[[to]],Xtp,dist_for$OS),
+                 tmb_braf_neg_OS=curve_draw(dp[[to]],Xtn,dist_for$OS))
+  p$p_pfs <- list(control_PFS=pc, crp_pos_PFS=curve_draw(dp[[cf]],Xcp,dist_for$PFS),
+                  crp_neg_PFS=curve_draw(dp[[cf]],Xcn,dist_for$PFS),
+                  tmb_braf_pos_PFS=curve_draw(dp[[tf]],Xtp,dist_for$PFS),
+                  tmb_braf_neg_PFS=curve_draw(dp[[tf]],Xtn,dist_for$PFS))
+  # Bootstrap draws may occasionally let PFS exceed OS; PSA mode (no sim_idx)
+  # uses the supplied curves and caps the crossing instead of aborting.
+  suppressWarnings(model_fun(p, determpsa = "psa"))
 }
 
 cj <- ej <- cs <- es <- matrix(NA, N, 3, dimnames = list(NULL, c("control","crp","tmb_braf")))

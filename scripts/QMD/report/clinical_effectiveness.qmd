@@ -1526,21 +1526,40 @@ Neither analysis resolves the most fundamental issue: TLR lies on the causal pat
 
 \newpage
 
+```{r discussion-values, include=FALSE}
+# Values quoted in the Discussion and Summary are pulled from the objects
+# computed above so the prose cannot drift from the tables.
+get_zph_p <- function(zph_df, pattern) {
+  idx <- grep(pattern, rownames(zph_df))
+  if (length(idx) == 0) NA_real_ else zph_df$p[idx[1]]
+}
+p_zph_os_global  <- get_zph_p(zph_os_df,  "^GLOBAL$")
+p_zph_pfs_global <- get_zph_p(zph_pfs_df, "^GLOBAL$")
+p_zph_pfs_crp    <- get_zph_p(zph_pfs_df, "^crp_num$")
+p_zph_pfs_tmb    <- get_zph_p(zph_pfs_df, "^tmb_braf_num$")
+p_zph_pfs_crp_rx <- get_zph_p(zph_pfs_df, "crp_num.*Rx|Rx.*crp_num")
+p_zph_pfs_tmb_rx <- get_zph_p(zph_pfs_df, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+
+# Firth HR (95% CI) and point-estimate shorthands
+hr_txt <- function(x) format_hr_ci(x$HR, x$CI_Lower, x$CI_Upper)
+hr_pt  <- function(x) if (is.na(x$HR)) "--" else sprintf("%.2f", x$HR)
+```
+
 # Discussion
 
 ## Primary interaction results
 
-Neither biomarker-treatment interaction reached conventional significance in the unified model. For **overall survival**, CRP × Rx yielded HR 0.78 (95% CI 0.21–3.61, PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR 0.93 (0.30–2.85, p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction showed a more directionally suggestive effect (HR 0.33, 0.07–2.15, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had roughly one-third the hazard of progression relative to CRP-positive controls, though the CI spans more than an order of magnitude. These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
+Neither biomarker-treatment interaction reached conventional significance in the unified model (Firth HR with 95% CI in parentheses). For **overall survival**, CRP × Rx yielded HR `r hr_txt(hr_crp_os)` (PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR `r hr_txt(hr_tmb_os)` (p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction was directionally favourable but imprecise (HR `r hr_txt(hr_crp_pfs)`, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had a lower estimated hazard of progression or death than CRP-positive controls, though the CI spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx PFS interaction was HR `r hr_txt(hr_tmb_pfs)` (p = `r format_pvalue(p_tmb_pfs)`). These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
-The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR 0.33) is consistent with the DAG association test showing CRP → PFS (HR 0.40, p = 0.004) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR 0.78) is considerably closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
+The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (HR 0.41, p = 0.001; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
 
-## Proportional hazards and TMB/BRAF
+## Proportional hazards
 
-The PH assumption was well supported in overall survival (Schoenfeld global p = 0.40). In progression-free survival, however, the global test was significant (p = 0.007), driven mainly by TMB/BRAF — both the main effect (p = 0.021) and the TMB/BRAF × Rx interaction (p = 0.045) violated the PH assumption. This indicates that the hazard ratio for TMB/BRAF (and its modification by treatment) is not constant over time in PFS, which may reflect different kinetics of early vs late events in TMB/BRAF-positive tumours. The PFS TMB/BRAF × Rx interaction estimate (HR 0.60) should therefore be interpreted with caution; a time-varying Cox model or landmark analysis would be more appropriate for that specific question.
+The PH assumption was well supported in overall survival (Schoenfeld global p = `r format_pvalue(p_zph_os_global)`). In progression-free survival the global test indicated some departure from proportionality (p = `r format_pvalue(p_zph_pfs_global)`), and this is carried by the biomarker main effects rather than the interaction terms: CRP main effect p = `r format_pvalue(p_zph_pfs_crp)`, TMB/BRAF main effect p = `r format_pvalue(p_zph_pfs_tmb)`, versus CRP × Rx p = `r format_pvalue(p_zph_pfs_crp_rx)` and TMB/BRAF × Rx p = `r format_pvalue(p_zph_pfs_tmb_rx)`. This suggests that the prognostic hazard ratios for CRP and TMB/BRAF are not constant over time in PFS, which may reflect different kinetics of early vs late events (now including deaths) across biomarker-defined subgroups. The PFS main-effect estimates for CRP and TMB/BRAF should therefore be read as time-averaged effects; a time-varying Cox model or landmark analysis would be more appropriate for characterizing them. The interaction estimates themselves are not flagged by this diagnostic.
 
 ## Ridge regression sensitivity
 
-For OS, Ridge shrinks the CRP × Rx estimate substantially toward null (Firth HR 0.78 → Ridge HR 0.39), suggesting the OS estimate is sensitive to regularization and should be treated as imprecise. The TMB/BRAF × Rx OS estimate shows minimal shrinkage (0.93 → 0.87), consistent with a near-null interaction. For PFS, the CRP × Rx estimate is essentially unchanged by Ridge (Firth 0.33 → Ridge 0.32), indicating that the directional PFS finding is robust to regularization — the data support it even when the model is penalized for large coefficients. TMB/BRAF × Rx PFS shows moderate shrinkage (0.60 → 0.45).
+For OS, the CRP × Rx estimate changes substantially when the biomarker main effects are penalized (Firth HR `r hr_pt(hr_crp_os)` → Ridge HR `r hr_pt(ridge_crp_os)`), indicating that the OS estimate is sensitive to model specification and should be treated as imprecise. The TMB/BRAF × Rx OS estimate changes little (`r hr_pt(hr_tmb_os)` → `r hr_pt(ridge_tmb_os)`), consistent with a near-null interaction. For PFS, both interaction estimates also move under Ridge (CRP × Rx `r hr_pt(hr_crp_pfs)` → `r hr_pt(ridge_crp_pfs)`; TMB/BRAF × Rx `r hr_pt(hr_tmb_pfs)` → `r hr_pt(ridge_tmb_pfs)`). Because only the main effects are penalized, a shift in the interaction terms reflects redistribution of the shrunken main-effect signal rather than independent support for a particular effect size; the PFS interaction estimates are therefore not stable under regularization and should not be over-interpreted.
 
 ## TLR responder analysis (exploratory)
 
@@ -1560,16 +1579,16 @@ A **week-9 landmark analysis** conditions on survival to the second (first on-tr
 
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary (DAG-informed):** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` — pre-treatment biomarkers as effect modifiers; TLR omitted because it is post-randomization. **Exploratory responder analysis:** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and its treatment interaction, with CRP and TMB/BRAF retained as prognostic main-effect adjustments. Profile likelihood CIs, PLRT for interaction testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects in the primary model and the TLR terms (main effect + TLR:Rx) in the exploratory model.
 
-**Proportional hazards:** No violations in OS (global p = 0.40). In PFS, the TMB/BRAF main effect (p = 0.021) and TMB/BRAF × Rx interaction (p = 0.045) violate the PH assumption; PFS TMB/BRAF estimates should be interpreted with caution.
+**Proportional hazards:** No violations in OS (global p = `r format_pvalue(p_zph_os_global)`). In PFS the global test gives p = `r format_pvalue(p_zph_pfs_global)`, carried by the biomarker main effects (CRP p = `r format_pvalue(p_zph_pfs_crp)`; TMB/BRAF p = `r format_pvalue(p_zph_pfs_tmb)`) rather than the interaction terms (CRP × Rx p = `r format_pvalue(p_zph_pfs_crp_rx)`; TMB/BRAF × Rx p = `r format_pvalue(p_zph_pfs_tmb_rx)`); PFS biomarker main-effect estimates should be read as time-averaged.
 
 **Interaction estimates:**
 
 | Interaction | OS HR (95% CI) | PLRT p | PFS HR (95% CI) | PLRT p |
 |-------------|----------------|--------|-----------------|--------|
-| CRP × Rx    | 0.78 (0.21–3.61) | `r format_pvalue(p_crp_os)` | 0.33 (0.07–2.15) | `r format_pvalue(p_crp_pfs)` |
-| TMB/BRAF × Rx | 0.93 (0.30–2.85) | `r format_pvalue(p_tmb_os)` | 0.60 (0.16–2.28) | `r format_pvalue(p_tmb_pfs)` |
+| CRP × Rx    | `r hr_txt(hr_crp_os)` | `r format_pvalue(p_crp_os)` | `r hr_txt(hr_crp_pfs)` | `r format_pvalue(p_crp_pfs)` |
+| TMB/BRAF × Rx | `r hr_txt(hr_tmb_os)` | `r format_pvalue(p_tmb_os)` | `r hr_txt(hr_tmb_pfs)` | `r format_pvalue(p_tmb_pfs)` |
 
-No interaction is statistically significant. CRP × Rx PFS (HR 0.33) is the most directionally consistent finding and is robust to Ridge regularization (Ridge HR 0.32). TMB/BRAF OS shows near-null interaction (Ridge HR 0.87 ≈ Firth); TMB/BRAF PFS violated PH.
+No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_pfs)`) is the strongest directional signal but is not stable under Ridge regularization (Ridge HR `r hr_pt(ridge_crp_pfs)`). TMB/BRAF OS shows a near-null interaction (Ridge HR `r hr_pt(ridge_tmb_os)` ≈ Firth `r hr_pt(hr_tmb_os)`). The PFS PH departure concerns the biomarker main effects, not the interaction terms.
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
 
