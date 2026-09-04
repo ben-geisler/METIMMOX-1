@@ -81,8 +81,19 @@ run_basecase <- function(params = NULL, verbose = TRUE) {
 
 #' Calculate pairwise ICERs against the control strategy
 #'
+#' Convention (issue #153): every ICER in the returned table is a PAIRWISE
+#' comparison of one strategy against standard of care, not a frontier ICER.
+#' A strategy can be "Dominated" on the dampack efficiency frontier (more costly
+#' and less effective than another biomarker strategy) while still having a
+#' finite pairwise ICER versus standard of care. The frontier status is
+#' therefore attached alongside the pairwise status as `Frontier_Status`
+#' (dampack codes: ND = on the frontier, D = dominated, ED = extendedly
+#' dominated) so that reports can state both without contradiction.
+#'
 #' @param results Data frame with Strategy, Cost, and Effect columns
-#' @return Results with incremental outcomes, ICER, and pairwise status
+#' @return Results with incremental outcomes versus control, the pairwise ICER,
+#'   the pairwise `Status` ("Reference", "Pairwise ICER vs SoC", "Dominated by
+#'   SoC", "Cost-saving vs SoC"), and the dampack `Frontier_Status`.
 calculate_pairwise_icers <- function(results) {
   control <- results[results$Strategy == get_control_strategy(), ]
   if (nrow(control) != 1) stop("Control strategy must appear exactly once.")
@@ -93,10 +104,32 @@ calculate_pairwise_icers <- function(results) {
   )
   out$ICER <- out$Inc_Cost / out$Inc_Effect
   out$ICER[out$Strategy == get_control_strategy()] <- NA_real_
-  out$Status <- "Non-dominated"
-  out$Status[out$Inc_Cost > 0 & out$Inc_Effect <= 0] <- "Dominated"
-  out$Status[out$Inc_Cost < 0 & out$Inc_Effect > 0] <- "Cost-saving"
+  out$Status <- "Pairwise ICER vs SoC"
+  out$Status[out$Inc_Cost > 0 & out$Inc_Effect <= 0] <- "Dominated by SoC"
+  out$Status[out$Inc_Cost < 0 & out$Inc_Effect > 0] <- "Cost-saving vs SoC"
   out$Status[out$Strategy == get_control_strategy()] <- "Reference"
+  out$Frontier_Status <- frontier_status(out)
+  out
+}
+
+#' dampack efficiency-frontier status for a set of strategies
+#'
+#' @param results Data frame with Strategy, Cost, and Effect columns
+#' @return Character vector aligned with `results$Strategy`: "ND", "D", or "ED"
+frontier_status <- function(results) {
+  icers <- dampack::calculate_icers(
+    cost = results$Cost,
+    effect = results$Effect,
+    strategies = results$Strategy
+  )
+  as.character(icers$Status)[match(results$Strategy, icers$Strategy)]
+}
+
+#' Human-readable frontier label for tables
+frontier_label <- function(status) {
+  labels <- c(ND = "On frontier", D = "Dominated", ED = "Extendedly dominated")
+  out <- unname(labels[as.character(status)])
+  out[is.na(out)] <- "--"
   out
 }
 

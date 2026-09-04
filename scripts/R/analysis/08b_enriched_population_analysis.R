@@ -183,20 +183,30 @@ run_enriched_analysis <- function(verbose = TRUE) {
   biomarkers <- get_biomarkers()
   base_rows <- base_pairwise[match(biomarkers, base_pairwise$Strategy), ]
   enriched_rows <- enriched_pairwise[match(biomarkers, enriched_pairwise$Strategy), ]
+  # Both ICER columns are PAIRWISE comparisons against standard of care
+  # (issue #153). Base_Frontier_Status carries the dampack frontier status of
+  # the guided strategy in the three-strategy base case; a strategy that is
+  # dominated on that frontier (e.g. TMB/BRAF, more costly and less effective
+  # than CRP) still has a finite pairwise ICER, but a percentage change between
+  # such ICERs is not meaningful, so Pct_Change is reported only when the
+  # strategy is on the frontier and both pairwise ICERs are finite, positive
+  # trade-offs (more costly and more effective).
   enriched_comparison <- data.frame(
     Biomarker = unname(strategy_display_name(biomarkers)),
     Prevalence = strategies_df$prevalence[match(biomarkers, strategies_df$id)],
     Base_Cost = base_rows$Cost, Base_Effect = base_rows$Effect,
     Base_ICER = base_rows$ICER, Base_Status = base_rows$Status,
+    Base_Frontier_Status = base_rows$Frontier_Status,
     Enr_Cost = enriched_rows$Cost, Enr_Effect = enriched_rows$Effect,
     Enr_Ctrl_Cost = enriched_rows$Ctrl_Cost,
     Enr_Ctrl_Effect = enriched_rows$Ctrl_Effect,
     Enr_ICER = enriched_rows$ICER, Enr_Status = enriched_rows$Status,
     Pct_Change = ifelse(
-      base_rows$Status == "Non-dominated" &
-        enriched_rows$Status == "Non-dominated" &
-        is.finite(base_rows$ICER) & base_rows$ICER != 0 &
-        is.finite(enriched_rows$ICER),
+      base_rows$Frontier_Status == "ND" &
+        base_rows$Status == "Pairwise ICER vs SoC" &
+        enriched_rows$Status == "Pairwise ICER vs SoC" &
+        is.finite(base_rows$ICER) & base_rows$ICER > 0 &
+        is.finite(enriched_rows$ICER) & enriched_rows$ICER > 0,
       (enriched_rows$ICER - base_rows$ICER) / abs(base_rows$ICER) * 100,
       NA_real_
     )

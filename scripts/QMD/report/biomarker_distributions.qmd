@@ -118,15 +118,26 @@ data_complete <- data_complete %>%
     Progression_event = factor(Progression, levels = c(0, 1), labels = c("No", "Yes"))
   )
 
-# Create strata variables for each biomarker with clean labels
-data_complete$strata_crp <- interaction(data_complete$Rx, data_complete$crp_strata, sep = " / ")
-levels(data_complete$strata_crp) <- c("Control / -", "Control / +", "Exp / -", "Exp / +")
+# Create strata variables for each biomarker with clean labels.
+# Relabel by level NAME, not by position: interaction() orders its levels with
+# the first factor varying fastest (Control/-, Exp/-, Control/+, Exp/+), so a
+# positional relabel would swap the Exp/- and Control/+ columns (issue #153).
+make_arm_strata <- function(rx, strata) {
+  f <- interaction(rx, strata, sep = " / ", lex.order = TRUE)
+  arm_short <- c("Control arm" = "Control", "Experimental arm" = "Exp")
+  new_levels <- vapply(strsplit(levels(f), " / ", fixed = TRUE), function(parts) {
+    paste(arm_short[[parts[1]]], parts[2], sep = " / ")
+  }, character(1))
+  levels(f) <- new_levels
+  f
+}
 
-data_complete$strata_tlr <- interaction(data_complete$Rx, data_complete$tlr_strata, sep = " / ")
-levels(data_complete$strata_tlr) <- c("Control / -", "Control / +", "Exp / -", "Exp / +")
+data_complete$strata_crp      <- make_arm_strata(data_complete$Rx, data_complete$crp_strata)
+data_complete$strata_tlr      <- make_arm_strata(data_complete$Rx, data_complete$tlr_strata)
+data_complete$strata_tmb_braf <- make_arm_strata(data_complete$Rx, data_complete$tmb_braf_strata)
 
-data_complete$strata_tmb_braf <- interaction(data_complete$Rx, data_complete$tmb_braf_strata, sep = " / ")
-levels(data_complete$strata_tmb_braf) <- c("Control / -", "Control / +", "Exp / -", "Exp / +")
+stopifnot(identical(levels(data_complete$strata_crp),
+                    c("Control / -", "Control / +", "Exp / -", "Exp / +")))
 
 # Calculate complete cases per stratum for each biomarker
 complete_cases_crp <- table(data_complete$strata_crp)
@@ -327,4 +338,4 @@ correlation_df %>%
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 1.2

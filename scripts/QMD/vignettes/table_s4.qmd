@@ -15,7 +15,7 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03"),
+  sources = c("02", "03", "04"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "flexsurv", "survival"),
   set_theme = FALSE
 )
@@ -70,8 +70,11 @@ for (spec_name in names(model_specs)) {
     formula <- spec[[outcome]]
     outcome_label <- toupper(outcome)
 
+    # Use the distribution selected for this endpoint by the ordering-constrained
+    # selection in script 04 (issue #153), not a hard-coded family.
+    dist_use <- models$best_fit[[paste0(outcome, "_distribution")]]
     fit <- tryCatch(
-      flexsurvreg(formula = formula, data = data_complete, dist = "gamma"),
+      flexsurvreg(formula = formula, data = data_complete, dist = dist_use),
       error = function(e) {
         cat("Failed to fit", spec_name, outcome, ":", e$message, "\n")
         NULL
@@ -104,7 +107,9 @@ for (spec_label in unique(all_coefs$Model)) {
 
   cat("\n\n")
   print(kable(display_df,
-              caption = paste("Table S4:", spec_label, "- Gamma model coefficients"),
+              caption = sprintf("Table S4: %s - coefficients of the selected distributions (OS %s, PFS %s)",
+                                spec_label, models$best_fit$os_distribution,
+                                models$best_fit$pfs_distribution),
               format = "html",
               row.names = FALSE) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
@@ -116,7 +121,9 @@ for (spec_label in unique(all_coefs$Model)) {
 
 ```{r footnotes}
 cat("\n\n**Notes:**\n\n")
-cat("- Gamma distribution used for both OS and PFS.\n")
+cat(sprintf("- Distributions: OS %s, PFS %s, selected jointly as the minimum combined-AIC pair with OS >= PFS for every subgroup over the model horizon (see Table S3).\n",
+            models$best_fit$os_distribution, models$best_fit$pfs_distribution))
+cat("- Rows named after distribution parameters (e.g. shape, rate) are baseline parameters on their natural scale; all covariate rows are additive effects on the log of the location parameter (log(rate) for gamma), so exp(coefficient) is a rate ratio.\n")
 cat("- Joint economic model: both biomarker-treatment interactions (crp:Rx, tmb_braf:Rx) in a single model, adjusted for age and sex.\n")
 cat("- Rx = treatment arm (experimental vs control). Interaction terms (e.g., crp1:Rx) represent treatment-biomarker interaction effects.\n")
 ```

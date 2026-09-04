@@ -156,7 +156,12 @@ if (length(panel_list) > 0) {
   )
 
   # Add legend annotation
-  legend_text <- "Black step: Kaplan-Meier observed data. Colored line: Gamma parametric fit (joint economic model)."
+  # Distribution names come from the ordering-constrained selection in script 04,
+  # not from a hard-coded string (issue #153).
+  legend_text <- sprintf(
+    "Black step: Kaplan-Meier observed data. Colored line: parametric fit (joint economic model; OS %s, PFS %s).",
+    models$best_fit$os_distribution, models$best_fit$pfs_distribution
+  )
 
   combined_plot <- plot_grid(
     combined_plot,

@@ -34,7 +34,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "08b"),
-  funs = c("report_format"),
+  funs = c("cea_helpers", "report_format"),
   set_theme = FALSE,
   quiet_sources = TRUE
 )
@@ -46,6 +46,7 @@ enriched_display <- enriched_comparison %>%
     Base_Cost = format_eur(Base_Cost),
     Base_Effect = sprintf("%.3f", Base_Effect),
     Base_ICER = format_icer(Base_ICER, Base_Status),
+    Base_Frontier = frontier_label(Base_Frontier_Status),
     Enr_Cost = format_eur(Enr_Cost),
     Enr_Effect = sprintf("%.3f", Enr_Effect),
     Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
@@ -84,18 +85,29 @@ knitr::kable(
 # Base Case vs Enriched Population
 
 ```{r enriched-summary}
-summary_cols <- c("Biomarker", "Prevalence", "Base_ICER",
+summary_cols <- c("Biomarker", "Prevalence", "Base_ICER", "Base_Frontier",
                   "Enr_ICER", "Pct_Change")
 
 knitr::kable(
   enriched_display[, summary_cols],
   booktabs = TRUE,
-  align = c("l", "r", "r", "r", "r"),
-  col.names = c("Biomarker", "Prevalence", "Base Case ICER",
-                "Enriched ICER", "Change"),
-  caption = "Base case and enriched-population ICERs"
+  align = c("l", "r", "r", "l", "r", "r"),
+  col.names = c("Biomarker", "Prevalence", "Base ICER (vs SoC)",
+                "Base frontier", "Enriched ICER (vs SoC)", "Change"),
+  caption = "Base case and enriched-population ICERs (pairwise versus standard of care)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
+  kableExtra::footnote(
+    general = paste(
+      "Both ICER columns are pairwise comparisons against standard of care.",
+      "'Base Case Frontier' is the dampack efficiency-frontier status of the",
+      "guided strategy among the three base-case strategies: a strategy that is",
+      "dominated on the frontier (more costly and less effective than the other",
+      "guided strategy) still has a finite pairwise ICER, but the percentage",
+      "change between such ICERs is not meaningful and is shown as '--'."
+    ),
+    threeparttable = TRUE
+  )
 ```
 
 ```{r enriched-detail}
@@ -146,4 +158,4 @@ The enriched analysis isolates expected value among biomarker-positive patients 
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 4.1

@@ -218,16 +218,30 @@ create_loglog_plot <- function(data, time_var, event_var, strata_var, title) {
 # DATA PREPARATION
 # =============================================================================
 
-# Prepare data for Cox models
-data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+# Prepare data for Cox models.
+# PRIMARY COHORT (issue #153): complete cases on the pre-immunotherapy
+# biomarkers only (CRP, TMB/BRAF) plus covariates and endpoints. This is the
+# same 68-patient cohort used by the economic survival models
+# (04_parametric_survival_analysis.R) and the DAG association report. TLR
+# completeness is NOT required here: the three patients without a TLR value are
+# early control-arm deaths who never reached the first on-treatment CT, and
+# dropping them from the primary models would condition on surviving to that
+# scan.
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp",
                                                "tmb_braf", "OSwk", "Death",
                                                "PFSwk", "Progression")]), ]
 
-# Ensure proper factor coding
+# Ensure proper factor coding.
+# `sex` is the renamed trial column "Sex 0female": level "0" = female,
+# level "1" = male (see 01_data_prep.R, where Female <- 1 - `Sex 0female`).
 data_complete$sex <- as.factor(data_complete$sex)
 data_complete$Rx <- as.factor(data_complete$Rx)
+SEX_FEMALE_LEVEL <- "0"
+SEX_MALE_LEVEL   <- "1"
+stopifnot(all(levels(data_complete$sex) %in% c(SEX_FEMALE_LEVEL, SEX_MALE_LEVEL)))
 
-# Biomarkers as numeric 0/1 for coxphf (interactions work better with numeric)
+# Biomarkers as numeric 0/1 for coxphf (interactions work better with numeric).
+# tlr_num is NA for the three patients without a first on-treatment scan.
 data_complete$crp_num <- as.numeric(as.character(data_complete$crp))
 data_complete$tlr_num <- as.numeric(as.character(data_complete$tlr))
 data_complete$tmb_braf_num <- as.numeric(as.character(data_complete$tmb_braf))
@@ -235,14 +249,20 @@ data_complete$tmb_braf_num <- as.numeric(as.character(data_complete$tmb_braf))
 # Create numeric Rx for ridge regression
 data_complete$Rx_num <- as.numeric(data_complete$Rx) - 1  # 0 = Control, 1 = Experimental
 
-# Sample characteristics
+# TLR-COMPLETE COHORT: used only by the exploratory TLR responder and landmark
+# analyses and by the TLR columns of the sample-characteristics table.
+data_tlr <- data_complete[!is.na(data_complete$tlr_num), ]
+n_tlr_total   <- nrow(data_tlr)
+n_tlr_missing <- n_total_missing_tlr <- nrow(data_complete) - n_tlr_total
+
+# Sample characteristics (primary cohort)
 n_total <- nrow(data_complete)
 n_control <- sum(data_complete$Rx_num == 0)
 n_experimental <- sum(data_complete$Rx_num == 1)
 
 # Biomarker prevalence
 prev_crp <- mean(data_complete$crp_num)
-prev_tlr <- mean(data_complete$tlr_num)
+prev_tlr <- mean(data_tlr$tlr_num)
 prev_tmb_braf <- mean(data_complete$tmb_braf_num)
 
 # Event counts
@@ -255,18 +275,18 @@ n_progressions <- sum(data_complete$Progression)
 # BIOMARKER CORRELATION ANALYSIS (Cramér's V)
 # =============================================================================
 
-# CRP vs TLR
-crp_tlr_table <- table(data_complete$crp_num, data_complete$tlr_num)
+# CRP vs TLR (TLR-complete subset)
+crp_tlr_table <- table(data_tlr$crp_num, data_tlr$tlr_num)
 crp_tlr_assoc <- assocstats(crp_tlr_table)
 cramers_v_crp_tlr <- crp_tlr_assoc$cramer
 
-# CRP vs TMB/BRAF
+# CRP vs TMB/BRAF (primary cohort)
 crp_tmb_table <- table(data_complete$crp_num, data_complete$tmb_braf_num)
 crp_tmb_assoc <- assocstats(crp_tmb_table)
 cramers_v_crp_tmb <- crp_tmb_assoc$cramer
 
-# TLR vs TMB/BRAF
-tlr_tmb_table <- table(data_complete$tlr_num, data_complete$tmb_braf_num)
+# TLR vs TMB/BRAF (TLR-complete subset)
+tlr_tmb_table <- table(data_tlr$tlr_num, data_tlr$tmb_braf_num)
 tlr_tmb_assoc <- assocstats(tlr_tmb_table)
 cramers_v_tlr_tmb <- tlr_tmb_assoc$cramer
 
@@ -330,7 +350,8 @@ We use Ridge regression as a sensitivity analysis to assess the stability of our
 
 - Ridge adds a penalty term that discourages large coefficients. The bigger a coefficient tries to get, the more the model resists, pulling estimates toward zero (HR toward 1.0).
 - Unlike LASSO (alpha = 1), which sets some coefficients exactly to zero and performs variable selection, Ridge (alpha = 0) shrinks all coefficients but retains all predictors.
-- The degree of shrinkage is controlled by the tuning parameter lambda, which is selected via **cross-validation (CV)**: the data are repeatedly split into training and validation sets, and the lambda that produces the best predictive performance is chosen.
+- The degree of shrinkage is controlled by the tuning parameter lambda, which is selected via **cross-validation (CV)**: the data are repeatedly split into training and validation sets, and the lambda that produces the best predictive performance is chosen. Here this is `glmnet::cv.glmnet(family = "cox", alpha = 0)` with 10-fold CV of the partial-likelihood deviance and `lambda.min`; fold assignment is seeded so the result is reproducible.
+- **Implementation detail.** The model is fitted on an explicit design matrix (Age, sex, Rx, CRP, TMB/BRAF, CRP x Rx, TMB/BRAF x Rx) in which the product terms are constructed before fitting. This matters because `survival::ridge()` with a factor treatment variable and a formula interaction such as `crp:Rx` codes the interaction separately for each arm (the CRP slope within the control arm and within the experimental arm) rather than as the single treatment-by-biomarker contrast; the pre-built product term recovers the same contrast that the Firth model estimates. In the primary model only the CRP and TMB/BRAF main effects are penalized (penalty factor 1); Age, sex, Rx and the two interaction terms have penalty factor 0. glmnet does not provide standard errors, so ridge results are point estimates.
 
 **Why not LASSO or Elastic Net?**
 
@@ -369,12 +390,15 @@ fmt_mean_sd <- function(x, digits = 1) {
 # Compute the column of statistics for a given subgroup
 build_col <- function(df) {
   n <- nrow(df)
-  sex_levels   <- levels(data_complete$sex)
   rx_levels    <- levels(data_complete$Rx)
-  n_female     <- sum(df$sex == sex_levels[length(sex_levels)])  # last level (typically Female)
-  n_male       <- sum(df$sex == sex_levels[1])
+  # sex: level "0" = female, "1" = male ("Sex 0female" in the trial export).
+  n_female     <- sum(df$sex == SEX_FEMALE_LEVEL)
+  n_male       <- sum(df$sex == SEX_MALE_LEVEL)
   n_ctrl       <- sum(df$Rx == rx_levels[1])
   n_exp        <- sum(df$Rx == rx_levels[2])
+  # TLR is missing for early deaths without a first on-treatment scan, so the
+  # TLR-positive row uses the patients with a TLR value as its denominator.
+  n_tlr_known  <- sum(!is.na(df$tlr_num))
   c(
     as.character(n),
     fmt_mean_sd(df$Age),
@@ -385,17 +409,18 @@ build_col <- function(df) {
     fmt_n_pct(sum(df$Death),       n),
     fmt_n_pct(sum(df$Progression), n),
     fmt_n_pct(sum(df$crp_num),      n),
-    fmt_n_pct(sum(df$tlr_num),      n),
+    fmt_n_pct(sum(df$tlr_num, na.rm = TRUE), n_tlr_known),
     fmt_n_pct(sum(df$tmb_braf_num), n)
   )
 }
 
-# Build subgroup data frames
+# Build subgroup data frames. CRP and TMB/BRAF columns use the primary
+# 68-patient cohort; TLR columns use the TLR-complete subset.
 sub_overall <- data_complete
 sub_crp_pos <- data_complete[data_complete$crp_num      == 1, ]
 sub_crp_neg <- data_complete[data_complete$crp_num      == 0, ]
-sub_tlr_pos <- data_complete[data_complete$tlr_num      == 1, ]
-sub_tlr_neg <- data_complete[data_complete$tlr_num      == 0, ]
+sub_tlr_pos <- data_tlr[data_tlr$tlr_num == 1, ]
+sub_tlr_neg <- data_tlr[data_tlr$tlr_num == 0, ]
 sub_tmb_pos <- data_complete[data_complete$tmb_braf_num == 1, ]
 sub_tmb_neg <- data_complete[data_complete$tmb_braf_num == 0, ]
 
@@ -437,7 +462,13 @@ table1_df %>%
   pack_rows("Treatment arm",         5, 6,  bold = TRUE, italic = FALSE) %>%
   pack_rows("Outcome events",        7, 8,  bold = TRUE, italic = FALSE) %>%
   pack_rows("Biomarker prevalence",  9, 11, bold = TRUE, italic = FALSE) %>%
-  footnote(general = "Percentages within each column use the column subgroup as denominator. CRP/TLR/TMB-BRAF rows in the corresponding subgroup column equal 100% by definition.",
+  footnote(general = paste0(
+             "Percentages within each column use the column subgroup as denominator. ",
+             "CRP/TLR/TMB-BRAF rows in the corresponding subgroup column equal 100% by definition. ",
+             "Overall, CRP and TMB/BRAF columns are the primary complete-case cohort (n = ", n_total,
+             "); the TLR columns and the TLR-positive row use the ", n_tlr_total,
+             " patients with a first on-treatment CT scan (", n_tlr_missing,
+             " early deaths have no TLR value). Sex: level 0 of the trial variable is female."),
            footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
@@ -715,40 +746,95 @@ if (nrow(forest_data) > 0) {
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (L2-penalized Cox, alpha = 0) shrinks all coefficients toward zero but does not eliminate any, providing a sensitivity check for the stability of the interaction estimates. The same unified model formula is used; only the main effects (CRP and TMB/BRAF) are penalized.
+Ridge regression (L2-penalized Cox, alpha = 0) shrinks coefficients toward zero but does not eliminate any, providing a sensitivity check for the stability of the interaction estimates. The same unified model terms are used, entered through an explicit design matrix in which the CRP x Rx and TMB/BRAF x Rx product terms are built before fitting, so each ridge interaction coefficient is the single treatment-by-biomarker contrast that the Firth model estimates (issue #153). Only the biomarker main effects (CRP and TMB/BRAF) are penalized; Age, sex, Rx and the two interaction terms carry a penalty factor of zero. The penalty lambda is chosen by 10-fold cross-validation of the partial-likelihood deviance (`glmnet::cv.glmnet`, `lambda.min`), with fold assignment seeded for reproducibility.
 
 ```{r ridge-regression, include=FALSE}
 # =============================================================================
-# RIDGE REGRESSION SENSITIVITY ANALYSIS (unified model)
-# Penalize main effects (CRP, TMB/BRAF); interaction terms are unpenalized
+# RIDGE REGRESSION SENSITIVITY ANALYSIS (unified model), glmnet with CV lambda
+#
+# Why an explicit design matrix (issue #153): survival::ridge() with a factor Rx
+# and `crp_num:Rx` in the formula codes the interaction for BOTH arm levels
+# (RxControl:crp_num and RxExperimental:crp_num), i.e. the CRP slope within
+# each arm rather than the CRP x Rx contrast. Building crp_x_rx = crp * Rx_num
+# beforehand gives the same single interaction coefficient as the Firth model.
+#
+# Penalty design: L2 penalty on the biomarker main effects only (penalty
+# factor 1 for crp and tmb_braf, 0 for Age, sex, Rx, and both interactions).
+# Lambda: 10-fold CV of the Cox partial-likelihood deviance, lambda.min.
+# glmnet reports no standard errors, so the ridge estimates are point estimates.
 # =============================================================================
 
-tryCatch({
-  ridge_os <- coxph(
-    Surv(OSwk, Death) ~ Age + sex + Rx +
-      ridge(crp_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx + tmb_braf_num:Rx,
-    data = data_complete
+ridge_design <- function(df) {
+  cbind(
+    Age           = df$Age,
+    sex_male      = as.numeric(df$sex == SEX_MALE_LEVEL),
+    Rx            = df$Rx_num,
+    crp           = df$crp_num,
+    tmb_braf      = df$tmb_braf_num,
+    crp_x_rx      = df$crp_num * df$Rx_num,
+    tmb_braf_x_rx = df$tmb_braf_num * df$Rx_num
   )
-  ridge_os_ok <- TRUE
-}, error = function(e) { ridge_os_ok <<- FALSE; ridge_os <<- NULL })
+}
+ridge_penalty_factor <- c(Age = 0, sex_male = 0, Rx = 0, crp = 1, tmb_braf = 1,
+                          crp_x_rx = 0, tmb_braf_x_rx = 0)
+RIDGE_NFOLDS <- 10
 
-tryCatch({
-  ridge_pfs <- coxph(
-    Surv(PFSwk, Progression) ~ Age + sex + Rx +
-      ridge(crp_num, tmb_braf_num, theta = 1, scale = TRUE) +
-      crp_num:Rx + tmb_braf_num:Rx,
-    data = data_complete
-  )
-  ridge_pfs_ok <- TRUE
-}, error = function(e) { ridge_pfs_ok <<- FALSE; ridge_pfs <<- NULL })
+fit_ridge_cv <- function(time, event, X, penalty_factor, seed = analysis_seed,
+                         nfolds = RIDGE_NFOLDS) {
+  stopifnot(identical(colnames(X), names(penalty_factor)))
+  y <- survival::Surv(time, event)
+  set.seed(seed)
+  tryCatch({
+    cvfit <- glmnet::cv.glmnet(
+      x = X, y = y, family = "cox", alpha = 0,
+      penalty.factor = unname(penalty_factor),
+      nfolds = nfolds, standardize = TRUE
+    )
+    beta <- as.matrix(coef(cvfit, s = "lambda.min"))[, 1]
+    list(
+      cvfit = cvfit,
+      lambda_min = cvfit$lambda.min,
+      lambda_1se = cvfit$lambda.1se,
+      coefs = data.frame(Term = names(beta), HR = exp(beta), SE = NA_real_,
+                         stringsAsFactors = FALSE)
+    )
+  }, error = function(e) {
+    warning("glmnet ridge fit failed: ", conditionMessage(e))
+    NULL
+  })
+}
 
-# Use "Experimental" in pattern to avoid matching RxControl arm coefficients
-# (survival::ridge() with a factor Rx creates both arms; we want the experimental arm)
-ridge_crp_os  <- if (exists("ridge_os")  && !is.null(ridge_os))  extract_ridge_interaction(ridge_os,  "Experimental.*crp|crp.*Experimental")  else list(HR = NA, SE = NA)
-ridge_tmb_os  <- if (exists("ridge_os")  && !is.null(ridge_os))  extract_ridge_interaction(ridge_os,  "Experimental.*tmb|tmb.*Experimental")  else list(HR = NA, SE = NA)
-ridge_crp_pfs <- if (exists("ridge_pfs") && !is.null(ridge_pfs)) extract_ridge_interaction(ridge_pfs, "Experimental.*crp|crp.*Experimental")  else list(HR = NA, SE = NA)
-ridge_tmb_pfs <- if (exists("ridge_pfs") && !is.null(ridge_pfs)) extract_ridge_interaction(ridge_pfs, "Experimental.*tmb|tmb.*Experimental")  else list(HR = NA, SE = NA)
+X_primary <- ridge_design(data_complete)
+ridge_os_fit  <- fit_ridge_cv(data_complete$OSwk,  data_complete$Death,
+                              X_primary, ridge_penalty_factor)
+ridge_pfs_fit <- fit_ridge_cv(data_complete$PFSwk, data_complete$Progression,
+                              X_primary, ridge_penalty_factor)
+ridge_os_ok  <- !is.null(ridge_os_fit)
+ridge_pfs_ok <- !is.null(ridge_pfs_fit)
+
+get_ridge_term <- function(fit, term) {
+  if (is.null(fit)) return(list(HR = NA_real_, SE = NA_real_))
+  idx <- match(term, fit$coefs$Term)
+  if (is.na(idx)) return(list(HR = NA_real_, SE = NA_real_))
+  list(HR = fit$coefs$HR[idx], SE = NA_real_)
+}
+
+ridge_crp_os  <- get_ridge_term(ridge_os_fit,  "crp_x_rx")
+ridge_tmb_os  <- get_ridge_term(ridge_os_fit,  "tmb_braf_x_rx")
+ridge_crp_pfs <- get_ridge_term(ridge_pfs_fit, "crp_x_rx")
+ridge_tmb_pfs <- get_ridge_term(ridge_pfs_fit, "tmb_braf_x_rx")
+
+fmt_lambda <- function(fit) if (is.null(fit)) "--" else sprintf("%.3f", fit$lambda_min)
+ridge_lambda_os  <- fmt_lambda(ridge_os_fit)
+ridge_lambda_pfs <- fmt_lambda(ridge_pfs_fit)
+
+# Qualitative label for the Firth -> ridge shift, used in the narrative so the
+# wording follows the numbers (a >= 1.5-fold change in HR is called substantial).
+shift_word <- function(firth_hr, ridge_hr, threshold = 1.5) {
+  if (is.na(firth_hr) || is.na(ridge_hr)) return("cannot be assessed")
+  ratio <- exp(abs(log(ridge_hr) - log(firth_hr)))
+  if (ratio >= threshold) "changes substantially" else "changes little"
+}
 ```
 
 ```{r table-ridge-os}
@@ -772,8 +858,11 @@ data.frame(
         caption = "Overall Survival: Firth vs Ridge Regression",
         booktabs = TRUE, format = "latex") %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Ridge: L2 shrinkage on main effects. Substantial shrinkage vs Firth = estimate sensitive to regularization.",
-           footnote_as_chunk = TRUE)
+  footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
+                            "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
+                            "-fold CV (lambda.min = ", ridge_lambda_os, "). glmnet gives no standard errors. ",
+                            "A substantial shift vs Firth = estimate sensitive to regularization."),
+           footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
 ```{r table-ridge-pfs}
@@ -792,11 +881,13 @@ data.frame(
         caption = "Progression-Free Survival: Firth vs Ridge Regression",
         booktabs = TRUE, format = "latex") %>%
   kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Ridge applies L2 shrinkage to main effects only.",
-           footnote_as_chunk = TRUE)
+  footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
+                            "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
+                            "-fold CV (lambda.min = ", ridge_lambda_pfs, "). glmnet gives no standard errors."),
+           footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
-**Interpretation:** Firth provides the best unbiased point estimate given the sample size and data structure. Ridge applies L2 shrinkage toward zero (HR toward 1.0). Comparing the two methods reveals estimate stability: if Firth and Ridge agree closely, the estimate is robust; if Ridge substantially shrinks the interaction toward null, the effect is sensitive to regularization in this sample.
+**Interpretation:** Firth provides the best unbiased point estimate given the sample size and data structure. Ridge applies L2 shrinkage to the biomarker main effects (HR toward 1.0) with the penalty strength chosen by cross-validation; the interaction terms are unpenalized, so any movement in them reflects redistribution of the shrunken main-effect signal. Comparing the two methods reveals estimate stability: if Firth and Ridge agree closely, the estimate is robust; if the interaction moves substantially under ridge, the effect is sensitive to how the biomarker main effects are estimated in this sample.
 
 \newpage
 
@@ -809,8 +900,8 @@ The model adjusts for the pre-immunotherapy biomarkers **CRP** and **TMB/BRAF** 
 **Formula:** `Surv(time, event) ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx`
 
 ```{r tlr-descriptive, include=FALSE}
-# Descriptive TLR statistics by treatment arm
-tlr_by_arm <- data_complete %>%
+# Descriptive TLR statistics by treatment arm (TLR-complete subset)
+tlr_by_arm <- data_tlr %>%
   group_by(Rx) %>%
   summarise(
     n = n(),
@@ -838,11 +929,11 @@ tlr_by_arm %>%
 ### Kaplan-Meier Curves Stratified by TLR
 
 ```{r km-tlr, fig.height=5, fig.width=10}
-km_os_tlr  <- survfit(Surv(OSwk, Death)       ~ tlr_num, data = data_complete)
-km_pfs_tlr <- survfit(Surv(PFSwk, Progression) ~ tlr_num, data = data_complete)
+km_os_tlr  <- survfit(Surv(OSwk, Death)       ~ tlr_num, data = data_tlr)
+km_pfs_tlr <- survfit(Surv(PFSwk, Progression) ~ tlr_num, data = data_tlr)
 
 p_os <- ggsurvplot(
-  km_os_tlr, data = data_complete,
+  km_os_tlr, data = data_tlr,
   pval = TRUE, conf.int = FALSE,
   legend.labs = c("TLR-negative", "TLR-positive"),
   title = "Overall Survival by TLR status",
@@ -851,7 +942,7 @@ p_os <- ggsurvplot(
 )$plot
 
 p_pfs <- ggsurvplot(
-  km_pfs_tlr, data = data_complete,
+  km_pfs_tlr, data = data_tlr,
   pval = TRUE, conf.int = FALSE,
   legend.labs = c("TLR-negative", "TLR-positive"),
   title = "Progression-Free Survival by TLR status",
@@ -878,11 +969,13 @@ formula_tlr_os  <- Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
 formula_tlr_pfs <- Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
                                               tlr_num + tlr_num:Rx
 
-std_tlr_os  <- coxph(formula_tlr_os,  data = data_complete)
-std_tlr_pfs <- coxph(formula_tlr_pfs, data = data_complete)
+# TLR-complete subset (n = n_tlr_total): TLR is undefined for early deaths
+# before the first on-treatment CT scan.
+std_tlr_os  <- coxph(formula_tlr_os,  data = data_tlr)
+std_tlr_pfs <- coxph(formula_tlr_pfs, data = data_tlr)
 
-model_tlr_os  <- fit_firth_cox(formula_tlr_os,  data_complete, "TLR OS")
-model_tlr_pfs <- fit_firth_cox(formula_tlr_pfs, data_complete, "TLR PFS")
+model_tlr_os  <- fit_firth_cox(formula_tlr_os,  data_tlr, "TLR OS")
+model_tlr_pfs <- fit_firth_cox(formula_tlr_pfs, data_tlr, "TLR PFS")
 
 results_tlr_os  <- extract_coxphf_results(model_tlr_os)
 results_tlr_pfs <- extract_coxphf_results(model_tlr_pfs)
@@ -1008,14 +1101,14 @@ Ridge regression is applied here with a targeted penalty: only the TLR main effe
 # survival::ridge() takes raw variables, so pre-construct the interaction.
 # =============================================================================
 
-data_complete$tlr_x_rx <- data_complete$tlr_num * data_complete$Rx_num
+data_tlr$tlr_x_rx <- data_tlr$tlr_num * data_tlr$Rx_num
 
 ridge_tlr_os_ok <- TRUE
 tryCatch({
   ridge_tlr_os <- coxph(
     Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
       ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-    data = data_complete
+    data = data_tlr
   )
 }, error = function(e) { ridge_tlr_os_ok <<- FALSE; ridge_tlr_os <<- NULL })
 
@@ -1024,7 +1117,7 @@ tryCatch({
   ridge_tlr_pfs <- coxph(
     Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
       ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-    data = data_complete
+    data = data_tlr
   )
 }, error = function(e) { ridge_tlr_pfs_ok <<- FALSE; ridge_tlr_pfs <<- NULL })
 
@@ -1161,10 +1254,12 @@ If the true response-assessment week differs from 9, only the single `LANDMARK_W
 # =============================================================================
 LANDMARK_WK <- 9
 
-data_lm_os <- data_complete[data_complete$OSwk >= LANDMARK_WK, ]
+# Landmark cohorts are built from the TLR-complete subset (the responder
+# analysis cohort), so attrition is measured against n_tlr_total.
+data_lm_os <- data_tlr[data_tlr$OSwk >= LANDMARK_WK, ]
 data_lm_os$OSwk_lm <- data_lm_os$OSwk - LANDMARK_WK
 
-data_lm_pfs <- data_complete[data_complete$PFSwk >= LANDMARK_WK, ]
+data_lm_pfs <- data_tlr[data_tlr$PFSwk >= LANDMARK_WK, ]
 data_lm_pfs$PFSwk_lm <- data_lm_pfs$PFSwk - LANDMARK_WK
 
 # Pre-build the ridge interaction term on each landmark cohort
@@ -1174,10 +1269,10 @@ data_lm_pfs$tlr_x_rx <- data_lm_pfs$tlr_num * data_lm_pfs$Rx_num
 # Attrition / sample-size accounting
 lm_attrition <- data.frame(
   Endpoint = c("Overall survival", "Progression-free survival"),
-  N_total = c(nrow(data_complete), nrow(data_complete)),
+  N_total = c(nrow(data_tlr), nrow(data_tlr)),
   N_landmark = c(nrow(data_lm_os), nrow(data_lm_pfs)),
-  N_excluded = c(nrow(data_complete) - nrow(data_lm_os),
-                 nrow(data_complete) - nrow(data_lm_pfs)),
+  N_excluded = c(nrow(data_tlr) - nrow(data_lm_os),
+                 nrow(data_tlr) - nrow(data_lm_pfs)),
   Events_landmark = c(sum(data_lm_os$Death), sum(data_lm_pfs$Progression)),
   stringsAsFactors = FALSE
 )
@@ -1186,8 +1281,8 @@ lm_attrition <- data.frame(
 # SAME first on-treatment scan, patients who progress at that scan are excluded
 # from the landmark cohort and are, by construction, TLR-negative. Quantify this
 # so the prose can report the entanglement honestly.
-pfs_excl <- data_complete[data_complete$PFSwk < LANDMARK_WK, ]
-os_excl  <- data_complete[data_complete$OSwk  < LANDMARK_WK, ]
+pfs_excl <- data_tlr[data_tlr$PFSwk < LANDMARK_WK, ]
+os_excl  <- data_tlr[data_tlr$OSwk  < LANDMARK_WK, ]
 n_pfs_excl          <- nrow(pfs_excl)
 n_pfs_excl_prog     <- sum(pfs_excl$Progression == 1)
 n_pfs_excl_prog_tn  <- sum(pfs_excl$Progression == 1 & pfs_excl$tlr_num == 0)
@@ -1198,7 +1293,7 @@ n_os_excl_death     <- sum(os_excl$Death == 1)
 
 ```{r table-lm-attrition}
 lm_attrition %>%
-  kable(col.names = c("Endpoint", "N randomized (complete cases)",
+  kable(col.names = c("Endpoint", "N in TLR-complete cohort",
                       "N at risk at week 9", "N excluded (event/censor < week 9)",
                       "Events from week 9"),
         caption = "Week-9 landmark cohort: attrition and remaining events",
@@ -1281,7 +1376,7 @@ render_lm_char_table(
 )
 ```
 
-Because no patient dies or is censored before week 9, the OS at-risk set coincides with the full complete-case cohort (n = `r nrow(data_lm_os)`).
+Because no patient dies or is censored before week 9, the OS at-risk set coincides with the full TLR-complete cohort (n = `r nrow(data_lm_os)`; the three early deaths without a TLR value are already outside this cohort).
 
 #### Progression-free-survival at-risk set (PFSwk >= 9)
 
@@ -1561,7 +1656,7 @@ The PH assumption was well supported in overall survival (Schoenfeld global p = 
 
 ## Ridge regression sensitivity
 
-For OS, the CRP × Rx estimate changes substantially when the biomarker main effects are penalized (Firth HR `r hr_pt(hr_crp_os)` → Ridge HR `r hr_pt(ridge_crp_os)`), indicating that the OS estimate is sensitive to model specification and should be treated as imprecise. The TMB/BRAF × Rx OS estimate changes little (`r hr_pt(hr_tmb_os)` → `r hr_pt(ridge_tmb_os)`), consistent with a near-null interaction. For PFS, both interaction estimates also move under Ridge (CRP × Rx `r hr_pt(hr_crp_pfs)` → `r hr_pt(ridge_crp_pfs)`; TMB/BRAF × Rx `r hr_pt(hr_tmb_pfs)` → `r hr_pt(ridge_tmb_pfs)`). Because only the main effects are penalized, a shift in the interaction terms reflects redistribution of the shrunken main-effect signal rather than independent support for a particular effect size; the PFS interaction estimates are therefore not stable under regularization and should not be over-interpreted.
+The ridge model penalizes the CRP and TMB/BRAF main effects with a cross-validated lambda (OS lambda.min = `r ridge_lambda_os`, PFS lambda.min = `r ridge_lambda_pfs`) and estimates the interaction terms as pre-built product terms, so the ridge and Firth interaction coefficients are the same treatment-by-biomarker contrast. For OS, the CRP × Rx estimate `r shift_word(hr_crp_os$HR, ridge_crp_os$HR)` under this penalization (Firth HR `r hr_pt(hr_crp_os)` → Ridge HR `r hr_pt(ridge_crp_os)`), and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_os$HR, ridge_tmb_os$HR)` (`r hr_pt(hr_tmb_os)` → `r hr_pt(ridge_tmb_os)`). For PFS, the CRP × Rx estimate `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (`r hr_pt(hr_crp_pfs)` → `r hr_pt(ridge_crp_pfs)`) and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_pfs$HR, ridge_tmb_pfs$HR)` (`r hr_pt(hr_tmb_pfs)` → `r hr_pt(ridge_tmb_pfs)`). A shift of at least 1.5-fold in the HR is labelled "substantial". Because only the main effects are penalized, any shift in an interaction term reflects redistribution of the shrunken main-effect signal rather than independent support for a particular effect size: an interaction that moves substantially is sensitive to how the biomarker main effects are estimated and should not be over-interpreted, while one that changes little is not driven by the main-effect estimates.
 
 ## TLR responder analysis (exploratory)
 
@@ -1590,7 +1685,7 @@ A **week-9 landmark analysis** conditions on survival to the second (first on-tr
 | CRP × Rx    | `r hr_txt(hr_crp_os)` | `r format_pvalue(p_crp_os)` | `r hr_txt(hr_crp_pfs)` | `r format_pvalue(p_crp_pfs)` |
 | TMB/BRAF × Rx | `r hr_txt(hr_tmb_os)` | `r format_pvalue(p_tmb_os)` | `r hr_txt(hr_tmb_pfs)` | `r format_pvalue(p_tmb_pfs)` |
 
-No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_pfs)`) is the strongest directional signal but is not stable under Ridge regularization (Ridge HR `r hr_pt(ridge_crp_pfs)`). TMB/BRAF OS shows a near-null interaction (Ridge HR `r hr_pt(ridge_tmb_os)` ≈ Firth `r hr_pt(hr_tmb_os)`). The PFS PH departure concerns the biomarker main effects, not the interaction terms.
+No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_pfs)`) is the strongest directional signal; under ridge regularization of the biomarker main effects (glmnet, CV lambda) it `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (Ridge HR `r hr_pt(ridge_crp_pfs)`). The TMB/BRAF × Rx OS interaction `r shift_word(hr_tmb_os$HR, ridge_tmb_os$HR)` (Ridge HR `r hr_pt(ridge_tmb_os)` vs Firth `r hr_pt(hr_tmb_os)`). The PFS PH departure concerns the biomarker main effects, not the interaction terms.
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
 
@@ -1600,4 +1695,4 @@ No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_p
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.4
+**Report version:** 3.5

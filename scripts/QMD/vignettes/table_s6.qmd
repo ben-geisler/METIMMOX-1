@@ -16,7 +16,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "08b"),
-  funs = "report_format",
+  funs = c("cea_helpers", "report_format"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
                "flexsurv", "survival"),
   set_theme = FALSE,
@@ -32,6 +32,7 @@ display_df <- enriched_comparison %>%
     Base_Cost = format_eur(Base_Cost),
     Base_Effect = sprintf("%.3f", Base_Effect),
     Base_ICER = format_icer(Base_ICER, Base_Status),
+    Base_Frontier = frontier_label(Base_Frontier_Status),
     Enr_Cost = format_eur(Enr_Cost),
     Enr_Effect = sprintf("%.3f", Enr_Effect),
     Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
@@ -49,7 +50,10 @@ kable(
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 10) %>%
   footnote(
-    general = "Base case compares each guided strategy with overall standard care; enriched analysis compares biomarker-positive experimental and biomarker-positive control arms.",
+    general = c(
+      "All ICERs are pairwise comparisons against standard of care. Base case compares each guided strategy with overall standard care; enriched analysis compares biomarker-positive experimental and biomarker-positive control arms.",
+      "Base_Frontier is the dampack efficiency-frontier status of the guided strategy among the three base-case strategies. A frontier-dominated strategy (more costly and less effective than the other guided strategy) still has a finite pairwise ICER; the percentage change is shown only for frontier strategies with finite, positive pairwise ICERs in both analyses."
+    ),
     general_title = "Notes: "
   )
 ```

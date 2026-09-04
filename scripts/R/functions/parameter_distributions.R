@@ -121,3 +121,59 @@ configure_parameter_distributions <- function(params) {
     spec = spec
   )
 }
+
+# ===============================================================================
+# DETERMINISTIC SENSITIVITY-ANALYSIS RANGES AND STRUCTURAL SCENARIOS
+# ===============================================================================
+# Single source of truth for the one-way DSA bounds (09_DSA.R, figure2.qmd) and
+# for the input-parameter table (table_1.qmd), so the published ranges always
+# correspond to an analysis that is actually run (issue #153).
+
+#' One-way DSA bounds: base value +/- mult, capped to the parameter's support
+#'
+#' @param params Base-case parameter list (l_params_base).
+#' @param distributions Named list from create_parameter_distributions();
+#'   names(distributions) define the DSA parameter set.
+#' @param groups Parameter groups from create_parameter_groups().
+#' @param mult Proportional variation (default DSA_mult, +/-20%).
+#' @return Data frame with columns pars, min, max.
+build_dsa_ranges <- function(params, distributions, groups, mult = DSA_mult) {
+  pars <- names(distributions)
+  ranges <- data.frame(
+    pars = pars,
+    min = unlist(params[pars]) * (1 - mult),
+    max = unlist(params[pars]) * (1 + mult),
+    stringsAsFactors = FALSE
+  )
+  bounded_zero <- ranges$pars %in% c(groups$all_costs, groups$prevalence)
+  bounded_one  <- ranges$pars %in% c(groups$utilities, groups$prevalence)
+  ranges$min[bounded_zero] <- pmax(ranges$min[bounded_zero], 0)
+  ranges$max[bounded_one]  <- pmin(ranges$max[bounded_one], 1)
+  if (any(ranges$min > ranges$max)) {
+    stop("Invalid DSA ranges (min > max) for: ",
+         paste(ranges$pars[ranges$min > ranges$max], collapse = ", "))
+  }
+  rownames(ranges) <- NULL
+  ranges
+}
+
+#' Deterministic structural scenarios run alongside the one-way DSA
+#'
+#' Discount rate (applied to costs and QALYs) and model time horizon. The
+#' values here are what 09_DSA.R runs and what table_1.qmd prints as ranges.
+#'
+#' @param base_dr Base-case annual discount rate.
+#' @param base_horizon_years Base-case time horizon in years.
+#' @return Named list; each element has label, unit, base, min, max.
+dsa_structural_scenarios <- function(base_dr, base_horizon_years) {
+  list(
+    Discount_rate = list(
+      label = "Discount rate (costs and QALYs)", unit = "rate",
+      base = base_dr, min = 0, max = 0.08
+    ),
+    Time_horizon = list(
+      label = "Time horizon", unit = "years",
+      base = base_horizon_years, min = 5, max = 20
+    )
+  )
+}

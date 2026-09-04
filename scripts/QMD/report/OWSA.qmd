@@ -141,12 +141,66 @@ if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
 }
 ```
 
+# Structural Scenarios: Discount Rate and Time Horizon
+
+The discount rate (applied to costs and QALYs together) and the model time horizon are not sampled in the PSA. They are varied here as deterministic structural scenarios (issue #153); these are the ranges reported for the two parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
+
+```{r structural-scenarios}
+scenario_rows <- dsa_results %>%
+  filter(Parameter %in% names(dsa_scenarios) | Parameter == "base_case")
+
+if (any(scenario_rows$Parameter != "base_case")) {
+  # Short labels keep the table within the page width.
+  short_strategy <- c(control = "SoC", crp = "CRP-guided", tmb_braf = "TMB/BRAF-guided")
+  scenario_value_label <- function(parameter, value, param_value) {
+    if (parameter == "base_case") return("Base case")
+    if (parameter == "Discount_rate") return(sprintf("Discount rate %g%%", 100 * param_value))
+    if (parameter == "Time_horizon") return(sprintf("Time horizon %g years", param_value))
+    sprintf("%s = %g", parameter, param_value)
+  }
+  scenario_display <- scenario_rows %>%
+    mutate(
+      Scenario = mapply(scenario_value_label, Parameter, Value, ParamValue),
+      Strategy = unname(short_strategy[Strategy])
+    ) %>%
+    group_by(Scenario) %>%
+    mutate(Optimal = Strategy[which.max(NMB)]) %>%
+    ungroup() %>%
+    select(Scenario, Strategy, NMB, Optimal) %>%
+    tidyr::pivot_wider(names_from = Strategy, values_from = NMB)
+
+  nmb_cols <- setdiff(names(scenario_display), c("Scenario", "Optimal"))
+  out <- scenario_display[, c("Scenario", nmb_cols, "Optimal")]
+  out[nmb_cols] <- lapply(out[nmb_cols], format_eur)
+
+  knitr::kable(
+    out,
+    booktabs = TRUE,
+    align = c("l", rep("r", length(nmb_cols)), "l"),
+    col.names = c("Scenario", paste("NMB", nmb_cols), "Optimal"),
+    caption = paste0("Net monetary benefit under structural scenarios at WTP = EUR ",
+                     format(WTP, big.mark = ","), " (discount rate applies to costs and QALYs)")
+  ) %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+} else {
+  cat("No structural scenario results are available (see the 09_DSA.R log for failed scenarios).")
+}
+```
+
+```{r structural-scenario-failures}
+failed <- names(dsa_scenario_status)[!unlist(dsa_scenario_status)]
+if (length(failed) > 0) {
+  cat("The following structural scenarios could not be evaluated and are omitted above:",
+      paste(failed, collapse = ", "), ".")
+}
+```
+
 # Interpretation
 
-The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input.
+The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate and time horizon move the NMB of every strategy; these parameters are fixed in the PSA.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 4.1

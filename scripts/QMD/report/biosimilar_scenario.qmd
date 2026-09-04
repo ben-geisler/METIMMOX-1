@@ -34,27 +34,14 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
-  funs = c("model_fun", "calculate_outcomes", "report_format"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format"),
   set_theme = FALSE
 )
 
+# Pairwise ICERs versus standard of care plus the dampack frontier status
+# (issue #153): the two conventions are reported side by side, never mixed.
 run_pairwise <- function(params) {
-  results <- model_fun(params, determpsa = "det")
-  control <- results[results$Strategy == "control", ]
-  pairwise <- results %>%
-    mutate(
-      Inc_Cost = Cost - control$Cost,
-      Inc_Effect = Effect - control$Effect,
-      ICER = Inc_Cost / Inc_Effect,
-      Status = case_when(
-        Strategy == "control" ~ "Reference",
-        Inc_Cost > 0 & Inc_Effect <= 0 ~ "Dominated",
-        Inc_Cost < 0 & Inc_Effect > 0 ~ "Cost-saving",
-        TRUE ~ "Non-dominated"
-      )
-    )
-  pairwise$ICER[pairwise$Strategy == "control"] <- NA_real_
-  pairwise
+  calculate_pairwise_icers(model_fun(params, determpsa = "det"))
 }
 
 base_params <- l_params_base
@@ -95,7 +82,7 @@ knitr::kable(
 # Deterministic Results
 
 ```{r scenario-results}
-scenario_display <- bind_rows(
+scenario_all <- bind_rows(
   base_results %>% mutate(Scenario = "Base case"),
   biosimilar_results %>% mutate(Scenario = "Biosimilar")
 ) %>%
@@ -103,21 +90,44 @@ scenario_display <- bind_rows(
     Strategy = strategy_label(Strategy),
     Cost = format_eur(Cost),
     Effect = sprintf("%.3f", Effect),
-    Inc_Cost = format_eur(Inc_Cost),
-    Inc_Effect = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
-    ICER = mapply(format_icer, ICER, Status)
-  ) %>%
-  select(Scenario, Strategy, Cost, Effect, Inc_Cost, Inc_Effect, ICER, Status)
+    Inc_Cost = ifelse(Status == "Reference", "--", format_eur(Inc_Cost)),
+    Inc_Effect = ifelse(Status == "Reference", "--", sprintf("%.3f", Inc_Effect)),
+    ICER = mapply(format_icer, ICER, Status),
+    Frontier = frontier_label(Frontier_Status)
+  )
 
 knitr::kable(
-  scenario_display,
+  scenario_all %>% select(Scenario, Strategy, Cost, Effect),
   booktabs = TRUE,
-  align = c("l", "l", "r", "r", "r", "r", "r", "l"),
-  col.names = c("Scenario", "Strategy", "Cost", "QALYs",
-                "Incremental Cost", "Incremental QALYs", "ICER", "Status"),
-  caption = "Base case and biosimilar deterministic cost-effectiveness results"
+  align = c("l", "l", "r", "r"),
+  col.names = c("Scenario", "Strategy", "Cost", "QALYs"),
+  caption = "Base case and biosimilar deterministic results: discounted cost and QALYs per patient"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r scenario-incremental}
+knitr::kable(
+  scenario_all %>% select(Scenario, Strategy, Inc_Cost, Inc_Effect, ICER, Status, Frontier),
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "l", "l"),
+  col.names = c("Scenario", "Strategy", "Incr. cost", "Incr. QALYs", "ICER",
+                "Pairwise status", "Frontier"),
+  caption = "Incremental results versus standard of care (pairwise convention) with the efficiency-frontier status"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
+  kableExtra::footnote(
+    general = paste(
+      "Incremental cost, incremental QALYs and ICER compare each guided strategy",
+      "with standard of care (pairwise convention). 'Frontier' is the dampack",
+      "efficiency-frontier status across all three strategies; a strategy can be",
+      "dominated on the frontier (more costly and less effective than another",
+      "guided strategy) while still having a finite pairwise ICER versus standard",
+      "of care. Percentage changes between pairwise ICERs of frontier-dominated",
+      "strategies are not reported."
+    ),
+    threeparttable = TRUE
+  )
 ```
 
 ```{r nmb-plot, fig.cap="Net monetary benefit by pricing scenario"}
@@ -148,4 +158,4 @@ The biosimilar scenario is evaluated with the same single joint economic surviva
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 4.1

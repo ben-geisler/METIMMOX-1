@@ -51,13 +51,21 @@ dist_colors <- c(
 )
 
 dist_labels <- c(
-  "gamma" = "Gamma (selected)",
+  "gamma" = "Gamma",
   "weibull" = "Weibull",
   "lognormal" = "Log-normal",
   "llogis" = "Log-logistic",
   "gompertz" = "Gompertz",
   "gengamma" = "Gen. gamma"
 )
+
+# Mark the distribution(s) actually selected by the ordering-constrained
+# selection in script 04 instead of hard-coding "Gamma (selected)" (issue #153).
+selected_dists <- unique(c(models$best_fit$os_distribution,
+                           models$best_fit$pfs_distribution))
+for (d in intersect(selected_dists, names(dist_labels))) {
+  dist_labels[d] <- paste0(dist_labels[d], " (selected)")
+}
 
 # Generate predictions for control arm under each distribution
 control_data <- data_complete

@@ -44,11 +44,19 @@ coef_table <- function(fit, outcome, distribution) {
   tab <- as.data.frame(fit$res)
   tab$Parameter <- rownames(tab)
   rownames(tab) <- NULL
+  # flexsurvreg: baseline distribution parameters are reported on their natural
+  # scale; covariate effects are on the log of the location parameter
+  # (issue #153: state the scale explicitly instead of leaving it implicit).
+  baseline_pars <- fit$dlist$pars
+  location <- fit$dlist$location
   tab %>%
     transmute(
       Outcome = outcome,
       Distribution = distribution,
       Parameter,
+      Scale = ifelse(Parameter %in% baseline_pars,
+                     "baseline parameter (natural scale)",
+                     paste0("covariate effect on log(", location, ")")),
       Estimate = est,
       SE = se,
       L95 = `L95%`,
@@ -98,23 +106,33 @@ knitr::kable(formula_df, booktabs = TRUE, align = c("l", "l"),
 
 # Distribution Selection
 
+```{r selection-summary, include=FALSE}
+selected_os  <- models$best_fit$os_distribution
+selected_pfs <- models$best_fit$pfs_distribution
+ordered_selection <- models$ordered_selection
+```
+
+The OS and PFS distributions are selected **jointly** from the nine candidate families: the selected pair is the one with the lowest combined AIC among all pairs whose population-averaged curves satisfy OS >= PFS for control and every economic biomarker subgroup at every weekly time point of the `r time_horizon / 52`-year horizon. Under this rule the selected pair is **OS `r selected_os` / PFS `r selected_pfs`** (combined AIC `r sprintf("%.2f", models$best_fit$combined_aic)`), which is `r sprintf("%.2f", ordered_selection$ic_penalty)` AIC above the unconstrained minimum-AIC pair. The lowest marginal-AIC distribution of an endpoint taken on its own is therefore not necessarily the selected one; the "Selected" column marks the distributions in use.
+
 ```{r os-ic}
 os_ic <- models$full$os_ic %>%
   filter(!is.na(AIC)) %>%
   arrange(AIC) %>%
   mutate(
     delta_AIC = AIC - min(AIC),
-    delta_BIC = BIC - min(BIC)
+    delta_BIC = BIC - min(BIC),
+    Selected = ifelse(Distribution == selected_os, "Yes", "")
   )
 
 knitr::kable(
   os_ic,
   booktabs = TRUE,
   digits = 2,
-  align = "r",
-  caption = "Overall survival distribution comparison"
+  align = c("l", rep("r", 4), "c"),
+  caption = "Overall survival distribution comparison (ordered by marginal AIC)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::row_spec(which(os_ic$Selected == "Yes"), bold = TRUE)
 ```
 
 ```{r pfs-ic}
@@ -123,20 +141,57 @@ pfs_ic <- models$full$pfs_ic %>%
   arrange(AIC) %>%
   mutate(
     delta_AIC = AIC - min(AIC),
-    delta_BIC = BIC - min(BIC)
+    delta_BIC = BIC - min(BIC),
+    Selected = ifelse(Distribution == selected_pfs, "Yes", "")
   )
 
 knitr::kable(
   pfs_ic,
   booktabs = TRUE,
   digits = 2,
-  align = "r",
-  caption = "Progression-free survival distribution comparison"
+  align = c("l", rep("r", 4), "c"),
+  caption = "Progression-free survival distribution comparison (ordered by marginal AIC)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::row_spec(which(pfs_ic$Selected == "Yes"), bold = TRUE)
+```
+
+```{r pair-audit}
+pairs <- ordered_selection$pairs
+n_show <- min(12, nrow(pairs))
+sel_idx <- which(pairs$os_distribution == selected_os & pairs$pfs_distribution == selected_pfs)
+show_idx <- sort(unique(c(seq_len(n_show), sel_idx)))
+
+pairs_display <- pairs[show_idx, ] %>%
+  transmute(
+    Rank = show_idx,
+    `OS distribution` = os_distribution,
+    `PFS distribution` = pfs_distribution,
+    `Combined AIC` = sprintf("%.2f", combined_ic),
+    `OS >= PFS` = ifelse(ordered, "Yes", "No"),
+    `Violating points` = ifelse(is.na(n_violations), "--", as.character(n_violations)),
+    Selected = ifelse(os_distribution == selected_os & pfs_distribution == selected_pfs, "Yes", "")
+  )
+
+knitr::kable(
+  pairs_display,
+  booktabs = TRUE,
+  row.names = FALSE,
+  align = c("r", "l", "l", "r", "c", "r", "c"),
+  caption = sprintf("Joint (OS, PFS) pair audit: top %d of %d pairs by combined AIC plus the selected pair",
+                    n_show, nrow(pairs))
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::row_spec(which(pairs_display$Selected == "Yes"), bold = TRUE) %>%
+  kableExtra::footnote(
+    general = "Violating points: number of (subgroup, week) points at which the population-averaged PFS curve exceeds the OS curve over the model horizon. The selected pair is the lowest combined-AIC pair with no violation.",
+    threeparttable = TRUE
+  )
 ```
 
 # Coefficients
+
+Coefficient scales differ by row type. Rows named after a distribution parameter (for example `shape` and `rate` for the gamma family, `shape` and `scale` for Weibull PH) are the baseline parameters on their natural scale. All covariate rows (Age, sex, Rx, biomarkers and their interactions) are additive effects on the log of the distribution's location parameter (`log(rate)` for gamma, `log(scale)` for Weibull PH, so that exp(coefficient) is a rate ratio for gamma and a hazard ratio for Weibull PH). The `Scale` column states this for every row.
 
 ```{r coefficients}
 coef_rows <- list(
@@ -152,15 +207,20 @@ coef_display <- bind_rows(coef_rows) %>%
     SE = sprintf("%.4f", SE),
     `95% CI` = sprintf("[%.4f, %.4f]", L95, U95)
   ) %>%
-  select(Outcome, Distribution, Parameter, Estimate, SE, `95% CI`)
+  select(Outcome, Distribution, Parameter, Scale, Estimate, SE, `95% CI`)
 
 knitr::kable(
   coef_display,
   booktabs = TRUE,
-  align = c("l", "l", "l", "r", "r", "r"),
-  caption = "Best-fit and Weibull PH coefficient estimates"
+  align = c("l", "l", "l", "l", "r", "r", "r"),
+  caption = sprintf("Selected (OS %s, PFS %s) and Weibull PH coefficient estimates",
+                    selected_os, selected_pfs)
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::footnote(
+    general = "Baseline parameters are on their natural scale; covariate rows are additive effects on the log location parameter (gamma: log(rate), exp(coef) = rate ratio; Weibull PH: log(scale), exp(coef) = hazard ratio).",
+    threeparttable = TRUE
+  )
 ```
 
 # Strategy Survival Curves
@@ -182,10 +242,10 @@ ggplot(plot_data, aes(x = Week, y = Survival, color = Curve, linetype = Curve)) 
 
 # Summary
 
-The economic model uses one joint formula for both CRP-guided and TMB/BRAF-guided strategies. Parametric distribution choice is selected by AIC for each endpoint, with Weibull PH retained as a familiar reference fit.
+The economic model uses one joint formula for both CRP-guided and TMB/BRAF-guided strategies. The OS and PFS distributions are selected jointly as the minimum combined-AIC pair that keeps OS >= PFS for every subgroup over the model horizon (currently OS `r selected_os`, PFS `r selected_pfs`), not by marginal AIC per endpoint; Weibull PH is retained as a familiar reference fit.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.0
+**Report version:** 4.1

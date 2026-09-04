@@ -81,7 +81,9 @@ format_icer <- function(x, status = NULL) {
   }
 
   out <- format_eur(x)
-  out[status %in% c("D", "ED", "Dominated")] <- "Dominated"
+  dominated <- status %in% c("D", "ED", "Dominated") |
+    grepl("^Dominated", status)
+  out[!is.na(dominated) & dominated] <- "Dominated"
   out[status %in% c("Reference", "ref")] <- "--"
   out
 }

@@ -22,112 +22,152 @@ setup_report(
 ```
 
 ```{r build-table, include=FALSE}
-# Compute prevalence 95% CIs (exact binomial)
-n_patients <- nrow(data_complete)
+# =============================================================================
+# Every range and source string is DERIVED from the analysis configuration
+# (issue #153):
+#   - cost, utility and prevalence ranges: the one-way DSA bounds actually run
+#     by 09_DSA.R (build_dsa_ranges(), +/- DSA_mult, capped to the support);
+#   - discount-rate and time-horizon ranges: the deterministic structural
+#     scenarios run by 09_DSA.R (dsa_structural_scenarios());
+#   - utility source: UTILITY_SOURCE switch (02_setup_and_global_variables.R);
+#   - prevalence CIs: exact binomial on the canonical per-biomarker denominators
+#     (patients with a non-missing biomarker value in the trial data, i.e. the
+#     denominators behind p_crp and p_tmb_braf in 03_biomarker_strategies.R).
+# =============================================================================
 
-prev_ci <- function(p, n) {
-  ci <- binom.test(round(p * n), n)$conf.int
-  sprintf("%.2f\u2013%.2f", ci[1], ci[2])
+parameter_config <- configure_parameter_distributions(l_params_base)
+dsa_ranges <- build_dsa_ranges(l_params_base, parameter_config$distributions,
+                               parameter_config$groups, mult = DSA_mult)
+scenarios <- dsa_structural_scenarios(base_dr = dr,
+                                      base_horizon_years = time_horizon / 52)
+
+dsa_range <- function(par, fmt) {
+  row <- dsa_ranges[dsa_ranges$pars == par, ]
+  if (nrow(row) != 1) stop("Parameter not in the DSA range table: ", par)
+  sprintf("%s–%s", fmt(row$min), fmt(row$max))
+}
+fmt_prob <- function(x) sprintf("%.3f", x)
+fmt_util <- function(x) sprintf("%.2f", x)
+fmt_cost <- function(x) format(round(x), big.mark = ",")
+fmt_pct  <- function(x) sprintf("%g%%", 100 * x)
+fmt_yr   <- function(x) sprintf("%g", x)
+
+# Canonical prevalence denominators: every trial patient with a biomarker value.
+n_crp <- sum(!is.na(data$crp))
+n_tmb <- sum(!is.na(data$tmb_braf))
+k_crp <- sum(data$crp == 1, na.rm = TRUE)
+k_tmb <- sum(data$tmb_braf == 1, na.rm = TRUE)
+stopifnot(isTRUE(all.equal(k_crp / n_crp, l_params_base$p_crp)),
+          isTRUE(all.equal(k_tmb / n_tmb, l_params_base$p_tmb_braf)))
+
+prev_ci_note <- function(k, n) {
+  ci <- binom.test(k, n)$conf.int
+  sprintf("%d/%d; 95%% CI %.1f–%.1f%%", k, n, ci[1] * 100, ci[2] * 100)
 }
 
-# Build the table data frame
+# Utility source follows the UTILITY_SOURCE switch.
+utility_meta <- if (UTILITY_SOURCE == 1) {
+  list(source = "CORRECT trial (Gourzoulidis et al. 2018)",
+       note = "EQ-5D in regorafenib-treated mCRC (Grothey et al. 2013)")
+} else {
+  list(source = "METIMMOX EQ-5D-5L (IPD)", note = "Danish tariff")
+}
+
+# PSA distribution family per parameter from the shared specification.
+psa_dist <- function(par) {
+  spec <- parameter_config$spec
+  fam <- spec$distribution[spec$parameter == par]
+  if (length(fam) != 1) return("Fixed")
+  tools::toTitleCase(fam)
+}
+
+scenario_range <- function(name, fmt) {
+  sc <- scenarios[[name]]
+  sprintf("%s–%s", fmt(sc$min), fmt(sc$max))
+}
+
 table_1 <- data.frame(
   Category = c(
     rep("Biomarker prevalences", 2),
     rep("Health-state utilities", 2),
-    rep("Treatment costs (\u20AC)", 4),
-    rep("Other costs (\u20AC)", 2),
+    rep("Treatment costs (€)", 4),
+    rep("Other costs (€)", 2),
     rep("Structural parameters", 2)
   ),
   Parameter = c(
-    "CRP-positive",
+    "CRP-positive (week 4, < 5 mg/L)",
     "TMB/BRAF-positive",
     "Progression-free",
     "Post-progression",
-    "Nivolumab per cycle",
+    "Nivolumab per administration",
     "FLOX per cycle",
     "CRP testing",
     "NGS testing",
-    "Monitoring per cycle",
+    "CT scan (monitoring)",
     "End-of-life",
-    "Discount rate",
+    "Discount rate (costs and QALYs)",
     "Time horizon"
   ),
   Base_case = c(
-    sprintf("%.3f", l_params_base$p_crp),
-    sprintf("%.3f", l_params_base$p_tmb_braf),
-    sprintf("%.2f", l_params_base$u_np),
-    sprintf("%.2f", l_params_base$u_p),
-    sprintf("\u20AC%s", format(round(l_params_base$c_drug_nivo), big.mark = ",")),
-    sprintf("\u20AC%s", format(round(l_params_base$c_drug_FLOX), big.mark = ",")),
-    sprintf("\u20AC%s", format(round(l_params_base$c_test_CRP), big.mark = ",")),
-    sprintf("\u20AC%s", format(round(l_params_base$c_test_NGS), big.mark = ",")),
-    sprintf("\u20AC%s", format(round(l_params_base$c_test_CT), big.mark = ",")),
-    sprintf("\u20AC%s", format(round(l_params_base$c_other_last), big.mark = ",")),
-    "4%",
-    "10 years"
+    fmt_prob(l_params_base$p_crp),
+    fmt_prob(l_params_base$p_tmb_braf),
+    fmt_util(l_params_base$u_np),
+    fmt_util(l_params_base$u_p),
+    sprintf("€%s", fmt_cost(l_params_base$c_drug_nivo)),
+    sprintf("€%s", fmt_cost(l_params_base$c_drug_FLOX)),
+    sprintf("€%s", fmt_cost(l_params_base$c_test_CRP)),
+    sprintf("€%s", fmt_cost(l_params_base$c_test_NGS)),
+    sprintf("€%s", fmt_cost(l_params_base$c_test_CT)),
+    sprintf("€%s", fmt_cost(l_params_base$c_other_last)),
+    fmt_pct(dr),
+    sprintf("%g years", time_horizon / 52)
   ),
   Range = c(
-    prev_ci(l_params_base$p_crp, n_patients),
-    prev_ci(l_params_base$p_tmb_braf, n_patients),
-    sprintf("%.2f\u2013%.2f",
-            l_params_base$u_np * (1 - DSA_mult),
-            min(l_params_base$u_np * (1 + DSA_mult), 1.0)),
-    sprintf("%.2f\u2013%.2f",
-            l_params_base$u_p * (1 - DSA_mult),
-            min(l_params_base$u_p * (1 + DSA_mult), 1.0)),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_drug_nivo * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_drug_nivo * (1 + DSA_mult)), big.mark = ",")),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_drug_FLOX * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_drug_FLOX * (1 + DSA_mult)), big.mark = ",")),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_test_CRP * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_test_CRP * (1 + DSA_mult)), big.mark = ",")),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_test_NGS * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_test_NGS * (1 + DSA_mult)), big.mark = ",")),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_test_CT * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_test_CT * (1 + DSA_mult)), big.mark = ",")),
-    sprintf("%s\u2013%s",
-            format(round(l_params_base$c_other_last * (1 - DSA_mult)), big.mark = ","),
-            format(round(l_params_base$c_other_last * (1 + DSA_mult)), big.mark = ",")),
-    "0\u20138%",
-    "5\u201320 yr"
+    dsa_range("p_crp", fmt_prob),
+    dsa_range("p_tmb_braf", fmt_prob),
+    dsa_range("u_np", fmt_util),
+    dsa_range("u_p", fmt_util),
+    dsa_range("c_drug_nivo", fmt_cost),
+    dsa_range("c_drug_FLOX", fmt_cost),
+    dsa_range("c_test_CRP", fmt_cost),
+    dsa_range("c_test_NGS", fmt_cost),
+    dsa_range("c_test_CT", fmt_cost),
+    dsa_range("c_other_last", fmt_cost),
+    scenario_range("Discount_rate", fmt_pct),
+    paste(scenario_range("Time_horizon", fmt_yr), "years")
+  ),
+  Range_type = c(
+    rep("One-way DSA (±20%)", 10),
+    rep("Structural scenario", 2)
   ),
   Distribution = c(
-    "Beta", "Beta",
-    "Beta", "Beta",
-    "Gamma", "Gamma", "Gamma", "Gamma",
-    "Gamma", "Gamma",
+    psa_dist("p_crp"), psa_dist("p_tmb_braf"),
+    psa_dist("u_np"), psa_dist("u_p"),
+    psa_dist("c_drug_nivo"), psa_dist("c_drug_FLOX"),
+    psa_dist("c_test_CRP"), psa_dist("c_test_NGS"),
+    psa_dist("c_test_CT"), psa_dist("c_other_last"),
     "Fixed", "Fixed"
   ),
   Source = c(
     "METIMMOX", "METIMMOX",
-    "METIMMOX EQ-5D", "METIMMOX EQ-5D",
+    utility_meta$source, utility_meta$source,
     "NoMA", "NoMA", "Local", "Local",
     "Ref 27", "Ref 28",
-    "NoMA guidelines", ""
+    "NoMA guidelines", "Assumption"
   ),
   Notes = c(
-    sprintf("95%% CI: %.1f\u2013%.1f%%",
-            binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[1] * 100,
-            binom.test(round(l_params_base$p_crp * n_patients), n_patients)$conf.int[2] * 100),
-    sprintf("95%% CI: %.1f\u2013%.1f%%",
-            binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[1] * 100,
-            binom.test(round(l_params_base$p_tmb_braf * n_patients), n_patients)$conf.int[2] * 100),
-    "Danish tariff",
-    "Danish tariff",
+    prev_ci_note(k_crp, n_crp),
+    prev_ci_note(k_tmb, n_tmb),
+    utility_meta$note,
+    utility_meta$note,
     "40% discount",
     "",
-    "CRP only",
-    "TMB/BRAF only",
-    "CT scans",
+    "CRP strategy only",
+    "TMB/BRAF strategy only",
+    "Every 12 weeks",
     "",
-    "",
-    ""
+    "Varied in deterministic scenarios only",
+    "Varied in deterministic scenarios only"
   ),
   stringsAsFactors = FALSE
 )
@@ -137,17 +177,21 @@ table_1 <- data.frame(
 kable(table_1 %>% select(-Category),
       caption = "Table 1: Model input parameters",
       format = "html",
-      col.names = c("Parameter", "Base case", "Range", "Distribution", "Source", "Notes"),
-      align = c("l", "r", "r", "l", "l", "l")) %>%
+      col.names = c("Parameter", "Base case", "Range", "Range type",
+                    "PSA distribution", "Source", "Notes"),
+      align = c("l", "r", "r", "l", "l", "l", "l")) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE,
                 font_size = 11) %>%
   pack_rows(index = table(table_1$Category)[unique(table_1$Category)]) %>%
   footnote(
     general = c(
-      "NoMA = Norwegian Medicines Agency. NGS = next-generation sequencing.",
-      "Costs in 2023 euros. Ranges for costs and utilities represent +/-20% variation for DSA.",
-      "Prevalence ranges based on 95% exact binomial confidence intervals."
+      "NoMA = Norwegian Medicines Agency. NGS = next-generation sequencing. Costs in 2023 euros.",
+      sprintf("One-way DSA ranges are the base value +/- %.0f%% bounds run by 09_DSA.R (prevalences and utilities capped at 1, costs and prevalences at 0).", 100 * DSA_mult),
+      "Discount rate and time horizon are not sampled in the PSA; the ranges are the deterministic structural scenarios run by 09_DSA.R and reported in the OWSA report.",
+      "Prevalence notes give the biomarker-positive count over all trial patients with a biomarker value (the denominators of the base-case prevalences) and the exact binomial 95% CI; the DSA range is the +/-20% bound, not the CI.",
+      sprintf("Utilities follow the UTILITY_SOURCE switch (currently %s).", if (UTILITY_SOURCE == 1) "1 = CORRECT trial" else "0 = METIMMOX IPD"),
+      "PSA distribution: family used for the probabilistic analysis (parameter_distributions.R)."
     ),
     general_title = "Notes: "
   )

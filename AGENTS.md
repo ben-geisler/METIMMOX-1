@@ -408,7 +408,8 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
-- **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`). Renamed from the legacy `multi_model_cea.R`.
+- **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`, `calculate_pairwise_icers()`, `frontier_status()`, `frontier_label()`). Renamed from the legacy `multi_model_cea.R`. **Dominance conventions (issue #153)**: `CEA.qmd` reports dampack *frontier* ICERs (status ND/D/ED across all three strategies). The biosimilar, enriched-population and Table S6 outputs report *pairwise* ICERs of each guided strategy versus standard of care (`Status` values "Reference", "Pairwise ICER vs SoC", "Dominated by SoC", "Cost-saving vs SoC") and always print the dampack `Frontier_Status` alongside, with captions stating "pairwise versus standard of care". A strategy can be frontier-dominated (more costly and less effective than the other guided strategy) yet have a finite pairwise ICER; percentage changes between pairwise ICERs are only reported for frontier strategies with finite, positive ICERs in both analyses (`Pct_Change` in `08b_enriched_population_analysis.R`).
+- **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years). `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). A time-horizon scenario re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules (`build_horizon_params()` in `09_DSA.R`); scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
 - **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
 
 **Shared Report and Clinical-Analysis Helpers**:
@@ -519,10 +520,14 @@ Each report has specific dependencies:
 - **Models displayed**: Ordering-constrained, minimum-combined-AIC pair (currently gamma for OS and gamma for PFS) AND Weibull PH models for reference (issue #68)
 - **Tables include**: Model parameter exponents for clinical interpretation
 - **Note**: Economic survival fits use the single joint CRP + TMB/BRAF model
+- **Selection reporting (issue #153)**: the selected distributions are read from `models$best_fit$os_distribution` / `pfs_distribution` and marked in a "Selected" column of the marginal-AIC tables (the lowest marginal-AIC row need not be the selected one); the joint pair audit `models$ordered_selection$pairs` (combined AIC, OS >= PFS flag, violating time points) is displayed; coefficient tables carry a `Scale` column (baseline parameters on the natural scale, covariates on the log location scale). The same rule applies to `table_s3.qmd` (also writes `tables/table_s3_pairs.csv`), `table_s4.qmd`, `figure_s1.qmd` and `figure_s2.qmd`, which no longer hard-code `dist = "gamma"` or "Gamma (selected)".
 
 **[clinical_effectiveness.qmd](scripts/QMD/report/clinical_effectiveness.qmd)** - Clinical Effectiveness Analysis
 - **Sources**: 02, 03 (with report-specific clinical models fitted in the document)
 - **Shows**: Baseline characteristics, clinical survival curves, life-years gained; may include TLR clinical analyses independent of the economic model
+- **Cohorts (issue #153)**: the primary Firth/standard Cox models, PH diagnostics, ridge sensitivity and the Overall/CRP/TMB-BRAF columns of Table 1 use `data_complete`, the same 68-patient complete-case cohort as the economic survival models (complete on Age, sex, Rx, CRP, TMB/BRAF and both endpoints). TLR completeness is required only for the TLR-complete subset `data_tlr` (65 patients; the 3 missing are early control-arm deaths before the first on-treatment CT), which feeds the TLR columns/row of Table 1, the Cramer's V pairs involving TLR, and the exploratory TLR responder and landmark analyses.
+- **Sex coding**: `sex` is the renamed trial column "Sex 0female", so level "0" is female and level "1" is male (`SEX_FEMALE_LEVEL`/`SEX_MALE_LEVEL` in the data-preparation chunk); never take "the last factor level" as female.
+- **Ridge sensitivity**: `glmnet::cv.glmnet(family = "cox", alpha = 0)` on an explicit design matrix with pre-built `crp_x_rx` and `tmb_braf_x_rx` product terms, penalty factor 1 for the CRP and TMB/BRAF main effects and 0 for Age, sex, Rx and the interactions, lambda = `lambda.min` from seeded 10-fold CV; ridge results are point estimates (no SE). The earlier `survival::ridge()` formula with `crp_num:Rx` coded the interaction per arm level (a within-arm CRP slope, not the CRP x Rx contrast) and was removed. Narrative wording about Firth-to-ridge shifts is computed (`shift_word()`, 1.5-fold HR threshold), not hard-coded.
 
 **[input_parameters.qmd](scripts/QMD/report/input_parameters.qmd)** - Input Parameters Summary
 - **Sources**: 02, 03, 04, 05
@@ -536,7 +541,7 @@ Each report has specific dependencies:
 **[OWSA.qmd](scripts/QMD/report/OWSA.qmd)** - One-Way Sensitivity Analysis (Deterministic)
 - **Sources**: 02, 03, 04, 05, then 09
 - **Requires**: DSA results from script 09
-- **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters
+- **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters, the survival-distribution structural sensitivity, and (issue #153) the discount-rate (0%, 8%) and time-horizon (5, 20 years) structural scenarios with NMB per strategy and the optimal strategy; failed scenarios are listed from `dsa_scenario_status`
 
 **[EVPPIs.qmd](scripts/QMD/report/EVPPIs.qmd)** - Value of Information Analysis
 - **Sources**: 02, 03
@@ -563,6 +568,7 @@ Each report has specific dependencies:
 **[biomarker_distributions.qmd](scripts/QMD/report/biomarker_distributions.qmd)** - Biomarker Distributions
 - **Sources**: 02, 03
 - **Shows**: Biomarker prevalence and distribution analyses, including clinical-only TLR summaries
+- **Stratum labels (issue #153)**: arm-by-biomarker strata are built by `make_arm_strata()`, which uses `interaction(..., lex.order = TRUE)` and relabels by level name; never relabel `interaction()` output positionally (its default order is Control/-, Exp/-, Control/+, Exp/+, which swapped two columns in every stratified table)
 
 **[survival_model_specification.qmd](scripts/QMD/report/survival_model_specification.qmd)** - Parametric Survival Model Specification
 - **Sources**: 02, 03, 04 (uses the `models`, `os_candidates`/`pfs_candidates`, and `models$ordered_selection` objects created by script 04; no refitting)

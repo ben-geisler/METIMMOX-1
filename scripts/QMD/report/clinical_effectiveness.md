@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-04
+2026-09-05
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -164,7 +164,22 @@ analysis, this is implemented as a penalized Cox model.
 - The degree of shrinkage is controlled by the tuning parameter lambda,
   which is selected via **cross-validation (CV)**: the data are
   repeatedly split into training and validation sets, and the lambda
-  that produces the best predictive performance is chosen.
+  that produces the best predictive performance is chosen. Here this is
+  `glmnet::cv.glmnet(family = "cox", alpha = 0)` with 10-fold CV of the
+  partial-likelihood deviance and `lambda.min`; fold assignment is
+  seeded so the result is reproducible.
+- **Implementation detail.** The model is fitted on an explicit design
+  matrix (Age, sex, Rx, CRP, TMB/BRAF, CRP x Rx, TMB/BRAF x Rx) in which
+  the product terms are constructed before fitting. This matters because
+  `survival::ridge()` with a factor treatment variable and a formula
+  interaction such as `crp:Rx` codes the interaction separately for each
+  arm (the CRP slope within the control arm and within the experimental
+  arm) rather than as the single treatment-by-biomarker contrast; the
+  pre-built product term recovers the same contrast that the Firth model
+  estimates. In the primary model only the CRP and TMB/BRAF main effects
+  are penalized (penalty factor 1); Age, sex, Rx and the two interaction
+  terms have penalty factor 0. glmnet does not provide standard errors,
+  so ridge results are point estimates.
 
 **Why not LASSO or Elastic Net?**
 
@@ -243,25 +258,25 @@ or near-separation instability that Firth corrects.
 
 | Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
 |:------------------|:-------------------------|:------------------|
-| CRP x Rx          | 0.88 (0.20-3.85)         | 0.78 (0.21-3.61)  |
-| TMB/BRAF x Rx     | 0.95 (0.30-2.97)         | 0.93 (0.30-2.85)  |
-| Rx (Experimental) | 1.69 (0.79-3.63)         | 1.70 (0.81-3.67)  |
-| CRP               | 0.45 (0.13-1.55)         | 0.52 (0.13-1.47)  |
-| TMB/BRAF          | 0.91 (0.40-2.10)         | 0.94 (0.41-2.12)  |
-| Age               | 1.00 (0.97-1.03)         | 1.00 (0.97-1.03)  |
-| Sex               | 1.59 (0.90-2.81)         | 1.58 (0.90-2.79)  |
+| CRP x Rx          | 0.71 (0.18-2.72)         | 0.65 (0.19-2.60)  |
+| TMB/BRAF x Rx     | 0.97 (0.32-2.92)         | 0.95 (0.32-2.82)  |
+| Rx (Experimental) | 1.51 (0.73-3.15)         | 1.53 (0.74-3.18)  |
+| CRP               | 0.57 (0.19-1.68)         | 0.63 (0.19-1.62)  |
+| TMB/BRAF          | 0.89 (0.40-1.94)         | 0.91 (0.41-1.96)  |
+| Age               | 1.01 (0.98-1.04)         | 1.01 (0.98-1.04)  |
+| Sex               | 1.44 (0.84-2.49)         | 1.44 (0.84-2.48)  |
 
 Unified Model - Overall Survival: Standard Cox vs Firth
 
 | Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
 |:------------------|:-------------------------|:------------------|
-| CRP x Rx          | 0.59 (0.14-2.53)         | 0.55 (0.14-2.43)  |
-| TMB/BRAF x Rx     | 0.73 (0.22-2.39)         | 0.72 (0.22-2.31)  |
-| Rx (Experimental) | 1.79 (0.85-3.78)         | 1.78 (0.86-3.80)  |
-| CRP               | 0.55 (0.17-1.82)         | 0.60 (0.17-1.77)  |
-| TMB/BRAF          | 0.71 (0.31-1.63)         | 0.73 (0.32-1.65)  |
-| Age               | 0.99 (0.96-1.02)         | 0.99 (0.96-1.02)  |
-| Sex               | 1.09 (0.62-1.93)         | 1.09 (0.62-1.92)  |
+| CRP x Rx          | 0.44 (0.11-1.74)         | 0.42 (0.11-1.68)  |
+| TMB/BRAF x Rx     | 0.66 (0.21-2.12)         | 0.66 (0.21-2.05)  |
+| Rx (Experimental) | 1.79 (0.87-3.72)         | 1.79 (0.88-3.73)  |
+| CRP               | 0.75 (0.25-2.26)         | 0.81 (0.26-2.21)  |
+| TMB/BRAF          | 0.77 (0.35-1.71)         | 0.79 (0.36-1.72)  |
+| Age               | 1.00 (0.97-1.03)         | 1.00 (0.97-1.03)  |
+| Sex               | 1.07 (0.62-1.84)         | 1.06 (0.62-1.84)  |
 
 Unified Model - Progression-Free Survival: Standard Cox vs Firth
 
@@ -295,17 +310,28 @@ treatment effect.
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (L2-penalized Cox, alpha = 0) shrinks all coefficients
+Ridge regression (L2-penalized Cox, alpha = 0) shrinks coefficients
 toward zero but does not eliminate any, providing a sensitivity check
 for the stability of the interaction estimates. The same unified model
-formula is used; only the main effects (CRP and TMB/BRAF) are penalized.
+terms are used, entered through an explicit design matrix in which the
+CRP x Rx and TMB/BRAF x Rx product terms are built before fitting, so
+each ridge interaction coefficient is the single treatment-by-biomarker
+contrast that the Firth model estimates (issue \#153). Only the
+biomarker main effects (CRP and TMB/BRAF) are penalized; Age, sex, Rx
+and the two interaction terms carry a penalty factor of zero. The
+penalty lambda is chosen by 10-fold cross-validation of the
+partial-likelihood deviance (`glmnet::cv.glmnet`, `lambda.min`), with
+fold assignment seeded for reproducibility.
 
 **Interpretation:** Firth provides the best unbiased point estimate
-given the sample size and data structure. Ridge applies L2 shrinkage
-toward zero (HR toward 1.0). Comparing the two methods reveals estimate
-stability: if Firth and Ridge agree closely, the estimate is robust; if
-Ridge substantially shrinks the interaction toward null, the effect is
-sensitive to regularization in this sample.
+given the sample size and data structure. Ridge applies L2 shrinkage to
+the biomarker main effects (HR toward 1.0) with the penalty strength
+chosen by cross-validation; the interaction terms are unpenalized, so
+any movement in them reflects redistribution of the shrunken main-effect
+signal. Comparing the two methods reveals estimate stability: if Firth
+and Ridge agree closely, the estimate is robust; if the interaction
+moves substantially under ridge, the effect is sensitive to how the
+biomarker main effects are estimated in this sample.
 
 
 
@@ -474,7 +500,8 @@ Characteristics of the week-9 OS landmark cohort (alive at week 9), by
 TLR status
 
 Because no patient dies or is censored before week 9, the OS at-risk set
-coincides with the full complete-case cohort (n = 65).
+coincides with the full TLR-complete cohort (n = 65; the three early
+deaths without a TLR value are already outside this cohort).
 
 #### Progression-free-survival at-risk set (PFSwk \>= 9)
 
@@ -607,37 +634,37 @@ week differs, change `LANDMARK_WK`.
 
 Neither biomarker-treatment interaction reached conventional
 significance in the unified model (Firth HR with 95% CI in parentheses).
-For **overall survival**, CRP × Rx yielded HR 0.78 (0.21-3.61) (PLRT p =
-0.728) and TMB/BRAF × Rx HR 0.93 (0.30-2.85) (p = 0.893) — point
+For **overall survival**, CRP × Rx yielded HR 0.65 (0.19-2.60) (PLRT p =
+0.520) and TMB/BRAF × Rx HR 0.95 (0.32-2.82) (p = 0.919) — point
 estimates close to null with very wide confidence intervals. For
 **progression-free survival**, the CRP × Rx interaction was
-directionally favourable but imprecise (HR 0.55 (0.14-2.43), p = 0.417):
+directionally favourable but imprecise (HR 0.42 (0.11-1.68), p = 0.213):
 CRP-positive patients in the experimental arm had a lower estimated
 hazard of progression or death than CRP-positive controls, though the CI
 spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx
-PFS interaction was HR 0.72 (0.22-2.31) (p = 0.578). These results are
+PFS interaction was HR 0.66 (0.21-2.05) (p = 0.469). These results are
 consistent with the trial being underpowered to detect treatment-effect
-heterogeneity (n = 65, 60 PFS events (progression or death), 56 deaths):
+heterogeneity (n = 68, 63 PFS events (progression or death), 59 deaths):
 even a moderate subgroup effect (HR ~0.5) would require far larger
 samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The
-CRP direction (HR 0.55) is consistent with the DAG association test
+CRP direction (HR 0.42) is consistent with the DAG association test
 showing CRP → PFS (HR 0.41, p = 0.001; see the DAG associations report)
 and the biological hypothesis that low CRP (reflecting lower systemic
 inflammation) identifies patients more likely to respond to
-immunotherapy. However, the OS CRP interaction estimate (HR 0.78) is
+immunotherapy. However, the OS CRP interaction estimate (HR 0.65) is
 closer to null, suggesting that any PFS benefit does not clearly
 translate to an OS benefit in this dataset.
 
 ## Proportional hazards
 
 The PH assumption was well supported in overall survival (Schoenfeld
-global p = 0.396). In progression-free survival the global test
-indicated some departure from proportionality (p = 0.028), and this is
+global p = 0.254). In progression-free survival the global test
+indicated some departure from proportionality (p = 0.119), and this is
 carried by the biomarker main effects rather than the interaction terms:
-CRP main effect p = 0.046, TMB/BRAF main effect p = 0.056, versus CRP ×
-Rx p = 0.300 and TMB/BRAF × Rx p = 0.169. This suggests that the
+CRP main effect p = 0.130, TMB/BRAF main effect p = 0.084, versus CRP ×
+Rx p = 0.272 and TMB/BRAF × Rx p = 0.203. This suggests that the
 prognostic hazard ratios for CRP and TMB/BRAF are not constant over time
 in PFS, which may reflect different kinetics of early vs late events
 (now including deaths) across biomarker-defined subgroups. The PFS
@@ -648,17 +675,22 @@ estimates themselves are not flagged by this diagnostic.
 
 ## Ridge regression sensitivity
 
-For OS, the CRP × Rx estimate changes substantially when the biomarker
-main effects are penalized (Firth HR 0.78 → Ridge HR 0.39), indicating
-that the OS estimate is sensitive to model specification and should be
-treated as imprecise. The TMB/BRAF × Rx OS estimate changes little (0.93
-→ 0.87), consistent with a near-null interaction. For PFS, both
-interaction estimates also move under Ridge (CRP × Rx 0.55 → 0.32;
-TMB/BRAF × Rx 0.72 → 0.52). Because only the main effects are penalized,
-a shift in the interaction terms reflects redistribution of the shrunken
-main-effect signal rather than independent support for a particular
-effect size; the PFS interaction estimates are therefore not stable
-under regularization and should not be over-interpreted.
+The ridge model penalizes the CRP and TMB/BRAF main effects with a
+cross-validated lambda (OS lambda.min = 86.857, PFS lambda.min =
+109.761) and estimates the interaction terms as pre-built product terms,
+so the ridge and Firth interaction coefficients are the same
+treatment-by-biomarker contrast. For OS, the CRP × Rx estimate changes
+substantially under this penalization (Firth HR 0.65 → Ridge HR 0.40),
+and the TMB/BRAF × Rx estimate changes little (0.95 → 0.86). For PFS,
+the CRP × Rx estimate changes little (0.42 → 0.33) and the TMB/BRAF × Rx
+estimate changes little (0.66 → 0.51). A shift of at least 1.5-fold in
+the HR is labelled “substantial”. Because only the main effects are
+penalized, any shift in an interaction term reflects redistribution of
+the shrunken main-effect signal rather than independent support for a
+particular effect size: an interaction that moves substantially is
+sensitive to how the biomarker main effects are estimated and should not
+be over-interpreted, while one that changes little is not driven by the
+main-effect estimates.
 
 ## TLR responder analysis (exploratory)
 
@@ -718,8 +750,8 @@ treatment selection on TLR.
 
 # Summary
 
-**Study:** METIMMOX-1 biomarker subgroup analysis. N = 65 complete
-cases, 56 OS events, 60 PFS events (progression or death).
+**Study:** METIMMOX-1 biomarker subgroup analysis. N = 68 complete
+cases, 59 OS events, 63 PFS events (progression or death).
 
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary
 (DAG-informed):**
@@ -734,24 +766,25 @@ testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects
 in the primary model and the TLR terms (main effect + TLR:Rx) in the
 exploratory model.
 
-**Proportional hazards:** No violations in OS (global p = 0.396). In PFS
-the global test gives p = 0.028, carried by the biomarker main effects
-(CRP p = 0.046; TMB/BRAF p = 0.056) rather than the interaction terms
-(CRP × Rx p = 0.300; TMB/BRAF × Rx p = 0.169); PFS biomarker main-effect
+**Proportional hazards:** No violations in OS (global p = 0.254). In PFS
+the global test gives p = 0.119, carried by the biomarker main effects
+(CRP p = 0.130; TMB/BRAF p = 0.084) rather than the interaction terms
+(CRP × Rx p = 0.272; TMB/BRAF × Rx p = 0.203); PFS biomarker main-effect
 estimates should be read as time-averaged.
 
 **Interaction estimates:**
 
 | Interaction   | OS HR (95% CI)   | PLRT p | PFS HR (95% CI)  | PLRT p |
 |---------------|------------------|--------|------------------|--------|
-| CRP × Rx      | 0.78 (0.21-3.61) | 0.728  | 0.55 (0.14-2.43) | 0.417  |
-| TMB/BRAF × Rx | 0.93 (0.30-2.85) | 0.893  | 0.72 (0.22-2.31) | 0.578  |
+| CRP × Rx      | 0.65 (0.19-2.60) | 0.520  | 0.42 (0.11-1.68) | 0.213  |
+| TMB/BRAF × Rx | 0.95 (0.32-2.82) | 0.919  | 0.66 (0.21-2.05) | 0.469  |
 
-No interaction is statistically significant. CRP × Rx PFS (HR 0.55) is
-the strongest directional signal but is not stable under Ridge
-regularization (Ridge HR 0.32). TMB/BRAF OS shows a near-null
-interaction (Ridge HR 0.87 ≈ Firth 0.93). The PFS PH departure concerns
-the biomarker main effects, not the interaction terms.
+No interaction is statistically significant. CRP × Rx PFS (HR 0.42) is
+the strongest directional signal; under ridge regularization of the
+biomarker main effects (glmnet, CV lambda) it changes little (Ridge HR
+0.33). The TMB/BRAF × Rx OS interaction changes little (Ridge HR 0.86 vs
+Firth 0.95). The PFS PH departure concerns the biomarker main effects,
+not the interaction terms.
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR 2.47
 (0.75-7.75) for OS and 1.49 (0.45-4.67) for PFS. Ridge-penalized TLR
@@ -783,6 +816,6 @@ on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-04  
+**Report completed on:** 2026-09-05  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.4
+**Report version:** 3.5

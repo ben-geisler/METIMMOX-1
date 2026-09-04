@@ -25,29 +25,20 @@ prevalence_params <- param_groups$prevalence
 # Use base case values as starting point
 dsa_basecase <- l_params_base
 
-# Calculate min/max ranges using DSA_mult (±20% variation)
-# But cap utility values at 1.0
-dsa_ranges <- data.frame(
-  pars = dsa_pars,
-  min = unlist(l_params_base[dsa_pars]) * (1 - DSA_mult),
-  max = unlist(l_params_base[dsa_pars]) * (1 + DSA_mult),
-  stringsAsFactors = FALSE
-)
-
+# Calculate min/max ranges using DSA_mult (±20% variation), capped to the
+# parameter support (costs and prevalences >= 0, utilities and prevalences <= 1).
+# build_dsa_ranges() (parameter_distributions.R) is shared with table_1.qmd so
+# the published ranges are the ranges actually run (issue #153). It validates
+# min <= max (issue #48); min = max is allowed for zero-valued parameters.
 utility_params <- param_groups$utilities
 cost_params <- param_groups$all_costs
-bounds <- data.frame(pars = dsa_pars, lower = -Inf, upper = Inf)
-bounds$lower[bounds$pars %in% c(cost_params, prevalence_params)] <- 0
-bounds$upper[bounds$pars %in% c(utility_params, prevalence_params)] <- 1
-dsa_ranges$min <- pmax(dsa_ranges$min, bounds$lower)
-dsa_ranges$max <- pmin(dsa_ranges$max, bounds$upper)
+dsa_ranges <- build_dsa_ranges(l_params_base, param_distributions, param_groups,
+                               mult = DSA_mult)
 
-# Validate all ranges have min < max (Issue #48)
-# Note: min = max is allowed for zero-valued parameters (e.g., c_test_blood = 0)
-if (any(dsa_ranges$min > dsa_ranges$max)) {
-  invalid <- dsa_ranges$pars[dsa_ranges$min > dsa_ranges$max]
-  stop("Invalid DSA ranges (min > max) for: ", paste(invalid, collapse = ", "))
-}
+# Deterministic structural scenarios (discount rate, time horizon) run after
+# the one-way parameter loop and reported in the OWSA report and Table 1.
+dsa_scenarios <- dsa_structural_scenarios(base_dr = dr,
+                                          base_horizon_years = time_horizon / 52)
 
 # Print the ranges for verification
 cat("Parameter ranges for DSA:\n")
@@ -100,6 +91,97 @@ for (i in seq_len(nrow(dsa_ranges))) {
   }
 }
 
+# ===============================================================================
+# STRUCTURAL SCENARIOS: DISCOUNT RATE AND TIME HORIZON (issue #153)
+# ===============================================================================
+# Deterministic scenarios that Table 1 reports as ranges. The discount rate is
+# applied to costs and QALYs together. A different time horizon re-predicts the
+# base-case survival curves on the new weekly grid from the selected joint
+# models and rebuilds the schedule vectors with the same rules as script 05
+# (drug positions are fixed calendar weeks; CT every 12 weeks and blood tests
+# every 4 weeks recur to the end of the horizon).
+
+build_horizon_params <- function(base_params, horizon_weeks) {
+  if (!exists("models") || is.null(models$best_fit$os) || is.null(models$best_fit$pfs)) {
+    stop("Fitted best-fit survival models are required for a time-horizon scenario.")
+  }
+  tp <- seq(0, horizon_weeks)
+  n <- length(tp)
+  preds <- generate_population_averaged_predictions(
+    models = list(os = models$best_fit$os, pfs = models$best_fit$pfs),
+    strategies_df = strategies_df,
+    data_complete = data_complete,
+    time_points = tp,
+    prevalences = setNames(strategies_df$prevalence, strategies_df$id)
+  )
+
+  p <- base_params
+  ctrl <- get_control_strategy()
+  p$p_os  <- setNames(list(preds[[ctrl]]$os),  paste0(ctrl, "_OS"))
+  p$p_pfs <- setNames(list(preds[[ctrl]]$pfs), paste0(ctrl, "_PFS"))
+  for (bm in get_biomarkers()) {
+    p$p_os[[paste0(bm, "_pos_OS")]]       <- preds[[bm]]$biomarker_positive$os
+    p$p_os[[paste0(bm, "_neg_OS")]]       <- preds[[bm]]$biomarker_negative$os
+    p$p_os[[paste0(bm, "_weighted_OS")]]  <- preds[[bm]]$os
+    p$p_pfs[[paste0(bm, "_pos_PFS")]]     <- preds[[bm]]$biomarker_positive$pfs
+    p$p_pfs[[paste0(bm, "_neg_PFS")]]     <- preds[[bm]]$biomarker_negative$pfs
+    p$p_pfs[[paste0(bm, "_weighted_PFS")]] <- preds[[bm]]$pfs
+  }
+
+  schedule <- function(positions) {
+    v <- rep(0, n)
+    v[positions[positions <= n]] <- 1
+    v
+  }
+  p$l_nivo         <- schedule(which(base_params$l_nivo == 1))
+  p$l_FLOX_exp     <- schedule(which(base_params$l_FLOX_exp == 1))
+  p$l_FLOX_control <- schedule(which(base_params$l_FLOX_control == 1))
+  p$l_CT    <- schedule(c(1, seq(13, n, by = 12)))
+  p$l_blood <- schedule(c(1, seq(5, n, by = 4)))
+  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
+  p$l_visit[1] <- 1
+  p$time_horizon <- horizon_weeks
+  p
+}
+
+run_structural_scenario <- function(scenario_name, value) {
+  if (scenario_name == "Discount_rate") {
+    p <- dsa_basecase
+    p$dr_costs <- value
+    p$dr_effects <- value
+    return(model_fun(p))
+  }
+  if (scenario_name == "Time_horizon") {
+    horizon_weeks <- as.integer(round(value * 52))
+    p <- build_horizon_params(dsa_basecase, horizon_weeks)
+    return(model_fun(p, time_horizon = horizon_weeks))
+  }
+  stop("Unknown structural scenario: ", scenario_name)
+}
+
+cat("\nRunning structural scenarios (discount rate, time horizon)...\n")
+dsa_scenario_status <- list()
+for (scenario_name in names(dsa_scenarios)) {
+  scenario <- dsa_scenarios[[scenario_name]]
+  for (side in c("min", "max")) {
+    value <- scenario[[side]]
+    cat("  ", scenario$label, "-", side, "=", value, scenario$unit, "\n")
+    result_side <- tryCatch(
+      run_structural_scenario(scenario_name, value),
+      error = function(e) {
+        cat("    Scenario failed:", conditionMessage(e), "\n")
+        NULL
+      }
+    )
+    dsa_scenario_status[[paste(scenario_name, side)]] <- !is.null(result_side)
+    if (is.null(result_side)) next
+    all_results[[result_counter]] <- format_results(
+      result_side, scenario_name, side, value
+    )
+    result_counter <- result_counter + 1
+  }
+}
+
 # Combine all results into a single data frame
 cat("Combining results...\n")
 dsa_results <- do.call(rbind, all_results)
@@ -107,6 +189,7 @@ dsa_results <- do.call(rbind, all_results)
 # Add parameter group information (param_groups from 06_sampling.R)
 dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
   if (p == "base_case") return("base_case")
+  if (p %in% names(dsa_scenarios)) return("structural")
   for (g in names(param_groups)) {
     if (p %in% param_groups[[g]] && g != "all_costs") return(g)
   }
@@ -305,7 +388,7 @@ par(mfrow = c(1, 1))
 cat("\nChecking if optimal strategy changes with parameter variations:\n")
 changes_found <- FALSE
 
-for (param_name in dsa_pars) {
+for (param_name in c(dsa_pars, names(dsa_scenarios))) {
   side_optimal <- setNames(character(2), c("min", "max"))
   for (side in names(side_optimal)) {
     side_results <- dsa_results[
