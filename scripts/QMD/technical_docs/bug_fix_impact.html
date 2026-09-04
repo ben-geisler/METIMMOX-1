@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Ben Geisler">
-<meta name="dcterms.date" content="2026-09-04">
+<meta name="dcterms.date" content="2026-09-05">
 
 <title>Bug Fix Impact Analysis</title>
 <style>
@@ -2206,7 +2206,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 4, 2026</p>
+      <p class="date">September 5, 2026</p>
     </div>
   </div>
   
@@ -2318,6 +2318,20 @@ vertical-align: -.125em;
 <td style="text-align: left;">9cb460b</td>
 <td style="text-align: left;">2026-09-04 19:17:51</td>
 </tr>
+<tr class="odd">
+<td style="text-align: left;">snapshot_153_baseline_66a995c.rds</td>
+<td style="text-align: left;">153</td>
+<td style="text-align: left;">baseline</td>
+<td style="text-align: left;">66a995c</td>
+<td style="text-align: left;">2026-09-05 00:20:04</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">snapshot_153_fixed_3b291ff.rds</td>
+<td style="text-align: left;">153</td>
+<td style="text-align: left;">fixed</td>
+<td style="text-align: left;">3b291ff</td>
+<td style="text-align: left;">2026-09-05 00:47:49</td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -2368,9 +2382,14 @@ vertical-align: -.125em;
 <td style="text-align: left;">snapshot_152_fixed_9cb460b.rds</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Cumulative: issue 145 baseline vs issue 152 fixed</td>
+<td style="text-align: left;">Issue 153: baseline vs fixed</td>
+<td style="text-align: left;">snapshot_153_baseline_66a995c.rds</td>
+<td style="text-align: left;">snapshot_153_fixed_3b291ff.rds</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Cumulative: issue 145 baseline vs issue 153 fixed</td>
 <td style="text-align: left;">snapshot_145_baseline_ce8ec08.rds</td>
-<td style="text-align: left;">snapshot_152_fixed_9cb460b.rds</td>
+<td style="text-align: left;">snapshot_153_fixed_3b291ff.rds</td>
 </tr>
 </tbody>
 </table>
@@ -3962,11 +3981,750 @@ EUR 1.61
 </tbody>
 </table>
 </section>
-<section id="cumulative-issue-145-baseline-vs-issue-152-fixed" class="level2" data-number="2.7">
-<h2 data-number="2.7" class="anchored" data-anchor-id="cumulative-issue-145-baseline-vs-issue-152-fixed"><span class="header-section-number">2.7</span> Cumulative: issue 145 baseline vs issue 152 fixed</h2>
+<section id="issue-153-baseline-vs-fixed" class="level2" data-number="2.7">
+<h2 data-number="2.7" class="anchored" data-anchor-id="issue-153-baseline-vs-fixed"><span class="header-section-number">2.7</span> Issue 153: baseline vs fixed</h2>
 <table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>
-Base case impact – Cumulative: issue 145 baseline vs issue 152 fixed
+Base case impact – Issue 153: baseline vs fixed
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Strategy
+</th>
+<th style="text-align:right;">
+Cost Before
+</th>
+<th style="text-align:right;">
+QALYs Before
+</th>
+<th style="text-align:right;">
+Cost After
+</th>
+<th style="text-align:right;">
+QALYs After
+</th>
+<th style="text-align:right;">
+Cost Change
+</th>
+<th style="text-align:right;">
+QALY Change
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Standard of Care
+</td>
+<td style="text-align:right;">
+EUR 21,523
+</td>
+<td style="text-align:right;">
+1.3714
+</td>
+<td style="text-align:right;">
+EUR 21,523
+</td>
+<td style="text-align:right;">
+1.3714
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CRP-guided
+</td>
+<td style="text-align:right;">
+EUR 53,928
+</td>
+<td style="text-align:right;">
+1.3918
+</td>
+<td style="text-align:right;">
+EUR 53,928
+</td>
+<td style="text-align:right;">
+1.3918
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TMB/BRAF-guided
+</td>
+<td style="text-align:right;">
+EUR 63,399
+</td>
+<td style="text-align:right;">
+1.3609
+</td>
+<td style="text-align:right;">
+EUR 63,399
+</td>
+<td style="text-align:right;">
+1.3609
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+</tr>
+</tbody>
+</table>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Net monetary benefit impact – Issue 153: baseline vs fixed
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Strategy
+</th>
+<th style="text-align:right;">
+NMB Before
+</th>
+<th style="text-align:right;">
+NMB After
+</th>
+<th style="text-align:right;">
+NMB Change
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Standard of Care
+</td>
+<td style="text-align:right;">
+EUR 48,419
+</td>
+<td style="text-align:right;">
+EUR 48,419
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CRP-guided
+</td>
+<td style="text-align:right;">
+EUR 17,056
+</td>
+<td style="text-align:right;">
+EUR 17,056
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TMB/BRAF-guided
+</td>
+<td style="text-align:right;">
+EUR 6,005
+</td>
+<td style="text-align:right;">
+EUR 6,005
+</td>
+<td style="text-align:right;">
+EUR 0
+</td>
+</tr>
+</tbody>
+</table>
+<p>Per-patient EVPI: EUR 45.20 before, EUR 45.20 after.</p>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+EVPPI impact – Issue 153: baseline vs fixed
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Parameter / group
+</th>
+<th style="text-align:right;">
+EVPPI Before
+</th>
+<th style="text-align:right;">
+% EVPI Before
+</th>
+<th style="text-align:right;">
+EVPPI After
+</th>
+<th style="text-align:right;">
+SE After
+</th>
+<th style="text-align:right;">
+% EVPI After
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+b_crp_rx_os
+</td>
+<td style="text-align:right;">
+EUR 0.10
+</td>
+<td style="text-align:right;">
+0.2%
+</td>
+<td style="text-align:right;">
+EUR 0.10
+</td>
+<td style="text-align:right;">
+EUR 1.60
+</td>
+<td style="text-align:right;">
+0.2%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+All costs (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Drug costs (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Biomarker-treatment interaction (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 1.61
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CRP-treatment interaction (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.74
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TMB/BRAF-treatment interaction (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Other costs (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.04
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Biomarker prevalence (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Test costs (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Utilities (group)
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+b_crp_rx_pfs
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.12
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+b_tmb_braf_rx_os
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+b_tmb_braf_rx_pfs
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_drug_FLOX
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_drug_nivo
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_other_baseline
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_other_follow
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_other_last
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_other_visit
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_test_CRP
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_test_CT
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_test_NGS
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+c_test_blood
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+p_crp
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+p_tmb_braf
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+u_np
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+u_p
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+EUR 0.00
+</td>
+<td style="text-align:right;">
+0.0%
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="cumulative-issue-145-baseline-vs-issue-153-fixed" class="level2" data-number="2.8">
+<h2 data-number="2.8" class="anchored" data-anchor-id="cumulative-issue-145-baseline-vs-issue-153-fixed"><span class="header-section-number">2.8</span> Cumulative: issue 145 baseline vs issue 153 fixed</h2>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Base case impact – Cumulative: issue 145 baseline vs issue 153 fixed
 </caption>
 <thead>
 <tr>
@@ -4067,7 +4825,7 @@ EUR 2,602
 </table>
 <table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
 <caption>
-Net monetary benefit impact – Cumulative: issue 145 baseline vs issue 152 fixed
+Net monetary benefit impact – Cumulative: issue 145 baseline vs issue 153 fixed
 </caption>
 <thead>
 <tr>
@@ -4137,7 +4895,7 @@ EUR 6,005
 <h1 data-number="3"><span class="header-section-number">3</span> Interpretation</h1>
 <p>This report compares baseline and fixed single-model snapshots for each bug-fix issue that has both, plus a cumulative comparison from the earliest baseline to the latest fixed snapshot. Snapshots are produced by the <code>13_save_snapshot.R</code> analysis script (in <code>scripts/R/analysis/</code>). If older snapshots contain obsolete multi-model components, <code>load_snapshot()</code> warns during render and the tables use the top-level single-model results.</p>
 <hr>
-<p><strong>Report completed on:</strong> 2026-09-04<br>
+<p><strong>Report completed on:</strong> 2026-09-05<br>
 <strong>Repository:</strong> ben-geisler/METIMMOX-1<br>
 <strong>Report version:</strong> 4.2</p>
 </section>
