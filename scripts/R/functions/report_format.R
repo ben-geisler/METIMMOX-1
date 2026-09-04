@@ -31,6 +31,31 @@ biomarker_label <- function(x) {
   out
 }
 
+#' Convert EVPPI parameter-group identifiers to display labels
+#'
+#' Accepts identifiers with or without the "[GROUP] " prefix used in the EVPPI
+#' result tables (e.g. "[GROUP] drug_costs" or "drug_costs"). Unknown
+#' identifiers are returned without the prefix.
+evppi_group_label <- function(x) {
+  biomarkers <- get_biomarkers()
+  labels <- c(
+    drug_costs = "Drug costs",
+    test_costs = "Test costs",
+    other_costs = "Other costs",
+    all_costs = "All costs",
+    utilities = "Utilities",
+    prevalence = "Biomarker prevalence",
+    stats::setNames(paste0(biomarker_label(biomarkers), "-treatment interaction"),
+                    paste0("interaction_", biomarkers)),
+    interaction_all = "Biomarker-treatment interaction"
+  )
+  x_chr <- sub("^\\[GROUP\\] ", "", as.character(x))
+  out <- x_chr
+  known <- !is.na(x_chr) & x_chr %in% names(labels)
+  out[known] <- unname(labels[x_chr[known]])
+  out
+}
+
 #' Format values as euros, guarding missing and non-finite values
 format_eur <- function(x, accuracy = 1) {
   out <- rep("--", length(x))

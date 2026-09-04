@@ -1,7 +1,7 @@
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here, dampack, dplyr, parallel)
+p_load(here, dampack, dplyr, parallel, voi)
 
 # Load functions
 source(here::here("scripts/R/functions/model_fun.R"))
@@ -113,7 +113,9 @@ rm(evppi_config)
 cat("EVPPI parameters:", length(evppi_params),
     "| parameter groups:", length(param_groups), "\n")
 
-# Run EVPPI analysis
+# Run EVPPI analysis: regression estimator (voi::evppi, GAM) with Monte Carlo
+# standard errors; stops if any group EVPPI falls below its largest member
+# beyond Monte Carlo tolerance (issue #152).
 evppi_results <- run_evppi_analysis(
   psa_obj = psa_obj,
   psa_params = psa_params,
@@ -122,12 +124,14 @@ evppi_results <- run_evppi_analysis(
   param_groups = param_groups,
   seed = analysis_seed
 )
+evppi_group_consistency <- attr(evppi_results, "group_consistency")
 
 # ===============================================================================
 # ADD POPULATION-LEVEL EVPPI
 # ===============================================================================
 
-# Add population-level EVPPI columns
+# Add population-level EVPPI columns (dplyr drops custom attributes, so the
+# consistency table is re-attached afterwards)
 evppi_results <- evppi_results %>%
   mutate(
     evppi_population_millions = calculate_population_evppi(
@@ -141,8 +145,15 @@ evppi_results <- evppi_results %>%
       annual_incidence = annual_incidence_norway,
       research_horizon = research_horizon_years,
       discount_rate = discount_rate_research
+    ),
+    evppi_se_population_millions = calculate_population_evppi(
+      evppi_se,
+      annual_incidence = annual_incidence_norway,
+      research_horizon = research_horizon_years,
+      discount_rate = discount_rate_research
     )
   )
+attr(evppi_results, "group_consistency") <- evppi_group_consistency
 
 # Print summary of population-level values
 cat("\n=== Population-Level EVPPI Summary ===\n")
@@ -168,25 +179,33 @@ cat("Number of PSA simulations:", psa_obj$n_sim, "\n")
 cat("Total EVPI:", round(evpi_manual, 4), "\n\n")
 
 if (nrow(evppi_results) > 0) {
-  cat("Individual Parameter EVPPIs (ranked by importance):\n")
-  print(evppi_results[, c("parameter", "evppi", "evppi_percent_of_evpi", "error")])
-  
+  cat("Parameter and group EVPPIs (regression estimates with Monte Carlo SE):\n")
+  print(evppi_results[, c("parameter", "evppi", "evppi_se",
+                          "evppi_percent_of_evpi", "n_params", "error")])
+
+  if (!is.null(evppi_group_consistency) && nrow(evppi_group_consistency) > 0) {
+    cat("\nGroup consistency (group EVPPI vs largest member):\n")
+    print(evppi_group_consistency)
+  }
+
   # Identify high-priority parameters
   high_priority_threshold <- 0.01  # 1% of EVPI
-  high_priority_params <- evppi_results[evppi_results$evppi_percent_of_evpi > high_priority_threshold * 100, ]
-  
+  high_priority_params <- evppi_results[
+    which(evppi_results$evppi_percent_of_evpi > high_priority_threshold * 100), ]
+
   if (nrow(high_priority_params) > 0) {
     cat("\nHigh-priority parameters for future research (>", high_priority_threshold * 100, "% of EVPI):\n")
     for (i in seq_len(nrow(high_priority_params))) {
-      cat("  ", high_priority_params$parameter[i], ": €", 
-          round(high_priority_params$evppi[i], 4), "\n")
+      cat("  ", high_priority_params$parameter[i], ": €",
+          round(high_priority_params$evppi[i], 4),
+          "(SE", round(high_priority_params$evppi_se[i], 4), ")\n")
     }
   } else {
     cat("\nNo parameters exceed the high-priority threshold\n")
   }
-  
+
   # Create visualization if we have meaningful results
-  meaningful_results <- evppi_results[evppi_results$evppi > 0, ]
+  meaningful_results <- evppi_results[which(evppi_results$evppi > 0), ]
   if (nrow(meaningful_results) > 0) {
     par(mar = c(5, 8, 4, 2))
     barplot(meaningful_results$evppi, 

@@ -109,49 +109,38 @@ stopifnot(
   )
 )
 
-# Capture the random row subset used by grouped EVPPI calculations.
-evppi_expressions <- parse("scripts/R/functions/evppi_functions.R")
-is_evppi_function <- vapply(evppi_expressions, function(expr) {
-  is.call(expr) &&
-    identical(expr[[1]], as.name("<-")) &&
-    identical(expr[[2]], as.name("calculate_evppi_improved"))
-}, logical(1))
-stopifnot(sum(is_evppi_function) == 1L)
-
+# The regression EVPPI point estimate is deterministic; its Monte Carlo
+# standard error comes from random draws of the regression coefficients and
+# must therefore follow the shared seed (issue #152).
 evppi_env <- new.env(parent = globalenv())
-evppi_env$sampled_indices <- NULL
-evppi_env$sample <- eval(quote(function(x, size, ...) {
-  indices <- base::sample(x, size, ...)
-  sampled_indices <<- indices
-  indices
-}), envir = evppi_env)
-eval(evppi_expressions[[which(is_evppi_function)]], envir = evppi_env)
+sys.source("scripts/R/functions/evppi_functions.R", envir = evppi_env)
 
-n_evppi <- 30L
-effect_one <- seq(0, 1, length.out = n_evppi)
+n_evppi <- 400L
+set.seed(1L)
+evppi_theta <- rnorm(n_evppi)
 psa_obj <- list(
   cost = cbind(strategy_one = rep(0, n_evppi),
                strategy_two = rep(0, n_evppi)),
-  effect = cbind(strategy_one = effect_one,
-                 strategy_two = rev(effect_one))
+  effect = cbind(strategy_one = rep(0, n_evppi),
+                 strategy_two = evppi_theta + rnorm(n_evppi, sd = 0.5))
 )
 psa_params <- data.frame(
-  parameter_one = effect_one,
-  parameter_two = cos(seq(0, 2 * pi, length.out = n_evppi))
+  parameter_one = evppi_theta,
+  parameter_two = rnorm(n_evppi)
 )
 
 run_grouped_evppi <- function(seed) {
   runif(50)
-  capture.output(evppi_env$calculate_evppi_improved(
+  result <- NULL
+  capture.output(result <- evppi_env$calculate_evppi_regression(
     psa_obj = psa_obj,
     psa_params = psa_params,
     param_names = names(psa_params),
     wtp = 1,
-    n_inner = 5,
-    n_grid = 8,
+    B = 50,
     seed = seed
   ))
-  evppi_env$sampled_indices
+  c(estimate = result$evppi, se = result$evppi_se)
 }
 
 evppi_reference <- run_grouped_evppi(123L)
@@ -159,8 +148,10 @@ evppi_repeat <- run_grouped_evppi(123L)
 evppi_other_seed <- run_grouped_evppi(124L)
 
 stopifnot(
+  all(is.finite(evppi_reference)),
   identical(evppi_reference, evppi_repeat),
-  !identical(evppi_reference, evppi_other_seed)
+  identical(evppi_reference[["estimate"]], evppi_other_seed[["estimate"]]),
+  !identical(evppi_reference[["se"]], evppi_other_seed[["se"]])
 )
 
 # Public wrappers must retain the documented default and forward it to their
@@ -170,7 +161,7 @@ sys.source("scripts/R/functions/evppi_functions.R", envir = interface_env)
 sys.source("scripts/R/functions/scenario_analysis.R", envir = interface_env)
 
 seeded_interfaces <- c(
-  "calculate_evppi_improved",
+  "calculate_evppi_regression",
   "run_evppi_analysis",
   "run_scenario_psa",
   "run_scenario_evppi",
@@ -181,7 +172,7 @@ stopifnot(all(vapply(seeded_interfaces, function(name) {
   identical(formals(interface_env[[name]])$seed, 123L)
 }, logical(1))))
 
-forwarding_wrappers <- setdiff(seeded_interfaces, "calculate_evppi_improved")
+forwarding_wrappers <- setdiff(seeded_interfaces, "calculate_evppi_regression")
 stopifnot(all(vapply(forwarding_wrappers, function(name) {
   grepl("seed = seed", paste(deparse(body(interface_env[[name]])), collapse = " "),
         fixed = TRUE)

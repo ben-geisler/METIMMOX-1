@@ -5,7 +5,7 @@
 # Load required packages
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here, dampack, dplyr, parallel, ggplot2, tidyr)
+p_load(here, dampack, dplyr, parallel, ggplot2, tidyr, voi)
 
 # Load functions
 source(here::here("scripts/R/functions/model_fun.R"))

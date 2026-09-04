@@ -150,7 +150,7 @@ source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analys
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
                survival, survminer, gems, mstate, tidyverse, xtable,
-               darthtools, dampack, mvtnorm, Matrix, here)
+               darthtools, dampack, mvtnorm, Matrix, here, voi)
 
 # Additional packages for Quarto reports
 pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)
@@ -268,7 +268,11 @@ There is no model-structure switch or multi-structure comparison layer. The econ
 
 **Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [04_parametric_survival_analysis.R](scripts/R/analysis/04_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**.
 
-**When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`.
+**When changed**: Regenerate sampling cache when survival formulas, the economic strategy/biomarker set, `n_samples`, or clinical data change. Regenerate PSA and EVPPI caches after regenerating sampling cache or changing economic parameters, distributions, prediction methodology, or `UTILITY_SOURCE`. Regenerate the EVPPI and scenario-EVPPI caches (scripts 11 and 12) after changing the EVPPI estimator or parameter groups.
+
+### Value of Information (EVPPI) Estimator
+
+EVPPI is estimated by nonparametric regression (Strong, Oakley & Brennan 2014) through `voi::evppi()` in [evppi_functions.R](scripts/R/functions/evppi_functions.R) (issue #152): the incremental NMB of each strategy versus control is regressed on the parameter(s) with a GAM; groups of up to four parameters use voi's tensor-product cubic regression spline, larger groups (currently only `all_costs`) use additive cubic regression splines because NMB is linear and additive in unit costs. Every estimate carries a Monte Carlo standard error (`evppi_se`, the SD of the EVPPI over 1,000 draws of the regression coefficients, seeded with `analysis_seed`). Failed estimates are `NA`, never zero, with the reason in the `error` column. `run_evppi_analysis()` asserts that every `[GROUP]` row is at least its largest member within two combined SEs (floor 1% of EVPI) and attaches the check as attribute `group_consistency`; `add_interaction_param_groups()` adds per-biomarker interaction groups plus the joint `interaction_all` group that Figure 5 and Table S7 report as "Biomarker-treatment interaction". Figure 5 and Table S7 use `[GROUP]` rows only; EVPPI is not additive and rows must never be summed. With the current PSA cache every single-parameter EVPPI is 0 (SE 0) at WTP EUR 51,000 because control is the optimal strategy at every sampled parameter value; that is a regression result, not a cap. The previous kNN estimator (1,000 nearest of 5,000 draws at 500 grid points, capped at EVPI) reported neighbourhood re-weighting bias as value of information and was removed.
 
 ### Biomarker Strategies
 
@@ -415,7 +419,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
-- **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: EVPPI calculation functions, population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
+- **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: Regression-based EVPPI via `voi::evppi()` (`calculate_evppi_regression()`, `run_evppi_analysis()`, `evppi_gam_formula()`), group-consistency checks (`check_evppi_group_consistency()`, `assert_evppi_group_consistency()`), population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
 - **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
 
 **Survival Modeling Functions**:
@@ -537,7 +541,7 @@ Each report has specific dependencies:
 **[EVPPIs.qmd](scripts/QMD/report/EVPPIs.qmd)** - Value of Information Analysis
 - **Sources**: 02, 03
 - **Requires**: PSA results (script 10) and EVPPI results (script 11)
-- **Shows**: Expected value of perfect information (EVPI), expected value of perfect partial information (EVPPI) for parameter groups
+- **Shows**: Expected value of perfect information (EVPI); single-parameter and joint group EVPPI with Monte Carlo standard errors (regression estimator, `voi::evppi()`); the group-versus-largest-member consistency table; an estimator description
 
 **[scenario_effect.qmd](scripts/QMD/report/scenario_effect.qmd)** - Scenario Analysis
 - **Sources**: 02, 03; loads scenario results generated by script 12
@@ -752,16 +756,16 @@ source("scripts/R/analysis/10_PSA.R")
 ### 3. EVPPI Cache
 
 **Location**: `data/tidy/evppi_results_{ipd|correct}.RData`
-**Purpose**: Cached EVPPI results for parameter groups
+**Purpose**: Cached EVPPI results (`evppi_results` with `evppi`, `evppi_se`, `evpi`, `evppi_percent_of_evpi`, `method`, `n_params`, `n_sim`, `error`, population columns, and the `group_consistency` attribute; plus `evpi_manual`)
 **Generation**: Script [11_EVPPIs.R](scripts/R/analysis/11_EVPPIs.R)
-**When to regenerate**: Delete cache file when PSA cache is regenerated or EVPPI parameter groupings change
+**When to regenerate**: Delete cache file when PSA cache is regenerated, EVPPI parameter groupings change, or the EVPPI estimator changes
 
 ### 4. Scenario EVPPI Cache
 
 **Location**: `data/tidy/scenario_evppi_results_{ipd|correct}.rds`
 **Purpose**: Cached scenario-based EVPPI analysis results
 **Generation**: Script [12_scenario_EVPPIs.R](scripts/R/analysis/12_scenario_EVPPIs.R)
-**When to regenerate**: Delete cache file when PSA cache is regenerated or scenario definitions change
+**When to regenerate**: Delete cache file when PSA cache is regenerated, scenario definitions change, or the EVPPI estimator changes (Figure 5 and Table S7 read this cache)
 
 ### Cache Workflow
 
@@ -786,7 +790,7 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 **Location**: `data/output/snapshots/`
 **Format**: `snapshot_NN_[baseline/fixed]_HASH.rds` and `psa_NN_[baseline/fixed]_HASH.rds`
-**Content**: Base case results, PSA results, metadata (git commit, timestamp, issue number)
+**Content**: Base case results, PSA results, metadata (git commit, timestamp, issue number) and, from issue #152 onwards, the EVPPI cache (`evppi$evpi`, `evppi$evppi_results`) when it exists at snapshot time; `bug_fix_impact.qmd` adds an EVPPI before/after table whenever both snapshots of a pair carry it
 
 ### Workflow
 
@@ -806,6 +810,8 @@ The test suite in `scripts/R/tests/` includes:
 - **[test_psa_fallback_reporting.R](scripts/R/tests/test_psa_fallback_reporting.R)**: Verifies PSA fallback-rate reporting and its failure threshold
 - **[test_sim_idx_validation.R](scripts/R/tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation
 - **[test_psa_basecase_alignment.R](scripts/R/tests/test_psa_basecase_alignment.R)**: Verifies structurally that the PSA control curve is the joint model with `Rx = control`, then checks that PSA strategy means (costs and QALYs) sit within 5 Monte Carlo standard errors of the base case and prints the incremental comparison (issue #151); skips the numerical check when the PSA cache is absent. The numerical criterion is a known failure at n_sim = 5000 (see the test protocol table)
+- **[test_evppi_estimator.R](scripts/R/tests/test_evppi_estimator.R)**: Verifies the regression EVPPI estimator on a synthetic problem with a closed-form answer, a pure-noise parameter, group-versus-member consistency (including the additive formula for more than four parameters), seed-reproducible standard errors, and NA-not-zero failure reporting (issue #152)
+- **[test_report_contracts.R](scripts/R/tests/test_report_contracts.R)**: Cache and report wiring contracts; for the EVPPI cache it requires the interaction rows with finite standard errors, the joint `interaction_all` group, and no group below its largest member
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
 - **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
@@ -825,6 +831,7 @@ Focused executable regression tests live in [`scripts/R/tests/`](scripts/R/tests
 | Near-certain mortality | With survival forced near 0 after baseline, more than 99% of the cohort is dead by cycle 3 | Black-box record (`BB-M1`) | Pass |
 | Determinism | Two deterministic runs with identical inputs produce bitwise-identical costs and QALYs | Black-box record (`BB-RE`) | Pass |
 | PSA centred on base case | For every strategy, the PSA mean cost and mean QALYs are within 5 Monte Carlo standard errors of the deterministic base-case values; the control PSA curve must be the joint model with `Rx = control` (structural check, no cache needed) | [`test_psa_basecase_alignment.R`](scripts/R/tests/test_psa_basecase_alignment.R) | Structural check: Pass. Numerical check: **Fail (known)** after the issue #151 fix at n_sim = 5000: every strategy's mean QALYs sit +0.025 to +0.033 above the base case (6.3 to 9.6 SE, all the same sign), the bootstrap-mean bias of the extrapolated gamma curves that is shared by all arms because they come from one joint fit; costs are within 4.7 SE. The increments versus control, which the shared bias cancels out of, are within 1.2 SE (QALYs) and 3.4 SE (cost). Before the fix the control QALY mean was 21 SE *below* the base case and the CRP incremental QALYs were 0.122 versus 0.020. |
+| EVPPI estimator | On a synthetic two-strategy problem with incremental NMB = theta + noise, theta ~ N(300, 1000^2): EVPPI(theta) within 4 SE + 2% of the closed-form value E[max(theta,0)] - max(E[theta],0) evaluated on the realised draws, within 10% of the analytic value, and below EVPI; a pure-noise parameter within max(4 SE, 2% EVPI) of 0; the groups {theta, noise} and the five-parameter additive group within 4 combined SE + 2% EVPI of the single-parameter value; no group-consistency violation, while a constructed shortfall of 50% of EVPI must raise an error; identical point estimates and SEs under the same seed, different SEs under another seed; missing or constant parameters return NA with an error message | [`test_evppi_estimator.R`](scripts/R/tests/test_evppi_estimator.R) | Pass (issue #152): analytic 266.8, realised-draw value 273.3, estimate 270.0 (SE 2.7), EVPI 285.1; noise 0.000 (SE 0.000); group 270.3 (SE 2.6); five-parameter additive 270.3 (SE 2.5) |
 
 Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" scripts/R/tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.
 

@@ -191,6 +191,23 @@ if (!is.null(psa_obj)) {
   psa_summary <- compute_psa_summary(psa_obj)
 }
 
+# Load the EVPPI cache when present so the snapshot also records the
+# value-of-information results (issue #152). Older snapshots lack this
+# component; bug_fix_impact.qmd only compares EVPPI when both sides carry it.
+evppi_snapshot <- NULL
+evppi_cache_file <- evppi_path(utility_source_label)
+if (file.exists(evppi_cache_file)) {
+  evppi_env <- new.env()
+  load(evppi_cache_file, envir = evppi_env)
+  evppi_snapshot <- list(
+    evpi = evppi_env$evpi_manual,
+    evppi_results = evppi_env$evppi_results
+  )
+  cat("EVPPI cache loaded from:", evppi_cache_file, "\n")
+} else {
+  cat("EVPPI cache not found - snapshot will not include EVPPI results.\n")
+}
+
 cat("\n=== Single-Model Analysis Complete ===\n")
 
 # ============================================================================
@@ -205,7 +222,8 @@ snapshot <- list(
   base_results = base_results,
   icer_obj = as.data.frame(icer_obj),
   nmb_at_wtp = nmb_at_wtp,
-  psa_summary = psa_summary
+  psa_summary = psa_summary,
+  evppi = evppi_snapshot
 )
 
 # ============================================================================

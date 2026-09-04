@@ -66,16 +66,42 @@ if (!file.exists(evppi_file)) {
              ". extract_interaction_coefficients() is matching nothing -- ",
              "check the coefficient-name pattern against a real fit.")
     )
-    # A row present but uniformly zero across ALL interactions is the signature
-    # of extraction returning NA and being coerced downstream.
+    # Since issue #152 a zero EVPPI is a legitimate result for a parameter that
+    # never changes the optimal decision, so a zero value is not a failure
+    # signature. An extraction failure now surfaces as an NA estimate with a
+    # populated error column and no standard error.
     present <- intersect(expected, params)
     if (length(present) > 0) {
-      vals <- e$evppi_results$evppi[match(present, params)]
+      rows <- e$evppi_results[match(present, params), , drop = FALSE]
       check(
-        any(is.finite(vals) & vals > 0),
-        "Every interaction EVPPI is zero/non-finite; extraction likely failed"
+        all(is.finite(rows$evppi)) &&
+          (!"error" %in% names(rows) || all(!nzchar(rows$error))),
+        "Interaction EVPPI rows are NA or carry an error; extraction likely failed"
+      )
+      check(
+        "evppi_se" %in% names(rows) && all(is.finite(rows$evppi_se)),
+        "Interaction EVPPI rows lack a finite Monte Carlo standard error"
       )
     }
+
+    # Every group row must be at least its largest member within Monte Carlo
+    # tolerance (issue #152). Rebuild the group definitions the pipeline uses.
+    suppressMessages({
+      source(here::here("scripts", "R", "functions", "parameter_distributions.R"))
+      source(here::here("scripts", "R", "functions", "evppi_functions.R"))
+    })
+    groups <- add_interaction_param_groups(create_parameter_groups())
+    consistency <- check_evppi_group_consistency(e$evppi_results, groups)
+    check(nrow(consistency) > 0, "EVPPI cache has no [GROUP] rows to check")
+    check(
+      !any(consistency$violation),
+      paste0("Group EVPPI below its largest member beyond tolerance: ",
+             paste(consistency$group[consistency$violation], collapse = ", "))
+    )
+    check(
+      "[GROUP] interaction_all" %in% params,
+      "EVPPI cache lacks the joint interaction group used by Figure 5 / Table S7"
+    )
   }
 }
 

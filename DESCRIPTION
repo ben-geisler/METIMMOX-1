@@ -52,4 +52,5 @@ Imports:
     tidyr,
     tidyverse,
     vcd,
+    voi,
     xtable

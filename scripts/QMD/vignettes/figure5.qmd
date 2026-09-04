@@ -16,6 +16,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02"),
+  funs = c("evppi_functions", "report_format"),
   packages = c("here", "ggplot2", "dplyr", "scales"),
   set_theme = FALSE
 )
@@ -31,40 +32,56 @@ if (!file.exists(cache_file)) {
 }
 evppi_cache <- readRDS(cache_file)
 
+# Figure 5 shows joint ([GROUP]) EVPPI rows only. Per-parameter rows are never
+# added to group rows: EVPPI is not additive, and summing single-parameter and
+# group estimates for the same parameters produced bars above total EVPI in
+# earlier versions (issue #152). The interaction bar is the joint EVPPI of all
+# treatment-by-biomarker coefficients (interaction_all).
+figure_groups <- c(
+  "[GROUP] drug_costs" = "Drug costs",
+  "[GROUP] utilities" = "Utilities",
+  "[GROUP] prevalence" = "Biomarker prevalence",
+  "[GROUP] interaction_all" = "Biomarker-treatment interaction"
+)
+
+scenario_labels <- c(
+  base = "Base case",
+  s1_decreased_nivo = "Biosimilar pricing",
+  s2_wtp100k = "WTP 100,000"
+)
+
+to_population <- function(x) {
+  calculate_population_evppi(
+    x,
+    annual_incidence = annual_incidence_norway,
+    research_horizon = research_horizon_years,
+    discount_rate = discount_rate_research
+  )
+}
+
 evppi_grouped <- data.frame()
 if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
   evppi_all <- evppi_cache$evppi_all_scenarios
-
-  if (!"evppi_population_millions" %in% names(evppi_all)) {
-    discounted_pop <- annual_incidence_norway *
-      sum(1 / (1 + discount_rate_research)^(0:(research_horizon_years - 1)))
-    evppi_all$evppi_population_millions <- evppi_all$evppi * discounted_pop / 1e6
-  }
-
-  scenario_labels <- c(
-    base = "Base case",
-    s1_decreased_nivo = "Biosimilar pricing",
-    s2_wtp100k = "WTP 100,000"
-  )
+  if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
 
   evppi_grouped <- evppi_all %>%
-    filter(scenario_id %in% names(scenario_labels)) %>%
-    mutate(param_group = case_when(
-      parameter %in% c("c_drug_nivo", "c_drug_FLOX") ~ "Drug costs",
-      parameter %in% c("u_np", "u_p") ~ "Utilities",
-      parameter %in% c("p_crp", "p_tmb_braf") ~ "Biomarker prevalence",
-      grepl("^b_(crp|tmb_braf)", parameter) ~ "Biomarker-treatment interaction",
-      grepl("^\\[GROUP\\].*drug", parameter) ~ "Drug costs",
-      grepl("^\\[GROUP\\].*util", parameter) ~ "Utilities",
-      grepl("^\\[GROUP\\].*prevalence", parameter) ~ "Biomarker prevalence",
-      grepl("^\\[GROUP\\].*interaction", parameter) ~ "Biomarker-treatment interaction",
-      TRUE ~ NA_character_
-    )) %>%
-    filter(!is.na(param_group)) %>%
-    group_by(param_group, scenario_id) %>%
-    summarise(evppi_pop = sum(evppi_population_millions, na.rm = TRUE),
-              .groups = "drop") %>%
-    mutate(Scenario = factor(scenario_labels[scenario_id], levels = scenario_labels))
+    filter(scenario_id %in% names(scenario_labels),
+           parameter %in% names(figure_groups)) %>%
+    mutate(
+      param_group = unname(figure_groups[parameter]),
+      evppi_pop = to_population(evppi),
+      se_pop = to_population(evppi_se),
+      evpi_pop = to_population(evpi),
+      Scenario = factor(scenario_labels[scenario_id], levels = scenario_labels)
+    )
+
+  present <- unique(evppi_all$parameter[evppi_all$scenario_id %in% names(scenario_labels)])
+  missing_groups <- setdiff(names(figure_groups), present)
+  if (length(missing_groups) > 0) {
+    warning("Figure 5: group rows absent from the scenario cache: ",
+            paste(missing_groups, collapse = ", "),
+            ". Rerun scripts/R/analysis/12_scenario_EVPPIs.R.")
+  }
 }
 ```
 
@@ -72,7 +89,7 @@ if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
 if (nrow(evppi_grouped) > 0) {
   group_order <- evppi_grouped %>%
     group_by(param_group) %>%
-    summarise(total = sum(evppi_pop), .groups = "drop") %>%
+    summarise(total = sum(evppi_pop, na.rm = TRUE), .groups = "drop") %>%
     arrange(total) %>%
     pull(param_group)
 
@@ -80,15 +97,40 @@ if (nrow(evppi_grouped) > 0) {
 
   p_evppi <- ggplot(evppi_grouped, aes(x = param_group, y = evppi_pop, fill = Scenario)) +
     geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_errorbar(
+      aes(ymin = evppi_pop - 1.96 * se_pop, ymax = evppi_pop + 1.96 * se_pop),
+      position = position_dodge(width = 0.8), width = 0.25,
+      linewidth = 0.4, colour = "gray30", na.rm = TRUE
+    ) +
     coord_flip() +
     scale_y_continuous(labels = function(x) paste0("EUR ", format(x, big.mark = ","), "M")) +
-    labs(x = NULL, y = "Population EVPPI (EUR millions)", fill = "Scenario") +
+    labs(
+      x = NULL,
+      y = "Population EVPPI (EUR millions)",
+      fill = "Scenario",
+      caption = paste0(
+        "Joint EVPPI per parameter group (regression estimator); ",
+        "error bars are 95% Monte Carlo intervals. Groups are not sums of ",
+        "single-parameter EVPPIs."
+      )
+    ) +
     theme_minimal() +
     theme(legend.position = "bottom", panel.grid.minor = element_blank())
 
   print(p_evppi)
 } else {
   cat("Scenario EVPPI cache not available. Run scripts/R/analysis/12_scenario_EVPPIs.R first.")
+}
+```
+
+```{r evpi-reference}
+if (nrow(evppi_grouped) > 0) {
+  evppi_grouped %>%
+    distinct(Scenario, evpi_pop) %>%
+    arrange(Scenario) %>%
+    mutate(`Population EVPI` = paste0("EUR ", sprintf("%.2f", evpi_pop), "M")) %>%
+    select(Scenario, `Population EVPI`) %>%
+    knitr::kable(caption = "Total population EVPI per scenario (upper bound for every bar)")
 }
 ```
 

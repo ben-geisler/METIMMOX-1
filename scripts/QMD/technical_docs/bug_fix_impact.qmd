@@ -144,6 +144,40 @@ build_nmb_impact <- function(before, after) {
     )
 }
 
+# EVPPI comparison (issue #152 onwards). Snapshots carry the EVPPI cache under
+# `evppi`; older snapshots lack it and the table is skipped.
+build_evppi_impact <- function(before, after) {
+  b <- before$evppi$evppi_results
+  a <- after$evppi$evppi_results
+  if (is.null(b) || is.null(a) || nrow(b) == 0 || nrow(a) == 0) return(NULL)
+  pick_se <- function(df) if ("evppi_se" %in% names(df)) df$evppi_se else NA_real_
+  full_join(
+    data.frame(Parameter = b$parameter, EVPPI_Before = b$evppi,
+               Pct_Before = b$evppi_percent_of_evpi, stringsAsFactors = FALSE),
+    data.frame(Parameter = a$parameter, EVPPI_After = a$evppi,
+               SE_After = pick_se(a), Pct_After = a$evppi_percent_of_evpi,
+               stringsAsFactors = FALSE),
+    by = "Parameter"
+  ) %>%
+    arrange(desc(EVPPI_Before), Parameter) %>%
+    mutate(
+      Parameter = ifelse(grepl("^\\[GROUP\\] ", Parameter),
+                         paste0(evppi_group_label(Parameter), " (group)"), Parameter),
+      across(c(EVPPI_Before, EVPPI_After, SE_After), ~ format_eur(.x, accuracy = 0.01)),
+      across(c(Pct_Before, Pct_After),
+             ~ ifelse(is.finite(.x), sprintf("%.1f%%", .x), "--"))
+    ) %>%
+    select(Parameter, EVPPI_Before, Pct_Before, EVPPI_After, SE_After, Pct_After)
+}
+
+evpi_line <- function(before, after) {
+  b <- before$evppi$evpi
+  a <- after$evppi$evpi
+  if (is.null(b) || is.null(a)) return(NULL)
+  sprintf("Per-patient EVPI: %s before, %s after.",
+          format_eur(b, accuracy = 0.01), format_eur(a, accuracy = 0.01))
+}
+
 # Wide table needs a smaller font in PDF (scale_down is dropped by Quarto's
 # raw-table handling); HTML uses striped bootstrap styling.
 style_wide <- function(k) {
@@ -207,7 +241,7 @@ if (length(comparisons) == 0) {
 }
 ```
 
-Each comparison below reports the change in base case costs and QALYs, and in net monetary benefit at the willingness-to-pay threshold, from the *before* snapshot to the *after* snapshot.
+Each comparison below reports the change in base case costs and QALYs, and in net monetary benefit at the willingness-to-pay threshold, from the *before* snapshot to the *after* snapshot. Where both snapshots carry the EVPPI cache (snapshots taken from issue #152 onwards), the per-patient EVPI and the EVPPI table are compared as well; the *after* column includes the Monte Carlo standard error of the regression estimator.
 
 ```{r comparisons, results='asis'}
 for (cmp in comparisons) {
@@ -233,6 +267,21 @@ for (cmp in comparisons) {
   ) %>%
     style_narrow()
   cat(as.character(nmb_tbl), "\n\n")
+
+  evppi_df <- build_evppi_impact(cmp$before, cmp$after)
+  if (!is.null(evppi_df)) {
+    cat(evpi_line(cmp$before, cmp$after), "\n\n")
+    evppi_tbl <- knitr::kable(
+      evppi_df,
+      booktabs = TRUE,
+      align = c("l", "r", "r", "r", "r", "r"),
+      col.names = c("Parameter / group", "EVPPI Before", "% EVPI Before",
+                    "EVPPI After", "SE After", "% EVPI After"),
+      caption = paste0("EVPPI impact -- ", cmp$label)
+    ) %>%
+      style_wide()
+    cat(as.character(evppi_tbl), "\n\n")
+  }
 }
 ```
 
@@ -244,4 +293,4 @@ This report compares baseline and fixed single-model snapshots for each bug-fix 
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

@@ -114,7 +114,7 @@ setwd("METIMMOX-1")
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
                survival, survminer, gems, mstate, tidyverse, xtable,
-               darthtools, dampack, mvtnorm, Matrix, here,
+               darthtools, dampack, mvtnorm, Matrix, here, voi,
                knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)
 ```
 

@@ -16,6 +16,7 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02"),
+  funs = c("evppi_functions", "report_format"),
   packages = c("here", "dplyr", "tidyr", "knitr", "kableExtra", "scales"),
   set_theme = FALSE
 )
@@ -31,66 +32,108 @@ if (!file.exists(cache_file)) {
 }
 evppi_cache <- readRDS(cache_file)
 
-evppi_grouped <- data.frame()
+# Table S7 reports the joint ([GROUP]) EVPPI rows only, one row per group and
+# scenario, plus total EVPI as the reference. Per-parameter rows are never added
+# to group rows: EVPPI is not additive, and summing them produced group values
+# above total EVPI in earlier versions (issue #152).
+group_order <- c(
+  "drug_costs", "test_costs", "other_costs", "all_costs",
+  "utilities", "prevalence",
+  paste0("interaction_", get_biomarkers()), "interaction_all"
+)
+
+to_population <- function(x) {
+  calculate_population_evppi(
+    x,
+    annual_incidence = annual_incidence_norway,
+    research_horizon = research_horizon_years,
+    discount_rate = discount_rate_research
+  )
+}
+
+evppi_table <- data.frame()
 if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
   evppi_all <- evppi_cache$evppi_all_scenarios
-  if (!"evppi_population_millions" %in% names(evppi_all)) {
-    discounted_pop <- annual_incidence_norway *
-      sum(1 / (1 + discount_rate_research)^(0:(research_horizon_years - 1)))
-    evppi_all$evppi_population_millions <- evppi_all$evppi * discounted_pop / 1e6
-  }
+  if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
+  if (!"n_params" %in% names(evppi_all)) evppi_all$n_params <- NA_integer_
 
-  evppi_grouped <- evppi_all %>%
-    mutate(param_group = case_when(
-      parameter %in% c("c_drug_nivo", "c_drug_FLOX") ~ "Drug costs",
-      parameter %in% c("c_test_CRP", "c_test_NGS", "c_test_CT", "c_test_blood") ~ "Test costs",
-      parameter %in% c("c_other_visit", "c_other_baseline",
-                       "c_other_follow", "c_other_last") ~ "Other costs",
-      parameter %in% c("u_np", "u_p") ~ "Utilities",
-      parameter %in% c("p_crp", "p_tmb_braf") ~ "Biomarker prevalence",
-      grepl("^b_(crp|tmb_braf)", parameter) ~ "Biomarker-treatment interaction",
-      grepl("^\\[GROUP\\].*drug", parameter) ~ "Drug costs",
-      grepl("^\\[GROUP\\].*test", parameter) ~ "Test costs",
-      grepl("^\\[GROUP\\].*other", parameter) ~ "Other costs",
-      grepl("^\\[GROUP\\].*util", parameter) ~ "Utilities",
-      grepl("^\\[GROUP\\].*prevalence", parameter) ~ "Biomarker prevalence",
-      grepl("^\\[GROUP\\].*interaction", parameter) ~ "Biomarker-treatment interaction",
-      TRUE ~ NA_character_
-    )) %>%
-    filter(!is.na(param_group)) %>%
-    group_by(scenario_name, wtp, param_group) %>%
-    summarise(
-      EVPPI = sum(evppi, na.rm = TRUE),
-      Population_EVPPI_M = sum(evppi_population_millions, na.rm = TRUE),
-      .groups = "drop"
+  scenario_order <- evppi_cache$scenarios$scenario_id
+
+  group_rows <- evppi_all %>%
+    filter(grepl("^\\[GROUP\\] ", parameter)) %>%
+    transmute(
+      scenario_id, scenario_name, wtp,
+      group = sub("^\\[GROUP\\] ", "", parameter),
+      param_group = evppi_group_label(parameter),
+      n_params,
+      evppi, evppi_se, evppi_percent_of_evpi, evpi,
+      evppi_population_millions = to_population(evppi),
+      evppi_se_population_millions = to_population(evppi_se)
     )
+
+  evpi_rows <- evppi_all %>%
+    distinct(scenario_id, scenario_name, wtp, evpi) %>%
+    transmute(
+      scenario_id, scenario_name, wtp,
+      group = "evpi",
+      param_group = "All parameters (EVPI)",
+      n_params = NA_integer_,
+      evppi = evpi, evppi_se = NA_real_, evppi_percent_of_evpi = 100, evpi,
+      evppi_population_millions = to_population(evpi),
+      evppi_se_population_millions = NA_real_
+    )
+
+  evppi_table <- bind_rows(evpi_rows, group_rows) %>%
+    mutate(
+      scenario_rank = match(scenario_id, scenario_order),
+      group_rank = match(group, c("evpi", group_order))
+    ) %>%
+    arrange(scenario_rank, group_rank) %>%
+    select(-scenario_rank, -group_rank)
+
+  missing_groups <- setdiff(paste0("[GROUP] ", group_order), unique(evppi_all$parameter))
+  if (length(missing_groups) > 0) {
+    warning("Table S7: group rows absent from the scenario cache: ",
+            paste(missing_groups, collapse = ", "),
+            ". Rerun scripts/R/analysis/12_scenario_EVPPIs.R.")
+  }
 }
 ```
 
 ```{r display-table}
-if (nrow(evppi_grouped) > 0) {
-  display_df <- evppi_grouped %>%
+if (nrow(evppi_table) > 0) {
+  display_df <- evppi_table %>%
     mutate(
       WTP = scales::dollar(wtp, prefix = "EUR ", accuracy = 1),
-      EVPPI = scales::dollar(EVPPI, prefix = "EUR ", accuracy = 0.01),
-      Population_EVPPI_M = paste0("EUR ", sprintf("%.2f", Population_EVPPI_M), "M")
+      Parameters = ifelse(is.finite(n_params), as.character(n_params), "--"),
+      EVPPI = format_eur(evppi, accuracy = 0.01),
+      SE = format_eur(evppi_se, accuracy = 0.01),
+      `Percent of EVPI` = ifelse(is.finite(evppi_percent_of_evpi),
+                                 sprintf("%.1f%%", evppi_percent_of_evpi), "--"),
+      `Population EVPPI` = paste0("EUR ", sprintf("%.2f", evppi_population_millions), "M")
     ) %>%
     select(Scenario = scenario_name, WTP, `Parameter Group` = param_group,
-           EVPPI, `Population EVPPI` = Population_EVPPI_M)
+           Parameters, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`)
 
   kable(
     display_df,
-    caption = "Table S7: EVPPI by parameter group and scenario",
+    caption = "Table S7: Joint EVPPI by parameter group and scenario",
     format = "html",
-    align = c("l", "r", "l", "r", "r")
+    align = c("l", "r", "l", "r", "r", "r", "r", "r")
   ) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                   full_width = FALSE, font_size = 11) %>%
     footnote(
-      general = paste0("Population scaling: ", annual_incidence_norway,
-                       " patients/year over ", research_horizon_years,
-                       " years, discounted at ",
-                       scales::percent(discount_rate_research, accuracy = 0.1), "."),
+      general = paste0(
+        "EVPPI estimated by nonparametric regression (voi::evppi, GAM; Strong et al. 2014) ",
+        "with Monte Carlo standard errors (SE) from 1,000 regression-coefficient draws. ",
+        "Each group row is one joint estimate for all parameters in the group; group ",
+        "rows are not sums of single-parameter EVPPIs. 'All parameters (EVPI)' is the ",
+        "total expected value of perfect information for the scenario. Population ",
+        "scaling: ", annual_incidence_norway, " patients/year over ",
+        research_horizon_years, " years, discounted at ",
+        scales::percent(discount_rate_research, accuracy = 0.1), "."
+      ),
       general_title = "Notes: "
     )
 } else {
@@ -99,10 +142,10 @@ if (nrow(evppi_grouped) > 0) {
 ```
 
 ```{r save-table, include=FALSE}
-if (nrow(evppi_grouped) > 0) {
+if (nrow(evppi_table) > 0) {
   tables_dir <- here("tables")
   if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
-  write.csv(evppi_grouped, file = here("tables", "table_s7.csv"), row.names = FALSE)
+  write.csv(evppi_table, file = here("tables", "table_s7.csv"), row.names = FALSE)
 }
 ```
 
