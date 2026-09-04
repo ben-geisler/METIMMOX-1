@@ -3,8 +3,9 @@
 # ===============================================================================
 # Defines the single economic survival model, its strategies, biomarkers,
 # display metadata, parameter keys, and formulas. The same shared formula is
-# used for the CRP-guided and TMB/BRAF-guided strategies; the control arm is
-# age/sex-adjusted only.
+# used for the CRP-guided and TMB/BRAF-guided strategies. The control arm is
+# NOT a separate model: it is the same joint fit predicted with Rx forced to
+# the control level, in both the base case and the PSA (issue #151).
 #
 # Economic analyses include standard of care plus two pre-immunotherapy biomarker
 # strategies (CRP and TMB/BRAF), i.e. biomarkers that are available before the
@@ -78,8 +79,9 @@ BIOMARKER_METADATA <- data.frame(
 #' Get the economic model configuration
 #'
 #' Single source of truth for the joint economic survival model. Returns a list
-#' with label/description, the strategy and biomarker sets, the shared biomarker
-#' formulas, and the control formulas.
+#' with label/description, the strategy and biomarker sets, and the shared
+#' joint formulas (the control arm is these formulas predicted with
+#' Rx = control; it has no formula of its own).
 #'
 #' @return Model configuration list.
 #' @export
@@ -97,10 +99,6 @@ get_current_model_config <- function() {
         os  = Surv(OSwk, Death) ~ Age + sex + Rx + crp * Rx + tmb_braf * Rx,
         pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp * Rx + tmb_braf * Rx
       )
-    ),
-    control_formulas = list(
-      os  = Surv(OSwk, Death) ~ Age + sex,
-      pfs = Surv(PFSwk, Progression) ~ Age + sex
     )
   )
 }
@@ -234,16 +232,6 @@ get_strategy_formula <- function(strategy, outcome) {
   }
 
   config$formulas$shared[[outcome]]
-}
-
-#' Get the control-arm survival formula for an outcome
-#'
-#' @param outcome "os" or "pfs".
-#' @return Formula object.
-#' @export
-get_control_formula <- function(outcome) {
-  .validate_outcome(outcome)
-  get_current_model_config()$control_formulas[[outcome]]
 }
 
 #' Get model formulas for survival analysis

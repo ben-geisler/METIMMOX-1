@@ -261,10 +261,10 @@ Defined in [02_setup_and_global_variables.R](scripts/R/analysis/02_setup_and_glo
 ```r
 OS:  Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
 PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
-Control: ~ Age + sex
+Control arm: the same joint models predicted with Rx = control for every patient
 ```
 
-There is no model-structure switch or multi-structure comparison layer. The economic model is the joint CRP + TMB/BRAF formula defined in [model_configs.R](scripts/R/functions/model_configs.R).
+There is no model-structure switch or multi-structure comparison layer. The economic model is the joint CRP + TMB/BRAF formula defined in [model_configs.R](scripts/R/functions/model_configs.R). There is no separate control-arm model: in both the base case and the PSA the standard-of-care curves are the joint model predicted with treatment set to control (issue #151). The sampling cache stores one joint bootstrap under each biomarker key; a legacy `control` component in an older cache is ignored.
 
 **Parametric distribution selection**: OS and PFS distributions are selected jointly from the nine candidate families in [04_parametric_survival_analysis.R](scripts/R/analysis/04_parametric_survival_analysis.R). The selected pair is the minimum-combined-AIC pair that preserves OS >= PFS for control and every economic biomarker subgroup at every modeled weekly time point. With the current data and 10-year horizon, the ordering-constrained selection is **gamma for OS and gamma for PFS**.
 
@@ -301,6 +301,7 @@ Both approaches are methodologically valid for their respective analytical purpo
 The model uses **correlated survival resampling** ([06_sampling.R](scripts/R/analysis/06_sampling.R:103-200)) to maintain the correlation between PFS and OS:
 
 - Both PFS and OS models are fitted to the **same resampled patient cohort**
+- One joint-model bootstrap serves every strategy: control, biomarker-positive, and biomarker-negative curves in a PSA draw all come from the same resampled joint fit (control = joint fit with `Rx = control`), so control and biomarker effects stay correlated (issue #151)
 - Results are cached in `data/tidy/`
 - Cache file naming: `sampling_models_n{n_samples}_full.rds`
 
@@ -381,24 +382,20 @@ Adverse-event/toxicity costs and disutilities are not modeled separately. This i
 
 ### Survival Model Formulas
 
-**Control group** (age- and sex-adjusted):
-```r
-OS:  Surv(OSwk, Death) ~ Age + sex
-PFS: Surv(PFSwk, Progression) ~ Age + sex
-```
-
-**Economic biomarker model** (shared by CRP-guided and TMB/BRAF-guided strategies):
+**Economic model** (shared by the control, CRP-guided, and TMB/BRAF-guided strategies):
 ```r
 OS:  Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
 PFS: Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
 ```
+
+**Control arm**: not a separate model. Standard-of-care curves are the joint OS and PFS models predicted with `Rx` set to the control level for every patient in `data_complete`, then averaged. This holds in the base case (`generate_population_averaged_predictions()`) and in every PSA draw (`generate_psa_population_averaged_predictions()` with `biomarker_name = NULL`), so PSA means are centred on the base case. An earlier age/sex-only control bootstrap fitted on the 36 control-arm patients was removed in issue #151.
 
 See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical formula definitions.
 
 ### Key Functions
 
 **Model Configuration**:
-- **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for the economic strategies, biomarkers, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_current_model_config()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_control_formula()`, `get_model_formulas()`.
+- **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for the economic strategies, biomarkers, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_current_model_config()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_model_formulas()`. (`get_control_formula()` was removed in issue #151; there is no separate control-arm formula.)
 - **[pfs_endpoint.R](scripts/R/functions/pfs_endpoint.R)**: Single source of truth for the composite PFS endpoint (progression or death). Auto-sourced by `02_setup_and_global_variables.R`. Key function: `derive_pfs_endpoint()`.
 - **[cache_paths.R](scripts/R/functions/cache_paths.R)**: Single source of truth for the utility-source label and cached-object file paths (sampling, PSA, EVPPI, scenario). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`.
 - **[report_setup.R](scripts/R/functions/report_setup.R)**: One-call Quarto report setup (knitr options, package loading, shared ggplot theme, and sourcing of analysis scripts/function files), used to remove duplicated setup boilerplate across the economic reports. Key function: `setup_report(sources, funs, packages, set_theme)`.
@@ -808,6 +805,7 @@ The test suite in `scripts/R/tests/` includes:
 - **[test_canonical_prevalence.R](scripts/R/tests/test_canonical_prevalence.R)**: Verifies weighted curves use canonical full-cohort biomarker prevalence
 - **[test_psa_fallback_reporting.R](scripts/R/tests/test_psa_fallback_reporting.R)**: Verifies PSA fallback-rate reporting and its failure threshold
 - **[test_sim_idx_validation.R](scripts/R/tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation
+- **[test_psa_basecase_alignment.R](scripts/R/tests/test_psa_basecase_alignment.R)**: Verifies structurally that the PSA control curve is the joint model with `Rx = control`, then checks that PSA strategy means (costs and QALYs) sit within 5 Monte Carlo standard errors of the base case and prints the incremental comparison (issue #151); skips the numerical check when the PSA cache is absent. The numerical criterion is a known failure at n_sim = 5000 (see the test protocol table)
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
 - **[snapshot.R](scripts/R/tests/snapshot.R)**: Helper script for running snapshot saves
@@ -826,6 +824,7 @@ Focused executable regression tests live in [`scripts/R/tests/`](scripts/R/tests
 | No mortality | With OS and PFS fixed at 1, death occupancy remains 0 and undiscounted life-years equal the stated 10-year horizon | Black-box record (`BB-M0`) | Fail (minor): 521 weekly grid points produce 10.019 rather than 10.000 life-years; equal across strategies |
 | Near-certain mortality | With survival forced near 0 after baseline, more than 99% of the cohort is dead by cycle 3 | Black-box record (`BB-M1`) | Pass |
 | Determinism | Two deterministic runs with identical inputs produce bitwise-identical costs and QALYs | Black-box record (`BB-RE`) | Pass |
+| PSA centred on base case | For every strategy, the PSA mean cost and mean QALYs are within 5 Monte Carlo standard errors of the deterministic base-case values; the control PSA curve must be the joint model with `Rx = control` (structural check, no cache needed) | [`test_psa_basecase_alignment.R`](scripts/R/tests/test_psa_basecase_alignment.R) | Structural check: Pass. Numerical check: **Fail (known)** after the issue #151 fix at n_sim = 5000: every strategy's mean QALYs sit +0.025 to +0.033 above the base case (6.3 to 9.6 SE, all the same sign), the bootstrap-mean bias of the extrapolated gamma curves that is shared by all arms because they come from one joint fit; costs are within 4.7 SE. The increments versus control, which the shared bias cancels out of, are within 1.2 SE (QALYs) and 3.4 SE (cost). Before the fix the control QALY mean was 21 SE *below* the base case and the CRP incremental QALYs were 0.122 versus 0.020. |
 
 Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" scripts/R/tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.
 

@@ -27,6 +27,12 @@
 #     base case curves. This is now tracked via a "fallback_used" attribute
 #     on the returned results, allowing the PSA loop to detect and replace
 #     failed iterations instead of mixing different estimation methods.
+#
+# One Survival Model in Base Case and PSA (Issue #151):
+#   - Every PSA curve (control, biomarker-positive, biomarker-negative) comes
+#     from the SAME resampled joint model; the control arm is that model
+#     predicted with Rx = control, exactly as in the base case. No separate
+#     age/sex-only control model is used anywhere.
 # ===============================================================================
 
 # ===============================================================================
@@ -166,14 +172,13 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
 
     # Check if any resampled models for this sim_idx are failed (using originals)
     # This helps track iterations where resampled model fitting failed and the
-    # original model was substituted, which reduces uncertainty estimation
-    control_failed <- isTRUE(
-      sampling_models[[control_strategy]]$samples[[sim_idx]]$failed
-    )
+    # original model was substituted, which reduces uncertainty estimation.
+    # The control arm is predicted from the same joint bootstrap as the
+    # biomarker strategies, so the biomarker components cover it (issue #151).
     biomarker_failed <- any(vapply(biomarkers_to_run, function(bm) {
       isTRUE(sampling_models[[bm]]$samples[[sim_idx]]$failed)
     }, logical(1)))
-    if (control_failed || biomarker_failed) {
+    if (biomarker_failed) {
       fallback_used <- TRUE
     }
 
@@ -181,15 +186,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # CONTROL STRATEGY: Population-averaged predictions over FULL population
     # -----------------------------------------------------------------------
     # Uses the shared population-averaging helper to predict for ALL patients in
-    # data_complete (both arms), matching the base case methodology which
-    # also averages over the full population. The control model only uses
-    # Age + sex, so treatment arm assignment is irrelevant.
+    # data_complete (both arms) with Rx forced to the control level, using the
+    # resampled JOINT model. This mirrors the base case, which predicts the
+    # control curve from the same joint fit with Rx = control
+    # (generate_population_averaged_predictions). A separate age/sex-only
+    # control model was previously bootstrapped here; that shifted the PSA
+    # away from the base case and broke the control/biomarker correlation
+    # (issue #151).
 
     tryCatch({
-      # Use population averaging over FULL population (data_complete)
-      # to match base case which also uses data_complete for control predictions
+      joint_sampling_models <- get_joint_sampling_models(sampling_models)
+
       os_control <- generate_psa_population_averaged_predictions(
-        sampling_model_list = sampling_models[[control_strategy]],
+        sampling_model_list = joint_sampling_models,
         outcome = "os",
         sample_idx = sim_idx,
         data_original = data_complete,
@@ -197,7 +206,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       )
 
       pfs_control <- generate_psa_population_averaged_predictions(
-        sampling_model_list = sampling_models[[control_strategy]],
+        sampling_model_list = joint_sampling_models,
         outcome = "pfs",
         sample_idx = sim_idx,
         data_original = data_complete,

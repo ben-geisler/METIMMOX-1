@@ -67,6 +67,23 @@ extract_km_data <- function(km_fit) {
   )
 }
 
+# Return the resampled JOINT economic model from the sampling cache.
+#
+# Every economic biomarker strategy shares one joint formula, so the cache
+# stores the same bootstrap under each biomarker key. The control arm is that
+# same joint fit predicted with Rx = control (issue #151); it has no component
+# of its own. A legacy "control" component (a separate age/sex-only bootstrap
+# fitted on the control arm) is ignored if present.
+get_joint_sampling_models <- function(sampling_models) {
+  biomarkers <- get_biomarkers()
+  present <- intersect(biomarkers, names(sampling_models))
+  if (length(present) == 0L) {
+    stop("sampling_models has no joint-model component; expected one of: ",
+         paste(biomarkers, collapse = ", "))
+  }
+  sampling_models[[present[1]]]
+}
+
 # Main function for population-averaged predictions across all strategies
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,

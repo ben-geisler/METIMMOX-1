@@ -83,8 +83,10 @@ subgroups <- test_env$generate_psa_population_averaged_predictions(
   sampled_models, biomarker_name = "crp", outcome = "os",
   data_original = patient_data, time_points = 0:2
 )
+# Control curve: every patient predicted with Rx = control (issue #151), so the
+# mock's +10 experimental effect must NOT appear: mean(Age) = 2.5, not 7.5.
 stopifnot(
-  identical(control, rep(7.5, 3)),
+  identical(control, rep(2.5, 3)),
   identical(subgroups$positive, rep(11.5, 3)),
   identical(subgroups$negative, rep(3.5, 3))
 )

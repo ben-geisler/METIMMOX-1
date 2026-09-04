@@ -161,8 +161,11 @@ for (model_name in "joint") {
     for (j in seq_along(boot_indices)) {
       idx <- boot_indices[j]
 
-      # Control predictions from control sampling model
-      ctrl_model <- sampling_models_cache$control$samples[[idx]][[outcome]]$model
+      # Control predictions from the SAME resampled joint model, with Rx forced
+      # to control (issue #151). The base-case line is the joint model with
+      # Rx = control, so its ribbon must come from the joint bootstrap too, not
+      # from a separate age/sex-only control bootstrap.
+      ctrl_model <- sampling_models_cache$crp$samples[[idx]][[outcome]]$model
       if (!is.null(ctrl_model)) {
         ctrl_data_tmp <- data_complete
         ctrl_data_tmp$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))

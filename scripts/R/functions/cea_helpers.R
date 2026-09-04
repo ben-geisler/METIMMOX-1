@@ -261,4 +261,144 @@ load_scenario_evppi_results <- function(results_file = NULL) {
   readRDS(results_file)
 }
 
+#' Compare PSA strategy means with base-case values
+#'
+#' The PSA and the base case use the same joint survival model (issue #151),
+#' so PSA means should sit close to the deterministic values, differing only
+#' by the mild nonlinearity of the partitioned survival model. This table
+#' reports, per strategy and outcome, the base-case value, the PSA mean, its
+#' Monte Carlo standard error, and the difference expressed in standard errors.
+#'
+#' @param psa_obj dampack PSA object.
+#' @param base_results Data frame with Strategy, Cost, and Effect columns
+#'   (the base-case output of \code{run_basecase()}).
+#' @return Data frame with columns Strategy, Outcome, Base_Case, PSA_Mean,
+#'   PSA_SE, Diff, Diff_SE, ordered by strategy then outcome (Cost, QALYs).
+create_psa_basecase_comparison <- function(psa_obj, base_results) {
+  if (is.null(psa_obj)) {
+    return(data.frame(
+      Strategy = character(), Outcome = character(),
+      Base_Case = numeric(), PSA_Mean = numeric(), PSA_SE = numeric(),
+      Diff = numeric(), Diff_SE = numeric(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  cost_matrix <- as.matrix(psa_obj$cost)
+  effect_matrix <- if (!is.null(psa_obj$effect)) {
+    as.matrix(psa_obj$effect)
+  } else {
+    as.matrix(psa_obj$effectiveness)
+  }
+  psa_strategies <- psa_obj$strategies
+  missing <- setdiff(psa_strategies, base_results$Strategy)
+  if (length(missing) > 0L) {
+    stop("Base-case results lack strategies present in the PSA: ",
+         paste(missing, collapse = ", "))
+  }
+
+  rows <- lapply(seq_along(psa_strategies), function(i) {
+    strategy <- psa_strategies[i]
+    base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
+    outcome_values <- list(
+      Cost = list(base = base_row$Cost[1], draws = cost_matrix[, i]),
+      QALYs = list(base = base_row$Effect[1], draws = effect_matrix[, i])
+    )
+    do.call(rbind, lapply(names(outcome_values), function(outcome) {
+      draws <- outcome_values[[outcome]]$draws
+      draws <- draws[is.finite(draws)]
+      psa_mean <- mean(draws)
+      psa_se <- stats::sd(draws) / sqrt(length(draws))
+      diff <- psa_mean - outcome_values[[outcome]]$base
+      data.frame(
+        Strategy = strategy,
+        Outcome = outcome,
+        Base_Case = outcome_values[[outcome]]$base,
+        PSA_Mean = psa_mean,
+        PSA_SE = psa_se,
+        Diff = diff,
+        Diff_SE = diff / psa_se,
+        stringsAsFactors = FALSE
+      )
+    }))
+  })
+
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+#' Compare PSA incremental means (versus control) with base-case increments
+#'
+#' Companion to \code{create_psa_basecase_comparison()}. Because every PSA
+#' draw predicts all strategies from one resampled joint model, a shift that is
+#' common to every strategy (bootstrap nonlinearity bias) cancels in the
+#' increments; a control-specific shift, such as the separate age/sex control
+#' model removed in issue #151, does not. The standard error is that of the
+#' paired incremental draws, so it reflects the within-draw correlation.
+#'
+#' @param psa_obj dampack PSA object.
+#' @param base_results Data frame with Strategy, Cost, and Effect columns.
+#' @return Data frame with columns Comparator, Outcome, Base_Case, PSA_Mean,
+#'   PSA_SE, Diff, Diff_SE, one row per biomarker strategy and outcome.
+create_psa_incremental_comparison <- function(psa_obj, base_results) {
+  control <- get_control_strategy()
+  if (is.null(psa_obj)) {
+    return(data.frame(
+      Comparator = character(), Outcome = character(),
+      Base_Case = numeric(), PSA_Mean = numeric(), PSA_SE = numeric(),
+      Diff = numeric(), Diff_SE = numeric(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  cost_matrix <- as.matrix(psa_obj$cost)
+  effect_matrix <- if (!is.null(psa_obj$effect)) {
+    as.matrix(psa_obj$effect)
+  } else {
+    as.matrix(psa_obj$effectiveness)
+  }
+  colnames(cost_matrix) <- colnames(effect_matrix) <- psa_obj$strategies
+  if (!control %in% psa_obj$strategies) {
+    stop("PSA object has no control strategy '", control, "'")
+  }
+  base_control <- base_results[base_results$Strategy == control, , drop = FALSE]
+
+  comparators <- setdiff(psa_obj$strategies, control)
+  rows <- lapply(comparators, function(strategy) {
+    base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
+    outcome_values <- list(
+      Cost = list(
+        base = base_row$Cost[1] - base_control$Cost[1],
+        draws = cost_matrix[, strategy] - cost_matrix[, control]
+      ),
+      QALYs = list(
+        base = base_row$Effect[1] - base_control$Effect[1],
+        draws = effect_matrix[, strategy] - effect_matrix[, control]
+      )
+    )
+    do.call(rbind, lapply(names(outcome_values), function(outcome) {
+      draws <- outcome_values[[outcome]]$draws
+      draws <- draws[is.finite(draws)]
+      psa_mean <- mean(draws)
+      psa_se <- stats::sd(draws) / sqrt(length(draws))
+      diff <- psa_mean - outcome_values[[outcome]]$base
+      data.frame(
+        Comparator = strategy,
+        Outcome = outcome,
+        Base_Case = outcome_values[[outcome]]$base,
+        PSA_Mean = psa_mean,
+        PSA_SE = psa_se,
+        Diff = diff,
+        Diff_SE = diff / psa_se,
+        stringsAsFactors = FALSE
+      )
+    }))
+  })
+
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
 message("Single-model CEA helper functions loaded successfully.")

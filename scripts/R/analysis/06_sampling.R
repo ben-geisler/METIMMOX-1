@@ -28,7 +28,13 @@ sampling_seed <- analysis_seed
 # Model formulas are defined in scripts/R/functions/model_configs.R
 # This ensures PSA uses the same single joint model as base case.
 #
-# Economic biomarker strategies are CRP and TMB/BRAF.
+# Economic biomarker strategies are CRP and TMB/BRAF. Both share one joint
+# formula, so one bootstrap of the joint model serves every strategy. The
+# control arm is NOT a separate age/sex model: it is the same joint fit
+# predicted with Rx forced to the control level, exactly as in the base case
+# (issue #151). The cache therefore holds one component per biomarker, all
+# pointing at the same joint bootstrap; a legacy "control" component, if
+# present in an older cache, is ignored.
 # ===============================================================================
 
 # Source model configurations if not already loaded
@@ -43,10 +49,6 @@ if (!exists("extract_all_survival_probabilities", mode = "function")) {
 model_config <- get_current_model_config()
 cat("Resampling: Using", model_config$label, "\n")
 cat("Description:", model_config$description, "\n")
-
-# Get control formulas from central config
-control_os_formula <- get_control_formula("os")
-control_pfs_formula <- get_control_formula("pfs")
 
 # Create biomarker formula function using central config
 create_biomarker_formula <- function(outcome, biomarker) {
@@ -207,13 +209,14 @@ if (file.exists(cache_file)) {
 
   sampling_models <- readRDS(cache_file)
 
-  # Validate cache contains the single economic model biomarkers
+  # Validate cache contains the single economic model biomarkers. Each
+  # biomarker component holds the same joint bootstrap, which also supplies the
+  # control arm (issue #151); a legacy "control" component is not required.
   biomarkers_to_validate <- get_biomarkers()
   if (is.list(sampling_models) &&
-      "control" %in% names(sampling_models) &&
       all(biomarkers_to_validate %in% names(sampling_models))) {
     expected_dists <- resolve_best_distributions(models)
-    cache_components <- c("control", biomarkers_to_validate)
+    cache_components <- biomarkers_to_validate
     distributions_match <- all(vapply(
       cache_components,
       function(component) {
@@ -240,20 +243,26 @@ if (file.exists(cache_file)) {
       sampling_models <- NULL
     } else {
       cat("Cache loaded successfully!\n")
-      control_strategy <- get_control_strategy()
-      cat("- Control samples:", sampling_models[[control_strategy]]$n_samples, "\n")
+      joint_models <- get_joint_sampling_models(sampling_models)
+      cat("- Joint-model samples:", joint_models$n_samples, "\n")
       cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
-      cat("- Created:", format(sampling_models[[control_strategy]]$creation_time), "\n")
-      cat("- Distributions: OS", sampling_models[[control_strategy]]$dist_os,
-          "| PFS", sampling_models[[control_strategy]]$dist_pfs, "\n")
-      cat("- RNG seed:", sampling_models[[control_strategy]]$seed, "\n")
+      cat("- Created:", format(joint_models$creation_time), "\n")
+      cat("- Distributions: OS", joint_models$dist_os,
+          "| PFS", joint_models$dist_pfs, "\n")
+      cat("- RNG seed:", joint_models$seed, "\n")
+      if (get_control_strategy() %in% names(sampling_models)) {
+        cat("- Legacy control component present and ignored: the control arm ",
+            "is predicted from the joint model with Rx = control (issue #151)\n",
+            sep = "")
+      }
 
       # Check if n_samples matches
-      if (sampling_models[[control_strategy]]$n_samples != n_samples) {
-        cat("WARNING: Cached models (", sampling_models[[control_strategy]]$n_samples,
+      if (joint_models$n_samples != n_samples) {
+        cat("WARNING: Cached models (", joint_models$n_samples,
             ") != requested (", n_samples, ")\n")
         cat("Will use cached models. Delete cache file to regenerate.\n")
       }
+      rm(joint_models)
     }
 
   } else {
@@ -279,28 +288,28 @@ if (is.null(sampling_models)) {
   cat("This will take some time but only needs to run once.\n")
   cat("Results will be cached to:", cache_file, "\n\n")
 
-  # Sample control models with age and sex adjustments
-  cat("\nSampling control strategy...\n")
+  # Bootstrap the joint economic model (age, sex, treatment, and the
+  # biomarker-by-treatment interactions). No separate control bootstrap is
+  # fitted: the control arm is this same joint fit predicted with Rx = control,
+  # matching the base case (issue #151). Biomarker strategies that share a
+  # formula share one bootstrap, stored under each biomarker key.
   selected_dists <- resolve_best_distributions(models)
-  sampling_models[[get_control_strategy()]] <- sample_correlated_survival(
-    formula_os = control_os_formula,
-    formula_pfs = control_pfs_formula,
-    data = data_control,
-    dist_os = selected_dists$os,
-    dist_pfs = selected_dists$pfs,
-    n_samples = n_samples,
-    seed = sampling_seed
-  )
-
-  # Sample biomarker models with age and sex adjustments
   biomarkers_to_sample <- get_biomarkers()
+  fitted_formula_sets <- list()
   for (biomarker in biomarkers_to_sample) {
-    cat("\nSampling", biomarker, "strategy...\n")
-
-    # OS model with age, sex, biomarker, treatment, and interaction
     os_formula <- create_biomarker_formula("os", biomarker)
     pfs_formula <- create_biomarker_formula("pfs", biomarker)
+    formula_key <- paste(deparse(os_formula), deparse(pfs_formula), sep = " || ")
 
+    if (!is.null(fitted_formula_sets[[formula_key]])) {
+      cat("\n", biomarker, " strategy shares the joint model bootstrap already ",
+          "fitted for ", fitted_formula_sets[[formula_key]], "\n", sep = "")
+      sampling_models[[biomarker]] <-
+        sampling_models[[fitted_formula_sets[[formula_key]]]]
+      next
+    }
+
+    cat("\nSampling joint model bootstrap for", biomarker, "strategy...\n")
     sampling_models[[biomarker]] <- sample_correlated_survival(
       formula_os = os_formula,
       formula_pfs = pfs_formula,
@@ -310,7 +319,9 @@ if (is.null(sampling_models)) {
       n_samples = n_samples,
       seed = sampling_seed
     )
+    fitted_formula_sets[[formula_key]] <- biomarker
   }
+  rm(fitted_formula_sets)
 
   # Save to cache
   cat("\n=== Saving sampling models to cache ===\n")
@@ -329,8 +340,9 @@ cat("- Model:", model_config$label, "\n")
 cat("- Biomarker strategies: CRP, TMB/BRAF\n")
 cat("- Formulas defined in: scripts/R/functions/model_configs.R\n")
 cat("- Number of resampled models:",
-    sampling_models[[get_control_strategy()]]$n_samples, "\n")
+    get_joint_sampling_models(sampling_models)$n_samples, "\n")
 cat("- PFS and OS are CORRELATED within each resampled model\n")
+cat("- Control arm: joint model predicted with Rx = control (issue #151)\n")
 
 # ===============================================================================
 # PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS (NON-SURVIVAL PARAMETERS)
@@ -346,8 +358,10 @@ rm(parameter_config)
 # ===============================================================================
 # POPULATION AVERAGING FUNCTION FOR PSA
 # ===============================================================================
-# With biomarker_name = NULL, predicts the control curve over all patients.
-# Otherwise predicts the biomarker-positive/experimental and
+# With biomarker_name = NULL, predicts the control curve over all patients with
+# Rx forced to the control level, i.e. the joint model's standard-of-care
+# prediction, mirroring generate_population_averaged_predictions() in the base
+# case (issue #151). Otherwise predicts the biomarker-positive/experimental and
 # biomarker-negative/control subgroup curves using one shared code path.
 
 generate_psa_population_averaged_predictions <- function(sampling_model_list,
@@ -390,7 +404,11 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   }
 
   if (is.null(biomarker_name)) {
-    return(average_prediction(data_original, label = "control"))
+    return(average_prediction(
+      data_original,
+      rx_level = levels(data_original$Rx)[1],
+      label = "control"
+    ))
   }
 
   status <- as.numeric(as.character(data_original[[biomarker_name]]))
