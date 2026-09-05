@@ -16,9 +16,15 @@ data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
 # This ensures all subset datasets (data_control, data_crp, etc.) have sex as factor
 data$sex <- as.factor(data$sex)
 
-# Create limited dataset with only the variables we need
+# Create limited dataset with only the variables we need.
+# ProgressionExit / TTPwk (raw progression-exit flag and time, issue #149) and
+# CT1wk (first on-treatment CT week, issue #155) are carried for the clinical
+# and DAG reports: the time-dependent PFS -> OS test needs the progression-only
+# event, and the TLR landmark analyses need the scan date. No economic script
+# reads them, and every complete-case subset names its columns explicitly.
 data <- data %>%
-  select(ID, PFSwk, Progression, OSwk, Death, Rx, crp, tlr, tmb_braf, Age, sex)
+  select(ID, PFSwk, Progression, OSwk, Death, Rx, crp, tlr, tmb_braf, Age, sex,
+         ProgressionExit, TTPwk, CT1wk)
 
 # Extract control and experimental groups
 data_control <- subset(data, Rx == levels(data$Rx)[1])

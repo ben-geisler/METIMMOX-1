@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-05
+2026-09-06
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -53,6 +53,8 @@ Ben Geisler
     - [Progression-Free Survival](#progression-free-survival-2)
   - [Ridge Sensitivity Analysis (Landmark, TLR Terms
     Penalized)](#ridge-sensitivity-analysis-landmark-tlr-terms-penalized)
+    - [Landmark Sensitivity: Scan-Date and Week-12
+      Landmarks](#landmark-sensitivity-scan-date-and-week-12-landmarks)
 - [Discussion](#discussion)
   - [Primary interaction results](#primary-interaction-results)
   - [Proportional hazards](#proportional-hazards)
@@ -447,24 +449,33 @@ patients are, by construction, a more favourable risk set than the full
 randomized population.
 
 A **landmark analysis** removes this bias by (i) fixing a landmark time,
-(ii) restricting to patients still at risk at the landmark, and (iii)
-measuring survival **from the landmark onward**. Here the landmark is
-set to **week 9**, the time of the second CT (the first on-treatment
+(ii) restricting to patients still at risk after the landmark, and (iii)
+measuring survival **from the landmark onward**. The primary landmark is
+**week 9**, the protocol time of the second CT (the first on-treatment
 response assessment): TLR compares this scan to the baseline CT, so a
-patient’s TLR status does not exist until week 9. Placing the landmark
-at the measurement time ensures every patient in the cohort has actually
-reached the scan and has a defined TLR. Every retained patient is
-guaranteed to have reached the assessment, so the TLR x Rx contrast is
-no longer inflated by the survival required to be classifiable. This
-section **complements** the responder analysis above (which is retained
-for comparison); it does not replace it.
+patient’s TLR status does not exist until that scan. The actual first
+on-treatment scans, however, were not all at week 9: in the trial
+extract they fell between weeks 6.7 and 12.1 after inclusion (median
+8.6). A fixed week-9 landmark therefore does not guarantee that every
+retained patient had reached the scan, and it does not remove every
+patient whose progression was recorded at the first scan. Both
+departures are counted below, and two sensitivity landmarks are
+reported: a **per-patient landmark at each patient’s own first-scan
+date**, which by construction retains only patients progression-free
+after their TLR was read, and a **fixed week-12 landmark**, after the
+latest first scan (issue \#155). This section **complements** the
+responder analysis above (which is retained for comparison); it does not
+replace it.
 
-If the true response-assessment week differs from 9, only the single
-`LANDMARK_WK` value below needs changing. Because the small trial loses
-patients with events or censoring before the landmark, the cohort sizes
-and event counts are reported explicitly, and all model fits are wrapped
-so a too-small cohort degrades gracefully rather than aborting the
-render.
+The three landmark definitions live in
+`scripts/R/functions/tlr_landmark.R` and are shared with Figure 1 of the
+clinical effectiveness paper and the DAG association tests, so all three
+use one cohort rule: a patient enters an endpoint-specific cohort only
+if the endpoint time is strictly after the landmark. Because the small
+trial loses patients with events or censoring before the landmark, the
+cohort sizes and event counts are reported explicitly, and all model
+fits are wrapped so a too-small cohort degrades gracefully rather than
+aborting the render.
 
 ## Landmark Cohort and Attrition
 
@@ -482,7 +493,7 @@ Reporting both fixes the denominators for the OS and PFS models that
 follow and makes the composition of the two TLR groups directly
 comparable.
 
-#### Overall-survival at-risk set (OSwk \>= 9)
+#### Overall-survival at-risk set (OSwk \> 9)
 
 | Characteristic                    | At-risk cohort | TLR-positive | TLR-negative |
 |:----------------------------------|---------------:|-------------:|-------------:|
@@ -503,7 +514,7 @@ Because no patient dies or is censored before week 9, the OS at-risk set
 coincides with the full TLR-complete cohort (n = 65; the three early
 deaths without a TLR value are already outside this cohort).
 
-#### Progression-free-survival at-risk set (PFSwk \>= 9)
+#### Progression-free-survival at-risk set (PFSwk \> 9)
 
 | Characteristic                    | At-risk cohort | TLR-positive | TLR-negative |
 |:----------------------------------|---------------:|-------------:|-------------:|
@@ -598,7 +609,7 @@ TMB/BRAF remain unpenalized.
 landmark, and the contrast is itself informative.
 
 *Overall survival* is clean: 0 patient(s) are excluded (no deaths occur
-before week 9), so the landmark OS cohort is the full randomized
+before week 9), so the landmark OS cohort is the full TLR-complete
 population and the landmark Firth TLR x Rx HR (2.47 (0.75-7.75)) is
 **identical** to the responder estimate (2.47 (0.75-7.75)) — a Cox model
 is invariant to a common shift of the time origin when no one leaves the
@@ -609,22 +620,36 @@ guarantee-time artefact.
 excluded, of whom 5 progressed, 5 of them **TLR-negative**. This is not
 a coincidence: progression and TLR are read from the *same* first
 on-treatment scan, so a patient whose tumour grows at that scan is
-simultaneously classified as a progression and as TLR-negative. The
-week-9 landmark removes exactly these TLR-negative scan-time
-progressors, shifting the Firth TLR x Rx HR from 1.49 (0.45-4.67)
-(responder) to 1.88 (0.52-6.38) (landmark). The responder PFS
-association is thus **partly tautological** — TLR-negativity and early
-progression are the same measurement — which the landmark makes explicit
-by excluding the coupled events.
+simultaneously classified as a progression and as TLR-negative. In total
+8 patients progressed at their first scan, all TLR-negative. The fixed
+week-9 cut removes only the 5 whose scan fell before week 9 and **keeps
+3** whose scan fell after it, with landmark times of 0.3 to 1.0 weeks;
+it also keeps 19 patients whose TLR was read after week 9, so for them
+the landmark covariate is measured after the landmark. Even so, the
+landmark shifts the Firth TLR x Rx HR from 1.49 (0.45-4.67) (responder)
+to 1.88 (0.52-6.38) (week-9 landmark). The responder PFS association is
+thus **partly tautological** — TLR-negativity and early progression are
+the same measurement — which the landmark makes explicit by excluding
+the coupled events. The sensitivity landmarks below remove all 8
+first-scan progressors.
+
+### Landmark Sensitivity: Scan-Date and Week-12 Landmarks
+
+The per-patient scan-date landmark and the week-12 landmark both exclude
+all 8 first-scan progressors (PFS cohort n = 57 and 57 versus 60 at week
+9) and give a PFS TLR x Rx HR of 1.88 (0.48-6.85) (PLRT p 0.350) and
+1.97 (0.51-7.16) (p 0.318), against 1.88 (0.52-6.38) (p 0.327) at week
+9. No patient dies before week 12, so the OS estimate is unchanged under
+every landmark. The direction of the PFS estimate is therefore not an
+artefact of the three first-scan progressors that the week-9 cut
+retains, but the confidence intervals are wide under every definition.
 
 Neither analysis resolves the most fundamental issue: TLR lies on the
 causal path of treatment (Rx -\> TLR -\> outcome), so the TLR x Rx
 contrast is not a baseline patient-selection estimate under any time
 origin; disentangling it would require formal causal mediation, not a
-landmark. All estimates remain exploratory and imprecise (PLRT p 0.135
-OS, 0.327 PFS) and must not guide treatment selection. The landmark is
-fixed at week 9 (the second, first-on-treatment CT); if the assessment
-week differs, change `LANDMARK_WK`.
+landmark. All estimates remain exploratory and imprecise (week-9 PLRT p
+0.135 OS, 0.327 PFS) and must not guide treatment selection.
 
 
 
@@ -729,22 +754,28 @@ generation, but not a causal predictive-biomarker estimate.
 
 ## TLR landmark analysis (exploratory)
 
-A **week-9 landmark analysis** conditions on survival to the second
-(first on-treatment) CT — the scan at which TLR is defined — and
-measures survival from that point, to test whether the responder signal
-is a guarantee-time artefact. The two endpoints diverge instructively.
-For **OS**, 0 patients are excluded (no early deaths), so the landmark
-estimate is identical to the responder estimate (2.47 (0.75-7.75)): the
-OS signal is not driven by early-death immortal time. For **PFS**, 5
-patients are excluded, with 5 of the 5 excluded progressors being
-TLR-negative, because progression and TLR are ascertained at the same
-scan; removing these coupled events moves the Firth TLR × Rx HR from
-1.49 (0.45-4.67) to 1.88 (0.52-6.38). The PFS responder association is
-therefore partly tautological. Under any time origin TLR remains on the
-causal path of treatment, so a definitive predictive-biomarker estimate
-would require causal mediation rather than a landmark. Both analyses
-remain underpowered and exploratory, and neither supports baseline
-treatment selection on TLR.
+A **week-9 landmark analysis** conditions on survival to the protocol
+time of the second (first on-treatment) CT — the scan at which TLR is
+defined — and measures survival from that point, to test whether the
+responder signal is a guarantee-time artefact. The two endpoints diverge
+instructively. For **OS**, 0 patients are excluded (no early deaths), so
+the landmark estimate is identical to the responder estimate (2.47
+(0.75-7.75)): the OS signal is not driven by early-death immortal time.
+For **PFS**, 5 patients are excluded, with 5 of the 5 excluded
+progressors being TLR-negative, because progression and TLR are
+ascertained at the same scan; removing these coupled events moves the
+Firth TLR × Rx HR from 1.49 (0.45-4.67) to 1.88 (0.52-6.38). The PFS
+responder association is therefore partly tautological. Because the
+actual first scans fell between weeks 6.7 and 12.1, the fixed week-9 cut
+retains 3 of the 8 first-scan progressors and 19 patients whose TLR was
+read after the landmark; a per-patient landmark at the scan date and a
+fixed week-12 landmark, which exclude all first-scan progressors, give
+PFS TLR × Rx HRs of 1.88 (0.48-6.85) and 1.97 (0.51-7.16), so the
+direction of the estimate does not depend on the landmark choice. Under
+any time origin TLR remains on the causal path of treatment, so a
+definitive predictive-biomarker estimate would require causal mediation
+rather than a landmark. Both analyses remain underpowered and
+exploratory, and neither supports baseline treatment selection on TLR.
 
 
 
@@ -808,14 +839,18 @@ immortal-time artefact. For PFS, 5 patients are excluded, 5 of the 5
 excluded progressors being TLR-negative because progression and TLR are
 read from the same scan; this shifts the HR from 1.49 (0.45-4.67)
 (responder) to 1.88 (0.52-6.38) (landmark), exposing the PFS association
-as partly tautological (PLRT p 0.135 OS, 0.327 PFS). Both analyses are
-retained for comparison; both are underpowered and exploratory, and the
-residual confounding from TLR being treatment-influenced needs causal
-mediation, not a landmark. Neither supports baseline treatment selection
-on TLR.
+as partly tautological (PLRT p 0.135 OS, 0.327 PFS). Because first scans
+fell between weeks 6.7 and 12.1, the week-9 cut retains 3 first-scan
+progressors and 19 patients scanned after the landmark; sensitivity
+landmarks at each patient’s scan date (PFS HR 1.88 (0.48-6.85)) and at
+week 12 (1.97 (0.51-7.16)) exclude all first-scan progressors and leave
+the direction unchanged. Both analyses are retained for comparison; both
+are underpowered and exploratory, and the residual confounding from TLR
+being treatment-influenced needs causal mediation, not a landmark.
+Neither supports baseline treatment selection on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-05  
+**Report completed on:** 2026-09-06  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.5
+**Report version:** 3.6

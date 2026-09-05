@@ -16,100 +16,30 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("assoc_tests"),
+  funs = c("dag_helpers", "assoc_tests", "tlr_landmark", "dag_association_tests"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "dagitty", "survival",
                "coxphf", "logistf", "coin"),
   set_theme = FALSE
 )
 
-data$sex_num <- as.numeric(as.character(data$sex))
-data$T_num   <- as.numeric(data$Rx == "Experimental arm")
-data$TxTMB   <- data$T_num * data$tmb_braf
-data$tmb_braf_fac <- factor(data$tmb_braf)
-data$TxTMB_fac    <- factor(data$TxTMB)
-data$T_fac    <- factor(data$T_num)
-data$sex_fac  <- factor(data$sex_num)
-data$crp_fac  <- factor(data$crp)
-
-data_tlr  <- data[!is.na(data$tlr), ]
-data_main <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tmb_braf",
-                                          "T_num", "TxTMB", "OSwk", "Death",
-                                          "PFSwk", "Progression")]), ]
-```
-
-```{r helpers, include=FALSE}
-# Association-test helpers are provided by assoc_tests.R.
+# Edge and conditional-independence lists are derived from the canonical `dag`
+# object (dag_helpers.R) by dag_association_tests.R, so this table always tests
+# the graph shown in Figure S1 (issue #155). The week-9 landmark PFS cohort is
+# used for TLR -> PFS and a time-dependent progression indicator for PFS -> OS.
+dd <- prepare_dag_data(data, landmark = "week9")
+lm_label <- tolower(dd$landmark$spec$short_label)
 ```
 
 ```{r run-tests, include=FALSE}
-edge_results <- dplyr::bind_rows(
-  run_wilcox_test(data, "tmb_braf", "Age", "Age -> TMB_BRAF", "Wilcoxon rank-sum",
-                  c("TMB/BRAF=0", "TMB/BRAF=1")),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ Age, "Age", "Age -> OS", "Firth Cox"),
-  run_fisher_test(data, "sex_num", "tmb_braf", "Sex -> TMB_BRAF", "Fisher's exact"),
-  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ tmb_braf, "tmb_braf",
-                     "TMB_BRAF -> PFS", "Firth Cox"),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ tmb_braf, "tmb_braf",
-                     "TMB_BRAF -> OS", "Firth Cox"),
-  run_firth_logistic_test(data_tlr, tlr ~ tmb_braf, "tmb_braf",
-                          "TMB_BRAF -> TLR", "Firth logistic"),
-  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ crp, "crp",
-                     "CRP -> PFS", "Firth Cox"),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ crp, "crp",
-                     "CRP -> OS", "Firth Cox"),
-  run_firth_logistic_test(data_tlr, tlr ~ crp, "crp", "CRP -> TLR", "Firth logistic"),
-  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ T_num, "T_num",
-                     "T -> PFS", "Firth Cox"),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ T_num, "T_num",
-                     "T -> OS", "Firth Cox"),
-  run_firth_logistic_test(data_tlr, tlr ~ T_num, "T_num", "T -> TLR", "Firth logistic"),
-  run_firth_cox_test(data_tlr, Surv(PFSwk, Progression) ~ tlr, "tlr",
-                     "TLR -> PFS", "Firth Cox (TLR subset)"),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ PFSwk, "PFSwk",
-                     "PFS -> OS", "Firth Cox"),
-  run_firth_cox_test(data_main, Surv(PFSwk, Progression) ~ T_num + tmb_braf + T_num:tmb_braf,
-                     "T_num:tmb_braf", "TxTMB -> PFS", "Firth Cox interaction"),
-  run_firth_cox_test(data_main, Surv(OSwk, Death) ~ T_num + tmb_braf + T_num:tmb_braf,
-                     "T_num:tmb_braf", "TxTMB -> OS", "Firth Cox interaction")
-) |> mutate(Conclusion = edge_support_label(p_value))
-
-ci_results <- dplyr::bind_rows(
-  run_wilcox_test(data, "crp", "Age", "Age _||_ CRP", "Wilcoxon rank-sum",
-                  c("CRP=0", "CRP=1")),
-  run_wilcox_test(data, "sex_num", "Age", "Age _||_ Sex", "Wilcoxon rank-sum",
-                  c("Sex=0", "Sex=1")),
-  run_wilcox_test(data, "T_num", "Age", "Age _||_ T",
-                  "Wilcoxon rank-sum (randomization check)", c("T=0", "T=1")),
-  run_firth_logistic_test(data_tlr, tlr ~ crp + tmb_braf + Age, "Age",
-                          "Age _||_ TLR | {CRP, TMB_BRAF}", "Firth logistic"),
-  run_permutation_test(data, Age ~ TxTMB_fac | tmb_braf_fac,
-                       "Age _||_ TxTMB | {TMB_BRAF}", "Conditional permutation test",
-                       seed = analysis_seed),
-  run_fisher_test(data, "crp", "sex_num", "CRP _||_ Sex", "Fisher's exact"),
-  run_fisher_test(data, "crp", "T_num", "CRP _||_ T",
-                  "Fisher's exact (randomization check)"),
-  run_mh_test(data, "crp", "TxTMB", "tmb_braf", "CRP _||_ TxTMB | {TMB_BRAF}",
-              "Mantel-Haenszel"),
-  run_fisher_test(data, "sex_num", "T_num", "Sex _||_ T",
-                  "Fisher's exact (randomization check)"),
-  run_mh_test(data, "sex_num", "TxTMB", "tmb_braf", "Sex _||_ TxTMB | {TMB_BRAF}",
-              "Mantel-Haenszel"),
-  run_firth_logistic_test(data_tlr, tlr ~ crp + tmb_braf + sex_num, "sex_num",
-                          "Sex _||_ TLR | {CRP, TMB_BRAF}", "Firth logistic"),
-  run_firth_logistic_test(data_tlr, tlr ~ T_num + tmb_braf + TxTMB, "TxTMB",
-                          "TLR _||_ TxTMB | {T, TMB_BRAF}", "Firth logistic"),
-  run_fisher_test(data, "T_num", "tmb_braf", "T _||_ TMB_BRAF",
-                  "Fisher's exact (randomization check)")
-) |> mutate(
-  Randomization_Check = Item %in% c("Age _||_ T", "CRP _||_ T", "Sex _||_ T", "T _||_ TMB_BRAF"),
-  Conclusion = ci_support_label(p_value, Randomization_Check)
-)
+edge_results <- run_dag_edge_tests(dag, dd)
+ci_results <- run_dag_ci_tests(dag, dd, seed = analysis_seed)
 
 consolidated_summary_table <- bind_rows(
   edge_results |>
-    transmute(Domain = "Direct edge", Item, Effect, `p-value` = fmt_p(p_value), Conclusion),
+    transmute(Domain = "Direct edge", Item, Test, Effect,
+              `p-value` = fmt_p(p_value), Conclusion),
   ci_results |>
-    transmute(Domain = "Conditional independence", Item, Effect,
+    transmute(Domain = "Conditional independence", Item, Test, Effect,
               `p-value` = fmt_p(p_value), Conclusion)
 )
 ```
@@ -125,8 +55,10 @@ kable(consolidated_summary_table,
   footnote(
     general = c(
       "Data from METIMMOX trial (NCT03388190). Scripts 02 and 03 sourced.",
-      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
+      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden; TxTMB = T x TMB/BRAF; TxCRP = T x CRP.",
+      "Edge and conditional-independence lists are derived from the canonical DAG (dag_helpers.R). Edges from the latent node U and into the interaction nodes are not tested; two statements relating TxCRP and TxTMB given T hold by construction.",
       "Firth-corrected Cox and logistic regression used throughout. Fisher's exact for 2x2 tables.",
+      sprintf("PFS -> OS: Firth Cox for death with a time-dependent progression indicator (counting-process time), not PFS time as a baseline covariate. TLR -> PFS: Firth Cox on the %s landmark PFS cohort (n = %d, progression-free after the landmark, time from the landmark), the cohort used in Figure 1.", lm_label, nrow(dd$data_lm_pfs)),
       "Arm balance checks: Age||T, CRP||T, Sex||T, T||TMB_BRAF. CRP is the week-4 value (before the first nivolumab dose), so CRP||T tests arm balance at the immunotherapy decision point, not randomization balance. No multiplicity correction applied."
     ),
     general_title = "Notes: "
