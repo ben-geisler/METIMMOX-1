@@ -31,11 +31,13 @@ theme_set(theme_minimal() +
 parameter_config <- configure_parameter_distributions(l_params_base)
 param_distributions <- parameter_config$distributions
 param_groups <- parameter_config$groups
-dsa_pars <- names(param_distributions)
 
 # Shared range construction (parameter_distributions.R), identical to 09_DSA.R.
-dsa_ranges <- build_dsa_ranges(l_params_base, param_distributions, param_groups,
+# The DSA set is the specification's dsa column, which also covers the unit
+# prices that are fixed in the PSA (issue #154).
+dsa_ranges <- build_dsa_ranges(l_params_base, parameter_config$spec,
                                mult = DSA_mult)
+dsa_pars <- dsa_ranges$pars
 
 base_result <- model_fun(l_params_base)
 base_result$NMB <- base_result$Effect * WTP - base_result$Cost

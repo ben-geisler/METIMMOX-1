@@ -34,7 +34,8 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
-  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format")
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions")
 )
 
 basecase <- run_basecase(verbose = FALSE)
@@ -42,6 +43,9 @@ base_results <- basecase$base_results
 icer_obj <- basecase$icer_obj
 model_config <- basecase$model_config
 psa_obj <- load_psa_cache(verbose = FALSE)
+
+# PSA parameter draws, used to report the utility-ordering diagnostic below.
+psa_params <- suppressWarnings(load_psa_params_cache(verbose = FALSE))
 ```
 
 # Overview
@@ -156,6 +160,30 @@ plot(
 
 # Probabilistic Sensitivity Analysis
 
+## Parameters sampled
+
+The PSA samples the health-state utilities, the biomarker prevalences, and the resource-use costs (visit, baseline work-up, quarterly follow-up, end-of-life care), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
+
+The two utilities are sampled jointly rather than independently. The PSA draws a non-negative decrement and sets the progressed utility to the progression-free utility minus that decrement, so no draw can place the progressed utility above the progression-free utility.
+
+```{r utility-ordering}
+reversal <- if (is.null(psa_params)) NULL else utility_reversal_fraction(psa_params)
+if (is.null(reversal)) {
+  cat("PSA parameter draws not found; the utility-ordering diagnostic is unavailable.")
+} else {
+  cat(sprintf(
+    paste0("Utility-ordering diagnostic: %d of %d PSA draws (%.1f%%) have u_p > u_np, ",
+           "and %.1f%% exceed it by more than %.2f. The decrement parameterisation ",
+           "makes these fractions zero by construction; independent beta draws ",
+           "for the two utilities did not."),
+    reversal$n_reversed, reversal$n, 100 * reversal$fraction,
+    100 * reversal$fraction_material, reversal$margin
+  ))
+}
+```
+
+## Results
+
 ```{r psa-summary}
 if (is.null(psa_obj)) {
   cat("PSA cache not found. Run scripts/R/analysis/10_PSA.R after regenerating the single-model sampling cache.")
@@ -258,8 +286,20 @@ if (is.null(psa_obj)) {
 
 The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy (week-4 CRP, before the first nivolumab dose), and TMB/BRAF-guided immunotherapy (baseline NGS).
 
+# Scope Limitations
+
+Three scope decisions bound the interpretation of these results (issue #154).
+
+**No post-progression treatment costs.** After progression the model charges only the quarterly follow-up contact and the one-time end-of-life cost. Second-line systemic therapy, post-progression imaging and post-progression visits are not modeled. The strategies differ in time spent in the progressed state, so this omission is differential rather than a common offset. A structural scenario charging EUR 5,000 per quarter in the progressed state is reported in the one-way sensitivity analysis.
+
+**Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption.
+
+**Nivolumab price is an assumption.** The base-case price per administration is an assumed Norwegian hospital acquisition cost rather than a citable tariff, because Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver; the biosimilar scenario and the one-way analysis show how the conclusions move with it.
+
+Adverse-event costs and disutilities remain outside the modeled scope, as described in the project documentation.
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

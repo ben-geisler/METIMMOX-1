@@ -59,14 +59,19 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   scenario_params <- l_params_base
   scenario_params$c_drug_nivo <- c_drug_nivo
 
-  # Update parameter distributions for this cost configuration
+  # Update parameter distributions for this cost configuration. Since issue #154
+  # the nivolumab price is a fixed input rather than a sampled one, so there is
+  # normally no distribution to rescale; only re-centre it if the parameter set
+  # in force does sample it.
   scenario_param_dist <- param_distributions
-  cv_costs <- 0.2
-  nivo_gamma <- list(
-    shape = 1/cv_costs^2,
-    rate = (1/cv_costs^2) / c_drug_nivo
-  )
-  scenario_param_dist$c_drug_nivo <- c(list(dist = "gamma"), nivo_gamma)
+  if (!is.null(scenario_param_dist$c_drug_nivo)) {
+    cv_costs <- 0.2
+    scenario_param_dist$c_drug_nivo <- list(
+      dist = "gamma",
+      shape = 1 / cv_costs^2,
+      rate = (1 / cv_costs^2) / c_drug_nivo
+    )
+  }
 
   # Add draw-aligned interaction coefficients when sampling models are available.
   interaction_coefs <- NULL

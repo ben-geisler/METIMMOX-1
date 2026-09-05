@@ -9,8 +9,12 @@ summarise_param_ranges <- function(results_df, strategy_name = NULL) {
   groups <- split(x, interaction(x$Strategy, x$Parameter, drop = TRUE))
   rows <- lapply(groups, function(group) {
     endpoints <- match(c("min", "max"), group$Value)
-    if (anyNA(endpoints)) return(NULL)
-    diffs <- group$NMB_diff[endpoints]
+    if (all(is.na(endpoints))) return(NULL)
+    # A one-sided structural scenario runs only the endpoint that differs from
+    # the base case (issue #154). The endpoint it omits IS the base case, whose
+    # NMB difference is zero by definition, so the bar still spans base to
+    # scenario rather than dropping out of the tornado altogether.
+    diffs <- ifelse(is.na(endpoints), 0, group$NMB_diff[endpoints])
     data.frame(
       Strategy = group$Strategy[1], Parameter = group$Parameter[1],
       Min_diff = diffs[1], Max_diff = diffs[2],

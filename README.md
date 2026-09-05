@@ -263,6 +263,14 @@ State occupancy is derived from parametric survival curves:
 
 Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
 
+### Cost and scope decisions
+
+- **No post-progression treatment cost.** After progression the model charges only the quarterly follow-up contact and the one-time end-of-life cost. Second-line systemic therapy, post-progression imaging and post-progression visits are outside the modeled scope. Because the strategies differ in time spent in the progressed state, the omission is differential rather than a common offset. The parameter `c_other_pp` makes it explicit (base case 0) and is varied in a structural scenario at EUR 5,000 per quarter.
+- **Second treatment sequence given to every progression-free patient.** Both arms receive a second eight-cycle sequence at modeled weeks 24-38, applied to everyone still progression-free at that point; METIMMOX re-treated on progression during the treatment break. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model. A structural scenario removes the second sequence, with survival held at the trial estimate, giving a cost-side bound.
+- **Unit prices are fixed in the probabilistic analysis.** Drug and test unit costs are published tariffs or assumed list prices, so they are varied deterministically only and carry no value of information. Visit, baseline, follow-up and end-of-life costs remain probabilistic because they bundle genuine resource-use uncertainty.
+- **The nivolumab price is an assumption.** EUR 13,923 per administration is an assumed Norwegian hospital acquisition cost (roughly 40% below list), not a citable tariff: Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver, bounded by the one-way analysis and the biosimilar scenario.
+- **Health-state utilities are sampled jointly.** The PSA draws the progression-free utility and a non-negative decrement, deriving the progressed utility as the difference, so no draw places the progressed utility above the progression-free utility.
+
 ## Publication Figures
 
 The repository includes Quarto vignettes (`scripts/QMD/vignettes/`) for generating publication-ready figures:

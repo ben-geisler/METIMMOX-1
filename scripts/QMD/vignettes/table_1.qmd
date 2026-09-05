@@ -36,10 +36,13 @@ setup_report(
 # =============================================================================
 
 parameter_config <- configure_parameter_distributions(l_params_base)
-dsa_ranges <- build_dsa_ranges(l_params_base, parameter_config$distributions,
-                               parameter_config$groups, mult = DSA_mult)
-scenarios <- dsa_structural_scenarios(base_dr = dr,
-                                      base_horizon_years = time_horizon / 52)
+dsa_ranges <- build_dsa_ranges(l_params_base, parameter_config$spec,
+                               mult = DSA_mult)
+scenarios <- dsa_structural_scenarios(
+  base_dr = dr,
+  base_horizon_years = time_horizon / 52,
+  base_pp_cost = l_params_base$c_other_pp
+)
 
 dsa_range <- function(par, fmt) {
   row <- dsa_ranges[dsa_ranges$pars == par, ]
@@ -73,12 +76,17 @@ utility_meta <- if (UTILITY_SOURCE == 1) {
   list(source = "METIMMOX EQ-5D-5L (IPD)", note = "Danish tariff")
 }
 
-# PSA distribution family per parameter from the shared specification.
+# PSA distribution family per parameter from the shared specification. Unit
+# prices are fixed in the PSA and varied deterministically (issue #154), so
+# their entry is "Fixed" and the range column is the one-way DSA range.
 psa_dist <- function(par) {
   spec <- parameter_config$spec
-  fam <- spec$distribution[spec$parameter == par]
-  if (length(fam) != 1) return("Fixed")
-  tools::toTitleCase(fam)
+  row <- spec[spec$parameter == par, , drop = FALSE]
+  if (nrow(row) != 1 || !row$psa || is.na(row$distribution)) return("Fixed")
+  if (identical(row$distribution, "derived")) {
+    return("Derived (u_np - decrement)")
+  }
+  tools::toTitleCase(row$distribution)
 }
 
 scenario_range <- function(name, fmt) {
@@ -92,7 +100,7 @@ table_1 <- data.frame(
     rep("Health-state utilities", 2),
     rep("Treatment costs (€)", 4),
     rep("Other costs (€)", 2),
-    rep("Structural parameters", 2)
+    rep("Structural parameters", 4)
   ),
   Parameter = c(
     "CRP-positive (week 4, < 5 mg/L)",
@@ -106,7 +114,9 @@ table_1 <- data.frame(
     "CT scan (monitoring)",
     "End-of-life",
     "Discount rate (costs and QALYs)",
-    "Time horizon"
+    "Time horizon",
+    "Post-progression treatment cost (per quarter)",
+    "Second treatment sequence (weeks 24–38)"
   ),
   Base_case = c(
     fmt_prob(l_params_base$p_crp),
@@ -120,7 +130,9 @@ table_1 <- data.frame(
     sprintf("€%s", fmt_cost(l_params_base$c_test_CT)),
     sprintf("€%s", fmt_cost(l_params_base$c_other_last)),
     fmt_pct(dr),
-    sprintf("%g years", time_horizon / 52)
+    sprintf("%g years", time_horizon / 52),
+    sprintf("€%s", fmt_cost(l_params_base$c_other_pp)),
+    "Given to all progression-free patients"
   ),
   Range = c(
     dsa_range("p_crp", fmt_prob),
@@ -134,11 +146,13 @@ table_1 <- data.frame(
     dsa_range("c_test_CT", fmt_cost),
     dsa_range("c_other_last", fmt_cost),
     scenario_range("Discount_rate", fmt_pct),
-    paste(scenario_range("Time_horizon", fmt_yr), "years")
+    paste(scenario_range("Time_horizon", fmt_yr), "years"),
+    scenario_range("Post_progression_cost", function(x) sprintf("€%s", fmt_cost(x))),
+    "Given–omitted"
   ),
   Range_type = c(
     rep("One-way DSA (±20%)", 10),
-    rep("Structural scenario", 2)
+    rep("Structural scenario", 4)
   ),
   Distribution = c(
     psa_dist("p_crp"), psa_dist("p_tmb_braf"),
@@ -146,28 +160,32 @@ table_1 <- data.frame(
     psa_dist("c_drug_nivo"), psa_dist("c_drug_FLOX"),
     psa_dist("c_test_CRP"), psa_dist("c_test_NGS"),
     psa_dist("c_test_CT"), psa_dist("c_other_last"),
-    "Fixed", "Fixed"
+    "Fixed", "Fixed", "Fixed", "Fixed"
   ),
   Source = c(
     "METIMMOX", "METIMMOX",
     utility_meta$source, utility_meta$source,
-    "NoMA", "NoMA", "Local", "Local",
+    "Assumption", "NoMA", "Local", "Local",
     "Ref 27", "Ref 28",
-    "NoMA guidelines", "Assumption"
+    "NoMA guidelines", "Assumption", "Assumption", "METIMMOX protocol"
   ),
   Notes = c(
     prev_ci_note(k_crp, n_crp),
     prev_ci_note(k_tmb, n_tmb),
     utility_meta$note,
-    utility_meta$note,
-    "40% discount",
+    paste(utility_meta$note,
+          "- sampled as u_np minus a non-negative decrement"),
+    paste("Assumption: 40% discount off list price; Norwegian hospital",
+          "(LIS tender) prices are confidential and cannot be cited"),
     "",
     "CRP strategy only",
     "TMB/BRAF strategy only",
     "Every 12 weeks",
     "",
     "Varied in deterministic scenarios only",
-    "Varied in deterministic scenarios only"
+    "Varied in deterministic scenarios only",
+    "Zero in the base case; second-line therapy is outside the modeled scope",
+    "Base case gives it to every progression-free patient at weeks 24-38"
   ),
   stringsAsFactors = FALSE
 )
@@ -191,7 +209,9 @@ kable(table_1 %>% select(-Category),
       "Discount rate and time horizon are not sampled in the PSA; the ranges are the deterministic structural scenarios run by 09_DSA.R and reported in the OWSA report.",
       "Prevalence notes give the biomarker-positive count over all trial patients with a biomarker value (the denominators of the base-case prevalences) and the exact binomial 95% CI; the DSA range is the +/-20% bound, not the CI.",
       sprintf("Utilities follow the UTILITY_SOURCE switch (currently %s).", if (UTILITY_SOURCE == 1) "1 = CORRECT trial" else "0 = METIMMOX IPD"),
-      "PSA distribution: family used for the probabilistic analysis (parameter_distributions.R)."
+      "PSA distribution: family used for the probabilistic analysis (parameter_distributions.R). 'Fixed' parameters are not sampled in the PSA; drug and test unit costs are published tariffs or assumed list prices, so they are varied deterministically only and carry no value-of-information (issue #154).",
+      "The post-progression utility is not sampled independently: the PSA draws a non-negative decrement and sets u_p = u_np - decrement, so no draw places the progressed utility above the progression-free utility.",
+      "The base case applies no post-progression treatment cost and gives every progression-free patient a second treatment sequence at weeks 24-38; both assumptions are tested as structural scenarios in the OWSA report."
     ),
     general_title = "Notes: "
   )

@@ -36,8 +36,11 @@ evppi_cache <- readRDS(cache_file)
 # scenario, plus total EVPI as the reference. Per-parameter rows are never added
 # to group rows: EVPPI is not additive, and summing them produced group values
 # above total EVPI in earlier versions (issue #152).
+# Drug and test unit prices are fixed in the PSA since issue #154, so those
+# groups are absent from current caches; they stay in the ordering so older
+# caches still sort correctly.
 group_order <- c(
-  "drug_costs", "test_costs", "other_costs", "all_costs",
+  "other_costs", "drug_costs", "test_costs", "all_costs",
   "utilities", "prevalence",
   paste0("interaction_", get_biomarkers()), "interaction_all"
 )

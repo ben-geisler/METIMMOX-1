@@ -425,15 +425,32 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   })
 }
 
-cost_cv <- unique(parameter_spec$cv[parameter_spec$distribution == "gamma"])
-utility_cv <- unique(parameter_spec$cv[parameter_spec$group == "utilities"])
-if (length(cost_cv) != 1 || length(utility_cv) != 1) {
-  stop("Expected one coefficient of variation per parameter category.")
-}
+# Report what the PSA actually samples. Since issue #154 the specification also
+# holds parameters that are fixed in the PSA (unit prices) and one that is
+# derived rather than drawn (u_p), so the summary is built per group instead of
+# assuming a single cost CV and a single utility CV.
+sampled_spec <- parameter_spec[parameter_spec$psa & !parameter_spec$derived, ,
+                               drop = FALSE]
+fixed_spec <- parameter_spec[!parameter_spec$psa, , drop = FALSE]
+derived_spec <- parameter_spec[parameter_spec$derived, , drop = FALSE]
 
 cat("\n=== Parameter distributions configured ===\n")
-cat("- Cost parameters: Gamma distributions (CV =", cost_cv, ")\n")
-cat("- Utility parameters: Beta distributions (CV =", utility_cv, ")\n")
+for (group_name in unique(sampled_spec$group)) {
+  rows <- sampled_spec[sampled_spec$group == group_name, , drop = FALSE]
+  cat(sprintf("- %s: %s (CV = %s): %s\n",
+              group_name,
+              paste(unique(rows$distribution), collapse = "/"),
+              paste(unique(rows$cv), collapse = "/"),
+              paste(rows$parameter, collapse = ", ")))
+}
+if (nrow(derived_spec) > 0) {
+  cat("- Derived in the PSA (not drawn):",
+      paste(derived_spec$parameter, collapse = ", "), "\n")
+}
+if (nrow(fixed_spec) > 0) {
+  cat("- Fixed in the PSA, varied in the DSA only (issue #154):",
+      paste(fixed_spec$parameter, collapse = ", "), "\n")
+}
 cat("- Survival parameters: Correlated resampled models (n =",
     sampling_models[[get_control_strategy()]]$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")

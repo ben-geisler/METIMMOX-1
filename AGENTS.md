@@ -272,7 +272,7 @@ There is no model-structure switch or multi-structure comparison layer. The econ
 
 ### Value of Information (EVPPI) Estimator
 
-EVPPI is estimated by nonparametric regression (Strong, Oakley & Brennan 2014) through `voi::evppi()` in [evppi_functions.R](scripts/R/functions/evppi_functions.R) (issue #152): the incremental NMB of each strategy versus control is regressed on the parameter(s) with a GAM; groups of up to four parameters use voi's tensor-product cubic regression spline, larger groups (currently only `all_costs`) use additive cubic regression splines because NMB is linear and additive in unit costs. Every estimate carries a Monte Carlo standard error (`evppi_se`, the SD of the EVPPI over 1,000 draws of the regression coefficients, seeded with `analysis_seed`). Failed estimates are `NA`, never zero, with the reason in the `error` column. `run_evppi_analysis()` asserts that every `[GROUP]` row is at least its largest member within two combined SEs (floor 1% of EVPI) and attaches the check as attribute `group_consistency`; `add_interaction_param_groups()` adds per-biomarker interaction groups plus the joint `interaction_all` group that Figure 5 and Table S7 report as "Biomarker-treatment interaction". Figure 5 and Table S7 use `[GROUP]` rows only; EVPPI is not additive and rows must never be summed. With the current PSA cache every single-parameter EVPPI is 0 (SE 0) at WTP EUR 51,000 because control is the optimal strategy at every sampled parameter value; that is a regression result, not a cap. The previous kNN estimator (1,000 nearest of 5,000 draws at 500 grid points, capped at EVPI) reported neighbourhood re-weighting bias as value of information and was removed.
+EVPPI is estimated by nonparametric regression (Strong, Oakley & Brennan 2014) through `voi::evppi()` in [evppi_functions.R](scripts/R/functions/evppi_functions.R) (issue #152): the incremental NMB of each strategy versus control is regressed on the parameter(s) with a GAM; groups of up to four parameters use voi's tensor-product cubic regression spline, larger groups use additive cubic regression splines because NMB is linear and additive in unit costs. Since issue #154 the sampled parameter set no longer contains the unit prices, so the cost side of the EVPPI table is the single `other_costs` group (resource-use costs) and there is no `drug_costs`, `test_costs` or `all_costs` row; the `utilities` group is `{u_np, u_decrement}`, with the derived `u_p` excluded from groups but still reported as a single-parameter row. Every estimate carries a Monte Carlo standard error (`evppi_se`, the SD of the EVPPI over 1,000 draws of the regression coefficients, seeded with `analysis_seed`). Failed estimates are `NA`, never zero, with the reason in the `error` column. `run_evppi_analysis()` asserts that every `[GROUP]` row is at least its largest member within two combined SEs (floor 1% of EVPI) and attaches the check as attribute `group_consistency`; `add_interaction_param_groups()` adds per-biomarker interaction groups plus the joint `interaction_all` group that Figure 5 and Table S7 report as "Biomarker-treatment interaction". Figure 5 and Table S7 use `[GROUP]` rows only; EVPPI is not additive and rows must never be summed. With the current PSA cache total EVPI is EUR 22.13 per patient at WTP EUR 51,000 and every economic-parameter EVPPI (costs, utilities, prevalences, single or grouped) is 0 (SE 0), because control is the optimal strategy at every sampled value of those parameters; that is a regression result, not a cap. The only non-zero rows are the biomarker-treatment interaction coefficients: `[GROUP] interaction_all` 1.18 (SE 1.94, 5.3% of EVPI), `b_crp_rx_os` 0.088 and `[GROUP] interaction_crp` 0.036, all well inside their standard errors. The previous kNN estimator (1,000 nearest of 5,000 draws at 500 grid points, capped at EVPI) reported neighbourhood re-weighting bias as value of information and was removed.
 
 ### Biomarker Strategies
 
@@ -339,17 +339,17 @@ list(
   # Time & discounting
   cl, time_horizon, dr_costs, dr_effects,
 
-  # Utilities (beta distributions in PSA)
-  u_np, u_p,
+  # Utilities: u_np beta in PSA; u_p derived as u_np - u_decrement (gamma)
+  u_np, u_p, u_decrement,
 
-  # Drug costs (gamma distributions in PSA)
+  # Drug costs (FIXED in PSA, varied in DSA only)
   c_drug_nivo, c_drug_FLOX,
 
-  # Test costs
+  # Test costs (FIXED in PSA, varied in DSA only)
   c_test_CT, c_test_blood, c_test_NGS,
 
-  # Other costs
-  c_other_visit, c_other_baseline, c_other_follow, c_other_last,
+  # Other costs (gamma distributions in PSA); c_other_pp = 0 in the base case
+  c_other_visit, c_other_baseline, c_other_follow, c_other_pp, c_other_last,
 
   # Treatment schedules (vectors of length time_horizon+1)
   l_nivo, l_FLOX_exp, l_FLOX_control, l_CT, l_blood, l_visit,
@@ -384,6 +384,20 @@ data$tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
 
 Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
 
+### Cost and Scope Decisions (issue #154)
+
+**Unit prices are fixed in the PSA.** `c_drug_nivo`, `c_drug_FLOX`, `c_test_CT`, `c_test_blood` and the biomarker test costs (`c_test_CRP`, `c_test_NGS`) are published tariffs or assumed list prices, not quantities research could resolve. They are `psa = FALSE, dsa = TRUE` in `parameter_distribution_spec()`: excluded from PSA sampling and from every EVPPI group, still varied +/-20% in the one-way DSA. Under the pre-#152 kNN estimator, sampling them put `c_drug_FLOX` (44% of EVPI) and `c_drug_nivo` (34%) at the top of the value-of-information ranking, which is what issue #154 reported; the regression estimator already gave both an EVPPI of 0, but their variance still inflated total EVPI, which fell from 45.20 to 22.13 when they were fixed. Their deterministic influence is undiminished: `c_drug_nivo` remains the second-largest one-way driver for both guided strategies. Visit, baseline, follow-up and end-of-life costs stay probabilistic because they bundle genuine resource-use uncertainty. Consequences: there is no `drug_costs` or `test_costs` EVPPI group, and `all_costs` is emitted only when more than one cost group is still sampled (currently it is not, so `create_parameter_groups()` returns `other_costs` alone) — Figure 5 reports `[GROUP] other_costs` as "Resource-use costs".
+
+**The nivolumab price is an assumption, not a tariff.** EUR 13,923 per administration is an assumed Norwegian hospital acquisition cost, roughly 40% below list, giving about EUR 111,000 over eight administrations. Norwegian hospital prices are set by confidential LIS tender and cannot be cited; international list prices are higher (a US list price is about USD 8,100 per 240 mg vial). It is the largest single cost driver and is bounded by the one-way DSA and the biosimilar scenario (EUR 4,641 per administration).
+
+**Utilities are sampled jointly, never independently.** The PSA draws `u_np` (beta) and a non-negative decrement `u_decrement` (gamma, mean `u_np - u_p`), then derives `u_p = pmax(u_np - u_decrement, 0)` in `apply_derived_psa_parameters()`. Independent beta draws put 15.9% of draws (48.5% under `UTILITY_SOURCE = 0`) in the impossible region `u_p > u_np`. `u_p` is a `derived` spec row: it is a model input so it takes part in the DSA, but it is excluded from EVPPI groups because it is exactly collinear with its inputs; the `utilities` group is `{u_np, u_decrement}`. `l_params_base$u_decrement` is derived in script 05 and asserted positive. `CEA.qmd` prints the realised reversal fraction (zero by construction).
+
+**No post-progression treatment cost.** `c_other_pp` (base case 0) is charged on the quarterly follow-up cycles against `p_p` in `calculate_outcomes()`. Second-line systemic therapy, post-progression imaging and post-progression visits are not modeled, so the progressed state accrues only `c_other_follow` and `c_other_last`. The strategies differ in time spent progressed, so the omission is differential. The parameter has a degenerate one-way range at zero and is instead varied by the `Post_progression_cost` structural scenario (EUR 5,000 per quarter, an illustrative upper bound rather than a costed Norwegian pathway).
+
+**The second treatment sequence is given to all progression-free patients.** Schedule positions 25-39 (modeled weeks 24-38) repeat the first eight-cycle sequence in both arms, for everyone still progression-free; METIMMOX re-treated on progression during the break. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model. The `Second_sequence` structural scenario removes the second sequence (drug and visit costs; monitoring and survival unchanged), giving a cost-side bound.
+
+**Structural scenarios can be one-sided.** `dsa_structural_scenarios()` entries carry a `sides` field read through `structural_scenario_sides()`; `Post_progression_cost` runs `"max"` only and `Second_sequence` runs `"min"` only, because their other endpoint is the base case. `summarise_param_ranges()` treats an absent endpoint as the base case (NMB difference 0) rather than dropping the parameter, so one-sided scenarios still get a tornado bar spanning base case to scenario. `09_DSA.R` groups DSA rows through `parameter_group_lookup()` (the full spec) rather than the PSA groups, so fixed prices still appear as drug/test costs in the tornado plots.
+
 ### Survival Model Formulas
 
 **Economic model** (shared by the control, CRP-guided, and TMB/BRAF-guided strategies):
@@ -409,7 +423,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
 - **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`, `calculate_pairwise_icers()`, `frontier_status()`, `frontier_label()`). Renamed from the legacy `multi_model_cea.R`. **Dominance conventions (issue #153)**: `CEA.qmd` reports dampack *frontier* ICERs (status ND/D/ED across all three strategies). The biosimilar, enriched-population and Table S6 outputs report *pairwise* ICERs of each guided strategy versus standard of care (`Status` values "Reference", "Pairwise ICER vs SoC", "Dominated by SoC", "Cost-saving vs SoC") and always print the dampack `Frontier_Status` alongside, with captions stating "pairwise versus standard of care". A strategy can be frontier-dominated (more costly and less effective than the other guided strategy) yet have a finite pairwise ICER; percentage changes between pairwise ICERs are only reported for frontier strategies with finite, positive ICERs in both analyses (`Pct_Change` in `08b_enriched_population_analysis.R`).
-- **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years). `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). A time-horizon scenario re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules (`build_horizon_params()` in `09_DSA.R`); scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
+- **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`, `parameter_group_lookup()`, `apply_derived_psa_parameters()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`, `structural_scenario_sides()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years, post-progression cost EUR 5,000 per quarter, second sequence omitted). The spec carries `psa`, `dsa` and `derived` flags, so PSA membership and DSA membership are no longer the same set: unit prices are `psa = FALSE, dsa = TRUE`, and `u_p` is `derived` (issue #154). `build_dsa_ranges()` takes the spec, not the distribution list. `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). A time-horizon scenario re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules (`build_horizon_params()` in `09_DSA.R`); scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
 - **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
 
 **Shared Report and Clinical-Analysis Helpers**:
@@ -419,7 +433,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[report_format.R](scripts/R/functions/report_format.R)**: Shared strategy/biomarker labels and economic-result number formatting
 
 **Sensitivity Analysis Functions**:
-- **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities
+- **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities, including `generate_psa_samples()` (which skips `derived` distributions and then calls `apply_derived_psa_parameters()`) and `utility_reversal_fraction()`, the `u_p > u_np` diagnostic printed by `CEA.qmd`
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: Regression-based EVPPI via `voi::evppi()` (`calculate_evppi_regression()`, `run_evppi_analysis()`, `evppi_gam_formula()`), group-consistency checks (`check_evppi_group_consistency()`, `assert_evppi_group_consistency()`), population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
 - **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
 
@@ -449,6 +463,8 @@ Treatment administration is defined by binary vectors aligned to `time_points <-
 - CT scans: Baseline + every 12 weeks
 - Blood tests: Baseline + every 4 weeks
 - Visits: Baseline + all treatment administration weeks
+
+Positions 25-39 (modeled weeks 24-38) are the **second treatment sequence**, and the model gives it to every patient still progression-free at that point in both arms. See "Cost and Scope Decisions (issue #154)" above; the `Second_sequence` structural scenario zeroes those positions and rebuilds `l_visit`.
 
 ## Important Modeling Considerations
 
@@ -531,17 +547,17 @@ Each report has specific dependencies:
 
 **[input_parameters.qmd](scripts/QMD/report/input_parameters.qmd)** - Input Parameters Summary
 - **Sources**: 02, 03, 04, 05
-- **Shows**: All model input parameters (costs, utilities, prevalence rates, treatment schedules)
+- **Shows**: All model input parameters (costs, utilities, prevalence rates, treatment schedules), which costs are sampled versus fixed in the PSA, the nivolumab price provenance, and the post-progression-cost and second-sequence scope limitations (issue #154)
 
 **[CEA.qmd](scripts/QMD/report/CEA.qmd)** - Cost-Effectiveness Analysis Report
 - **Sources**: 02, 03, 04, 05; runs the base case through shared helpers
 - **Requires**: PSA cache from script 10 for probabilistic outputs
-- **Shows**: Incremental cost-effectiveness ratios (ICERs), cost-effectiveness plane, decision tables
+- **Shows**: Incremental cost-effectiveness ratios (ICERs), cost-effectiveness plane, decision tables, the utility-ordering diagnostic (fraction of PSA draws with u_p > u_np, zero by construction), and a Scope Limitations section (issue #154)
 
 **[OWSA.qmd](scripts/QMD/report/OWSA.qmd)** - One-Way Sensitivity Analysis (Deterministic)
 - **Sources**: 02, 03, 04, 05, then 09
 - **Requires**: DSA results from script 09
-- **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters, the survival-distribution structural sensitivity, and (issue #153) the discount-rate (0%, 8%) and time-horizon (5, 20 years) structural scenarios with NMB per strategy and the optimal strategy; failed scenarios are listed from `dsa_scenario_status`
+- **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters, the survival-distribution structural sensitivity, and (issues #153, #154) the discount-rate (0%, 8%), time-horizon (5, 20 years), post-progression-cost (EUR 5,000 per quarter) and no-second-sequence structural scenarios with NMB per strategy and the optimal strategy; failed scenarios are listed from `dsa_scenario_status`
 
 **[EVPPIs.qmd](scripts/QMD/report/EVPPIs.qmd)** - Value of Information Analysis
 - **Sources**: 02, 03
@@ -749,6 +765,7 @@ source("scripts/R/analysis/06_sampling.R")
 - **UTILITY_SOURCE changes** (cache filenames encode utility source to prevent mixing)
 - **Sampling cache is regenerated** (PSA depends on specific resampled models - always regenerate PSA after regenerating sampling cache)
 - Parameter distributions change (distributional assumptions, means, SDs, correlations)
+- **PSA parameter membership changes** — moving a parameter between sampled, fixed and derived in `parameter_distribution_spec()` changes the PSA draws and every EVPPI group (issue #154)
 
 **To regenerate**:
 ```r
@@ -817,6 +834,7 @@ The test suite in `scripts/R/tests/` includes:
 - **[test_sim_idx_validation.R](scripts/R/tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation
 - **[test_psa_basecase_alignment.R](scripts/R/tests/test_psa_basecase_alignment.R)**: Verifies structurally that the PSA control curve is the joint model with `Rx = control`, then checks that PSA strategy means (costs and QALYs) sit within 5 Monte Carlo standard errors of the base case and prints the incremental comparison (issue #151); skips the numerical check when the PSA cache is absent. The numerical criterion is a known failure at n_sim = 5000 (see the test protocol table)
 - **[test_evppi_estimator.R](scripts/R/tests/test_evppi_estimator.R)**: Verifies the regression EVPPI estimator on a synthetic problem with a closed-form answer, a pure-noise parameter, group-versus-member consistency (including the additive formula for more than four parameters), seed-reproducible standard errors, and NA-not-zero failure reporting (issue #152)
+- **[test_sampling_rework.R](scripts/R/tests/test_sampling_rework.R)**: Parameter-specification contracts — PSA membership excludes the fixed unit prices, `u_p` is derived rather than drawn, EVPPI groups exclude derived parameters and drop `all_costs` when only one cost group is sampled, the DSA still covers the fixed prices but never `u_decrement`, the derived utility never exceeds `u_np`, and one-sided structural scenarios declare only their differing endpoint (issue #154); plus the script-06 distribution-resolution helper
 - **[test_report_contracts.R](scripts/R/tests/test_report_contracts.R)**: Cache and report wiring contracts; for the EVPPI cache it requires the interaction rows with finite standard errors, the joint `interaction_all` group, and no group below its largest member
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics
@@ -836,7 +854,7 @@ Focused executable regression tests live in [`scripts/R/tests/`](scripts/R/tests
 | No mortality | With OS and PFS fixed at 1, death occupancy remains 0 and undiscounted life-years equal the stated 10-year horizon | Black-box record (`BB-M0`) | Fail (minor): 521 weekly grid points produce 10.019 rather than 10.000 life-years; equal across strategies |
 | Near-certain mortality | With survival forced near 0 after baseline, more than 99% of the cohort is dead by cycle 3 | Black-box record (`BB-M1`) | Pass |
 | Determinism | Two deterministic runs with identical inputs produce bitwise-identical costs and QALYs | Black-box record (`BB-RE`) | Pass |
-| PSA centred on base case | For every strategy, the PSA mean cost and mean QALYs are within 5 Monte Carlo standard errors of the deterministic base-case values; the control PSA curve must be the joint model with `Rx = control` (structural check, no cache needed) | [`test_psa_basecase_alignment.R`](scripts/R/tests/test_psa_basecase_alignment.R) | Structural check: Pass. Numerical check: **Fail (known)** after the issue #151 fix at n_sim = 5000: every strategy's mean QALYs sit +0.025 to +0.033 above the base case (6.3 to 9.6 SE, all the same sign), the bootstrap-mean bias of the extrapolated gamma curves that is shared by all arms because they come from one joint fit; costs are within 4.7 SE. The increments versus control, which the shared bias cancels out of, are within 1.2 SE (QALYs) and 3.4 SE (cost). Before the fix the control QALY mean was 21 SE *below* the base case and the CRP incremental QALYs were 0.122 versus 0.020. |
+| PSA centred on base case | For every strategy, the PSA mean cost and mean QALYs are within 5 Monte Carlo standard errors of the deterministic base-case values; the control PSA curve must be the joint model with `Rx = control` (structural check, no cache needed) | [`test_psa_basecase_alignment.R`](scripts/R/tests/test_psa_basecase_alignment.R) | Structural check: Pass. Numerical check: **Fail (known)** after the issue #151 fix at n_sim = 5000: every strategy's mean QALYs sit +0.028 to +0.037 above the base case (6.1 to 8.7 SE, all the same sign), the bootstrap-mean bias of the extrapolated gamma curves that is shared by all arms because they come from one joint fit; costs are within 4.9 SE. The increments versus control, which the shared bias cancels out of, are within 1.6 SE for QALYs; the CRP incremental cost is 6.7 SE (EUR 493 on EUR 32,404) because fixing the unit prices in issue #154 cut the PSA cost variance, so an unchanged absolute difference now spans more standard errors. Before the issue #151 fix the control QALY mean was 21 SE *below* the base case and the CRP incremental QALYs were 0.122 versus 0.020. |
 | EVPPI estimator | On a synthetic two-strategy problem with incremental NMB = theta + noise, theta ~ N(300, 1000^2): EVPPI(theta) within 4 SE + 2% of the closed-form value E[max(theta,0)] - max(E[theta],0) evaluated on the realised draws, within 10% of the analytic value, and below EVPI; a pure-noise parameter within max(4 SE, 2% EVPI) of 0; the groups {theta, noise} and the five-parameter additive group within 4 combined SE + 2% EVPI of the single-parameter value; no group-consistency violation, while a constructed shortfall of 50% of EVPI must raise an error; identical point estimates and SEs under the same seed, different SEs under another seed; missing or constant parameters return NA with an error message | [`test_evppi_estimator.R`](scripts/R/tests/test_evppi_estimator.R) | Pass (issue #152): analytic 266.8, realised-draw value 273.3, estimate 270.0 (SE 2.7), EVPI 285.1; noise 0.000 (SE 0.000); group 270.3 (SE 2.6); five-parameter additive 270.3 (SE 2.5) |
 
 Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" scripts/R/tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.

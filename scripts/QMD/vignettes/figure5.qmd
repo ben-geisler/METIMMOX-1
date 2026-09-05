@@ -37,8 +37,11 @@ evppi_cache <- readRDS(cache_file)
 # group estimates for the same parameters produced bars above total EVPI in
 # earlier versions (issue #152). The interaction bar is the joint EVPPI of all
 # treatment-by-biomarker coefficients (interaction_all).
+# Unit drug and test prices are fixed in the PSA since issue #154, so there is
+# no drug_costs group; the cost bar is the sampled resource-use costs (visits,
+# baseline work-up, follow-up contacts, end-of-life care).
 figure_groups <- c(
-  "[GROUP] drug_costs" = "Drug costs",
+  "[GROUP] other_costs" = "Resource-use costs",
   "[GROUP] utilities" = "Utilities",
   "[GROUP] prevalence" = "Biomarker prevalence",
   "[GROUP] interaction_all" = "Biomarker-treatment interaction"

@@ -3,39 +3,64 @@
 # ===============================================================================
 # The table below is the single source of truth for PSA, DSA, and EVPPI
 # parameter membership. Add a parameter once here; downstream analyses derive
-# their parameter vectors from names(param_distributions).
+# their parameter vectors from the specification.
+#
+# Columns (issue #154):
+#   psa      TRUE if the parameter is sampled in (or derived within) the PSA.
+#   dsa      TRUE if the parameter is varied in the one-way DSA. Published
+#            tariffs and list prices are psa = FALSE, dsa = TRUE: their value is
+#            known, so sampling them adds decision uncertainty that does not
+#            exist and puts "value of research on the FLOX tariff" at the top of
+#            the EVPPI ranking, but their level still matters and is tested
+#            deterministically.
+#   derived  TRUE if the PSA column is a deterministic function of other sampled
+#            parameters (apply_derived_psa_parameters()) rather than a draw.
+#            Derived parameters are model inputs, so they take part in the DSA,
+#            but they are excluded from EVPPI groups because they are exactly
+#            collinear with the parameters they are derived from.
 
 parameter_distribution_spec <- function() {
   biomarker_cost_parameters <- unique(unname(biomarker_cost_key()))
   prevalence_parameters <- unname(biomarker_prevalence_key())
-  static_costs <- data.frame(
-    parameter = c(
-      "c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-      "c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last"
-    ),
-    distribution = "gamma",
-    cv = 0.20,
-    group = c(
-      "drug_costs", "drug_costs", "test_costs", "test_costs",
-      rep("other_costs", 4)
-    ),
-    order = c(10:11, 20:21, 30:33),
+
+  # Published list prices and laboratory/procedure tariffs: fixed in the PSA,
+  # varied in the one-way DSA only.
+  fixed_costs <- data.frame(
+    parameter = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+                  biomarker_cost_parameters),
+    distribution = NA_character_,
+    cv = NA_real_,
+    group = c("drug_costs", "drug_costs", "test_costs", "test_costs",
+              rep("test_costs", length(biomarker_cost_parameters))),
+    psa = FALSE,
+    order = c(10:11, 20:21, 22 + seq_along(biomarker_cost_parameters)),
     stringsAsFactors = FALSE
   )
-  biomarker_costs <- data.frame(
-    parameter = biomarker_cost_parameters,
+  # Visit, baseline, follow-up and end-of-life costs bundle genuine resource-use
+  # uncertainty (contact frequency, terminal-care intensity), so they remain
+  # probabilistic.
+  other_costs <- data.frame(
+    parameter = c("c_other_visit", "c_other_baseline", "c_other_follow",
+                  "c_other_last"),
     distribution = "gamma",
     cv = 0.20,
-    group = "test_costs",
-    order = 22 + seq_along(biomarker_cost_parameters),
+    group = "other_costs",
+    psa = TRUE,
+    order = 30:33,
     stringsAsFactors = FALSE
   )
+  # u_p is not sampled directly. Independent beta draws for u_np and u_p put
+  # 16% of draws (48% under UTILITY_SOURCE = 0) in the implausible region
+  # u_p > u_np. Sampling a non-negative decrement instead makes u_p <= u_np hold
+  # by construction, and E[u_decrement] = u_np - u_p leaves the marginal mean of
+  # u_p unchanged.
   utilities <- data.frame(
-    parameter = c("u_np", "u_p"),
-    distribution = "beta",
-    cv = 0.15,
+    parameter = c("u_np", "u_decrement", "u_p"),
+    distribution = c("beta", "gamma", "derived"),
+    cv = c(0.15, 0.15, NA_real_),
     group = "utilities",
-    order = 40:41,
+    psa = TRUE,
+    order = 40:42,
     stringsAsFactors = FALSE
   )
   prevalence <- data.frame(
@@ -43,20 +68,40 @@ parameter_distribution_spec <- function() {
     distribution = "beta",
     cv = 0.15,
     group = "prevalence",
+    psa = TRUE,
     order = 50 + seq_along(prevalence_parameters),
     stringsAsFactors = FALSE
   )
 
-  spec <- rbind(static_costs, biomarker_costs, utilities, prevalence)
+  spec <- rbind(fixed_costs, other_costs, utilities, prevalence)
+  spec$derived <- spec$distribution %in% "derived"
+  # The sampled decrement is a PSA construct, not a model input, so it is the
+  # one parameter excluded from the one-way DSA.
+  spec$dsa <- spec$parameter != "u_decrement"
   spec <- spec[order(spec$order), , drop = FALSE]
   spec$order <- NULL
+  rownames(spec) <- NULL
   if (anyDuplicated(spec$parameter)) {
     stop("Parameter distribution specification contains duplicate names.")
   }
   spec
 }
 
+#' Look up the reporting group of any specified parameter
+#'
+#' Covers fixed as well as sampled parameters, so deterministic-analysis output
+#' can be grouped even for parameters that have no PSA distribution.
+#'
+#' @param spec Parameter specification.
+#' @return Named character vector mapping parameter to group.
+parameter_group_lookup <- function(spec = parameter_distribution_spec()) {
+  stats::setNames(spec$group, spec$parameter)
+}
+
 distribution_parameters <- function(mean_value, distribution, cv) {
+  if (identical(distribution, "derived")) {
+    return(list(dist = "derived"))
+  }
   if (!is.finite(mean_value) || mean_value < 0) {
     stop("Distribution means must be finite and non-negative.")
   }
@@ -84,6 +129,7 @@ distribution_parameters <- function(mean_value, distribution, cv) {
 
 create_parameter_distributions <- function(params,
                                            spec = parameter_distribution_spec()) {
+  spec <- spec[spec$psa, , drop = FALSE]
   missing_parameters <- setdiff(spec$parameter, names(params))
   if (length(missing_parameters) > 0) {
     stop("Missing base-case parameters: ",
@@ -99,18 +145,42 @@ create_parameter_distributions <- function(params,
 }
 
 create_parameter_groups <- function(spec = parameter_distribution_spec()) {
+  # EVPPI groups describe what the PSA actually samples. Fixed prices carry no
+  # decision uncertainty, and derived columns are collinear with their inputs.
+  spec <- spec[spec$psa & !spec$derived, , drop = FALSE]
   grouped <- split(spec$parameter, factor(
     spec$group,
     levels = c("drug_costs", "test_costs", "other_costs", "utilities", "prevalence")
   ))
   grouped <- grouped[lengths(grouped) > 0]
-  append(
-    grouped,
-    list(all_costs = spec$parameter[spec$group %in% c(
-      "drug_costs", "test_costs", "other_costs"
-    )]),
-    after = match("other_costs", names(grouped))
-  )
+
+  cost_group_names <- c("drug_costs", "test_costs", "other_costs")
+  sampled_cost_groups <- intersect(cost_group_names, names(grouped))
+  # "all_costs" only earns a row when it spans more than one cost group;
+  # otherwise it would duplicate that group in every EVPPI table.
+  if (length(sampled_cost_groups) > 1) {
+    grouped <- append(
+      grouped,
+      list(all_costs = spec$parameter[spec$group %in% cost_group_names]),
+      after = match(utils::tail(sampled_cost_groups, 1), names(grouped))
+    )
+  }
+  grouped
+}
+
+#' Fill in PSA columns that are deterministic functions of sampled parameters
+#'
+#' Applied by generate_psa_samples() after the sampling loop, so every consumer
+#' of the PSA parameter table sees the same derived values.
+#'
+#' @param samples Data frame of sampled PSA parameters.
+#' @return The data frame with derived columns added.
+apply_derived_psa_parameters <- function(samples) {
+  if (all(c("u_np", "u_decrement") %in% names(samples))) {
+    # Non-negative decrement, floored at zero: u_p <= u_np in every draw.
+    samples$u_p <- pmax(samples$u_np - samples$u_decrement, 0)
+  }
+  samples
 }
 
 configure_parameter_distributions <- function(params) {
@@ -131,22 +201,31 @@ configure_parameter_distributions <- function(params) {
 
 #' One-way DSA bounds: base value +/- mult, capped to the parameter's support
 #'
+#' The DSA set is spec$dsa, not the PSA parameter set: unit prices that are
+#' fixed in the PSA are still varied deterministically (issue #154).
+#'
 #' @param params Base-case parameter list (l_params_base).
-#' @param distributions Named list from create_parameter_distributions();
-#'   names(distributions) define the DSA parameter set.
-#' @param groups Parameter groups from create_parameter_groups().
+#' @param spec Parameter specification from parameter_distribution_spec().
 #' @param mult Proportional variation (default DSA_mult, +/-20%).
 #' @return Data frame with columns pars, min, max.
-build_dsa_ranges <- function(params, distributions, groups, mult = DSA_mult) {
-  pars <- names(distributions)
+build_dsa_ranges <- function(params, spec = parameter_distribution_spec(),
+                             mult = DSA_mult) {
+  spec <- spec[spec$dsa, , drop = FALSE]
+  pars <- spec$parameter
+  missing_parameters <- setdiff(pars, names(params))
+  if (length(missing_parameters) > 0) {
+    stop("Missing base-case parameters for the DSA: ",
+         paste(missing_parameters, collapse = ", "))
+  }
   ranges <- data.frame(
     pars = pars,
     min = unlist(params[pars]) * (1 - mult),
     max = unlist(params[pars]) * (1 + mult),
     stringsAsFactors = FALSE
   )
-  bounded_zero <- ranges$pars %in% c(groups$all_costs, groups$prevalence)
-  bounded_one  <- ranges$pars %in% c(groups$utilities, groups$prevalence)
+  cost_groups <- c("drug_costs", "test_costs", "other_costs")
+  bounded_zero <- spec$group %in% c(cost_groups, "prevalence")
+  bounded_one  <- spec$group %in% c("utilities", "prevalence")
   ranges$min[bounded_zero] <- pmax(ranges$min[bounded_zero], 0)
   ranges$max[bounded_one]  <- pmin(ranges$max[bounded_one], 1)
   if (any(ranges$min > ranges$max)) {
@@ -159,21 +238,50 @@ build_dsa_ranges <- function(params, distributions, groups, mult = DSA_mult) {
 
 #' Deterministic structural scenarios run alongside the one-way DSA
 #'
-#' Discount rate (applied to costs and QALYs) and model time horizon. The
-#' values here are what 09_DSA.R runs and what table_1.qmd prints as ranges.
+#' Discount rate, model time horizon, post-progression treatment cost and the
+#' second treatment sequence. The values here are what 09_DSA.R runs and what
+#' table_1.qmd prints as ranges. `sides` names the endpoints that are actually
+#' run; a one-sided scenario is one whose other endpoint is the base case.
 #'
 #' @param base_dr Base-case annual discount rate.
 #' @param base_horizon_years Base-case time horizon in years.
-#' @return Named list; each element has label, unit, base, min, max.
-dsa_structural_scenarios <- function(base_dr, base_horizon_years) {
+#' @param base_pp_cost Base-case post-progression cost per quarter.
+#' @return Named list; each element has label, unit, base, min, max, sides.
+dsa_structural_scenarios <- function(base_dr, base_horizon_years,
+                                     base_pp_cost = 0) {
   list(
     Discount_rate = list(
       label = "Discount rate (costs and QALYs)", unit = "rate",
-      base = base_dr, min = 0, max = 0.08
+      base = base_dr, min = 0, max = 0.08, sides = c("min", "max")
     ),
     Time_horizon = list(
       label = "Time horizon", unit = "years",
-      base = base_horizon_years, min = 5, max = 20
+      base = base_horizon_years, min = 5, max = 20, sides = c("min", "max")
+    ),
+    # The base case costs nothing after progression beyond the quarterly
+    # follow-up contact and the end-of-life cost (issue #154). EUR 5,000 per
+    # quarter is an illustrative upper bound spanning a second-line systemic
+    # therapy course plus imaging and visits; it is a scenario value, not a
+    # costed Norwegian second-line pathway.
+    Post_progression_cost = list(
+      label = "Post-progression treatment cost (per quarter, progressed state)",
+      unit = "EUR", base = base_pp_cost, min = base_pp_cost, max = 5000,
+      sides = "max"
+    ),
+    # The base case gives every progression-free patient a second eight-cycle
+    # sequence at weeks 24-38. The scenario removes it, holding survival at the
+    # trial estimate, so it bounds the cost side of that assumption only.
+    Second_sequence = list(
+      label = "Second treatment sequence at weeks 24-38 (1 = given, 0 = omitted)",
+      unit = "indicator", base = 1, min = 0, max = 1, sides = "min"
     )
   )
+}
+
+#' Endpoints of a structural scenario that 09_DSA.R runs
+#'
+#' @param scenario One element of dsa_structural_scenarios().
+#' @return Character vector of endpoint names ("min", "max").
+structural_scenario_sides <- function(scenario) {
+  if (is.null(scenario$sides)) c("min", "max") else scenario$sides
 }

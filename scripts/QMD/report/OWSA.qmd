@@ -141,9 +141,13 @@ if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
 }
 ```
 
-# Structural Scenarios: Discount Rate and Time Horizon
+# Structural Scenarios
 
-The discount rate (applied to costs and QALYs together) and the model time horizon are not sampled in the PSA. They are varied here as deterministic structural scenarios (issue #153); these are the ranges reported for the two parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
+The discount rate (applied to costs and QALYs together), the model time horizon, the post-progression treatment cost and the second treatment sequence are not sampled in the PSA. They are varied here as deterministic structural scenarios (issues #153 and #154); these are the ranges reported for those parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
+
+Two of the scenarios test scope assumptions rather than parameter values. The base case applies **no post-progression treatment cost**: second-line systemic therapy, imaging and visits after progression are outside the modeled scope, so the progressed state accrues only the quarterly follow-up contact and the end-of-life cost. Because the strategies differ in time spent progressed, this omission is differential, and the scenario charges EUR 5,000 per quarter in the progressed state as an illustrative upper bound. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
+
+Unit drug and test costs are fixed in the PSA (issue #154) because they are published tariffs or assumed list prices rather than quantities a study could resolve; their influence is quantified in the one-way analysis above, not in the value-of-information results.
 
 ```{r structural-scenarios}
 scenario_rows <- dsa_results %>%
@@ -156,6 +160,14 @@ if (any(scenario_rows$Parameter != "base_case")) {
     if (parameter == "base_case") return("Base case")
     if (parameter == "Discount_rate") return(sprintf("Discount rate %g%%", 100 * param_value))
     if (parameter == "Time_horizon") return(sprintf("Time horizon %g years", param_value))
+    if (parameter == "Post_progression_cost") {
+      return(sprintf("Post-progression cost EUR %s per quarter",
+                     format(param_value, big.mark = ",")))
+    }
+    if (parameter == "Second_sequence") {
+      return(if (param_value == 0) "No second treatment sequence" else
+        "Second treatment sequence given")
+    }
     sprintf("%s = %g", parameter, param_value)
   }
   scenario_display <- scenario_rows %>%
@@ -197,10 +209,10 @@ if (length(failed) > 0) {
 
 # Interpretation
 
-The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate and time horizon move the NMB of every strategy; these parameters are fixed in the PSA.
+The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate, time horizon, post-progression cost and second treatment sequence move the NMB of every strategy; these parameters are fixed in the PSA, as are the unit drug and test costs.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

@@ -39,9 +39,11 @@ biomarker_label <- function(x) {
 evppi_group_label <- function(x) {
   biomarkers <- get_biomarkers()
   labels <- c(
+    # Drug and test unit prices are fixed in the PSA since issue #154, so these
+    # groups no longer appear; the labels are kept for older caches.
     drug_costs = "Drug costs",
     test_costs = "Test costs",
-    other_costs = "Other costs",
+    other_costs = "Resource-use costs",
     all_costs = "All costs",
     utilities = "Utilities",
     prevalence = "Biomarker prevalence",

@@ -107,7 +107,20 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   if(length(quarterly_cycles) > 0) {
     follow_up_costs[quarterly_cycles] <- params$c_other_follow * p_p[quarterly_cycles]
   }
-  
+
+  # Post-progression treatment costs (issue #154). Second-line systemic therapy,
+  # imaging and visits after progression are NOT costed in the base case, where
+  # c_other_pp = 0 and the progressed state accrues only the quarterly follow-up
+  # contact and the end-of-life cost. The omission is differential because the
+  # strategies differ in time spent progressed, so the parameter is explicit and
+  # is varied in a deterministic structural scenario. Charged on the same
+  # quarterly cycles as the follow-up contact.
+  c_other_pp <- if (is.null(params$c_other_pp)) 0 else params$c_other_pp
+  post_progression_costs <- rep(0, n_cycles)
+  if (c_other_pp != 0 && length(quarterly_cycles) > 0) {
+    post_progression_costs[quarterly_cycles] <- c_other_pp * p_p[quarterly_cycles]
+  }
+
   # End-of-life costs: one-time cost applied when patients transition to death
   # At t=0: no deaths yet (everyone starts alive)
   # At t>0: incremental deaths from previous time point
@@ -117,7 +130,8 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   end_life_costs <- death_transitions * params$c_other_last
   
   # Total costs
-  total_costs_undiscounted <- drug_costs + test_costs + visit_costs + follow_up_costs + end_life_costs
+  total_costs_undiscounted <- drug_costs + test_costs + visit_costs +
+    follow_up_costs + post_progression_costs + end_life_costs
   total_costs_discounted <- total_costs_undiscounted * v_dw_c
   costs_total <- sum(total_costs_discounted)
   
@@ -131,6 +145,7 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
     test_costs = test_costs,
     visit_costs = visit_costs,
     follow_up_costs = follow_up_costs,
+    post_progression_costs = post_progression_costs,
     end_life_costs = end_life_costs,
     total_costs_undiscounted = total_costs_undiscounted,
     total_costs_discounted = total_costs_discounted,

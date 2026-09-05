@@ -12,15 +12,16 @@ if (!exists("param_distributions") || !exists("param_groups")) {
   rm(parameter_config)
 }
 
+# The DSA varies more parameters than the PSA samples: unit prices are fixed in
+# the PSA and tested deterministically here (issue #154), so the DSA reads the
+# shared specification directly rather than the PSA distribution list.
+param_spec <- parameter_distribution_spec()
+
 # Load functions
 source(here::here("scripts/R/functions/model_fun.R"))
 source(here::here("scripts/R/functions/calculate_outcomes.R"))
 source(here::here("scripts/R/functions/create_tornado_plot.R"))
 source(here::here("scripts/R/functions/prediction_functions.R"))
-
-# Define parameters to vary in sensitivity analysis (matches EVPPI parameters).
-dsa_pars <- names(param_distributions)
-prevalence_params <- param_groups$prevalence
 
 # Use base case values as starting point
 dsa_basecase <- l_params_base
@@ -30,15 +31,18 @@ dsa_basecase <- l_params_base
 # build_dsa_ranges() (parameter_distributions.R) is shared with table_1.qmd so
 # the published ranges are the ranges actually run (issue #153). It validates
 # min <= max (issue #48); min = max is allowed for zero-valued parameters.
-utility_params <- param_groups$utilities
-cost_params <- param_groups$all_costs
-dsa_ranges <- build_dsa_ranges(l_params_base, param_distributions, param_groups,
-                               mult = DSA_mult)
+dsa_ranges <- build_dsa_ranges(l_params_base, param_spec, mult = DSA_mult)
+dsa_pars <- dsa_ranges$pars
+prevalence_params <- param_groups$prevalence
 
-# Deterministic structural scenarios (discount rate, time horizon) run after
-# the one-way parameter loop and reported in the OWSA report and Table 1.
-dsa_scenarios <- dsa_structural_scenarios(base_dr = dr,
-                                          base_horizon_years = time_horizon / 52)
+# Deterministic structural scenarios (discount rate, time horizon,
+# post-progression cost, second treatment sequence) run after the one-way
+# parameter loop and reported in the OWSA report and Table 1.
+dsa_scenarios <- dsa_structural_scenarios(
+  base_dr = dr,
+  base_horizon_years = time_horizon / 52,
+  base_pp_cost = l_params_base$c_other_pp
+)
 
 # Print the ranges for verification
 cat("Parameter ranges for DSA:\n")
@@ -92,14 +96,15 @@ for (i in seq_len(nrow(dsa_ranges))) {
 }
 
 # ===============================================================================
-# STRUCTURAL SCENARIOS: DISCOUNT RATE AND TIME HORIZON (issue #153)
+# STRUCTURAL SCENARIOS (issues #153, #154)
 # ===============================================================================
 # Deterministic scenarios that Table 1 reports as ranges. The discount rate is
 # applied to costs and QALYs together. A different time horizon re-predicts the
 # base-case survival curves on the new weekly grid from the selected joint
 # models and rebuilds the schedule vectors with the same rules as script 05
 # (drug positions are fixed calendar weeks; CT every 12 weeks and blood tests
-# every 4 weeks recur to the end of the horizon).
+# every 4 weeks recur to the end of the horizon). The post-progression cost and
+# second-sequence scenarios test the two scope assumptions raised in issue #154.
 
 build_horizon_params <- function(base_params, horizon_weeks) {
   if (!exists("models") || is.null(models$best_fit$os) || is.null(models$best_fit$pfs)) {
@@ -144,6 +149,23 @@ build_horizon_params <- function(base_params, horizon_weeks) {
   p
 }
 
+# Remove the second treatment sequence: zero every administration from the given
+# schedule position onwards and rebuild the visit schedule from the remaining
+# administrations. Monitoring (CT, blood tests) is unchanged, and so is
+# survival, so the scenario bounds the cost of the assumption only.
+drop_second_sequence <- function(p, first_position = 25L) {
+  zap <- function(v) {
+    if (length(v) >= first_position) v[seq.int(first_position, length(v))] <- 0
+    v
+  }
+  p$l_nivo         <- zap(p$l_nivo)
+  p$l_FLOX_exp     <- zap(p$l_FLOX_exp)
+  p$l_FLOX_control <- zap(p$l_FLOX_control)
+  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
+  p$l_visit[1] <- 1
+  p
+}
+
 run_structural_scenario <- function(scenario_name, value) {
   if (scenario_name == "Discount_rate") {
     p <- dsa_basecase
@@ -156,14 +178,25 @@ run_structural_scenario <- function(scenario_name, value) {
     p <- build_horizon_params(dsa_basecase, horizon_weeks)
     return(model_fun(p, time_horizon = horizon_weeks))
   }
+  if (scenario_name == "Post_progression_cost") {
+    p <- dsa_basecase
+    p$c_other_pp <- value
+    return(model_fun(p))
+  }
+  if (scenario_name == "Second_sequence") {
+    p <- dsa_basecase
+    if (value == 0) p <- drop_second_sequence(p)
+    return(model_fun(p))
+  }
   stop("Unknown structural scenario: ", scenario_name)
 }
 
-cat("\nRunning structural scenarios (discount rate, time horizon)...\n")
+cat("\nRunning structural scenarios...\n")
 dsa_scenario_status <- list()
 for (scenario_name in names(dsa_scenarios)) {
   scenario <- dsa_scenarios[[scenario_name]]
-  for (side in c("min", "max")) {
+  # One-sided scenarios declare only the endpoint that differs from base case.
+  for (side in structural_scenario_sides(scenario)) {
     value <- scenario[[side]]
     cat("  ", scenario$label, "-", side, "=", value, scenario$unit, "\n")
     result_side <- tryCatch(
@@ -186,13 +219,14 @@ for (scenario_name in names(dsa_scenarios)) {
 cat("Combining results...\n")
 dsa_results <- do.call(rbind, all_results)
 
-# Add parameter group information (param_groups from 06_sampling.R)
+# Add parameter group information. The lookup comes from the shared parameter
+# specification rather than the PSA groups, so fixed unit prices are still
+# grouped as drug/test costs in the tornado plots (issue #154).
+group_lookup <- parameter_group_lookup(param_spec)
 dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
   if (p == "base_case") return("base_case")
   if (p %in% names(dsa_scenarios)) return("structural")
-  for (g in names(param_groups)) {
-    if (p %in% param_groups[[g]] && g != "all_costs") return(g)
-  }
+  if (p %in% names(group_lookup)) return(unname(group_lookup[p]))
   return("other")
 })
 

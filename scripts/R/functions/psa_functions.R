@@ -15,8 +15,11 @@ generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
   # Sample from each parameter distribution
   for (param_name in names(param_distributions)) {
     dist_info <- param_distributions[[param_name]]
-    
-    if (dist_info$dist == "lnorm") {
+
+    if (dist_info$dist == "derived") {
+      # Filled in below from the parameters it is derived from (issue #154).
+      next
+    } else if (dist_info$dist == "lnorm") {
       samples[[param_name]] <- rlnorm(n_sim, 
                                       meanlog = dist_info$meanlog, 
                                       sdlog = dist_info$sdlog)
@@ -35,8 +38,41 @@ generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
     }
   }
 
+  # Deterministic functions of the sampled parameters (currently u_p).
+  samples <- apply_derived_psa_parameters(samples)
+
+  missing_columns <- setdiff(names(param_distributions), names(samples))
+  if (length(missing_columns) > 0) {
+    stop("PSA sampling produced no column for: ",
+         paste(missing_columns, collapse = ", "))
+  }
+
   attr(samples, "seed") <- seed
   return(samples)
+}
+
+#' Fraction of PSA draws with an implausible utility ordering
+#'
+#' Reported alongside the PSA results so the ordering assumption is visible
+#' (issue #154). The decrement parameterisation makes this zero by
+#' construction; independent beta draws for u_np and u_p did not.
+#'
+#' @param psa_params Data frame of PSA parameter draws.
+#' @param margin Excess of u_p over u_np counted as a material reversal.
+#' @return List with n, n_reversed, fraction, and fraction_material, or NULL
+#'   when the utility columns are absent.
+utility_reversal_fraction <- function(psa_params, margin = 0.05) {
+  if (!all(c("u_np", "u_p") %in% names(psa_params))) return(NULL)
+  excess <- psa_params$u_p - psa_params$u_np
+  excess <- excess[is.finite(excess)]
+  if (length(excess) == 0) return(NULL)
+  list(
+    n = length(excess),
+    n_reversed = sum(excess > 0),
+    fraction = mean(excess > 0),
+    fraction_material = mean(excess > margin),
+    margin = margin
+  )
 }
 
 #' Check whether cached PSA samples were generated with the requested seed

@@ -319,9 +319,10 @@ N <- 1000; set.seed(2026); idx <- sample(nrow(psa_params), N)
 
 run_panel <- function(d_row, dp, panel) {
   p <- l_params_base
-  for (nm in c("c_drug_nivo","c_drug_FLOX","c_test_CT","c_test_blood","c_test_CRP","c_test_NGS",
-               "c_other_visit","c_other_baseline","c_other_follow","c_other_last",
-               "u_np","u_p","p_crp","p_tmb_braf")) p[[nm]] <- d_row[[nm]]
+  # Take whatever the PSA cache actually sampled. Unit prices are fixed in the
+  # PSA since issue #154 and keep their base-case values; a hardcoded name list
+  # would silently drop them from the parameter set.
+  for (nm in intersect(names(d_row), names(l_params_base))) p[[nm]] <- d_row[[nm]]
   p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
   oc <- curve_draw(dp$ctrl_os, XC$ctrl, dist_for$OS); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, dist_for$PFS)
