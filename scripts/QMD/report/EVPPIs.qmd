@@ -46,6 +46,18 @@ if (file.exists(evppi_cache_file)) {
 }
 
 has_evppi <- !is.null(evppi_results) && nrow(evppi_results) > 0
+# Distinguish an absent cache from a cache with no rows: a zero EVPI (control
+# optimal in every PSA draw) makes every EVPPI zero and the analysis script
+# stores no rows (issue #156).
+no_evppi_msg <- if (!file.exists(evppi_cache_file)) {
+  "EVPPI cache not found. Run scripts/R/analysis/11_EVPPIs.R before rendering this report."
+} else if (is.finite(evpi_manual) && evpi_manual <= 0.01) {
+  sprintf(paste("EVPI is %s per patient: standard of care has the highest net monetary benefit in",
+                "every PSA draw, so the EVPPI of every parameter and group is zero and no",
+                "rows are stored (analysis script short-circuit)."), format_eur(evpi_manual, accuracy = 0.01))
+} else {
+  "EVPPI cache contains no rows."
+}
 group_consistency <- if (has_evppi) attr(evppi_results, "group_consistency") else NULL
 if (has_evppi) {
   for (col in c("evppi_se", "evppi_percent_of_evpi", "evppi_population_millions")) {
@@ -120,7 +132,7 @@ knitr::kable(
 
 ```{r evppi-table-parameters}
 if (!has_evppi) {
-  cat("EVPPI cache not found. Run scripts/R/analysis/11_EVPPIs.R before rendering this report.")
+  cat(no_evppi_msg)
 } else {
   single_display <- evppi_results %>%
     filter(!is_group) %>%
@@ -209,7 +221,7 @@ if (!is.null(group_consistency) && nrow(group_consistency) > 0) {
 if (!has_evppi) {
   ggplot() +
     annotate("text", x = 0.5, y = 0.5,
-             label = "EVPPI cache not available", size = 5) +
+             label = if (is.finite(evpi_manual) && evpi_manual <= 0.01) "EVPI = 0: all EVPPI are zero" else "EVPPI cache not available", size = 5) +
     theme_void()
 } else {
   plot_df <- evppi_results %>%
@@ -256,4 +268,4 @@ Population-level values assume `r annual_incidence_norway` annual eligible patie
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.0
+**Report version:** 5.1

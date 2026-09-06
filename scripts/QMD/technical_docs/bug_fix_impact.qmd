@@ -272,9 +272,12 @@ for (cmp in comparisons) {
   # comparison is a copy of the same cache, not evidence of "no change".
   cat(describe_psa_provenance(cmp$before, cmp$after), "\n\n")
 
+  # EVPI is reported whenever both snapshots carry it, even when one EVPPI
+  # table is empty (EVPI = 0 stores no rows; issue #156).
+  evpi_text <- evpi_line(cmp$before, cmp$after)
+  if (!is.null(evpi_text)) cat(evpi_text, "\n\n")
   evppi_df <- build_evppi_impact(cmp$before, cmp$after)
   if (!is.null(evppi_df)) {
-    cat(evpi_line(cmp$before, cmp$after), "\n\n")
     evppi_tbl <- knitr::kable(
       evppi_df,
       booktabs = TRUE,

@@ -53,9 +53,19 @@ collect_cache_provenance <- function(label = NULL, n = NULL) {
 describe_psa_provenance <- function(before, after) {
   b <- before$metadata$caches
   a <- after$metadata$caches
+  describe_one <- function(x, label) {
+    if (is.null(x)) {
+      return(sprintf("%s snapshot predates issue #156 and did not record the PSA cache md5",
+                     label))
+    }
+    sprintf("%s PSA cache md5 %s (modified %s%s)", label, x$psa_obj$md5,
+            format(x$psa_obj$mtime, "%Y-%m-%d %H:%M"),
+            if (isTRUE(x$psa_regenerated)) ", regenerated inside the snapshot run" else "")
+  }
   if (is.null(b) || is.null(a)) {
-    return(paste0("PSA provenance unavailable: one or both snapshots predate ",
-                  "issue #156 and did not record the PSA cache md5."))
+    return(paste0("PSA provenance: ", describe_one(b, "before"), "; ",
+                  describe_one(a, "after"), ". Identity of the two PSA files ",
+                  "cannot be established from metadata."))
   }
   same <- identical(b$psa_obj$md5, a$psa_obj$md5)
   regen <- isTRUE(a$psa_regenerated)

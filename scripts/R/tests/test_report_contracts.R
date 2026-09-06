@@ -53,7 +53,15 @@ if (!file.exists(evppi_file)) {
   load(evppi_file, envir = e)
   check(!is.null(e$evppi_results), "EVPPI cache has no evppi_results object")
 
-  if (!is.null(e$evppi_results)) {
+  if (!is.null(e$evppi_results) && nrow(e$evppi_results) == 0 &&
+      isTRUE(e$evpi_manual <= 0.01)) {
+    # A zero EVPI (control optimal in every PSA draw) makes every EVPPI zero
+    # and run_evppi_analysis() returns no rows by design; the interaction-row
+    # and group checks below have nothing to test. This is the state of the
+    # cache after the issue #156 sampling change at WTP 51,000.
+    skip(sprintf("EVPPI cache has no rows because EVPI = %s; row checks not applicable",
+                 format(e$evpi_manual)))
+  } else if (!is.null(e$evppi_results)) {
     params <- e$evppi_results$parameter
     expected <- unlist(lapply(get_biomarkers(), function(b) {
       paste0("b_", b, "_rx_", c("os", "pfs"))
