@@ -147,9 +147,10 @@ for (model_name in "joint") {
   cat("Loading sampling cache ...\n")
   sampling_models_cache <- readRDS(cache_pattern)
 
-  n_available <- min(n_boot_subset, sampling_models_cache$crp$n_samples)
+  joint_cache <- get_joint_sampling_models(sampling_models_cache)
+  n_available <- min(n_boot_subset, joint_cache$n_samples)
   set.seed(analysis_seed)
-  boot_indices <- sample(seq_len(sampling_models_cache$crp$n_samples), n_available)
+  boot_indices <- sample(seq_len(joint_cache$n_samples), n_available)
 
   ci_data[[model_name]] <- list()
 
@@ -165,7 +166,9 @@ for (model_name in "joint") {
       # to control (issue #151). The base-case line is the joint model with
       # Rx = control, so its ribbon must come from the joint bootstrap too, not
       # from a separate age/sex-only control bootstrap.
-      ctrl_model <- sampling_models_cache$crp$samples[[idx]][[outcome]]$model
+      sampled_idx <- tryCatch(sampled_survival_models(joint_cache, idx),
+                              error = function(e) NULL)
+      ctrl_model <- sampled_idx[[outcome]]$model
       if (!is.null(ctrl_model)) {
         ctrl_data_tmp <- data_complete
         ctrl_data_tmp$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
@@ -177,7 +180,7 @@ for (model_name in "joint") {
       }
 
       # CRP-weighted predictions from CRP sampling model
-      crp_model <- sampling_models_cache$crp$samples[[idx]][[outcome]]$model
+      crp_model <- sampled_idx[[outcome]]$model
       if (!is.null(crp_model)) {
         crp_pos_tmp <- data_complete[as.numeric(as.character(data_complete$crp)) == 1, ]
         crp_pos_tmp$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
@@ -213,7 +216,7 @@ for (model_name in "joint") {
   }
 
   # Free memory
-  rm(sampling_models_cache)
+  rm(sampling_models_cache, joint_cache)
   gc()
 
   cat("Bootstrap CIs computed for", model_name, "\n")

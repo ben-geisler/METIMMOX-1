@@ -13,6 +13,21 @@ cache_file_obj <- psa_obj_path()
 cache_file_params <- psa_params_path()
 psa_seed <- analysis_seed
 
+# Fingerprint of everything the PSA depends on (issue #156): the sampling cache
+# behind the survival draws, the full base-case parameter list, the sampled
+# distributions, the strategy set, n_sim, seed, horizon and cycle length. A
+# cache stamped with a different fingerprint is regenerated.
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = psa_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+
 # Check if PSA cache exists and is valid
 psa_cached <- FALSE
 if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
@@ -73,6 +88,26 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
       cache_valid <- FALSE
     }
 
+    # Caches without the per-row model index cannot align interaction
+    # coefficients with replaced draws (issue #156).
+    if (!"model_idx" %in% names(psa_params) || is.null(psa_obj$model_idx)) {
+      cat("  Cache validation failed: no model_idx (cache predates issue #156)\n")
+      cache_valid <- FALSE
+    }
+
+    # Input fingerprint: sampling cache, base parameters, distributions,
+    # strategies, n_sim, seed, horizon and cycle length (issue #156).
+    if (!identical(psa_obj$fingerprint, expected_psa$fingerprint)) {
+      cat("  Cache validation failed: input fingerprint mismatch\n")
+      cached_inputs <- psa_obj$fingerprint_inputs
+      for (key in names(expected_psa$inputs)) {
+        if (!identical(cached_inputs[[key]], expected_psa$inputs[[key]])) {
+          cat("    - ", key, " differs\n", sep = "")
+        }
+      }
+      cache_valid <- FALSE
+    }
+
     if (cache_valid) {
       cat("  Cache validation successful!\n")
       cat("  Loaded PSA results from cache:\n")
@@ -111,6 +146,9 @@ if (!psa_cached) {
   psa_params <- psa_build$psa_params
   psa_results <- psa_build$psa_results
   rm(psa_build)
+  psa_obj$fingerprint <- expected_psa$fingerprint
+  psa_obj$fingerprint_inputs <- expected_psa$inputs
+  psa_obj$sampling_method <- get_joint_sampling_models(sampling_models)$method
 
   cat(sprintf(
     "PSA fallback diagnostic: %d/%d initial iterations (%.2f%%; maximum permitted %.2f%%)\n",

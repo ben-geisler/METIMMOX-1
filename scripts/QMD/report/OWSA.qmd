@@ -89,10 +89,20 @@ knitr::kable(
 
 # Tornado Plots
 
-```{r tornado-plots, fig.cap="Tornado plots by economic strategy", fig.height=8, fig.width=10}
+Two tornado diagrams are shown for each guided strategy. The first ranks parameters by how far they move the strategy's own NMB. Parameters that move every strategy by the same amount (the progression-free utility, the end-of-life cost) rank highly there without affecting the choice between strategies. The second ranks parameters by the change in **incremental NMB versus standard of care**, which is the decision-relevant quantity and the measure used in Figure 2 (issue #156).
+
+```{r tornado-plots, fig.cap="Tornado plots by economic strategy (change in the strategy's own NMB)", fig.height=8, fig.width=10}
 par(mfrow = c(length(get_strategies()), 1), mar = c(4, 8, 3, 1))
 for (strategy in get_strategies()) {
   create_tornado_plot(strategy, dsa_results)
+}
+par(mfrow = c(1, 1))
+```
+
+```{r tornado-plots-incremental, fig.cap="Incremental tornado plots for the guided strategies (change in NMB versus standard of care)", fig.height=6, fig.width=10}
+par(mfrow = c(length(get_biomarkers()), 1), mar = c(4, 8, 3, 1))
+for (strategy in get_biomarkers()) {
+  create_tornado_plot(strategy, dsa_results_inmb, measure = "INMB_diff")
 }
 par(mfrow = c(1, 1))
 ```
@@ -111,17 +121,38 @@ knitr::kable(
   booktabs = TRUE,
   align = c("l", "r", "l", "r"),
   col.names = c("Strategy", "Rank", "Parameter", "NMB Range"),
-  caption = "Top one-way sensitivity drivers by strategy"
+  caption = "Top one-way sensitivity drivers by strategy (strategy's own NMB)"
 ) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
+```{r impact-ranking-incremental}
+incremental_display <- incremental_impact_summary %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Impact = format_eur(Impact)
+  )
+
+knitr::kable(
+  incremental_display,
+  booktabs = TRUE,
+  align = c("l", "r", "l", "r"),
+  col.names = c("Strategy", "Rank", "Parameter", "Incremental NMB Range"),
+  caption = "Top drivers of incremental NMB versus standard of care (decision sensitivity)"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+# Survival Distribution Sensitivity
+
 ```{r model-sensitivity}
 if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
+  n_eval <- model_impact_summary$N_Evaluated[1]
+  n_cand <- model_impact_summary$N_Candidates[1]
   model_sens_display <- model_impact_summary %>%
     mutate(
       Strategy = strategy_label(Strategy),
-      Base_NMB = format_eur(Base_NMB),
+      Base_NMB = paste0(format_eur(Base_NMB), " (", Base_Dist, ")"),
       Min_NMB = paste0(format_eur(Min_NMB), " (", Min_Dist, ")"),
       Max_NMB = paste0(format_eur(Max_NMB), " (", Max_Dist, ")"),
       Range = format_eur(Range)
@@ -132,13 +163,40 @@ if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
     model_sens_display,
     booktabs = TRUE,
     align = c("l", "r", "r", "r", "r"),
-    col.names = c("Strategy", "Base NMB", "Lowest NMB", "Highest NMB", "Range"),
-    caption = "Structural sensitivity to parametric survival distribution"
+    col.names = c("Strategy", "Base NMB (selected pair)", "Lowest NMB", "Highest NMB", "Range"),
+    caption = sprintf(
+      "Structural sensitivity to the parametric survival family (%d of %d candidate families evaluated; same family for OS and PFS)",
+      n_eval, n_cand)
   ) %>%
     kableExtra::kable_styling(latex_options = c("HOLD_position"))
 } else {
   cat("Survival-distribution sensitivity results were not available.")
 }
+```
+
+```{r distribution-status}
+if (exists("dsa_distribution_status") && !is.null(dsa_distribution_status)) {
+  status_display <- dsa_distribution_status %>%
+    mutate(
+      Status = ifelse(Evaluated, "Evaluated", "Not evaluated"),
+      Selected = ifelse(Selected, "Yes", ""),
+      Reason = ifelse(is.na(Reason), "", Reason)
+    ) %>%
+    select(Distribution, Selected, Status, Reason)
+
+  knitr::kable(
+    status_display,
+    booktabs = TRUE,
+    align = c("l", "c", "l", "l"),
+    col.names = c("Family", "Base case", "Status", "Reason not evaluated"),
+    caption = "Candidate survival families in the structural sensitivity analysis"
+  ) %>%
+    kableExtra::kable_styling(latex_options = c("HOLD_position"), font_size = 9) %>%
+    kableExtra::column_spec(4, width = "8cm")
+}
+```
+
+Families whose OS and PFS pair violates the OS >= PFS ordering at some modeled time point are not run through the model, because the deterministic model stops on an ordering violation; they are listed above with the number of violating curve-time points so the table is complete. The base-case row is the ordering-constrained pair selected in the survival analysis, which is the base case by construction.
 ```
 
 # Structural Scenarios
@@ -209,10 +267,10 @@ if (length(failed) > 0) {
 
 # Interpretation
 
-The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate, time horizon, post-progression cost and second treatment sequence move the NMB of every strategy; these parameters are fixed in the PSA, as are the unit drug and test costs.
+The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model; the incremental tornado plots show which of them drive the decision between a guided strategy and standard of care. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate, time horizon, post-progression cost and second treatment sequence move the NMB of every strategy; these parameters are fixed in the PSA, as are the unit drug and test costs.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.2
+**Report version:** 4.3

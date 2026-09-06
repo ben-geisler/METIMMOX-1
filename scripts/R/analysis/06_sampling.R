@@ -1,7 +1,7 @@
 #libraries
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
-p_load(here, survival, flexsurv, dplyr, tidyr)
+p_load(here, survival, flexsurv, dplyr, tidyr, mvtnorm)
 
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
@@ -58,114 +58,128 @@ create_biomarker_formula <- function(outcome, biomarker) {
 # ===============================================================================
 # CORRELATED SAMPLING FUNCTION
 # ===============================================================================
-# This function implements non-parametric resampling that maintains correlation
-# between PFS and OS by resampling patients and fitting both models to the same
-# resampled dataset.
+# MULTIVARIATE-NORMAL COEFFICIENT SAMPLING (issue #156)
+# ===============================================================================
+# Parameter uncertainty in the survival models is propagated by drawing
+# coefficient vectors from the multivariate-normal approximation to the sampling
+# distribution of each fitted joint model (mean = maximum-likelihood estimate,
+# covariance = inverse observed information, both on flexsurvreg's optimisation
+# scale). This replaced the unstratified nonparametric bootstrap, whose
+# resamples could contain 0-2 of the 6 control-arm CRP-positive patients and
+# produced interaction coefficients between -3.7 and +4.0 and singular fits.
+#
+# OS and PFS coefficients are drawn independently: the two models are fitted
+# separately and no joint covariance between them is estimated. The bootstrap
+# preserved the OS-PFS correlation by refitting both to the same resample; that
+# property is given up here in exchange for draws that cannot degenerate
+# (user decision, issue #156). Within a draw, the same coefficient vector serves
+# the control arm (Rx = control) and every biomarker subgroup, so the
+# control/biomarker correlation of issue #151 is unchanged.
+#
+# The cache stores the draws as n_samples x n_parameters matrices and the two
+# original fits; sampled_survival_models() (prediction_functions.R) builds a
+# flexsurvreg object with the drawn estimates on request.
 # ===============================================================================
 
-sample_correlated_survival <- function(formula_os, formula_pfs, data,
-                                       dist_os = "weibull", dist_pfs = "weibull",
-                                       n_samples = n_samples, seed = 123L) {
+SAMPLING_METHOD <- "mvn_v1"
+
+sample_survival_coefficients <- function(formula_os, formula_pfs, data,
+                                         dist_os = "weibull", dist_pfs = "weibull",
+                                         n_samples = n_samples, seed = 123L) {
 
   n_patients <- nrow(data)
-  sampled_models <- vector("list", n_samples)
-  n_failed <- 0
-
-  cat("Generating", n_samples, "correlated resampled models for", n_patients, "patients...\n")
+  cat("Generating", n_samples, "multivariate-normal coefficient draws for the",
+      "joint OS and PFS models fitted on", n_patients, "patients...\n")
   cat("Using OS distribution:", dist_os, "| PFS distribution:", dist_pfs, "\n")
-  cat("This preserves PFS-OS correlation by fitting both models to the same resampled data\n")
 
-  # Fit original models for reference
   original_os <- flexsurvreg(formula_os, data = data, dist = dist_os)
   original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist_pfs)
 
-  # Make bootstrap indices independent of prior RNG use and cache branches.
-  set.seed(seed)
-
-  # Set up progress reporting
-  start_time <- Sys.time()
-
-  for (i in seq_len(n_samples)) {
-    # Resample patients with replacement (non-parametric resampling)
-    resample_idx <- sample(1:n_patients, size = n_patients, replace = TRUE)
-    resampled_data <- data[resample_idx, ]
-
-    # Fit BOTH models to the SAME resampled dataset
-    # This is critical: PFS and OS share the same patient cohort
-    sampled_models[[i]] <- tryCatch({
-      os_model <- flexsurvreg(formula_os, data = resampled_data, dist = dist_os)
-      pfs_model <- flexsurvreg(formula_pfs, data = resampled_data, dist = dist_pfs)
-
-      list(
-        os = list(
-          model = os_model,
-          coefficients = os_model$coefficients,
-          dist = dist_os
-        ),
-        pfs = list(
-          model = pfs_model,
-          coefficients = pfs_model$coefficients,
-          dist = dist_pfs
-        ),
-        resample_idx = resample_idx  # Store for reproducibility/debugging
-      )
-    }, error = function(e) {
-      # If resampled model fails, use original model
-      cat("Warning: Resampled model", i, "failed:", conditionMessage(e), "\n")
-      list(
-        os = list(
-          model = original_os,
-          coefficients = original_os$coefficients,
-          dist = dist_os
-        ),
-        pfs = list(
-          model = original_pfs,
-          coefficients = original_pfs$coefficients,
-          dist = dist_pfs
-        ),
-        failed = TRUE
-      )
-    })
-
-    if (isTRUE(sampled_models[[i]]$failed)) {
-      n_failed <- n_failed + 1
+  draw_coefficients <- function(model, label) {
+    if (is.null(model$cov) || anyNA(model$cov)) {
+      stop("Covariance matrix unavailable for the ", label,
+           " model (non-converged fit); cannot draw coefficients")
     }
-    
-    # Progress reporting
-    if (i %% 500 == 0) {
-      elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
-      rate <- i / elapsed
-      remaining <- (n_samples - i) / rate
-      cat(sprintf("Completed %d/%d resampled models (%.1f%%) - %d failures - ETA: %.1f min\n",
-                  i, n_samples, 100*i/n_samples, n_failed, remaining))
+    par_names <- rownames(model$res)
+    draws <- matrix(NA_real_, nrow = n_samples, ncol = length(par_names),
+                    dimnames = list(NULL, par_names))
+    draws[, model$optpars] <- mvtnorm::rmvnorm(n_samples, model$opt$par, model$cov)
+    if (length(model$fixedpars) > 0) {
+      draws[, model$fixedpars] <- rep(model$res.t[model$fixedpars, "est"],
+                                      each = n_samples)
     }
+    draws
   }
 
-  total_time <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
-  cat(sprintf("Resampling complete: %d successful, %d failed in %.1f minutes\n",
-              n_samples - n_failed, n_failed, total_time))
+  # Make the draws independent of prior RNG use and cache branches.
+  set.seed(seed)
+  start_time <- Sys.time()
+  draws <- list(
+    os = draw_coefficients(original_os, "OS"),
+    pfs = draw_coefficients(original_pfs, "PFS")
+  )
+  total_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
 
-  return(list(
-    samples = sampled_models,
+  # Draw diagnostics: no draw can fail (the normal approximation is always
+  # proper), so the reported rate is the share of draws whose treatment-by-
+  # biomarker interaction exceeds a ten-fold time ratio in either direction, an
+  # interpretive flag for extreme tails rather than a validity criterion.
+  interaction_terms <- function(draw_matrix) {
+    nm <- colnames(draw_matrix)
+    nm[grepl(":", nm, fixed = TRUE) & grepl("Rx", nm, fixed = TRUE)]
+  }
+  summarise_draws <- function(draw_matrix, outcome) {
+    stats <- t(apply(draw_matrix, 2, function(v) c(
+      mean = mean(v), sd = stats::sd(v),
+      q2.5 = unname(stats::quantile(v, 0.025)),
+      q97.5 = unname(stats::quantile(v, 0.975)),
+      min = min(v), max = max(v)
+    )))
+    data.frame(outcome = outcome, coefficient = rownames(stats), stats,
+               row.names = NULL, stringsAsFactors = FALSE)
+  }
+  coefficient_summary <- rbind(summarise_draws(draws$os, "os"),
+                               summarise_draws(draws$pfs, "pfs"))
+  extreme_bound <- log(10)
+  extreme_flags <- lapply(draws, function(m) {
+    terms <- interaction_terms(m)
+    if (length(terms) == 0) return(rep(FALSE, nrow(m)))
+    apply(abs(m[, terms, drop = FALSE]) > extreme_bound, 1, any)
+  })
+  n_extreme <- sum(extreme_flags$os | extreme_flags$pfs)
+
+  cat(sprintf("Coefficient draws complete: %d draws per outcome in %.1f seconds; 0 failed\n",
+              n_samples, total_time))
+  cat(sprintf("Extreme-draw rate (any interaction |coefficient| > log(10)): %d/%d (%.2f%%)\n",
+              n_extreme, n_samples, 100 * n_extreme / n_samples))
+  cat("Interaction coefficient draws (mean, 2.5%, 97.5%):\n")
+  ix <- coefficient_summary[grepl(":", coefficient_summary$coefficient, fixed = TRUE), ]
+  for (r in seq_len(nrow(ix))) {
+    cat(sprintf("  %-4s %-32s %7.3f [%7.3f, %7.3f]\n", ix$outcome[r], ix$coefficient[r],
+                ix$mean[r], ix$q2.5[r], ix$q97.5[r]))
+  }
+
+  list(
+    method = SAMPLING_METHOD,
+    draws = draws,
     original_os = original_os,
     original_pfs = original_pfs,
     n_samples = n_samples,
-    n_failed = n_failed,
+    n_failed = 0L,
+    n_extreme = n_extreme,
+    extreme_bound = extreme_bound,
+    coefficient_summary = coefficient_summary,
     dist_os = dist_os,
     dist_pfs = dist_pfs,
     seed = seed,
     creation_time = Sys.time()
-  ))
+  )
 }
 
-# Return TRUE only when every requested cache component records the expected seed.
-sampling_cache_seed_matches <- function(sampling_models, components,
-                                        seed = 123L) {
-  all(vapply(
-    components,
-    function(component) identical(sampling_models[[component]]$seed, seed),
-    logical(1)
-  ))
+# Return TRUE only when the joint component records the expected seed.
+sampling_cache_seed_matches <- function(sampling_models, seed = 123L) {
+  joint <- tryCatch(get_joint_sampling_models(sampling_models), error = function(e) NULL)
+  !is.null(joint) && identical(joint$seed, seed)
 }
 
 # ===============================================================================
@@ -202,128 +216,120 @@ resolve_best_distributions <- function(models) {
 # ===============================================================================
 # CHECK CACHE OR GENERATE SAMPLING MODELS
 # ===============================================================================
+# The cache is keyed by a fingerprint of everything that determines its content
+# (formulas, fitting data, selected distributions, n_samples, seed and sampling
+# method; issue #156). A cache whose fingerprint differs is regenerated, so a
+# changed formula, data set or distribution can no longer be served from a
+# stale file. The file name still carries n_samples for discoverability.
 
+selected_dists <- resolve_best_distributions(models)
+biomarkers_to_sample <- get_biomarkers()
+
+# Every economic biomarker strategy must share one joint formula: the cache
+# stores that model once, and the interaction-coefficient extraction and the
+# control-arm prediction (issue #151) both assume a single joint fit.
+formula_keys <- vapply(biomarkers_to_sample, function(biomarker) {
+  paste(paste(deparse(create_biomarker_formula("os", biomarker)), collapse = " "),
+        paste(deparse(create_biomarker_formula("pfs", biomarker)), collapse = " "),
+        sep = " || ")
+}, character(1))
+if (length(unique(formula_keys)) != 1L) {
+  stop("Biomarker strategies use different survival formulas (",
+       paste(unique(formula_keys), collapse = "; "),
+       "). The shared joint sampling cache requires one formula; extend ",
+       "06_sampling.R before adding biomarker-specific formulas.")
+}
+joint_formulas <- list(
+  os = create_biomarker_formula("os", biomarkers_to_sample[1]),
+  pfs = create_biomarker_formula("pfs", biomarkers_to_sample[1])
+)
+
+expected_sampling <- sampling_cache_fingerprint(
+  formulas = joint_formulas,
+  data = data_complete,
+  distributions = selected_dists,
+  n_samples = n_samples,
+  seed = sampling_seed,
+  method = SAMPLING_METHOD
+)
+
+report_fingerprint_differences <- function(cached_inputs, expected_inputs) {
+  keys <- union(names(expected_inputs), names(cached_inputs))
+  for (key in keys) {
+    if (!identical(cached_inputs[[key]], expected_inputs[[key]])) {
+      cat("  - ", key, " differs\n", sep = "")
+    }
+  }
+}
+
+sampling_models <- NULL
 if (file.exists(cache_file)) {
   cat("\n=== Loading sampling models from cache ===\n")
   cat("Cache file:", cache_file, "\n")
-
   sampling_models <- readRDS(cache_file)
 
-  # Validate cache contains the single economic model biomarkers. Each
-  # biomarker component holds the same joint bootstrap, which also supplies the
-  # control arm (issue #151); a legacy "control" component is not required.
-  biomarkers_to_validate <- get_biomarkers()
-  if (is.list(sampling_models) &&
-      all(biomarkers_to_validate %in% names(sampling_models))) {
-    expected_dists <- resolve_best_distributions(models)
-    cache_components <- biomarkers_to_validate
-    distributions_match <- all(vapply(
-      cache_components,
-      function(component) {
-        cached <- sampling_models[[component]]
-        identical(cached$dist_os, expected_dists$os) &&
-          identical(cached$dist_pfs, expected_dists$pfs)
-      },
-      logical(1)
-    ))
-    seed_matches <- sampling_cache_seed_matches(
-      sampling_models,
-      cache_components,
-      sampling_seed
-    )
-
-    if (!distributions_match) {
-      cat("Cache distributions do not match the ordering-constrained base case ",
-          "(OS: ", expected_dists$os, ", PFS: ", expected_dists$pfs,
-          "). Regenerating...\n", sep = "")
-      sampling_models <- NULL
-    } else if (!seed_matches) {
-      cat("Cache RNG seed is missing or does not match the requested seed (",
-          sampling_seed, "). Regenerating...\n", sep = "")
-      sampling_models <- NULL
-    } else {
-      cat("Cache loaded successfully!\n")
-      joint_models <- get_joint_sampling_models(sampling_models)
-      cat("- Joint-model samples:", joint_models$n_samples, "\n")
-      cat("- Biomarkers:", paste(biomarkers_to_validate, collapse = ", "), "\n")
-      cat("- Created:", format(joint_models$creation_time), "\n")
-      cat("- Distributions: OS", joint_models$dist_os,
-          "| PFS", joint_models$dist_pfs, "\n")
-      cat("- RNG seed:", joint_models$seed, "\n")
-      if (get_control_strategy() %in% names(sampling_models)) {
-        cat("- Legacy control component present and ignored: the control arm ",
-            "is predicted from the joint model with Rx = control (issue #151)\n",
-            sep = "")
-      }
-
-      # Check if n_samples matches
-      if (joint_models$n_samples != n_samples) {
-        cat("WARNING: Cached models (", joint_models$n_samples,
-            ") != requested (", n_samples, ")\n")
-        cat("Will use cached models. Delete cache file to regenerate.\n")
-      }
-      rm(joint_models)
-    }
-
-  } else {
-    cat("Cache file corrupted or incomplete. Regenerating...\n")
+  if (!is.list(sampling_models) || is.null(sampling_models$joint) ||
+      is.null(sampling_models$fingerprint)) {
+    cat("Cache predates issue #156 (per-biomarker bootstrap components or no ",
+        "fingerprint). Regenerating...\n", sep = "")
     sampling_models <- NULL
+  } else if (!identical(sampling_models$fingerprint, expected_sampling$fingerprint)) {
+    cat("Cache fingerprint does not match the current inputs. Regenerating...\n")
+    report_fingerprint_differences(sampling_models$fingerprint_inputs,
+                                   expected_sampling$inputs)
+    sampling_models <- NULL
+  } else if (!sampling_cache_seed_matches(sampling_models, sampling_seed)) {
+    cat("Cache RNG seed is missing or does not match the requested seed (",
+        sampling_seed, "). Regenerating...\n", sep = "")
+    sampling_models <- NULL
+  } else {
+    joint_models <- get_joint_sampling_models(sampling_models)
+    cat("Cache loaded successfully!\n")
+    cat("- Method:", joint_models$method, "\n")
+    cat("- Joint-model draws:", joint_models$n_samples, "\n")
+    cat("- Biomarkers sharing the joint model:",
+        paste(sampling_models$biomarkers, collapse = ", "), "\n")
+    cat("- Created:", format(joint_models$creation_time), "\n")
+    cat("- Distributions: OS", joint_models$dist_os,
+        "| PFS", joint_models$dist_pfs, "\n")
+    cat("- RNG seed:", joint_models$seed, "\n")
+    cat("- Fingerprint:", sampling_models$fingerprint, "\n")
+    rm(joint_models)
   }
-
 } else {
   cat("\n=== No cache found - will generate sampling models ===\n")
-  sampling_models <- NULL
 }
 
 # ===============================================================================
-# SURVIVAL MODEL RESAMPLING WITH CORRELATION (if not cached)
+# SURVIVAL MODEL COEFFICIENT SAMPLING (if not cached)
 # ===============================================================================
 
 if (is.null(sampling_models)) {
-
-  # Initialize list to store resampled models
-  sampling_models <- list()
-
-  cat("\n=== Starting correlated survival resampling ===\n")
-  cat("This will take some time but only needs to run once.\n")
+  cat("\n=== Starting multivariate-normal coefficient sampling ===\n")
   cat("Results will be cached to:", cache_file, "\n\n")
 
-  # Bootstrap the joint economic model (age, sex, treatment, and the
-  # biomarker-by-treatment interactions). No separate control bootstrap is
-  # fitted: the control arm is this same joint fit predicted with Rx = control,
-  # matching the base case (issue #151). Biomarker strategies that share a
-  # formula share one bootstrap, stored under each biomarker key.
-  selected_dists <- resolve_best_distributions(models)
-  biomarkers_to_sample <- get_biomarkers()
-  fitted_formula_sets <- list()
-  for (biomarker in biomarkers_to_sample) {
-    os_formula <- create_biomarker_formula("os", biomarker)
-    pfs_formula <- create_biomarker_formula("pfs", biomarker)
-    formula_key <- paste(deparse(os_formula), deparse(pfs_formula), sep = " || ")
+  # One joint model (age, sex, treatment and the biomarker-by-treatment
+  # interactions) serves every strategy. No separate control model is fitted:
+  # the control arm is this same fit predicted with Rx = control (issue #151).
+  joint_component <- sample_survival_coefficients(
+    formula_os = joint_formulas$os,
+    formula_pfs = joint_formulas$pfs,
+    data = data_complete,
+    dist_os = selected_dists$os,
+    dist_pfs = selected_dists$pfs,
+    n_samples = n_samples,
+    seed = sampling_seed
+  )
 
-    if (!is.null(fitted_formula_sets[[formula_key]])) {
-      cat("\n", biomarker, " strategy shares the joint model bootstrap already ",
-          "fitted for ", fitted_formula_sets[[formula_key]], "\n", sep = "")
-      sampling_models[[biomarker]] <-
-        sampling_models[[fitted_formula_sets[[formula_key]]]]
-      next
-    }
+  sampling_models <- list(
+    joint = joint_component,
+    biomarkers = biomarkers_to_sample,
+    fingerprint = expected_sampling$fingerprint,
+    fingerprint_inputs = expected_sampling$inputs,
+    creation_time = Sys.time()
+  )
+  rm(joint_component)
 
-    cat("\nSampling joint model bootstrap for", biomarker, "strategy...\n")
-    sampling_models[[biomarker]] <- sample_correlated_survival(
-      formula_os = os_formula,
-      formula_pfs = pfs_formula,
-      data = data,
-      dist_os = selected_dists$os,
-      dist_pfs = selected_dists$pfs,
-      n_samples = n_samples,
-      seed = sampling_seed
-    )
-    fitted_formula_sets[[formula_key]] <- biomarker
-  }
-  rm(fitted_formula_sets)
-
-  # Save to cache
   cat("\n=== Saving sampling models to cache ===\n")
   tryCatch({
     saveRDS(sampling_models, cache_file)
@@ -333,15 +339,18 @@ if (is.null(sampling_models)) {
     cat("WARNING: Failed to save cache:", conditionMessage(e), "\n")
   })
 }
+rm(expected_sampling, formula_keys, report_fingerprint_differences)
 
 # Print confirmation of model structure
 cat("\n=== Sampling model structure ready ===\n")
 cat("- Model:", model_config$label, "\n")
-cat("- Biomarker strategies: CRP, TMB/BRAF\n")
+cat("- Biomarker strategies sharing the joint model:",
+    paste(sampling_models$biomarkers, collapse = ", "), "\n")
 cat("- Formulas defined in: scripts/R/functions/model_configs.R\n")
-cat("- Number of resampled models:",
+cat("- Number of coefficient draws:",
     get_joint_sampling_models(sampling_models)$n_samples, "\n")
-cat("- PFS and OS are CORRELATED within each resampled model\n")
+cat("- Draws: multivariate normal around the fitted joint models; OS and PFS",
+    "drawn independently (issue #156)\n")
 cat("- Control arm: joint model predicted with Rx = control (issue #151)\n")
 
 # ===============================================================================
@@ -370,9 +379,12 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
                                                          sample_idx = 1,
                                                          data_original,
                                                          time_points) {
-  sampled_model <- sampling_model_list$samples[[sample_idx]]
+  sampled_model <- tryCatch(
+    sampled_survival_models(sampling_model_list, sample_idx),
+    error = function(e) NULL
+  )
   if (is.null(sampled_model)) {
-    warning("Sampled model ", sample_idx, " is NULL - returning NULL")
+    warning("Sampled model ", sample_idx, " is unavailable - returning NULL")
     return(NULL)
   }
 
@@ -451,7 +463,7 @@ if (nrow(fixed_spec) > 0) {
   cat("- Fixed in the PSA, varied in the DSA only (issue #154):",
       paste(fixed_spec$parameter, collapse = ", "), "\n")
 }
-cat("- Survival parameters: Correlated resampled models (n =",
-    sampling_models[[get_control_strategy()]]$n_samples, ")\n")
+cat("- Survival parameters: multivariate-normal coefficient draws (n =",
+    get_joint_sampling_models(sampling_models)$n_samples, ")\n")
 cat("- PSA population averaging function ready\n")
 cat("\nReady for PSA analysis\n")

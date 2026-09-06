@@ -19,6 +19,61 @@ get_git_commit <- function() {
   })
 }
 
+#' Get Git Commit Time
+#'
+#' @return POSIXct commit time of HEAD, or NA if unavailable.
+get_git_commit_time <- function() {
+  tryCatch({
+    epoch <- suppressWarnings(as.numeric(system("git log -1 --format=%ct HEAD", intern = TRUE)))
+    if (length(epoch) != 1 || is.na(epoch)) return(as.POSIXct(NA))
+    as.POSIXct(epoch, origin = "1970-01-01", tz = "")
+  }, error = function(e) as.POSIXct(NA))
+}
+
+#' Collect cache provenance for a snapshot
+#'
+#' @param label Utility-source label.
+#' @param n Sampling-cache sample size.
+#' @return Named list of cache_file_provenance() results for the sampling, PSA
+#'   object, PSA parameter, EVPPI and scenario-EVPPI caches.
+collect_cache_provenance <- function(label = NULL, n = NULL) {
+  list(
+    sampling = cache_file_provenance(sampling_cache_path(n)),
+    psa_obj = cache_file_provenance(psa_obj_path(label)),
+    psa_params = cache_file_provenance(psa_params_path(label)),
+    evppi = cache_file_provenance(evppi_path(label)),
+    scenario_evppi = cache_file_provenance(scenario_evppi_path(label))
+  )
+}
+
+#' Describe the PSA provenance of a before/after snapshot pair
+#'
+#' @param before,after Snapshot objects.
+#' @return Character scalar suitable for printing in a comparison.
+describe_psa_provenance <- function(before, after) {
+  b <- before$metadata$caches
+  a <- after$metadata$caches
+  if (is.null(b) || is.null(a)) {
+    return(paste0("PSA provenance unavailable: one or both snapshots predate ",
+                  "issue #156 and did not record the PSA cache md5."))
+  }
+  same <- identical(b$psa_obj$md5, a$psa_obj$md5)
+  regen <- isTRUE(a$psa_regenerated)
+  msg <- sprintf(
+    "PSA cache md5 before %s (modified %s), after %s (modified %s).",
+    b$psa_obj$md5, format(b$psa_obj$mtime, "%Y-%m-%d %H:%M"),
+    a$psa_obj$md5, format(a$psa_obj$mtime, "%Y-%m-%d %H:%M")
+  )
+  if (same) {
+    msg <- paste(msg, "The two snapshots copied the same PSA cache, so any",
+                 "PSA comparison shows no change by construction.")
+  } else if (regen) {
+    msg <- paste(msg, "The after PSA was regenerated inside the snapshot run",
+                 "because the cache predated the fix commit.")
+  }
+  msg
+}
+
 #' Get Package Versions
 #'
 #' Retrieves version numbers for key R packages used in the analysis.
@@ -65,11 +120,17 @@ get_economic_model_metadata <- function() {
 #'
 #' @param issue_number GitHub issue number (character or numeric).
 #' @return List containing metadata.
-collect_metadata <- function(issue_number) {
+collect_metadata <- function(issue_number, caches = NULL) {
   list(
     issue_number = as.character(issue_number),
     git_commit = get_git_commit(),
+    git_commit_time = get_git_commit_time(),
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    # Cache provenance (issue #156): md5 and modification time of every cache
+    # the snapshot copied, plus whether the PSA/EVPPI were regenerated inside
+    # the snapshot run. Without this, a "fixed" snapshot could carry a PSA file
+    # copied unchanged from before the fix and report "no PSA change".
+    caches = caches,
     r_version = R.version.string,
     packages = get_package_versions(),
     model = get_economic_model_metadata(),

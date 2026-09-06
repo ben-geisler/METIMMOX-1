@@ -28,7 +28,13 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
     n_sim = n_sim
   )
 
-  retained_sim_ids <- if ("sim" %in% names(psa_params)) {
+  # Index by the cached model that produced each retained row, not by the draw
+  # number: replaced draws were run with another cached model (issue #156).
+  retained_sim_ids <- if ("model_idx" %in% names(psa_params)) {
+    psa_params$model_idx
+  } else if ("sim" %in% names(psa_params)) {
+    warning("psa_params has no model_idx column; indexing interaction ",
+            "coefficients by draw number (replaced draws misaligned)")
     psa_params$sim
   } else {
     seq_len(nrow(psa_params))
@@ -223,5 +229,7 @@ if (nrow(evppi_results) > 0) {
 
 # Save results
 evppi_cache_file <- evppi_path()
-save(evppi_results, evpi_manual, file = evppi_cache_file)
+# Provenance: the PSA cache fingerprint this EVPPI run consumed (issue #156).
+evppi_psa_fingerprint <- psa_obj$fingerprint
+save(evppi_results, evpi_manual, evppi_psa_fingerprint, file = evppi_cache_file)
 cat("\nEVPPI analysis complete. Results saved to", evppi_cache_file, "\n")

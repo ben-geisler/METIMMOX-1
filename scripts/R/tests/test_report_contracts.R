@@ -133,6 +133,45 @@ if (!file.exists(psa_file)) {
   )
   check(!anyNA(po$cost) && !anyNA(po$effectiveness),
         "PSA cache contains NA cost/effectiveness entries")
+  # Issue #156: per-row model index and input fingerprint.
+  check(!is.null(po$model_idx) && length(po$model_idx) == po$n_sim,
+        "PSA cache lacks a model_idx vector aligned with its rows (issue #156)")
+  check(is.character(po$fingerprint) && nchar(po$fingerprint) > 0,
+        "PSA cache lacks an input fingerprint (issue #156)")
+  params_file <- psa_params_path()
+  if (file.exists(params_file)) {
+    pp <- readRDS(params_file)
+    check("model_idx" %in% names(pp) && identical(pp$model_idx, po$model_idx),
+          "psa_params model_idx column missing or not aligned with the PSA object")
+  }
+  evppi_file <- evppi_path()
+  if (file.exists(evppi_file)) {
+    ev_env <- new.env()
+    load(evppi_file, envir = ev_env)
+    check(identical(ev_env$evppi_psa_fingerprint, po$fingerprint),
+          "EVPPI cache was built from a PSA with a different fingerprint (issue #156)")
+  }
+}
+
+sampling_file <- sampling_cache_path(5000)
+if (!file.exists(sampling_file)) {
+  skip(paste("Sampling cache absent:", basename(sampling_file)))
+} else {
+  sm <- readRDS(sampling_file)
+  check(!is.null(sm$joint) && is.null(sm$crp),
+        "Sampling cache should hold one joint component, not per-biomarker copies (issue #156)")
+  check(is.character(sm$fingerprint) && nchar(sm$fingerprint) > 0,
+        "Sampling cache lacks an input fingerprint (issue #156)")
+  check(identical(sm$joint$method, "mvn_v1") && !is.null(sm$joint$draws$os),
+        "Sampling cache is not a multivariate-normal coefficient-draw cache (issue #156)")
+  if (exists("po") && !is.null(po$fingerprint_inputs)) {
+    check(identical(po$fingerprint_inputs$sampling_fingerprint, sm$fingerprint),
+          "PSA cache was built from a different sampling cache (issue #156)")
+  }
+  if (exists("sc") && !is.null(sc$sampling_fingerprint)) {
+    check(identical(sc$sampling_fingerprint, sm$fingerprint),
+          "Scenario cache was built from a different sampling cache (issue #156)")
+  }
 }
 
 # ---------------------------------------------------------------------------

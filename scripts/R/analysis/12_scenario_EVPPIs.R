@@ -176,7 +176,10 @@ evppi_cache <- list(
   all_scenario_results = all_scenario_results,
   evppi_all_scenarios = evppi_all_scenarios,
   scenarios = scenarios,
-  failed_draw_policy = psa_failed_draw_policy()
+  failed_draw_policy = psa_failed_draw_policy(),
+  # Provenance (issue #156): the sampling cache these scenario PSAs drew from.
+  sampling_fingerprint = sampling_models$fingerprint,
+  sampling_method = get_joint_sampling_models(sampling_models)$method
 )
 
 scenario_evppi_cache_file <- scenario_evppi_path()

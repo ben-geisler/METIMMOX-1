@@ -303,6 +303,11 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   # run additional simulations to replace failed iterations
 
   replaced_iterations <- integer(0)
+  # Cached survival model actually used by each draw (issue #156). A replaced
+  # draw keeps its economic-parameter row but its outcomes come from another
+  # cached model, so downstream code that pairs outcomes with model-derived
+  # quantities (the interaction coefficients) must index by model_idx.
+  model_idx <- seq_len(n_sim)
 
   if (length(fallback_iterations) > 0) {
     cat(sprintf("\n--- Replacing %d fallback iterations (Issue #79) ---\n",
@@ -366,6 +371,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
             success <- TRUE
             replaced_count <- replaced_count + 1
             replaced_iterations <- c(replaced_iterations, failed_i)
+            model_idx[failed_i] <- actual_sim_idx
           }
         }, error = function(e) {
           # This model also failed, try next
@@ -454,6 +460,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     dropped_count = dropped_count,
     dropped_iterations = dropped_iterations,
     retained_iterations = retained_iterations,
+    model_idx = model_idx[retained_iterations],
     n_sim = length(retained_iterations),
     failed_draw_policy = psa_failed_draw_policy(),
     replacement_model_policy = "cyclic_next_10_other_cached_models_v1",
@@ -482,12 +489,8 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
                           currency = "€", additional_params = NULL,
                           fallback_threshold = 0.02) {
   psa_params <- generate_psa_samples(param_distributions, n_sim, seed)
-  if (!is.null(additional_params)) {
-    if (nrow(additional_params) != n_sim) {
-      stop("additional_params must contain exactly n_sim rows")
-    }
-    psa_params <- cbind(psa_params, additional_params)
-    attr(psa_params, "seed") <- seed
+  if (!is.null(additional_params) && nrow(additional_params) != n_sim) {
+    stop("additional_params must contain exactly n_sim rows")
   }
 
   psa_results <- run_psa_analysis(
@@ -495,6 +498,18 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
     time_horizon, cl, n_sim, fallback_threshold
   )
   psa_params <- psa_params[psa_results$retained_iterations, , drop = FALSE]
+  # The cached survival model behind each retained row. Replaced draws keep
+  # their economic-parameter row but were run with another cached model, so
+  # model-derived columns (interaction coefficients) are aligned by model_idx,
+  # not by the draw number (issue #156).
+  psa_params$model_idx <- psa_results$model_idx
+  if (!is.null(additional_params)) {
+    psa_params <- cbind(
+      psa_params,
+      additional_params[psa_results$model_idx, , drop = FALSE]
+    )
+  }
+  rownames(psa_params) <- NULL
   attr(psa_params, "seed") <- seed
 
   psa_obj <- dampack::make_psa_obj(
@@ -505,6 +520,7 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
   )
   metadata <- c(
     requested_n_sim = "requested_n_sim", fallback_count = "fallback_count",
+    model_idx = "model_idx",
     dropped_count = "dropped_count", dropped_iterations = "dropped_iterations",
     failed_draw_policy = "failed_draw_policy",
     replacement_model_policy = "replacement_model_policy"

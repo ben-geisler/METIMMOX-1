@@ -170,17 +170,19 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
     }
 
-    # Check if any resampled models for this sim_idx are failed (using originals)
-    # This helps track iterations where resampled model fitting failed and the
-    # original model was substituted, which reduces uncertainty estimation.
-    # The control arm is predicted from the same joint bootstrap as the
-    # biomarker strategies, so the biomarker components cover it (issue #151).
-    biomarker_failed <- any(vapply(biomarkers_to_run, function(bm) {
-      isTRUE(sampling_models[[bm]]$samples[[sim_idx]]$failed)
-    }, logical(1)))
-    if (biomarker_failed) {
+    # One joint component serves the control arm and every biomarker strategy
+    # (issues #151, #156). A draw that cannot be materialised, or a legacy
+    # bootstrap sample flagged as failed (original fit substituted), is
+    # recorded as fallback so the PSA loop replaces it.
+    joint_sampling_models <- get_joint_sampling_models(sampling_models)
+    joint_sample <- tryCatch(
+      sampled_survival_models(joint_sampling_models, sim_idx),
+      error = function(e) NULL
+    )
+    if (is.null(joint_sample) || isTRUE(joint_sample$failed)) {
       fallback_used <- TRUE
     }
+    rm(joint_sample)
 
     # -----------------------------------------------------------------------
     # CONTROL STRATEGY: Population-averaged predictions over FULL population
@@ -195,8 +197,6 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # (issue #151).
 
     tryCatch({
-      joint_sampling_models <- get_joint_sampling_models(sampling_models)
-
       os_control <- generate_psa_population_averaged_predictions(
         sampling_model_list = joint_sampling_models,
         outcome = "os",
@@ -243,7 +243,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       tryCatch({
         # Get population-averaged predictions for BOTH subgroups
         preds_os <- generate_psa_population_averaged_predictions(
-          sampling_model_list = sampling_models[[biomarker]],
+          sampling_model_list = joint_sampling_models,
           biomarker_name = biomarker,
           outcome = "os",
           sample_idx = sim_idx,
@@ -252,7 +252,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         )
 
         preds_pfs <- generate_psa_population_averaged_predictions(
-          sampling_model_list = sampling_models[[biomarker]],
+          sampling_model_list = joint_sampling_models,
           biomarker_name = biomarker,
           outcome = "pfs",
           sample_idx = sim_idx,

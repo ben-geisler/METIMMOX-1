@@ -102,6 +102,9 @@ cat("-------------------------------------\n")
 before_psa_sum <- before_snapshot$psa_summary
 after_psa_sum <- after_snapshot$psa_summary
 
+# Provenance (issue #156): say whether the two PSA files are the same cache.
+cat(describe_psa_provenance(before_snapshot, after_snapshot), "\n\n")
+
 if (is.null(before_psa_sum) || is.null(after_psa_sum)) {
   cat("PSA summary unavailable in one or both snapshots.\n")
   comparison_psa <- data.frame()

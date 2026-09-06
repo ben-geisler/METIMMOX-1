@@ -241,7 +241,7 @@ if (length(comparisons) == 0) {
 }
 ```
 
-Each comparison below reports the change in base case costs and QALYs, and in net monetary benefit at the willingness-to-pay threshold, from the *before* snapshot to the *after* snapshot. Where both snapshots carry the EVPPI cache (snapshots taken from issue #152 onwards), the per-patient EVPI and the EVPPI table are compared as well; the *after* column includes the Monte Carlo standard error of the regression estimator.
+Each comparison below reports the change in base case costs and QALYs, and in net monetary benefit at the willingness-to-pay threshold, from the *before* snapshot to the *after* snapshot. Where both snapshots carry the EVPPI cache (snapshots taken from issue #152 onwards), the per-patient EVPI and the EVPPI table are compared as well; the *after* column includes the Monte Carlo standard error of the regression estimator. From issue #156 onwards each snapshot records the md5 and modification time of the PSA cache it copied, and a *fixed* snapshot regenerates the PSA and EVPPI caches when they predate the fix commit; the provenance line under each comparison states whether the two PSA files are the same cache.
 
 ```{r comparisons, results='asis'}
 for (cmp in comparisons) {
@@ -267,6 +267,10 @@ for (cmp in comparisons) {
   ) %>%
     style_narrow()
   cat(as.character(nmb_tbl), "\n\n")
+
+  # PSA provenance (issue #156): identical md5 means the PSA side of the
+  # comparison is a copy of the same cache, not evidence of "no change".
+  cat(describe_psa_provenance(cmp$before, cmp$after), "\n\n")
 
   evppi_df <- build_evppi_impact(cmp$before, cmp$after)
   if (!is.null(evppi_df)) {

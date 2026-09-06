@@ -32,6 +32,7 @@ stopifnot(result$fallback_count == 0)
 stopifnot(result$dropped_count == 0)
 stopifnot(result$n_sim == 4)
 stopifnot(identical(result$retained_iterations, 1:4))
+stopifnot(identical(result$model_idx, 1:4))
 stopifnot(identical(result$failed_draw_policy, psa_failed_draw_policy()))
 stopifnot(identical(
   result$replacement_model_policy,
@@ -130,6 +131,8 @@ stopifnot(
   identical(replacement_calls, c(2L, 3L, 4L, 4L)),
   identical(result$dropped_iterations, 1L),
   identical(result$retained_iterations, 2:4),
+  # Draw 3 was re-run with cached model 4; model_idx records that (issue #156).
+  identical(result$model_idx, c(2L, 4L, 4L)),
   identical(as.numeric(result$cost[, "control"]), c(22, 34, 44)),
   any(grepl("iteration 1 after 3 attempts", replacement_warnings)),
   any(grepl("Replacement model attempts: 4", output))
@@ -171,6 +174,7 @@ stopifnot(result$fallback_count == 1)
 stopifnot(result$dropped_count == 1)
 stopifnot(identical(result$dropped_iterations, 1L))
 stopifnot(identical(result$retained_iterations, 2:4))
+stopifnot(identical(result$model_idx, 2:4))
 stopifnot(result$n_sim == 3)
 stopifnot(nrow(result$cost) == 3, nrow(result$effect) == 3)
 stopifnot(!anyNA(result$cost), !anyNA(result$effect))

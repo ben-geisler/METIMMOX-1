@@ -1,6 +1,7 @@
 # Regression tests for deterministic stochastic blocks and cache seed metadata.
 # Run from the repository root with Rscript. No trial data or caches are needed.
 
+source("scripts/R/functions/parameter_distributions.R")  # apply_derived_psa_parameters()
 source("scripts/R/functions/psa_functions.R")
 
 param_distributions <- list(
@@ -43,13 +44,27 @@ extract_assignment <- function(name) {
   sampling_expressions[[which(matches)]]
 }
 
-sampling_env <- new.env(parent = baseenv())
-eval(extract_assignment("sample_correlated_survival"), envir = sampling_env)
+sampling_env <- new.env(parent = globalenv())
+eval(extract_assignment("SAMPLING_METHOD"), envir = sampling_env)
+eval(extract_assignment("sample_survival_coefficients"), envir = sampling_env)
 eval(extract_assignment("sampling_cache_seed_matches"), envir = sampling_env)
 
-sampling_env$flexsurvreg <- function(...) {
-  list(coefficients = c(intercept = 0))
+# A minimal stand-in for a converged flexsurvreg fit: two baseline parameters
+# and one covariate effect, all optimised, with a proper covariance matrix.
+mock_fit <- function(...) {
+  par_names <- c("shape", "rate", "predictor")
+  est <- c(0.1, -3, 0.2)
+  res <- matrix(est, ncol = 4, nrow = 3,
+                dimnames = list(par_names, c("est", "L95%", "U95%", "se")))
+  list(
+    res = res, res.t = res, coefficients = setNames(est, par_names),
+    opt = list(par = est), cov = diag(c(0.01, 0.04, 0.02)),
+    optpars = 1:3, fixedpars = integer(0),
+    dlist = list(pars = c("shape", "rate"),
+                 inv.transforms = list(exp, exp))
+  )
 }
+sampling_env$flexsurvreg <- mock_fit
 
 sampling_args <- list(
   formula_os = response ~ predictor,
@@ -59,54 +74,39 @@ sampling_args <- list(
 )
 
 sampling_reference <- do.call(
-  sampling_env$sample_correlated_survival,
+  sampling_env$sample_survival_coefficients,
   c(sampling_args, list(seed = 123L))
 )
 invisible(runif(100))
 sampling_after_rng_use <- do.call(
-  sampling_env$sample_correlated_survival,
+  sampling_env$sample_survival_coefficients,
   c(sampling_args, list(seed = 123L))
 )
 sampling_other_seed <- do.call(
-  sampling_env$sample_correlated_survival,
+  sampling_env$sample_survival_coefficients,
   c(sampling_args, list(seed = 124L))
 )
 
-resample_indices <- function(result) {
-  lapply(result$samples, `[[`, "resample_idx")
+stopifnot(
+  identical(sampling_reference$draws, sampling_after_rng_use$draws),
+  !identical(sampling_reference$draws, sampling_other_seed$draws),
+  identical(dim(sampling_reference$draws$os), c(5L, 3L)),
+  identical(sampling_reference$seed, 123L),
+  identical(sampling_reference$method, "mvn_v1"),
+  identical(sampling_reference$n_failed, 0L)
+)
+
+# The seed check resolves the joint component (issue #156 layout) and falls
+# back to a legacy per-biomarker component through get_joint_sampling_models().
+sampling_env$get_joint_sampling_models <- function(sampling_models) {
+  if (!is.null(sampling_models$joint)) return(sampling_models$joint)
+  sampling_models[["crp"]]
 }
-
 stopifnot(
-  identical(resample_indices(sampling_reference),
-            resample_indices(sampling_after_rng_use)),
-  !identical(resample_indices(sampling_reference),
-             resample_indices(sampling_other_seed)),
-  identical(sampling_reference$seed, 123L)
-)
-
-valid_sampling_cache <- list(
-  control = list(seed = 123L),
-  crp = list(seed = 123L)
-)
-legacy_sampling_cache <- list(
-  control = list(),
-  crp = list()
-)
-mismatched_sampling_cache <- list(
-  control = list(seed = 123L),
-  crp = list(seed = 124L)
-)
-
-stopifnot(
-  sampling_env$sampling_cache_seed_matches(
-    valid_sampling_cache, c("control", "crp"), 123L
-  ),
-  !sampling_env$sampling_cache_seed_matches(
-    legacy_sampling_cache, c("control", "crp"), 123L
-  ),
-  !sampling_env$sampling_cache_seed_matches(
-    mismatched_sampling_cache, c("control", "crp"), 123L
-  )
+  sampling_env$sampling_cache_seed_matches(list(joint = list(seed = 123L)), 123L),
+  sampling_env$sampling_cache_seed_matches(list(crp = list(seed = 123L)), 123L),
+  !sampling_env$sampling_cache_seed_matches(list(joint = list()), 123L),
+  !sampling_env$sampling_cache_seed_matches(list(joint = list(seed = 124L)), 123L)
 )
 
 # The regression EVPPI point estimate is deterministic; its Monte Carlo

@@ -111,4 +111,22 @@ no_int <- list(
 no_int_result <- suppressWarnings(extract_interaction_coefficients(no_int, 1L))
 stopifnot(is.null(no_int_result) || all(is.na(no_int_result$b_crp_rx_os)))
 
+# ---------------------------------------------------------------------------
+# 5. Issue #156 layout: one joint component with coefficient-draw matrices
+#    gives the same columns as the legacy per-biomarker sample lists
+# ---------------------------------------------------------------------------
+draw_matrix <- do.call(rbind, lapply(seq_len(n_sim), function(k) {
+  make_coefs(c(crp = 0.100 * k, tmb_braf = -0.200 * k))
+}))
+joint_models <- list(
+  joint = list(method = "mvn_v1", draws = list(os = draw_matrix, pfs = draw_matrix)),
+  biomarkers = c("crp", "tmb_braf")
+)
+joint_extracted <- suppressWarnings(extract_interaction_coefficients(joint_models, n_sim))
+stopifnot(
+  setequal(names(joint_extracted), expected_cols),
+  isTRUE(all.equal(joint_extracted$b_crp_rx_os, extracted$b_crp_rx_os)),
+  isTRUE(all.equal(joint_extracted$b_tmb_braf_rx_pfs, extracted$b_tmb_braf_rx_pfs))
+)
+
 cat("PASS: treatment-by-biomarker interaction coefficients extract correctly.\n")

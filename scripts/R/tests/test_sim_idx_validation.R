@@ -16,7 +16,7 @@ cat("=== sim_idx Validation Tests (Issue #46) ===\n\n")
 cat("Loading dependencies...\n")
 
 # Set working directory
-setwd("c:/Users/benjampg/git/METIMMOX-1")
+setwd(here::here())
 
 # Load required packages
 if (!require("pacman")) install.packages("pacman")

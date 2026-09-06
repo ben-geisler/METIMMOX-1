@@ -96,4 +96,112 @@ scenario_evppi_path <- function(label = NULL, directory = cache_dir()) {
   )
 }
 
+# ===============================================================================
+# CACHE FINGERPRINTS AND PROVENANCE (issue #156)
+# ===============================================================================
+# The file name of a cache encodes only n_samples (sampling) or the utility
+# source (PSA). Before issue #156 the load checks compared distribution names and
+# the RNG seed, so a cache built from an earlier formula, data set or base
+# parameter list was silently reused. Each cache now stores a fingerprint of the
+# inputs that determine its content; the loading script recomputes it and
+# regenerates on any mismatch.
+
+#' Hash an arbitrary R object into a short, stable string
+#'
+#' @param x Object to hash (formulas are deparsed first so environments do
+#'   not enter the hash; factors are hashed as character).
+#' @return Character scalar.
+#' @export
+cache_fingerprint <- function(x) {
+  canonical <- function(obj) {
+    if (inherits(obj, "formula")) return(paste(deparse(obj), collapse = " "))
+    if (is.data.frame(obj)) {
+      obj <- obj[, order(names(obj)), drop = FALSE]
+      return(lapply(as.list(obj), function(col) {
+        if (is.factor(col)) as.character(col) else col
+      }))
+    }
+    if (is.list(obj)) {
+      out <- lapply(obj, canonical)
+      if (!is.null(names(obj))) out <- out[order(names(out))]
+      return(out)
+    }
+    if (is.function(obj)) return(paste(deparse(obj), collapse = "\n"))
+    obj
+  }
+  rlang::hash(canonical(x))
+}
+
+#' Fingerprint of the inputs that determine the survival-sampling cache
+#'
+#' @param formulas Named list of OS and PFS formulas.
+#' @param data Data frame the models are fitted on.
+#' @param distributions List with \code{os} and \code{pfs} distribution names.
+#' @param n_samples Number of draws.
+#' @param seed RNG seed.
+#' @param method Sampling method label.
+#' @return List with the \code{fingerprint} and its \code{inputs}.
+#' @export
+sampling_cache_fingerprint <- function(formulas, data, distributions,
+                                       n_samples, seed, method) {
+  inputs <- list(
+    formulas = lapply(formulas, function(f) paste(deparse(f), collapse = " ")),
+    data_hash = cache_fingerprint(data),
+    n_rows = nrow(data),
+    distributions = distributions,
+    n_samples = as.integer(n_samples),
+    seed = as.integer(seed),
+    method = method
+  )
+  list(fingerprint = cache_fingerprint(inputs), inputs = inputs)
+}
+
+#' Fingerprint of the inputs that determine the PSA cache
+#'
+#' @param sampling_fingerprint Fingerprint of the sampling cache used.
+#' @param l_params_base Base-case parameter list (every element enters the
+#'   hash, including the survival curves and schedules).
+#' @param param_distributions Named list of PSA distributions.
+#' @param strategies Strategy identifiers.
+#' @param n_sim Requested number of simulations.
+#' @param seed PSA RNG seed.
+#' @param time_horizon Model horizon in cycles.
+#' @param cl Cycle length.
+#' @return List with the \code{fingerprint} and its \code{inputs}.
+#' @export
+psa_cache_fingerprint <- function(sampling_fingerprint, l_params_base,
+                                  param_distributions, strategies, n_sim,
+                                  seed, time_horizon, cl) {
+  inputs <- list(
+    sampling_fingerprint = sampling_fingerprint,
+    params_hash = cache_fingerprint(l_params_base),
+    distributions_hash = cache_fingerprint(param_distributions),
+    strategies = strategies,
+    n_sim = as.integer(n_sim),
+    seed = as.integer(seed),
+    time_horizon = time_horizon,
+    cl = cl
+  )
+  list(fingerprint = cache_fingerprint(inputs), inputs = inputs)
+}
+
+#' Provenance (md5 and modification time) of a cache file
+#'
+#' @param path File path.
+#' @return List with \code{path}, \code{exists}, \code{md5} and \code{mtime}
+#'   (NA when the file is absent).
+#' @export
+cache_file_provenance <- function(path) {
+  if (!file.exists(path)) {
+    return(list(path = path, exists = FALSE, md5 = NA_character_,
+                mtime = as.POSIXct(NA)))
+  }
+  list(
+    path = path,
+    exists = TRUE,
+    md5 = unname(tools::md5sum(path)),
+    mtime = file.info(path)$mtime
+  )
+}
+
 message("Cache-path helpers loaded from cache_paths.R")

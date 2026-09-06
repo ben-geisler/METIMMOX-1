@@ -302,16 +302,15 @@ The model uses different approaches for base case vs PSA, both properly accounti
 
 Both approaches are methodologically valid for their respective analytical purposes (deterministic point estimates vs. probabilistic uncertainty quantification).
 
-### Survival Resampling & Correlation
+### Survival Parameter Sampling (issue #156)
 
-The model uses **correlated survival resampling** ([06_sampling.R](scripts/R/analysis/06_sampling.R:103-200)) to maintain the correlation between PFS and OS:
+Survival-model parameter uncertainty enters the PSA through **multivariate-normal coefficient draws** ([06_sampling.R](scripts/R/analysis/06_sampling.R), `sample_survival_coefficients()`): for each of the joint OS and PFS gamma models fitted on `data_complete`, `n_samples` coefficient vectors are drawn from N(estimate, covariance) on flexsurvreg's optimisation scale (`opt$par`, `cov`), with the seed `analysis_seed`. This replaced the unstratified nonparametric bootstrap, whose resamples could contain 0 to 2 of the 6 control-arm CRP-positive patients (1st-percentile cell size 2), produced singular fits and interaction coefficients between -3.7 and +4.0, and put control QALYs of 0.6 to 2.5 in the PSA tails. Consequences and conventions:
 
-- Both PFS and OS models are fitted to the **same resampled patient cohort**
-- One joint-model bootstrap serves every strategy: control, biomarker-positive, and biomarker-negative curves in a PSA draw all come from the same resampled joint fit (control = joint fit with `Rx = control`), so control and biomarker effects stay correlated (issue #151)
-- Results are cached in `data/tidy/`
-- Cache file naming: `sampling_models_n{n_samples}_full.rds`
-
-**IMPORTANT**: The first run of `06_sampling.R` will take significant time (generates 5000 resampled models). Subsequent runs load from cache.
+- **OS and PFS coefficients are drawn independently** (user decision, issue #156): the two models are fitted separately and no joint covariance between them is estimated, so the OS-PFS correlation that the bootstrap preserved by refitting both models to the same resample is not represented. Within a draw the same coefficient vector serves the control arm (`Rx = control`) and every biomarker subgroup, so the control/biomarker correlation of issue #151 is unchanged.
+- **One joint component.** The cache is `list(joint = <component>, biomarkers = c("crp", "tmb_braf"), fingerprint, fingerprint_inputs, creation_time)`; the component holds `draws$os` and `draws$pfs` (`n_samples x n_parameters` matrices, transformed scale), the two original fits, `method = "mvn_v1"`, `n_failed = 0` (a draw cannot fail; a fit without a covariance matrix stops the script), `n_extreme` and `extreme_bound = log(10)` (draws with any interaction coefficient beyond a ten-fold time ratio, an interpretive tail flag printed as the "extreme-draw rate"), `coefficient_summary` (mean, SD, 2.5%, 97.5%, min, max per coefficient), distributions, seed and creation time. The earlier layout stored one identical bootstrap under each biomarker key (about 2.7 GB duplicated in memory, 118 MB on disk); the new cache is under 1 MB. Script 06 stops if the biomarker strategies ever use different formulas, because the shared joint component, the control prediction and `extract_interaction_coefficients()` all assume one formula.
+- **Accessors.** `get_joint_sampling_models(sampling_models)` returns the joint component (falling back to the first biomarker key of a legacy cache); `sampled_survival_models(component, idx)` returns `list(os = list(model, coefficients, dist), pfs = ..., failed = FALSE)` for one draw, building the flexsurvreg object with `build_sampled_flexsurv_model()` (replaces `opt$par`, `res.t`, `res` and `coefficients` consistently; `predict()` reads the baseline parameters from `res.t` and the covariate effects from `res`). A legacy bootstrap cache or test fixture with `$samples` is returned as stored. `model_fun()`, the PSA prediction helper in script 06, `extract_interaction_coefficients()` and `figure1.qmd` all go through these accessors; nothing indexes `sampling_models[[biomarker]]$samples` any more.
+- **Cache validity is a fingerprint, not a name** (see Cache Management). Results are cached in `data/tidy/sampling_models_n{n_samples}_full.rds`; generation takes seconds.
+- The interaction coefficient draws under the current fit span roughly -2.5 to +1.5 (2.5% to 97.5%: -0.95 to +0.66 for CRP x Rx on OS, -1.60 to +0.39 on PFS); the extreme-draw rate is 1 in 5,000.
 
 ### Main Model Function
 
@@ -328,9 +327,9 @@ model_fun(params, time_horizon = 520, cl = 1/52,
 - `return_traces`: If TRUE, returns state occupancy over time
 
 **PSA Mode Behavior** (lines 17-148):
-- Uses second-order Monte Carlo: samples one patient per iteration from resampled datasets (see "Survival Prediction Methodologies" section)
-- PFS and OS always come from the **same** resampled model to maintain correlation
-- If prediction from resampled model fails, falls back to base case curves
+- Uses second-order Monte Carlo: population-averaged predictions from the coefficient draw `sim_idx` of the joint model (see "Survival Prediction Methodologies" section)
+- The OS and PFS curves of a draw come from the same joint component (row `sim_idx` of the OS and PFS draw matrices, drawn independently since issue #156)
+- If prediction from the sampled model fails, the draw is flagged `fallback_used` and the PSA loop re-pairs the economic-parameter draw with up to 10 other cached models; the model actually used is recorded per row as `model_idx` (issue #156)
 
 ### Parameter Structure
 
@@ -417,13 +416,13 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 **Model Configuration**:
 - **[model_configs.R](scripts/R/functions/model_configs.R)**: Single source of truth for the economic strategies, biomarkers, and formulas. Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `get_model_configs()`, `get_current_model_config()`, `get_strategies()`, `get_biomarkers()`, `get_strategy_formula()`, `get_model_formulas()`. (`get_control_formula()` was removed in issue #151; there is no separate control-arm formula.)
 - **[pfs_endpoint.R](scripts/R/functions/pfs_endpoint.R)**: Single source of truth for the composite PFS endpoint (progression or death). Auto-sourced by `02_setup_and_global_variables.R`. Key function: `derive_pfs_endpoint()`.
-- **[cache_paths.R](scripts/R/functions/cache_paths.R)**: Single source of truth for the utility-source label and cached-object file paths (sampling, PSA, EVPPI, scenario). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`.
+- **[cache_paths.R](scripts/R/functions/cache_paths.R)**: Single source of truth for the utility-source label, cached-object file paths (sampling, PSA, EVPPI, scenario) and cache fingerprints (issue #156). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`, `cache_fingerprint()` (rlang hash of a canonicalised object; formulas deparsed, factors as character, list and column order ignored), `sampling_cache_fingerprint()` (formulas, fitting data, distributions, n_samples, seed, method), `psa_cache_fingerprint()` (sampling fingerprint, the whole `l_params_base`, the PSA distributions, strategies, n_sim, seed, horizon, cycle length), `cache_file_provenance()` (md5 and mtime of a file).
 - **[report_setup.R](scripts/R/functions/report_setup.R)**: One-call Quarto report setup (knitr options, package loading, shared ggplot theme, and sourcing of analysis scripts/function files), used to remove duplicated setup boilerplate across the economic reports. Key function: `setup_report(sources, funs, packages, set_theme)`.
 
 **Core Model Functions**:
 - **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
-- **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models
+- **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models; sampling-cache accessors `get_joint_sampling_models()`, `sampled_survival_models()` and `build_sampled_flexsurv_model()` (issue #156)
 - **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`, `calculate_pairwise_icers()`, `frontier_status()`, `frontier_label()`). Renamed from the legacy `multi_model_cea.R`. **Dominance conventions (issue #153)**: `CEA.qmd` reports dampack *frontier* ICERs (status ND/D/ED across all three strategies). The biosimilar, enriched-population and Table S6 outputs report *pairwise* ICERs of each guided strategy versus standard of care (`Status` values "Reference", "Pairwise ICER vs SoC", "Dominated by SoC", "Cost-saving vs SoC") and always print the dampack `Frontier_Status` alongside, with captions stating "pairwise versus standard of care". A strategy can be frontier-dominated (more costly and less effective than the other guided strategy) yet have a finite pairwise ICER; percentage changes between pairwise ICERs are only reported for frontier strategies with finite, positive ICERs in both analyses (`Pct_Change` in `08b_enriched_population_analysis.R`).
 - **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`, `parameter_group_lookup()`, `apply_derived_psa_parameters()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`, `structural_scenario_sides()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years, post-progression cost EUR 5,000 per quarter, second sequence omitted). The spec carries `psa`, `dsa` and `derived` flags, so PSA membership and DSA membership are no longer the same set: unit prices are `psa = FALSE, dsa = TRUE`, and `u_p` is `derived` (issue #154). `build_dsa_ranges()` takes the spec, not the distribution list. `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). A time-horizon scenario re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules (`build_horizon_params()` in `09_DSA.R`); scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
 - **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
@@ -437,7 +436,7 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[report_format.R](scripts/R/functions/report_format.R)**: Shared strategy/biomarker labels and economic-result number formatting
 
 **Sensitivity Analysis Functions**:
-- **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities, including `generate_psa_samples()` (which skips `derived` distributions and then calls `apply_derived_psa_parameters()`) and `utility_reversal_fraction()`, the `u_p > u_np` diagnostic printed by `CEA.qmd`
+- **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities, including `generate_psa_samples()` (which skips `derived` distributions and then calls `apply_derived_psa_parameters()`) and `utility_reversal_fraction()`, the `u_p > u_np` diagnostic printed by `CEA.qmd`. **Replaced draws keep their parameter row but not their model index (issue #156)**: `run_psa_analysis()` returns `model_idx`, the cached survival model behind each retained row (equal to the draw number except for replaced draws, which record the model that finally succeeded); `build_psa_obj()` stores it as `psa_obj$model_idx` and `psa_params$model_idx` and binds `additional_params` (the interaction coefficients in the scenario PSA) by `model_idx` after the run, never by draw number. `11_EVPPIs.R` indexes the interaction coefficients by `psa_params$model_idx`. The pre-#156 cache had five replaced rows (708, 716, 1598, 3400, 3552) whose `b_*` columns came from the failed draw's model rather than the model that produced the outcomes.
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: Regression-based EVPPI via `voi::evppi()` (`calculate_evppi_regression()`, `run_evppi_analysis()`, `evppi_gam_formula()`), group-consistency checks (`check_evppi_group_consistency()`, `assert_evppi_group_consistency()`), population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
 - **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
 
@@ -446,10 +445,10 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[survival_plots.R](scripts/R/functions/survival_plots.R)**: Survival curve visualization
 
 **Visualization Functions**:
-- **[create_tornado_plot.R](scripts/R/functions/create_tornado_plot.R)**: DSA tornado diagram generation
+- **[create_tornado_plot.R](scripts/R/functions/create_tornado_plot.R)**: DSA tornado diagram generation. `summarise_param_ranges()` and `create_tornado_plot()` take `measure = "NMB_diff"` (change in the strategy's own NMB) or `"INMB_diff"` (change in incremental NMB versus control, the decision-sensitivity measure that Figure 2 plots; issue #156). `09_DSA.R` adds `INMB` and `INMB_diff` to `dsa_results`, keeps a second frame `dsa_results_inmb` whose survival-model endpoints are chosen on incremental NMB, and produces `incremental_impact_summary` alongside `impact_summary`. Under the NMB measure `u_np` and `c_other_last` top every tornado because they move all strategies equally; under the incremental measure the survival family, the second treatment sequence, the nivolumab price and the CRP prevalence lead for the CRP-guided strategy.
 
 **Snapshot/Impact Assessment Functions**:
-- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Snapshot management for bug fix impact assessment
+- **[snapshot_utils.R](scripts/R/functions/snapshot_utils.R)**: Snapshot management for bug fix impact assessment, including cache provenance (`collect_cache_provenance()`, `get_git_commit_time()`, `describe_psa_provenance()`; issue #156)
 
 **Archived Functions** (in `scripts/R/archive/`):
 - `bootstrap_survival_model.R`: Alternative resampling approach (not used in main analysis)
@@ -562,7 +561,8 @@ Each report has specific dependencies:
 **[OWSA.qmd](scripts/QMD/report/OWSA.qmd)** - One-Way Sensitivity Analysis (Deterministic)
 - **Sources**: 02, 03, 04, 05, then 09
 - **Requires**: DSA results from script 09
-- **Shows**: Tornado diagrams, one-way sensitivity plots for all varied parameters, the survival-distribution structural sensitivity, and (issues #153, #154) the discount-rate (0%, 8%), time-horizon (5, 20 years), post-progression-cost (EUR 5,000 per quarter) and no-second-sequence structural scenarios with NMB per strategy and the optimal strategy; failed scenarios are listed from `dsa_scenario_status`
+- **Shows**: Tornado diagrams on the strategy's own NMB and, for the guided strategies, on incremental NMB versus standard of care (issue #156), the corresponding impact rankings, the survival-distribution structural sensitivity, and (issues #153, #154) the discount-rate (0%, 8%), time-horizon (5, 20 years), post-progression-cost (EUR 5,000 per quarter) and no-second-sequence structural scenarios with NMB per strategy and the optimal strategy; failed scenarios are listed from `dsa_scenario_status`
+- **Survival-family sensitivity (issue #156)**: `09_DSA.R` evaluates every candidate family with the same family for OS and PFS; a family whose OS/PFS pair violates OS >= PFS (from `models$ordered_selection$pairs`) is not run through the model, because the deterministic model stops on an ordering violation, but is listed in `dsa_distribution_status` with its violation count. The report states "7 of 9 candidate families evaluated" in the table caption and tabulates the skipped ones (gengamma, 814 violating curve-time points; genf, 825), instead of silently showing seven rows. The base-case anchor is the ordering-constrained selected pair (`models$best_fit$os_distribution`/`pfs_distribution`, labelled "gamma" or "os/pfs" when they differ), taken from the base-case rows, not the OS family alone
 
 **[EVPPIs.qmd](scripts/QMD/report/EVPPIs.qmd)** - Value of Information Analysis
 - **Sources**: 02, 03
@@ -738,22 +738,12 @@ The analysis uses several cache systems to speed up computation:
 ### 1. Sampling Cache (Survival Models)
 
 **Location**: `data/tidy/sampling_models_n*.rds`
-**Purpose**: Cached correlated PFS/OS survival model fits
-**Generation**: Script [06_sampling.R](scripts/R/analysis/06_sampling.R) (~first run takes time)
-**Size**: Hundreds of MB
-**When to regenerate**: Delete cache file when:
-- Survival model formulas change
-- Economic strategy/biomarker set changes
-- `n_samples` changes
-- Clinical data is updated
-
-**To regenerate**:
+**Purpose**: Multivariate-normal coefficient draws for the joint OS and PFS models (one `joint` component; issue #156)
+**Generation**: Script [06_sampling.R](scripts/R/analysis/06_sampling.R) (seconds)
+**Size**: Under 1 MB
+**Validity (issue #156)**: the file name carries only `n_samples`. Script 06 computes `sampling_cache_fingerprint()` from the joint formulas, `data_complete`, the selected distributions, `n_samples`, `analysis_seed` and the sampling method, compares it with the `fingerprint` stored in the cache, and regenerates on any mismatch (printing which input differs). A cache without a `joint` component or fingerprint (pre-#156 bootstrap) is regenerated. The seed check remains as a second guard. Manual deletion is therefore only needed to force a regeneration with identical inputs:
 ```r
-# Delete cache file (example for full single-model cache)
-cache_file <- here("data", "tidy",
-                   paste0("sampling_models_n", n_samples, "_full.rds"))
-file.remove(cache_file)
-# Re-run 06_sampling.R
+file.remove(sampling_cache_path())
 source("scripts/R/analysis/06_sampling.R")
 ```
 
@@ -771,6 +761,8 @@ source("scripts/R/analysis/06_sampling.R")
 - **Sampling cache is regenerated** (PSA depends on specific resampled models - always regenerate PSA after regenerating sampling cache)
 - Parameter distributions change (distributional assumptions, means, SDs, correlations)
 - **PSA parameter membership changes** — moving a parameter between sampled, fixed and derived in `parameter_distribution_spec()` changes the PSA draws and every EVPPI group (issue #154)
+
+**Validity (issue #156)**: `10_PSA.R` stamps the cache with `psa_cache_fingerprint()` (sampling-cache fingerprint, the entire `l_params_base` including the survival curves and schedules, the PSA distributions, strategies, `n_sim`, seed, horizon and cycle length) and regenerates when the stored fingerprint differs, printing which input differs, or when `model_idx` is absent. The earlier check only compared the column names of `psa_params`, so changing a unit price or a survival curve left the cache "valid". The list above still describes what changes the results; the fingerprint enforces it. The EVPPI cache records `evppi_psa_fingerprint` and the scenario cache `sampling_fingerprint`/`sampling_method`; `test_report_contracts.R` checks that all three agree.
 
 **To regenerate**:
 ```r
@@ -820,6 +812,8 @@ The repository includes a snapshot comparison system for assessing the impact of
 **Format**: `snapshot_NN_[baseline/fixed]_HASH.rds` and `psa_NN_[baseline/fixed]_HASH.rds`
 **Content**: Base case results, PSA results, metadata (git commit, timestamp, issue number) and, from issue #152 onwards, the EVPPI cache (`evppi$evpi`, `evppi$evppi_results`) when it exists at snapshot time; `bug_fix_impact.qmd` adds an EVPPI before/after table whenever both snapshots of a pair carry it
 
+**PSA provenance (issue #156)**: the `psa_NN_*.rds` file is a copy of the PSA cache, so before issue #156 a "fixed" snapshot could carry the pre-fix PSA unchanged (the psa files of #146 baseline, #146 fixed and #147 baseline are byte-identical, as are #147 fixed, #149 baseline and the live cache at the time) and the impact report showed "no PSA change" by construction. `metadata$caches` now records md5 and mtime of the sampling, PSA object, PSA parameter, EVPPI and scenario caches, the PSA fingerprint, `git_commit_time`, and the flags `psa_stale_reason`, `psa_regenerated`, `evppi_regenerated`, `scenario_evppi_stale`. A **fixed** snapshot regenerates the PSA (about 20 minutes) and then the EVPPI cache (script 11) when the PSA cache's fingerprint differs from the current inputs or its mtime predates the HEAD commit (user decision, issue #156); the scenario-EVPPI cache is not regenerated (40 minutes) but its staleness is recorded and printed. `compare_snapshots.R` and `bug_fix_impact.qmd` print `describe_psa_provenance()`, which says outright when the two PSA files are the same cache.
+
 ### Workflow
 
 1. Save "baseline" snapshot before applying a fix
@@ -840,7 +834,10 @@ The test suite in `scripts/R/tests/` includes:
 - **[test_psa_basecase_alignment.R](scripts/R/tests/test_psa_basecase_alignment.R)**: Verifies structurally that the PSA control curve is the joint model with `Rx = control`, then checks that PSA strategy means (costs and QALYs) sit within 5 Monte Carlo standard errors of the base case and prints the incremental comparison (issue #151); skips the numerical check when the PSA cache is absent. The numerical criterion is a known failure at n_sim = 5000 (see the test protocol table)
 - **[test_evppi_estimator.R](scripts/R/tests/test_evppi_estimator.R)**: Verifies the regression EVPPI estimator on a synthetic problem with a closed-form answer, a pure-noise parameter, group-versus-member consistency (including the additive formula for more than four parameters), seed-reproducible standard errors, and NA-not-zero failure reporting (issue #152)
 - **[test_sampling_rework.R](scripts/R/tests/test_sampling_rework.R)**: Parameter-specification contracts — PSA membership excludes the fixed unit prices, `u_p` is derived rather than drawn, EVPPI groups exclude derived parameters and drop `all_costs` when only one cost group is sampled, the DSA still covers the fixed prices but never `u_decrement`, the derived utility never exceeds `u_np`, and one-sided structural scenarios declare only their differing endpoint (issue #154); plus the script-06 distribution-resolution helper
-- **[test_report_contracts.R](scripts/R/tests/test_report_contracts.R)**: Cache and report wiring contracts; for the EVPPI cache it requires the interaction rows with finite standard errors, the joint `interaction_all` group, and no group below its largest member
+- **[test_report_contracts.R](scripts/R/tests/test_report_contracts.R)**: Cache and report wiring contracts; for the EVPPI cache it requires the interaction rows with finite standard errors, the joint `interaction_all` group, and no group below its largest member; since issue #156 also that the PSA cache carries `model_idx` and a fingerprint aligned with `psa_params`, that the EVPPI cache was built from that PSA fingerprint, and that the sampling cache is a single fingerprinted `joint` multivariate-normal component that the PSA and scenario caches reference
+- **[test_mvn_sampling.R](scripts/R/tests/test_mvn_sampling.R)**: Multivariate-normal sampling and draw/model alignment (issue #156) — a flexsurvreg object rebuilt from a drawn coefficient vector reproduces the closed-form gamma survival to 1e-10 on simulated data, the accessor returns the legacy sample shape and rejects out-of-range indices, `get_joint_sampling_models()` resolves both cache layouts, `build_psa_obj()` records `model_idx = c(1, 3, 3, 4)` when draw 2 is re-run with model 3 and binds the model-derived column by that index, and the sampling/PSA fingerprints change with every input and not with column or list order
+- **[test_sampling_failure_fallback.R](scripts/R/tests/test_sampling_failure_fallback.R)**: The sampler produces finite, independent OS and PFS draw matrices with `n_failed = 0` for converged fits and stops, naming the outcome, on a fit without a covariance matrix (issue #156; previously tested the bootstrap's original-fit substitution)
+- **[test_rng_reproducibility.R](scripts/R/tests/test_rng_reproducibility.R)**: PSA draws and coefficient draws are identical under the same seed regardless of prior RNG use and differ under another seed; the cache seed check resolves the joint component
 - **[test_dag_landmark_contracts.R](scripts/R/tests/test_dag_landmark_contracts.R)**: DAG-validation and landmark contracts (issue #155) — every DAG-implied edge and conditional independence is tested or classified latent/definitional, both `TxCRP` edges and all six `TxCRP` independencies are covered, a DAG edit that adds an untested edge stops `run_dag_edge_tests()`; landmark cohorts contain only endpoint times strictly after the landmark, the scan-date and week-12 landmarks retain no first-scan progressor, the week-9 landmark reports the ones it retains; `PFS -> OS` is estimated on counting-process rows with a time-dependent progression flag (HR > 1) and `TLR -> PFS` on the landmark cohort. Structural checks run without the trial data; data checks are skipped when `data/tidy/METIMMOX.rds` is absent
 - **[compare_snapshots.R](scripts/R/tests/compare_snapshots.R)**: Compares before/after snapshots for bug fix impact assessment
 - **[para_models.Rmd](scripts/R/tests/para_models.Rmd)**: Parametric model fit validation and diagnostics

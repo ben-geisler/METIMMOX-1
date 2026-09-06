@@ -147,18 +147,57 @@ nmb_at_wtp <- data.frame(
 )
 nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
 
-# Load PSA cache, or generate if not available
+# Load PSA cache, or (re)generate it when absent or stale.
 cache_file_obj <- psa_obj_path(utility_source_label)
 cache_file_params <- psa_params_path(utility_source_label)
 
 psa_obj <- NULL
 psa_summary <- NULL
 
-psa_obj <- load_psa_cache(util_label = utility_source_label, verbose = TRUE)
+# ---- PSA cache provenance and staleness (issue #156) ------------------------
+# Before issue #156 the snapshot copied whatever PSA cache existed, so a
+# "fixed" snapshot could carry the pre-fix PSA unchanged and the impact report
+# showed "no PSA change" by construction. A fixed snapshot now regenerates the
+# PSA (and the EVPPI cache that depends on it) when the cache predates the fix
+# commit or was built from different inputs (fingerprint mismatch).
+caches_before <- collect_cache_provenance(utility_source_label, n_samples)
+fix_commit_time <- get_git_commit_time()
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+
+psa_stale_reason <- NULL
+if (caches_before$psa_obj$exists) {
+  cached_fingerprint <- tryCatch(readRDS(cache_file_obj)$fingerprint, error = function(e) NULL)
+  if (!identical(cached_fingerprint, expected_psa$fingerprint)) {
+    psa_stale_reason <- "input fingerprint differs from the current inputs"
+  } else if (snapshot_status == "fixed" && !is.na(fix_commit_time) &&
+             caches_before$psa_obj$mtime < fix_commit_time) {
+    psa_stale_reason <- sprintf("cache modified %s, before the fix commit %s",
+                                format(caches_before$psa_obj$mtime, "%Y-%m-%d %H:%M"),
+                                format(fix_commit_time, "%Y-%m-%d %H:%M"))
+  }
+}
+
+psa_regenerated <- FALSE
+evppi_regenerated <- FALSE
+
+if (is.null(psa_stale_reason)) {
+  psa_obj <- load_psa_cache(util_label = utility_source_label, verbose = TRUE)
+} else {
+  cat("PSA cache is stale (", psa_stale_reason, "); regenerating (issue #156).\n", sep = "")
+}
 
 if (is.null(psa_obj)) {
   if (exists("sampling_models") && !is.null(sampling_models)) {
-    cat("PSA cache not found - generating PSA...\n")
+    cat("Generating PSA...\n")
 
     psa_build <- build_psa_obj(
       l_params_base = l_params_base,
@@ -171,16 +210,33 @@ if (is.null(psa_obj)) {
       currency = "EUR"
     )
     psa_obj <- psa_build$psa_obj
-    psa_params_gen <- psa_build$psa_params
+    psa_params <- psa_build$psa_params
     rm(psa_build)
+    psa_obj$fingerprint <- expected_psa$fingerprint
+    psa_obj$fingerprint_inputs <- expected_psa$inputs
+    psa_obj$sampling_method <- get_joint_sampling_models(sampling_models)$method
 
     tryCatch({
       saveRDS(psa_obj, cache_file_obj)
-      saveRDS(psa_params_gen, cache_file_params)
+      saveRDS(psa_params, cache_file_params)
+      psa_regenerated <- TRUE
       cat("PSA cache saved to:", cache_file_obj, "\n")
     }, error = function(e) {
       cat("Warning: Failed to save PSA cache:", e$message, "\n")
     })
+
+    # The EVPPI cache is derived from the PSA; rebuild it so the snapshot's
+    # value-of-information block matches the PSA it carries.
+    if (psa_regenerated) {
+      cat("Regenerating the EVPPI cache from the new PSA (11_EVPPIs.R)...\n")
+      evppi_regenerated <- tryCatch({
+        source(here::here("scripts/R/analysis/11_EVPPIs.R"))
+        TRUE
+      }, error = function(e) {
+        cat("Warning: EVPPI regeneration failed:", conditionMessage(e), "\n")
+        FALSE
+      })
+    }
   } else {
     cat("WARNING: PSA cache not found and sampling_models is unavailable.\n")
     cat("Snapshot will be saved without PSA summary.\n")
@@ -190,6 +246,25 @@ if (is.null(psa_obj)) {
 if (!is.null(psa_obj)) {
   psa_summary <- compute_psa_summary(psa_obj)
 }
+
+caches_after <- collect_cache_provenance(utility_source_label, n_samples)
+scenario_stale <- caches_after$scenario_evppi$exists && !is.na(fix_commit_time) &&
+  caches_after$scenario_evppi$mtime < fix_commit_time
+if (snapshot_status == "fixed" && scenario_stale) {
+  cat("NOTE: the scenario-EVPPI cache predates the fix commit and is not ",
+      "regenerated here (run 12_scenario_EVPPIs.R; about 40 minutes).\n", sep = "")
+}
+snapshot_caches <- c(
+  caches_after,
+  list(
+    psa_fingerprint = psa_obj$fingerprint,
+    psa_stale_reason = psa_stale_reason,
+    psa_regenerated = psa_regenerated,
+    evppi_regenerated = evppi_regenerated,
+    scenario_evppi_stale = scenario_stale,
+    fix_commit_time = fix_commit_time
+  )
+)
 
 # Load the EVPPI cache when present so the snapshot also records the
 # value-of-information results (issue #152). Older snapshots lack this
@@ -214,7 +289,7 @@ cat("\n=== Single-Model Analysis Complete ===\n")
 # Step 4: Collect metadata and build snapshot
 # ============================================================================
 cat("\nCollecting metadata...\n")
-metadata <- collect_metadata(issue_number)
+metadata <- collect_metadata(issue_number, caches = snapshot_caches)
 
 cat("Creating snapshot object...\n")
 snapshot <- list(

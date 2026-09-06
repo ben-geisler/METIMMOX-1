@@ -67,22 +67,84 @@ extract_km_data <- function(km_fit) {
   )
 }
 
-# Return the resampled JOINT economic model from the sampling cache.
+# Resolve the joint-model sampling component from the sampling cache
 #
-# Every economic biomarker strategy shares one joint formula, so the cache
-# stores the same bootstrap under each biomarker key. The control arm is that
-# same joint fit predicted with Rx = control (issue #151); it has no component
-# of its own. A legacy "control" component (a separate age/sex-only bootstrap
-# fitted on the control arm) is ignored if present.
+# Since issue #156 the cache stores the joint model once under `joint` and lists
+# the biomarker strategies that share it under `biomarkers`. Legacy caches held
+# one identical component per biomarker key; the first present key is used so
+# older objects (and test fixtures) still resolve.
 get_joint_sampling_models <- function(sampling_models) {
+  if (!is.null(sampling_models$joint)) return(sampling_models$joint)
   biomarkers <- get_biomarkers()
   present <- intersect(biomarkers, names(sampling_models))
   if (length(present) == 0L) {
-    stop("sampling_models has no joint-model component; expected one of: ",
+    stop("sampling_models has no joint-model component; expected `joint` or one of: ",
          paste(biomarkers, collapse = ", "))
   }
   sampling_models[[present[1]]]
 }
+
+# Build a flexsurvreg object whose estimates are one sampled coefficient vector
+#
+# `draw` is on the scale flexsurvreg optimises (log for positive baseline
+# parameters, identity for covariate effects), i.e. the scale of `model$opt$par`
+# and `model$res.t[, "est"]`. Prediction reads the baseline parameters from
+# `res.t` and the covariate effects from `res`, so both tables, the
+# coefficient vector and the optimiser output are replaced consistently.
+build_sampled_flexsurv_model <- function(model, draw) {
+  par_names <- rownames(model$res)
+  if (is.null(names(draw))) names(draw) <- par_names
+  if (!identical(names(draw), par_names)) {
+    draw <- draw[par_names]
+  }
+  if (anyNA(draw)) stop("Sampled coefficient vector does not cover every model parameter")
+  sampled <- model
+  sampled$opt$par <- draw[model$optpars]
+  sampled$res.t[, "est"] <- draw
+  sampled$res[, "est"] <- draw
+  for (j in seq_along(model$dlist$pars)) {
+    sampled$res[j, "est"] <- model$dlist$inv.transforms[[j]](draw[j])
+  }
+  sampled$coefficients <- draw
+  # The estimate-specific fields below describe the original fit only.
+  sampled$res.t[, c("L95%", "U95%", "se")] <- NA_real_
+  sampled$res[, c("L95%", "U95%", "se")] <- NA_real_
+  sampled$sampled_from_original <- TRUE
+  sampled
+}
+
+# Return the sampled OS and PFS models for one draw in the legacy sample shape
+#
+# The result is `list(os = list(model, coefficients, dist), pfs = ..., failed)`,
+# which is what model_fun(), the PSA prediction helper and the interaction
+# coefficient extraction consumed from the bootstrap cache. A multivariate-normal
+# cache (issue #156) stores only the coefficient draws and materialises the
+# model object on request; a legacy bootstrap cache returns its stored sample.
+sampled_survival_models <- function(component, idx) {
+  if (!is.null(component$samples)) {
+    return(component$samples[[idx]])
+  }
+  if (is.null(component$draws)) {
+    stop("Sampling component has neither `draws` (issue #156) nor legacy `samples`")
+  }
+  n <- nrow(component$draws$os)
+  if (!is.numeric(idx) || length(idx) != 1L || idx < 1 || idx > n || idx != floor(idx)) {
+    stop("idx must be a single integer in 1..", n, "; got ", idx)
+  }
+  originals <- list(os = component$original_os, pfs = component$original_pfs)
+  dists <- list(os = component$dist_os, pfs = component$dist_pfs)
+  out <- lapply(c(os = "os", pfs = "pfs"), function(outcome) {
+    draw <- component$draws[[outcome]][idx, ]
+    list(
+      model = build_sampled_flexsurv_model(originals[[outcome]], draw),
+      coefficients = draw,
+      dist = dists[[outcome]]
+    )
+  })
+  out$failed <- FALSE
+  out
+}
+
 
 # Main function for population-averaged predictions across all strategies
 # Uses actual patient-level covariate distributions instead of reference patient

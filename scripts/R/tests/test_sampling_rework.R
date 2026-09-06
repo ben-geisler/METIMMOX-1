@@ -102,6 +102,9 @@ stopifnot(
 test_env$extract_all_survival_probabilities <- function(prediction) {
   do.call(cbind, lapply(prediction$.pred, function(x) x$.pred_survival))
 }
+# Since issue #156 the prediction helper resolves the draw through the cache
+# accessor; a legacy-shaped sample list is returned as-is here.
+test_env$sampled_survival_models <- function(component, idx) component$samples[[idx]]
 test_env$predict <- function(object, newdata, type, times) {
   rx_effect <- as.numeric(newdata$Rx == "experimental") * 10
   curves <- lapply(newdata$Age + rx_effect, function(value) {

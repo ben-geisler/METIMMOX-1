@@ -524,13 +524,34 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
 
   cat("\n=== Extracting interaction coefficients from sampling models ===\n")
 
+  # Since issue #156 the cache holds one joint component (`joint`) shared by
+  # every biomarker strategy, with the coefficient draws stored as matrices.
+  # Legacy caches and test fixtures hold one component per biomarker key with
+  # per-sample coefficient vectors; both layouts are read here.
+  joint_component <- sampling_models$joint
+  component_for <- function(biomarker) {
+    if (!is.null(joint_component)) return(joint_component)
+    sampling_models[[biomarker]]
+  }
+
+  # Coefficient vector of draw i for one outcome, or NULL when unavailable.
+  draw_coefficients <- function(component, outcome, i) {
+    if (!is.null(component$draws)) {
+      m <- component$draws[[outcome]]
+      if (is.null(m) || i > nrow(m)) return(NULL)
+      return(m[i, ])
+    }
+    sample_i <- component$samples[[i]]
+    if (is.null(sample_i)) return(NULL)
+    sample_i[[outcome]]$coefficients
+  }
+
   for (biomarker in biomarkers) {
-    if (!biomarker %in% names(sampling_models)) {
+    strategy_models <- component_for(biomarker)
+    if (is.null(strategy_models)) {
       cat("  Warning:", biomarker, "not found in sampling_models - skipping\n")
       next
     }
-
-    strategy_models <- sampling_models[[biomarker]]
 
     for (outcome in outcomes) {
       col_name <- paste0("b_", biomarker, "_rx_", outcome)
@@ -540,15 +561,7 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
       n_missing <- 0
 
       for (i in seq_len(n_sim)) {
-        sample_i <- strategy_models$samples[[i]]
-
-        if (is.null(sample_i)) {
-          values[i] <- NA
-          n_failed <- n_failed + 1
-          next
-        }
-
-        coefs <- sample_i[[outcome]]$coefficients
+        coefs <- draw_coefficients(strategy_models, outcome, i)
 
         if (is.null(coefs)) {
           values[i] <- NA
