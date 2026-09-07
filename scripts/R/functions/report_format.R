@@ -69,10 +69,18 @@ format_eur <- function(x, accuracy = 1) {
 # Backward-compatible short name used by input and poster reports.
 fmt_eur <- format_eur
 
-#' Format an ICER using its frontier status
+#' Format an ICER using its frontier or pairwise status
 #'
-#' Reference strategies are shown as "--" and dominated or extended-dominated
-#' strategies as "Dominated". Missing and infinite estimates are also "--".
+#' Accepts the dampack frontier codes ("ND", "D", "ED") and the pairwise
+#' statuses of `calculate_pairwise_icers()` ("Reference", "Pairwise ICER vs
+#' SoC", "Dominated by SoC", "Cost-saving vs SoC"; issue #153). Reference
+#' strategies are shown as "--", dominated or extendedly dominated strategies
+#' as "Dominated", and cost-saving (dominant) strategies as "Cost-saving": their
+#' ratio is negative because the incremental cost is negative, and printing it
+#' would read as a cost per QALY (issue #157). A negative ratio with no
+#' informative status is also "--", because without the signs of the increments
+#' a cost-saving strategy cannot be told from a dominated one. Missing and
+#' infinite estimates are "--".
 format_icer <- function(x, status = NULL) {
   if (length(x) == 0) return(character())
 
@@ -83,9 +91,35 @@ format_icer <- function(x, status = NULL) {
   }
 
   out <- format_eur(x)
+  reference <- status %in% c("Reference", "ref")
   dominated <- status %in% c("D", "ED", "Dominated") |
     grepl("^Dominated", status)
+  cost_saving <- status %in% c("Dominant", "Cost-saving") |
+    grepl("^Cost-saving", status) | grepl("^Dominant", status)
   out[!is.na(dominated) & dominated] <- "Dominated"
-  out[status %in% c("Reference", "ref")] <- "--"
+  out[!is.na(cost_saving) & cost_saving] <- "Cost-saving"
+  out[reference] <- "--"
+  unlabelled_negative <- is.finite(x) & x < 0 & !reference &
+    !(!is.na(dominated) & dominated) & !(!is.na(cost_saving) & cost_saving)
+  out[unlabelled_negative] <- "--"
   out
+}
+
+#' Restricted mean survival time of a curve on the model's weekly grid
+#'
+#' Trapezoidal integration of a survival curve evaluated at equally spaced time
+#' points (the weekly model cycle), returned in years. The mean is restricted to
+#' the horizon spanned by the curve: 520 weeks (10 years) for the base-case
+#' curves in `l_params_base`. The earlier left Riemann sum `sum(y) * cl`
+#' included the t = 0 point as a full cycle and so extended the integral by one
+#' cycle beyond the horizon (issue #157).
+#'
+#' @param y Survival probabilities at consecutive grid points, starting at t = 0.
+#' @param cycle_length Grid spacing in years (defaults to the global `cl`).
+#' @return Restricted mean survival time in years.
+restricted_mean_survival <- function(y, cycle_length = cl) {
+  y <- as.numeric(y)
+  n <- length(y)
+  if (n < 2 || anyNA(y)) return(NA_real_)
+  (sum(y) - (y[1] + y[n]) / 2) * cycle_length
 }

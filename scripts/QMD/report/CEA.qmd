@@ -33,7 +33,7 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "04", "05"),
+  sources = c("02", "03", "04", "05", "06"),
   funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
            "psa_functions")
 )
@@ -42,10 +42,36 @@ basecase <- run_basecase(verbose = FALSE)
 base_results <- basecase$base_results
 icer_obj <- basecase$icer_obj
 model_config <- basecase$model_config
-psa_obj <- load_psa_cache(verbose = FALSE)
+
+# The PSA cache must have been generated from the inputs of this session. The
+# expected fingerprint is the one 10_PSA.R stamps on the cache (sampling-cache
+# fingerprint, l_params_base, PSA distributions, strategies, n_sim, seed,
+# horizon and cycle length; issue #156); the loader stops on an absent or stale
+# cache instead of rendering placeholders (issue #157). Script 06 is sourced
+# for the sampling-cache fingerprint and the PSA distributions; it loads from
+# cache in seconds.
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+psa_obj <- load_psa_cache(
+  verbose = FALSE, required = TRUE,
+  expected_fingerprint = expected_psa,
+  strategies = strategies, n_sim = n_sim,
+  sampling_fingerprint = sampling_models$fingerprint
+)
 
 # PSA parameter draws, used to report the utility-ordering diagnostic below.
-psa_params <- suppressWarnings(load_psa_params_cache(verbose = FALSE))
+psa_params <- load_psa_params_cache(
+  verbose = FALSE, required = TRUE,
+  seed = analysis_seed, n_sim = psa_obj$n_sim
+)
 ```
 
 # Overview
@@ -167,119 +193,96 @@ The PSA samples the health-state utilities, the biomarker prevalences, and the r
 The two utilities are sampled jointly rather than independently. The PSA draws a non-negative decrement and sets the progressed utility to the progression-free utility minus that decrement, so no draw can place the progressed utility above the progression-free utility.
 
 ```{r utility-ordering}
-reversal <- if (is.null(psa_params)) NULL else utility_reversal_fraction(psa_params)
-if (is.null(reversal)) {
-  cat("PSA parameter draws not found; the utility-ordering diagnostic is unavailable.")
-} else {
-  cat(sprintf(
-    paste0("Utility-ordering diagnostic: %d of %d PSA draws (%.1f%%) have u_p > u_np, ",
-           "and %.1f%% exceed it by more than %.2f. The decrement parameterisation ",
-           "makes these fractions zero by construction; independent beta draws ",
-           "for the two utilities did not."),
-    reversal$n_reversed, reversal$n, 100 * reversal$fraction,
-    100 * reversal$fraction_material, reversal$margin
-  ))
-}
+reversal <- utility_reversal_fraction(psa_params)
+cat(sprintf(
+  paste0("Utility-ordering diagnostic: %d of %d PSA draws (%.1f%%) have u_p > u_np, ",
+         "and %.1f%% exceed it by more than %.2f. The decrement parameterisation ",
+         "makes these fractions zero by construction; independent beta draws ",
+         "for the two utilities did not."),
+  reversal$n_reversed, reversal$n, 100 * reversal$fraction,
+  100 * reversal$fraction_material, reversal$margin
+))
 ```
 
 ## Results
 
 ```{r psa-summary}
-if (is.null(psa_obj)) {
-  cat("PSA cache not found. Run scripts/R/analysis/10_PSA.R after regenerating the single-model sampling cache.")
-} else {
-  psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
-    mutate(
-      Strategy = strategy_label(Strategy),
-      Mean_Cost = format_eur(Mean_Cost),
-      Mean_QALY = sprintf("%.3f", Mean_QALY),
-      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
-    )
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Mean_Cost = format_eur(Mean_Cost),
+    Mean_QALY = sprintf("%.3f", Mean_QALY),
+    Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+  )
 
-  knitr::kable(
-    psa_summary,
-    booktabs = TRUE,
-    align = c("l", "r", "r", "r"),
-    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
-    caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
-  ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
-}
+knitr::kable(
+  psa_summary,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+  caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-The PSA and the base case use the same joint survival model: every PSA draw predicts the control, biomarker-positive, and biomarker-negative curves from one resampled joint fit, with the control curve obtained by setting treatment to standard of care for every patient, exactly as in the base case. PSA means should therefore sit close to the base-case values, differing only through the nonlinearity of the partitioned survival model. The table below reports each difference in units of the PSA Monte Carlo standard error; the regression test `test_psa_basecase_alignment.R` flags any absolute difference above five standard errors. With 5,000 draws the standard errors are small, and the mean QALYs of every strategy sit a few hundredths of a QALY above the base case with the same sign: this is the bootstrap-mean bias of the extrapolated parametric curves, shared by all arms because they come from one fit, and it is documented as a known deviation in the test protocol.
+The PSA and the base case use the same joint survival model: every PSA draw predicts the control, biomarker-positive, and biomarker-negative curves from one sampled coefficient vector of the joint fit (multivariate-normal draws, issue #156), with the control curve obtained by setting treatment to standard of care for every patient, exactly as in the base case. PSA means should therefore sit close to the base-case values, differing only through the nonlinearity of the partitioned survival model. The table below reports each difference in units of the PSA Monte Carlo standard error; the regression test `test_psa_basecase_alignment.R` flags any absolute difference above five standard errors. With 5,000 draws the standard errors are small, and the mean QALYs of every strategy sit a few hundredths of a QALY above the base case with the same sign: this is the mean bias of the extrapolated parametric curves under coefficient sampling, shared by all arms because they come from one fit, and it is documented as a known deviation in the test protocol.
 
 ```{r psa-basecase-table}
-if (is.null(psa_obj)) {
-  cat("PSA cache not found; the PSA-versus-base-case comparison is unavailable.")
-} else {
-  psa_vs_base <- create_psa_basecase_comparison(psa_obj, base_results) %>%
-    mutate(
-      Strategy = strategy_label(Strategy),
-      Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
-                         sprintf("%.4f", Base_Case)),
-      PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
-                        sprintf("%.4f", PSA_Mean)),
-      PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
-                      sprintf("%.4f", PSA_SE)),
-      Diff = ifelse(Outcome == "Cost", format_eur(Diff),
-                    sprintf("%+.4f", Diff)),
-      Diff_SE = sprintf("%+.1f", Diff_SE)
-    )
+psa_vs_base <- create_psa_basecase_comparison(psa_obj, base_results) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
+                       sprintf("%.4f", Base_Case)),
+    PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
+                      sprintf("%.4f", PSA_Mean)),
+    PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
+                    sprintf("%.4f", PSA_SE)),
+    Diff = ifelse(Outcome == "Cost", format_eur(Diff),
+                  sprintf("%+.4f", Diff)),
+    Diff_SE = sprintf("%+.1f", Diff_SE)
+  )
 
-  knitr::kable(
-    psa_vs_base,
-    booktabs = TRUE,
-    align = c("l", "l", "r", "r", "r", "r", "r"),
-    col.names = c("Strategy", "Outcome", "Base Case", "PSA Mean",
-                  "PSA SE", "Difference", "Difference (SE)"),
-    caption = "PSA means versus base-case values (difference in Monte Carlo standard errors)"
-  ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
-}
+knitr::kable(
+  psa_vs_base,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "r", "r"),
+  col.names = c("Strategy", "Outcome", "Base Case", "PSA Mean",
+                "PSA SE", "Difference", "Difference (SE)"),
+  caption = "PSA means versus base-case values (difference in Monte Carlo standard errors)"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
-Because all strategies in a PSA draw share one resampled joint model, a shift that is common to every strategy (the bootstrap-mean bias of the extrapolated parametric curves) cancels in the increments, whereas a control-specific shift would not. The incremental comparison below therefore isolates what matters for the decision.
+Because all strategies in a PSA draw share one sampled joint model, a shift that is common to every strategy (the mean bias of the extrapolated parametric curves under coefficient sampling) cancels in the increments, whereas a control-specific shift would not. The incremental comparison below therefore isolates what matters for the decision.
 
 ```{r psa-incremental-table}
-if (is.null(psa_obj)) {
-  cat("PSA cache not found; the incremental comparison is unavailable.")
-} else {
-  psa_inc <- create_psa_incremental_comparison(psa_obj, base_results) %>%
-    mutate(
-      Comparator = paste(strategy_label(Comparator), "vs", strategy_label(get_control_strategy())),
-      Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
-                         sprintf("%+.4f", Base_Case)),
-      PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
-                        sprintf("%+.4f", PSA_Mean)),
-      PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
-                      sprintf("%.4f", PSA_SE)),
-      Diff = ifelse(Outcome == "Cost", format_eur(Diff),
-                    sprintf("%+.4f", Diff)),
-      Diff_SE = sprintf("%+.1f", Diff_SE)
-    )
+psa_inc <- create_psa_incremental_comparison(psa_obj, base_results) %>%
+  mutate(
+    Comparator = paste(strategy_label(Comparator), "vs", strategy_label(get_control_strategy())),
+    Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
+                       sprintf("%+.4f", Base_Case)),
+    PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
+                      sprintf("%+.4f", PSA_Mean)),
+    PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
+                    sprintf("%.4f", PSA_SE)),
+    Diff = ifelse(Outcome == "Cost", format_eur(Diff),
+                  sprintf("%+.4f", Diff)),
+    Diff_SE = sprintf("%+.1f", Diff_SE)
+  )
 
-  knitr::kable(
-    psa_inc,
-    booktabs = TRUE,
-    align = c("l", "l", "r", "r", "r", "r", "r"),
-    col.names = c("Comparison", "Outcome", "Base Case", "PSA Mean",
-                  "PSA SE", "Difference", "Difference (SE)"),
-    caption = "Incremental PSA means versus base-case increments relative to standard of care"
-  ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
-}
+knitr::kable(
+  psa_inc,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "r", "r"),
+  col.names = c("Comparison", "Outcome", "Base Case", "PSA Mean",
+                "PSA SE", "Difference", "Difference (SE)"),
+  caption = "Incremental PSA means versus base-case increments relative to standard of care"
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
 ```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
-if (is.null(psa_obj)) {
-  ggplot() +
-    annotate("text", x = 0.5, y = 0.5,
-             label = "PSA cache not available", size = 5) +
-    theme_void()
-} else {
-  create_ceac_plot(psa_obj, wtp_line = WTP)
-}
+create_ceac_plot(psa_obj, wtp_line = WTP)
 ```
 
 # Summary

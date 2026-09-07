@@ -25,10 +25,12 @@ setup_report(
 basecase <- run_basecase(verbose = FALSE)
 icer_df <- as.data.frame(basecase$icer_obj)
 
+# Table 4: dampack efficiency-frontier results (the CEA.qmd convention, issue
+# #153). Labels are looked up by name (issue #157).
 display_df <- icer_df %>%
-  filter(Strategy %in% names(strategy_labels)) %>%
+  filter(as.character(Strategy) %in% names(strategy_labels)) %>%
   mutate(
-    Strategy_Label = strategy_labels[Strategy],
+    Strategy_Label = strategy_label(Strategy),
     Cost = format_eur(Cost),
     QALYs = sprintf("%.2f", Effect),
     Inc_Cost = format_eur(Inc_Cost),
@@ -37,17 +39,30 @@ display_df <- icer_df %>%
   ) %>%
   select(Strategy_Label, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER)
 
-display_df_s5 <- icer_df %>%
-  filter(Strategy %in% names(strategy_labels)) %>%
+# Table S5: full results at three decimals with, for every guided strategy,
+# the PAIRWISE comparison against standard of care (increments, ICER and
+# status from calculate_pairwise_icers()) alongside the frontier ICER and
+# frontier status of Table 4 (issue #153 conventions). Before issue #157
+# tables/table_s5.csv was a byte-identical copy of tables/table_4.csv.
+table_s5_df <- calculate_pairwise_icers(basecase$base_results) %>%
   mutate(
-    Strategy = strategy_labels[Strategy],
+    Frontier_ICER = icer_df$ICER[match(Strategy, as.character(icer_df$Strategy))]
+  ) %>%
+  select(Strategy, Cost, Effect, Inc_Cost, Inc_Effect, ICER, Status,
+         Frontier_ICER, Frontier_Status)
+
+display_df_s5 <- table_s5_df %>%
+  transmute(
+    Strategy = strategy_label(Strategy),
     Cost = format_eur(Cost),
     QALYs = sprintf("%.3f", Effect),
-    Inc_Cost = format_eur(Inc_Cost),
-    Inc_QALYs = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
-    ICER = format_icer(ICER, Status)
-  ) %>%
-  select(Strategy, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER, Status)
+    Inc_Cost = ifelse(Status == "Reference", "--", format_eur(Inc_Cost)),
+    Inc_QALYs = ifelse(Status == "Reference", "--", sprintf("%.3f", Inc_Effect)),
+    Pairwise_ICER = format_icer(ICER, Status),
+    Pairwise_Status = Status,
+    Frontier_ICER = format_icer(Frontier_ICER, Frontier_Status),
+    Frontier = frontier_label(Frontier_Status)
+  )
 ```
 
 ## Table 4
@@ -78,21 +93,30 @@ kable(
 ```{r display-table-s5}
 kable(
   display_df_s5,
-  caption = "Table S5: Full cost-effectiveness results, overall MSS population",
+  caption = "Table S5: Full cost-effectiveness results, overall MSS population (pairwise versus standard of care and efficiency frontier)",
   format = "html",
-  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
-                "Incremental QALYs", "ICER", "Status"),
-  align = c("l", rep("r", 5), "l")
+  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost vs SoC",
+                "Incremental QALYs vs SoC", "Pairwise ICER vs SoC",
+                "Pairwise status", "Frontier ICER", "Frontier status"),
+  align = c("l", rep("r", 5), "l", "r", "l")
 ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
-                full_width = FALSE, font_size = 12)
+                full_width = FALSE, font_size = 12) %>%
+  footnote(
+    general = c(
+      "Increments and the pairwise ICER compare each guided strategy with standard of care (issue #153).",
+      "The frontier ICER is the dampack incremental ratio versus the next non-dominated alternative, as in Table 4; a strategy that is dominated on the frontier (more costly and less effective than the other guided strategy) can still have a finite pairwise ICER.",
+      "Costs and QALYs discounted at 4% per year."
+    ),
+    general_title = "Notes: "
+  )
 ```
 
 ```{r save-table, include=FALSE}
 tables_dir <- here("tables")
 if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
 write.csv(icer_df, file = here("tables", "table_4.csv"), row.names = FALSE)
-write.csv(icer_df, file = here("tables", "table_s5.csv"), row.names = FALSE)
+write.csv(table_s5_df, file = here("tables", "table_s5.csv"), row.names = FALSE)
 ```
 
-Tables 4 and S5 have been saved to `tables/table_4.csv` and `tables/table_s5.csv`.
+Tables 4 and S5 have been saved to `tables/table_4.csv` (frontier results) and `tables/table_s5.csv` (pairwise-versus-SoC results with the frontier ICER and status).

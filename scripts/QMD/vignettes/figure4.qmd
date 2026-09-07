@@ -40,14 +40,19 @@ biosimilar_psa <- tryCatch(
   error = function(e) NULL
 )
 
-wtp_range <- seq(0, 150000, by = 2000)
+# The grid carries the base-case WTP as an evaluated point, so the dotted
+# reference line meets the curves at a computed value (issue #157).
+wtp_range <- sort(unique(c(seq(0, 150000, by = 2000), WTP)))
 get_ceac_data <- function(psa, scenario) {
   if (is.null(psa)) return(data.frame())
   result <- dampack::ceac(wtp = wtp_range, psa = psa)
   result$Scenario <- scenario
+  # dampack returns Strategy as a factor: labels are looked up by name through
+  # strategy_label(), never by factor code (issue #157).
   result %>%
-    filter(Strategy %in% names(strategy_labels)) %>%
-    mutate(Strategy = factor(strategy_labels[Strategy], levels = strategy_labels))
+    filter(as.character(Strategy) %in% names(strategy_labels)) %>%
+    mutate(Strategy = factor(strategy_label(Strategy),
+                             levels = unname(strategy_labels)))
 }
 
 base_ceac_data <- get_ceac_data(base_psa, "Base case")

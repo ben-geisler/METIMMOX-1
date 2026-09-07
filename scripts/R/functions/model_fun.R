@@ -5,10 +5,10 @@
 #
 # Supports both deterministic and probabilistic sensitivity analysis (PSA):
 #   - Deterministic: Uses base case survival curves and parameters
-#   - PSA: Uses resampled survival models with subgroup population averaging
+#   - PSA: Uses sampled survival models (multivariate-normal coefficient draws, issue #156) with subgroup population averaging
 #
 # PSA Methodology (Issues #73, #74, #87):
-#   - Parameter uncertainty: Captured by resampled survival models (varies
+#   - Parameter uncertainty: Captured by sampled survival models (varies
 #     BETWEEN PSA iterations)
 #   - Patient heterogeneity: Integrated out via population averaging (averaged
 #     WITHIN each iteration)
@@ -19,8 +19,8 @@
 #
 # Biological Constraint (Issue #76):
 #   - Base-case ordering is guaranteed during joint distribution selection.
-#   - PFS is capped at OS only for resampled PSA models. Without this safety
-#     net, states can sum to >1 when a resampled pair crosses.
+#   - PFS is capped at OS only for sampled PSA models. Without this safety
+#     net, states can sum to >1 when a sampled pair crosses.
 #
 # Fallback Tracking (Issue #79):
 #   - When PSA survival curve generation fails, the function falls back to
@@ -30,7 +30,7 @@
 #
 # One Survival Model in Base Case and PSA (Issue #151):
 #   - Every PSA curve (control, biomarker-positive, biomarker-negative) comes
-#     from the SAME resampled joint model; the control arm is that model
+#     from the SAME sampled joint model; the control arm is that model
 #     predicted with Rx = control, exactly as in the base case. No separate
 #     age/sex-only control model is used anywhere.
 # ===============================================================================
@@ -124,8 +124,8 @@ validate_model_params <- function(params) {
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL) {
   # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
-  #   - n_samples: Number of resampled models (from 02_setup_and_global_variables.R)
-  #   - sampling_models: Resampled survival models (from 06_sampling.R)
+  #   - n_samples: Number of sampled coefficient draws (from 02_setup_and_global_variables.R)
+  #   - sampling_models: Sampled survival models (MVN coefficient draws) (from 06_sampling.R)
   #   - data_complete: Full analysis cohort (from 04_parametric_survival_analysis.R)
   #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
   # These must exist in the global environment before calling model_fun in PSA mode.
@@ -145,12 +145,12 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # PSA MODE: Subgroup Population Averaging
   # =========================================================================
   # Each PSA iteration:
-  #   1. Uses resampled survival model i (captures parameter uncertainty)
+  #   1. Uses sampled survival model i (coefficient draw i) (captures parameter uncertainty)
   #   2. Predicts for ALL patients in each subgroup, then averages
   #   3. Keeps prevalence at true population value
   #
   # This properly separates:
-  #   - Parameter uncertainty (varies BETWEEN iterations via resampled models)
+  #   - Parameter uncertainty (varies BETWEEN iterations via sampled models)
   #   - Patient heterogeneity (averaged WITHIN each iteration)
   #
   # See GitHub Issues #73, #74, #87 for methodology discussion.
@@ -189,7 +189,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # -----------------------------------------------------------------------
     # Uses the shared population-averaging helper to predict for ALL patients in
     # data_complete (both arms) with Rx forced to the control level, using the
-    # resampled JOINT model. This mirrors the base case, which predicts the
+    # sampled JOINT model. This mirrors the base case, which predicts the
     # control curve from the same joint fit with Rx = control
     # (generate_population_averaged_predictions). A separate age/sex-only
     # control model was previously bootstrapped here; that shifted the PSA

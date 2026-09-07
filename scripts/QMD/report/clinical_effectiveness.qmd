@@ -311,7 +311,27 @@ The analysis uses **Firth-corrected Cox proportional hazards regression** with p
 - **CRP** (C-reactive protein): Low CRP (<5 mg/L) at week 4 (cycle 3 day 1), measured after the two FLOX cycles that both arms receive and before the first nivolumab dose — a prognostic and potentially predictive marker
 - **TMB/BRAF**: High tumor mutational burden (≥9 mut/MB) or BRAF mutation — a baseline genomic marker
 
-**CRP timing.** CRP is not a baseline (pre-randomization) measurement: the value used throughout is the week-4 CRP at the start of nivolumab, matching the post-hoc CRP analysis of the trial paper. Because nivolumab has not yet been given at week 4 and both arms receive identical FLOX until then, the DAG carries no `T -> CRP` edge. Two consequences follow. First, week-4 CRP-positivity differs by arm (experimental 17/36, control 7/35; Fisher p = 0.023) whereas baseline CRP was balanced (8/38 vs 7/35; p = 1); this is treated as chance imbalance on a week-4 measurement in a small trial, not as a failure of randomization, and is what the `CRP:Rx` interaction is estimated against. Second, the three patients with no week-4 CRP are early deaths (weeks 2.4, 15.7 and 20.9) and are excluded from the complete-case data, so the CRP subgroups are conditional on surviving to the week-4 measurement. The clock remains randomization; a landmark analysis at week 4 would drop no further patients from the CRP subgroups.
+```{r crp-timing-counts, include=FALSE}
+# Week-4 CRP by arm on the full trial data (before complete-case exclusion)
+# and the follow-up of the patients with no week-4 value, quoted in the
+# paragraph below so that the counts cannot drift from the data (issue #157).
+# The baseline CRP comparison (CRP0cat, cycle 1 day 1) is derived in
+# 01_data_prep.R and is not carried into the analysis data, so it is quoted
+# from that script.
+crp_arm_tab <- table(data$Rx, data$crp)
+crp_arm_n <- rowSums(crp_arm_tab)
+crp_arm_pos <- crp_arm_tab[, "1"]
+crp_arm_fisher_p <- fisher.test(crp_arm_tab)$p.value
+crp_missing <- data[is.na(data$crp), ]
+crp_missing_weeks <- paste(sprintf("%.1f", sort(crp_missing$OSwk)), collapse = ", ")
+crp_missing_outcome <- if (nrow(crp_missing) > 0 && all(crp_missing$Death == 1)) {
+  "early deaths"
+} else {
+  "lost early (death or censoring)"
+}
+```
+
+**CRP timing.** CRP is not a baseline (pre-randomization) measurement: the value used throughout is the week-4 CRP at the start of nivolumab, matching the post-hoc CRP analysis of the trial paper. Because nivolumab has not yet been given at week 4 and both arms receive identical FLOX until then, the DAG carries no `T -> CRP` edge. Two consequences follow. First, week-4 CRP-positivity differs by arm (experimental `r crp_arm_pos["Experimental arm"]`/`r crp_arm_n["Experimental arm"]`, control `r crp_arm_pos["Control arm"]`/`r crp_arm_n["Control arm"]`; Fisher p = `r format_pvalue(crp_arm_fisher_p)`) whereas baseline CRP was balanced (8/38 vs 7/35; p = 1; `CRP0cat` in `01_data_prep.R`, which is not part of the analysis data); this is treated as chance imbalance on a week-4 measurement in a small trial, not as a failure of randomization, and is what the `CRP:Rx` interaction is estimated against. Second, the `r nrow(crp_missing)` patients with no week-4 CRP are `r crp_missing_outcome` (weeks `r crp_missing_weeks`) and are excluded from the complete-case data, so the CRP subgroups are conditional on surviving to the week-4 measurement. The clock remains randomization; a landmark analysis at week 4 would drop no further patients from the CRP subgroups.
 
 **Model specification is motivated by the causal DAG** (see `dag.qmd` and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized with no parents, so no confounding adjustment is needed for causal identification; Age and Sex are included as precision covariates. TLR (Tumor Lesion Reduction) is encoded as a post-randomization intermediate variable (T → TLR → PFS): it is not a pre-treatment baseline characteristic and conditioning on it as a covariate would block part of the treatment effect pathway. TLR is therefore excluded from the primary survival models and examined separately as a descriptive endpoint.
 
@@ -1690,6 +1710,16 @@ p_zph_pfs_tmb_rx <- get_zph_p(zph_pfs_df, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 # Firth HR (95% CI) and point-estimate shorthands
 hr_txt <- function(x) format_hr_ci(x$HR, x$CI_Lower, x$CI_Upper)
 hr_pt  <- function(x) if (is.na(x$HR)) "--" else sprintf("%.2f", x$HR)
+
+# Unadjusted Firth Cox CRP -> PFS on the complete-case cohort: the DAG
+# association test quoted in the Discussion, with the specification of
+# run_dag_edge_tests() in dag_association_tests.R (issue #157).
+dag_crp_pfs_fit <- coxphf::coxphf(
+  Surv(PFSwk, Progression) ~ crp_num, data = data_complete,
+  firth = TRUE, pl = TRUE, maxit = 100, maxstep = 0.1
+)
+dag_crp_pfs_hr <- exp(unname(dag_crp_pfs_fit$coefficients["crp_num"]))
+dag_crp_pfs_p <- unname(dag_crp_pfs_fit$prob["crp_num"])
 ```
 
 # Discussion
@@ -1698,7 +1728,7 @@ hr_pt  <- function(x) if (is.na(x$HR)) "--" else sprintf("%.2f", x$HR)
 
 Neither biomarker-treatment interaction reached conventional significance in the unified model (Firth HR with 95% CI in parentheses). For **overall survival**, CRP × Rx yielded HR `r hr_txt(hr_crp_os)` (PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR `r hr_txt(hr_tmb_os)` (p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction was directionally favourable but imprecise (HR `r hr_txt(hr_crp_pfs)`, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had a lower estimated hazard of progression or death than CRP-positive controls, though the CI spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx PFS interaction was HR `r hr_txt(hr_tmb_pfs)` (p = `r format_pvalue(p_tmb_pfs)`). These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
-The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (HR 0.41, p = 0.001; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
+The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (unadjusted Firth HR `r sprintf("%.2f", dag_crp_pfs_hr)`, p = `r format_pvalue(dag_crp_pfs_p)`; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
 
 ## Proportional hazards
 
@@ -1745,4 +1775,4 @@ No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_p
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.6
+**Report version:** 3.7

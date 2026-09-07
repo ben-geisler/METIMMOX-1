@@ -291,3 +291,24 @@ compile_evppi_results <- function(all_results) {
 
   return(evppi_combined)
 }
+
+#' Deterministic alternative-utility scenarios (Table S8)
+#'
+#' Run deterministically on the base-case survival curves by table_s8.qmd;
+#' they are not part of the PSA/EVPPI scenario set in define_scenarios().
+#' The literature utility pair has NO citation yet: `source` is a placeholder
+#' that must be replaced with the reference before publication (issue #157).
+#' `u_decrement` is derived so the pair stays consistent with the derived-
+#' utility convention of issue #154.
+#'
+#' @return Data frame with scenario_id, scenario_name, u_np, u_p, source.
+define_utility_scenarios <- function() {
+  data.frame(
+    scenario_id = "u_literature",
+    scenario_name = "Literature utilities (u_np 0.80, u_p 0.65)",
+    u_np = 0.80,
+    u_p = 0.65,
+    source = "[CITATION PLACEHOLDER: reference for u_np 0.80 / u_p 0.65 to be added]",
+    stringsAsFactors = FALSE
+  )
+}

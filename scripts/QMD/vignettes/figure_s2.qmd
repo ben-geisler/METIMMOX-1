@@ -67,9 +67,15 @@ for (d in intersect(selected_dists, names(dist_labels))) {
   dist_labels[d] <- paste0(dist_labels[d], " (selected)")
 }
 
-# Generate predictions for control arm under each distribution
-control_data <- data_complete
-control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+# Generate predictions for the control-arm patients under each distribution.
+# The curves are predicted for exactly the patients in the Kaplan-Meier
+# reference curve below (their own age, sex and biomarker values; their Rx is
+# already control), so the overlay is a fit check on the same patients. The
+# economic model's standard-of-care curve is instead standardised to all
+# complete-case patients with Rx set to control and is not shown here
+# (issue #157).
+control_data <- data_complete[data_complete$Rx == ctrl_rx, ]
+n_control <- nrow(control_data)
 
 pred_data <- data.frame()
 
@@ -173,3 +179,10 @@ if (nrow(pred_data) > 0) {
 ```
 
 Figure S2 has been saved to `figs/figure_s2.png`.
+
+**Note.** Dashed step lines are the Kaplan-Meier curves of the `r n_control`
+control-arm patients in the complete-case data; the parametric curves are
+predicted for those same patients (own covariates, control treatment) and
+averaged. The economic model's standard-of-care curves are standardised to all
+`r nrow(data_complete)` complete-case patients with treatment set to control
+(the `predictions` object) and are not shown here.

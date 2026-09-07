@@ -105,7 +105,8 @@ cat("Cramer's V matrix computed\n")
 
 ```{r display-prevalence}
 kable(prevalence_df,
-      caption = "Biomarker prevalence in the analysis population (n=65)",
+      caption = paste0("Biomarker prevalence in the analysis population (n = ",
+                       nrow(data_complete), ")"),
       format = "html",
       row.names = FALSE) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
@@ -125,7 +126,9 @@ kable(display_matrix,
       "Cramer's V measures association between categorical variables (range 0-1).",
       "Significance levels: * p<0.05, ** p<0.01, *** p<0.001.",
       "CRP = C-reactive protein (<5 mg/L at week 4, before the first nivolumab dose); TLR = target lesion reduction (>=10%); TMB/BRAF = TMB >=9 mut/Mb or BRAF V600E.",
-      "Weak intercorrelations (V=0.278 for CRP-TLR) limit confounding between biomarkers across model specifications."
+      sprintf("Weak intercorrelations (largest V = %.3f, for %s) limit confounding between biomarkers across model specifications.",
+              max(v_matrix[upper.tri(v_matrix)]),
+              paste(bm_names[which(v_matrix == max(v_matrix[upper.tri(v_matrix)]), arr.ind = TRUE)[1, ]], collapse = "-"))
     ),
     general_title = "Notes: "
   )

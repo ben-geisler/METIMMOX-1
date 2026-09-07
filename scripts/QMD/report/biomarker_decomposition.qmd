@@ -57,7 +57,11 @@ curve_df <- function(biomarker, endpoint = c("os", "pfs")) {
                  names_to = "Curve", values_to = "Survival")
 }
 
-restricted_mean <- function(y) sum(y) * cl
+# Restricted mean survival over the modelled horizon (time_horizon weeks),
+# trapezoidal rule on the weekly grid (restricted_mean_survival() in
+# report_format.R). The earlier sum(y) * cl was a left Riemann sum that counted
+# the t = 0 point as a full cycle (issue #157).
+restricted_mean <- function(y) restricted_mean_survival(y, cl)
 ```
 
 # Overview
@@ -80,6 +84,8 @@ knitr::kable(prev_df, booktabs = TRUE, align = c("l", "r"),
 ```
 
 # Restricted Mean Survival
+
+Restricted mean survival is the area under each survival curve over the modelled horizon of `r time_horizon` weeks (`r time_horizon * cl` years), integrated with the trapezoidal rule on the weekly model grid; it is therefore bounded by `r time_horizon * cl` years and is not an estimate of unrestricted mean survival.
 
 ```{r rmst-table}
 rmst_rows <- lapply(get_biomarkers(), function(bm) {
@@ -110,7 +116,9 @@ knitr::kable(
   rmst_df,
   booktabs = TRUE,
   align = c("l", "l", "l", "r"),
-  caption = "Restricted mean survival by biomarker subgroup and strategy curve"
+  caption = paste0("Restricted mean survival (years) over the ", time_horizon,
+                   "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
+                   "by biomarker subgroup and strategy curve")
 ) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```

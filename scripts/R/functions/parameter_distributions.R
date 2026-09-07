@@ -285,3 +285,143 @@ dsa_structural_scenarios <- function(base_dr, base_horizon_years,
 structural_scenario_sides <- function(scenario) {
   if (is.null(scenario$sides)) c("min", "max") else scenario$sides
 }
+
+# ---------------------------------------------------------------------------
+# Applying a structural scenario to a base-case parameter list (issue #157)
+# ---------------------------------------------------------------------------
+# Moved here from 09_DSA.R so that the one-way DSA (09_DSA.R, OWSA.qmd,
+# Table 1) and the deterministic scenario table (table_s8.qmd) run exactly the
+# same scenario code. The discount rate is applied to costs and QALYs together.
+# A different time horizon re-predicts the base-case survival curves on the
+# new weekly grid from the selected joint models and rebuilds the schedule
+# vectors with the same rules as script 05 (drug positions are fixed calendar
+# weeks; CT every 12 weeks and blood tests every 4 weeks recur to the end of
+# the horizon). The post-progression cost and second-sequence scenarios test
+# the two scope assumptions raised in issue #154.
+
+#' Rebuild the base-case parameter list for a different model horizon
+#'
+#' @param base_params Base-case parameter list (l_params_base).
+#' @param horizon_weeks New horizon in weeks.
+#' @param models list(os = <flexsurvreg>, pfs = <flexsurvreg>): the selected
+#'   ordering-constrained best-fit models (models$best_fit$os / $pfs).
+#' @param strategies_df Strategy table with `id` and `prevalence`.
+#' @param data_complete Complete-case data used for population averaging.
+#' @return Parameter list with curves and schedules on the new grid.
+build_horizon_params <- function(base_params, horizon_weeks, models,
+                                 strategies_df, data_complete) {
+  if (is.null(models) || is.null(models$os) || is.null(models$pfs)) {
+    stop("Fitted best-fit survival models are required for a time-horizon scenario.")
+  }
+  tp <- seq(0, horizon_weeks)
+  n <- length(tp)
+  preds <- generate_population_averaged_predictions(
+    models = list(os = models$os, pfs = models$pfs),
+    strategies_df = strategies_df,
+    data_complete = data_complete,
+    time_points = tp,
+    prevalences = setNames(strategies_df$prevalence, strategies_df$id)
+  )
+
+  p <- base_params
+  ctrl <- get_control_strategy()
+  p$p_os  <- setNames(list(preds[[ctrl]]$os),  paste0(ctrl, "_OS"))
+  p$p_pfs <- setNames(list(preds[[ctrl]]$pfs), paste0(ctrl, "_PFS"))
+  for (bm in get_biomarkers()) {
+    p$p_os[[paste0(bm, "_pos_OS")]]       <- preds[[bm]]$biomarker_positive$os
+    p$p_os[[paste0(bm, "_neg_OS")]]       <- preds[[bm]]$biomarker_negative$os
+    p$p_os[[paste0(bm, "_weighted_OS")]]  <- preds[[bm]]$os
+    p$p_pfs[[paste0(bm, "_pos_PFS")]]     <- preds[[bm]]$biomarker_positive$pfs
+    p$p_pfs[[paste0(bm, "_neg_PFS")]]     <- preds[[bm]]$biomarker_negative$pfs
+    p$p_pfs[[paste0(bm, "_weighted_PFS")]] <- preds[[bm]]$pfs
+  }
+
+  schedule <- function(positions) {
+    v <- rep(0, n)
+    v[positions[positions <= n]] <- 1
+    v
+  }
+  p$l_nivo         <- schedule(which(base_params$l_nivo == 1))
+  p$l_FLOX_exp     <- schedule(which(base_params$l_FLOX_exp == 1))
+  p$l_FLOX_control <- schedule(which(base_params$l_FLOX_control == 1))
+  p$l_CT    <- schedule(c(1, seq(13, n, by = 12)))
+  p$l_blood <- schedule(c(1, seq(5, n, by = 4)))
+  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
+  p$l_visit[1] <- 1
+  p$time_horizon <- horizon_weeks
+  p
+}
+
+#' Remove the second treatment sequence
+#'
+#' Zero every administration from the given schedule position onwards and
+#' rebuild the visit schedule from the remaining administrations. Monitoring
+#' (CT, blood tests) is unchanged, and so is survival, so the scenario bounds
+#' the cost of the assumption only.
+#'
+#' @param p Parameter list.
+#' @param first_position First schedule position of the second sequence
+#'   (position 25 = modeled week 24).
+drop_second_sequence <- function(p, first_position = 25L) {
+  zap <- function(v) {
+    if (length(v) >= first_position) v[seq.int(first_position, length(v))] <- 0
+    v
+  }
+  p$l_nivo         <- zap(p$l_nivo)
+  p$l_FLOX_exp     <- zap(p$l_FLOX_exp)
+  p$l_FLOX_control <- zap(p$l_FLOX_control)
+  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
+  p$l_visit[1] <- 1
+  p
+}
+
+#' Apply one endpoint of a structural scenario to a parameter list
+#'
+#' @param scenario_name Name of an entry of dsa_structural_scenarios().
+#' @param value The endpoint value (scenario$min or scenario$max).
+#' @param base_params Base-case parameter list.
+#' @param base_horizon Base-case horizon in weeks (passed back unchanged for
+#'   every scenario except Time_horizon).
+#' @param models,strategies_df,data_complete Needed for Time_horizon only; see
+#'   build_horizon_params().
+#' @return list(params, time_horizon) ready for
+#'   model_fun(params, time_horizon = time_horizon).
+apply_structural_scenario <- function(scenario_name, value, base_params,
+                                      base_horizon, models = NULL,
+                                      strategies_df = NULL,
+                                      data_complete = NULL) {
+  p <- base_params
+  horizon <- base_horizon
+  if (scenario_name == "Discount_rate") {
+    p$dr_costs <- value
+    p$dr_effects <- value
+  } else if (scenario_name == "Time_horizon") {
+    horizon <- as.integer(round(value * 52))
+    p <- build_horizon_params(base_params, horizon, models, strategies_df,
+                              data_complete)
+  } else if (scenario_name == "Post_progression_cost") {
+    p$c_other_pp <- value
+  } else if (scenario_name == "Second_sequence") {
+    if (value == 0) p <- drop_second_sequence(p)
+  } else {
+    stop("Unknown structural scenario: ", scenario_name)
+  }
+  list(params = p, time_horizon = horizon)
+}
+
+#' Human-readable label for one structural scenario endpoint
+#'
+#' @param scenario_name Name of an entry of dsa_structural_scenarios().
+#' @param value The endpoint value.
+#' @return Character label used in Table S8 and the OWSA report.
+structural_scenario_label <- function(scenario_name, value) {
+  switch(scenario_name,
+    Discount_rate = sprintf("Discount rate %g%% (costs and QALYs)", 100 * value),
+    Time_horizon = sprintf("Time horizon %g years", value),
+    Post_progression_cost = sprintf("Post-progression cost EUR %s per quarter",
+                                    format(value, big.mark = ",", scientific = FALSE)),
+    Second_sequence = if (value == 0) "Second treatment sequence omitted" else
+      "Second treatment sequence given",
+    paste(scenario_name, value)
+  )
+}

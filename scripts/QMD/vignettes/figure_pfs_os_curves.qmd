@@ -19,11 +19,14 @@ execute:
 #   figs/figure_pfs_os_curves_crp.png       CRP-guided: CRP+ (FLOX+nivo) and CRP- (FLOX)
 #   figs/figure_pfs_os_curves_tmb_braf.png  TMB/BRAF-guided: TMB/BRAF+ and TMB/BRAF-
 #
-# Each panel shows the observed Kaplan-Meier step curve and the base-case
-# parametric (population-averaged, ordering-constrained best-fit) curve used by
-# the economic model. Subgroup curves use the same treatment assignment as the
-# economic model: biomarker-positive on the experimental arm, biomarker-negative
-# on the control arm.
+# Each panel shows the observed Kaplan-Meier step curve of a patient subset and
+# the ordering-constrained best-fit parametric models (the economic model's
+# joint OS and PFS fits) predicted for exactly those patients and averaged, so
+# the overlay is a fit check on matched patients (issue #157). Subgroups use
+# the same treatment assignment as the economic model: biomarker-positive on
+# the experimental arm, biomarker-negative on the control arm. The economic
+# model's own curves are standardised to the full complete-case cohort with Rx
+# set by strategy and are not shown.
 # ===============================================================================
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
@@ -78,42 +81,44 @@ km_df <- function(d, endpoint) {
              endpoint = endpoint, stringsAsFactors = FALSE)
 }
 
-# Parametric base-case curve from the economic-model predictions object
-para_df <- function(surv, endpoint) {
+# Parametric curve predicted for exactly the patients in the KM subset (their
+# own age, sex and biomarker values, and the arm they were actually in), then
+# averaged (issue #157). The economic model uses curves standardised to all
+# complete-case patients with Rx set by strategy (the `predictions` object);
+# those are not shown here, because overlaying them on a subset KM curve
+# reads covariate mix as lack of fit.
+para_df <- function(d, endpoint) {
+  model <- if (endpoint == "OS") models$best_fit$os else models$best_fit$pfs
+  surv <- predict_pop_avg(model, d, time_points)
+  if (is.null(surv)) stop("Parametric prediction failed for ", endpoint)
   data.frame(years = time_points / 52, surv = surv, endpoint = endpoint,
              stringsAsFactors = FALSE)
 }
 
 # Assemble KM + parametric curves for a named subgroup
-curve_set <- function(d, os_curve, pfs_curve, subgroup) {
+curve_set <- function(d, subgroup) {
   list(
     km = rbind(km_df(d, "OS"), km_df(d, "PFS")) |>
       mutate(subgroup = subgroup),
-    para = rbind(para_df(os_curve, "OS"), para_df(pfs_curve, "PFS")) |>
+    para = rbind(para_df(d, "OS"), para_df(d, "PFS")) |>
       mutate(subgroup = subgroup),
     n = nrow(d)
   )
 }
 
-control_strategy <- get_control_strategy()
-
 # --- Standard of care: control arm patients -----------------------------------
 d_soc <- data_complete[data_complete$Rx == ctrl_rx, ]
-soc <- curve_set(d_soc,
-                 predictions[[control_strategy]]$os,
-                 predictions[[control_strategy]]$pfs,
-                 subgroup = "Standard of care")
+soc <- curve_set(d_soc, subgroup = "Standard of care")
 
 # --- Biomarker-guided strategies: positive on experimental, negative on control -
+# The subsets already carry the strategy's treatment (positives were in the
+# experimental arm, negatives in the control arm), so no Rx is forced.
 biomarker_sets <- function(biomarker, label) {
   bm <- as.numeric(as.character(data_complete[[biomarker]]))
   d_pos <- data_complete[bm == 1 & data_complete$Rx == exp_rx, ]
   d_neg <- data_complete[bm == 0 & data_complete$Rx == ctrl_rx, ]
-  pred <- predictions[[biomarker]]
-  pos <- curve_set(d_pos, pred$biomarker_positive$os, pred$biomarker_positive$pfs,
-                   subgroup = paste0(label, "+ (FLOX + nivolumab)"))
-  neg <- curve_set(d_neg, pred$biomarker_negative$os, pred$biomarker_negative$pfs,
-                   subgroup = paste0(label, "- (FLOX)"))
+  pos <- curve_set(d_pos, subgroup = paste0(label, "+ (FLOX + nivolumab)"))
+  neg <- curve_set(d_neg, subgroup = paste0(label, "- (FLOX)"))
   list(
     km = rbind(pos$km, neg$km),
     para = rbind(pos$para, neg$para),
@@ -164,7 +169,7 @@ plot_pfs_os <- function(km, para, subgroup_levels, title, subtitle) {
 }
 
 fit_note <- sprintf(
-  "Faint step lines: Kaplan-Meier (observed, complete-case data).\nSmooth lines: base-case parametric fit used in the economic model (%s OS, %s PFS).",
+  "Faint step lines: Kaplan-Meier (observed, complete-case data).\nSmooth lines: parametric fit (%s OS, %s PFS) predicted for the same patients as the step line and averaged;\nthe economic model uses the same fitted models standardised to the full complete-case cohort (not shown).",
   os_dist, pfs_dist
 )
 ```
@@ -226,12 +231,18 @@ p_tmb
 
 ## Notes
 
-- Parametric curves are the population-averaged base-case predictions from
-  `04_parametric_survival_analysis.R` (`predictions` object), i.e. the same
-  curves that feed `l_params_base` and the economic model.
-- Kaplan-Meier curves are fitted to `data_complete` (complete cases for the
-  survival-model covariates), so the observed and parametric curves are
-  estimated on the same patients.
+- Parametric curves are the selected joint OS and PFS models from
+  `04_parametric_survival_analysis.R` (`models$best_fit`) predicted for each
+  patient in the plotted subset with that patient's own covariates and actual
+  arm, then averaged. The observed and parametric curves in a panel are
+  therefore estimated on the same patients.
+- The economic model uses the same fitted models standardised to all
+  `r nrow(data_complete)` complete-case patients with treatment set by
+  strategy (the `predictions` object feeding `l_params_base`). Those
+  standardised curves differ from the subset-matched curves shown here because
+  the covariate mix differs (for example, the control arm has fewer
+  CRP-positive patients than the full cohort); they are not overlaid on the
+  subset Kaplan-Meier curves for that reason (issue #157).
 - Subgroup treatment assignment mirrors the economic model: biomarker-positive
   patients from the experimental arm, biomarker-negative patients from the
   control arm.

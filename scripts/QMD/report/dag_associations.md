@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-09-06
+2026-09-07
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -399,15 +399,15 @@ edges, `TxCRP -> PFS` is the only one below p = 0.05 in this small
 sample, and it should be read together with the adjusted interaction
 estimates in the clinical effectiveness report.
 
-The data also surface two CRP-related tensions with the assumed graph,
-both traceable to the chance arm imbalance in week-4 CRP. The most
-defensible takeaway is therefore that the DAG captures much of the
-prognostic structure in the data, while the CRP-related balance and
-interaction structure may need refinement or stronger justification in
-future versions.
+The data also surface 2 conditional-independence violations (CRP *\|\|*
+T; CRP *\|\|* TxTMB \| {TMB_BRAF}) against the assumed graph, traceable
+to the chance arm imbalance in week-4 CRP. The most defensible takeaway
+is therefore that the DAG captures much of the prognostic structure in
+the data, while the CRP-related balance and interaction structure may
+need refinement or stronger justification in future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-06  
+**Report completed on:** 2026-09-07  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report version:** 1.2

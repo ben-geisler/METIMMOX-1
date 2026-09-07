@@ -32,6 +32,7 @@ detail_df <- enriched_comparison %>%
     Enr_Effect = sprintf("%.3f", Enr_Effect),
     Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
     Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_Screening = format_eur(Enr_Screening_Cost),
     Enr_ICER = format_icer(Enr_ICER, Enr_Status)
   )
 
@@ -40,8 +41,9 @@ kable(
   caption = "Table 6: Biomarker-enriched population results",
   format = "html",
   col.names = c("Biomarker", "Experimental Cost", "Experimental QALYs",
-                "Control Cost", "Control QALYs", "ICER"),
-  align = c("l", rep("r", 5))
+                "Control Cost", "Control QALYs",
+                "Screening cost per identified positive", "ICER"),
+  align = c("l", rep("r", 6))
 ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 11) %>%
@@ -49,6 +51,7 @@ kable(
     general = c(
       "Enriched analysis restricts both arms to biomarker-positive patients.",
       "Experimental arm: FLOX + nivolumab. Control arm: FLOX only.",
+      "The experimental cost includes the expected screening cost per identified positive (biomarker test cost divided by prevalence) in place of a single test; the control cost includes no test. The ICER is the pairwise comparison of the two arms.",
       "Costs and QALYs discounted at 4% per year."
     ),
     general_title = "Notes: "

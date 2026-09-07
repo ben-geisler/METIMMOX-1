@@ -98,97 +98,28 @@ for (i in seq_len(nrow(dsa_ranges))) {
 # ===============================================================================
 # STRUCTURAL SCENARIOS (issues #153, #154)
 # ===============================================================================
-# Deterministic scenarios that Table 1 reports as ranges. The discount rate is
-# applied to costs and QALYs together. A different time horizon re-predicts the
-# base-case survival curves on the new weekly grid from the selected joint
-# models and rebuilds the schedule vectors with the same rules as script 05
-# (drug positions are fixed calendar weeks; CT every 12 weeks and blood tests
-# every 4 weeks recur to the end of the horizon). The post-progression cost and
-# second-sequence scenarios test the two scope assumptions raised in issue #154.
+# Deterministic scenarios that Table 1 reports as ranges. The scenario code
+# (discount rate applied to costs and QALYs together; time horizon re-predicted
+# on the new weekly grid with the script-05 schedule rules; post-progression
+# cost; second sequence omitted) lives in parameter_distributions.R as
+# apply_structural_scenario(), shared with table_s8.qmd (issue #157), so the
+# scenario table and the DSA run exactly the same scenarios.
 
-build_horizon_params <- function(base_params, horizon_weeks) {
-  if (!exists("models") || is.null(models$best_fit$os) || is.null(models$best_fit$pfs)) {
-    stop("Fitted best-fit survival models are required for a time-horizon scenario.")
-  }
-  tp <- seq(0, horizon_weeks)
-  n <- length(tp)
-  preds <- generate_population_averaged_predictions(
-    models = list(os = models$best_fit$os, pfs = models$best_fit$pfs),
-    strategies_df = strategies_df,
-    data_complete = data_complete,
-    time_points = tp,
-    prevalences = setNames(strategies_df$prevalence, strategies_df$id)
-  )
-
-  p <- base_params
-  ctrl <- get_control_strategy()
-  p$p_os  <- setNames(list(preds[[ctrl]]$os),  paste0(ctrl, "_OS"))
-  p$p_pfs <- setNames(list(preds[[ctrl]]$pfs), paste0(ctrl, "_PFS"))
-  for (bm in get_biomarkers()) {
-    p$p_os[[paste0(bm, "_pos_OS")]]       <- preds[[bm]]$biomarker_positive$os
-    p$p_os[[paste0(bm, "_neg_OS")]]       <- preds[[bm]]$biomarker_negative$os
-    p$p_os[[paste0(bm, "_weighted_OS")]]  <- preds[[bm]]$os
-    p$p_pfs[[paste0(bm, "_pos_PFS")]]     <- preds[[bm]]$biomarker_positive$pfs
-    p$p_pfs[[paste0(bm, "_neg_PFS")]]     <- preds[[bm]]$biomarker_negative$pfs
-    p$p_pfs[[paste0(bm, "_weighted_PFS")]] <- preds[[bm]]$pfs
-  }
-
-  schedule <- function(positions) {
-    v <- rep(0, n)
-    v[positions[positions <= n]] <- 1
-    v
-  }
-  p$l_nivo         <- schedule(which(base_params$l_nivo == 1))
-  p$l_FLOX_exp     <- schedule(which(base_params$l_FLOX_exp == 1))
-  p$l_FLOX_control <- schedule(which(base_params$l_FLOX_control == 1))
-  p$l_CT    <- schedule(c(1, seq(13, n, by = 12)))
-  p$l_blood <- schedule(c(1, seq(5, n, by = 4)))
-  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
-  p$l_visit[1] <- 1
-  p$time_horizon <- horizon_weeks
-  p
-}
-
-# Remove the second treatment sequence: zero every administration from the given
-# schedule position onwards and rebuild the visit schedule from the remaining
-# administrations. Monitoring (CT, blood tests) is unchanged, and so is
-# survival, so the scenario bounds the cost of the assumption only.
-drop_second_sequence <- function(p, first_position = 25L) {
-  zap <- function(v) {
-    if (length(v) >= first_position) v[seq.int(first_position, length(v))] <- 0
-    v
-  }
-  p$l_nivo         <- zap(p$l_nivo)
-  p$l_FLOX_exp     <- zap(p$l_FLOX_exp)
-  p$l_FLOX_control <- zap(p$l_FLOX_control)
-  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
-  p$l_visit[1] <- 1
-  p
+horizon_models <- if (exists("models")) {
+  list(os = models$best_fit$os, pfs = models$best_fit$pfs)
+} else {
+  NULL
 }
 
 run_structural_scenario <- function(scenario_name, value) {
-  if (scenario_name == "Discount_rate") {
-    p <- dsa_basecase
-    p$dr_costs <- value
-    p$dr_effects <- value
-    return(model_fun(p))
-  }
-  if (scenario_name == "Time_horizon") {
-    horizon_weeks <- as.integer(round(value * 52))
-    p <- build_horizon_params(dsa_basecase, horizon_weeks)
-    return(model_fun(p, time_horizon = horizon_weeks))
-  }
-  if (scenario_name == "Post_progression_cost") {
-    p <- dsa_basecase
-    p$c_other_pp <- value
-    return(model_fun(p))
-  }
-  if (scenario_name == "Second_sequence") {
-    p <- dsa_basecase
-    if (value == 0) p <- drop_second_sequence(p)
-    return(model_fun(p))
-  }
-  stop("Unknown structural scenario: ", scenario_name)
+  scenario <- apply_structural_scenario(
+    scenario_name, value, dsa_basecase,
+    base_horizon = time_horizon,
+    models = horizon_models,
+    strategies_df = strategies_df,
+    data_complete = data_complete
+  )
+  model_fun(scenario$params, time_horizon = scenario$time_horizon)
 }
 
 cat("\nRunning structural scenarios...\n")

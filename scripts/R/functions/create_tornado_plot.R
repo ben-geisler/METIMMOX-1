@@ -47,10 +47,13 @@ summarise_param_ranges <- function(results_df, strategy_name = NULL,
 #'   change in incremental NMB versus the control strategy, i.e. by decision
 #'   sensitivity (issue #156).
 #' @param title Optional plot title
+#' @param drop_empty Drop parameters whose two endpoints both leave the measure
+#'   unchanged (or are NA); they would otherwise appear as empty rows. The
+#'   dropped parameters are printed (issue #157).
 #' @return The ranked tornado data (invisibly NULL when nothing to plot)
 create_tornado_plot <- function(strategy_name, results_df,
                                 measure = c("NMB_diff", "INMB_diff"),
-                                title = NULL) {
+                                title = NULL, drop_empty = TRUE) {
   measure <- match.arg(measure)
   cat("Creating tornado plot for strategy:", strategy_name, "(", measure, ")\n")
   tornado_data <- summarise_param_ranges(results_df, strategy_name, measure)
@@ -58,6 +61,13 @@ create_tornado_plot <- function(strategy_name, results_df,
 
   # Sort by range for tornado plot (descending order)
   tornado_data <- tornado_data[order(-tornado_data$Range), ]
+
+  empty <- !is.finite(tornado_data$Range) | tornado_data$Range == 0
+  if (isTRUE(drop_empty) && any(empty)) {
+    cat("Omitting", sum(empty), "parameter(s) with no effect on", measure, "for",
+        strategy_name, ":", paste(tornado_data$Parameter[empty], collapse = ", "), "\n")
+    tornado_data <- tornado_data[!empty, , drop = FALSE]
+  }
 
   if (nrow(tornado_data) == 0) {
     cat("No data available for tornado plot for", strategy_name, "\n")
@@ -92,7 +102,7 @@ create_tornado_plot <- function(strategy_name, results_df,
   )
   abline(v = 0, lty = 2)  # Add line at zero
   legend("bottomright",
-         legend = c("Min Value", "Max Value"),
+         legend = c("Parameter at lower bound", "Parameter at upper bound"),
          fill = c("blue", "red"),
          cex = 0.8)
 

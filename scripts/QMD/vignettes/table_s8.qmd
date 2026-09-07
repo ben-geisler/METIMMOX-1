@@ -16,7 +16,8 @@ execute:
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
-  funs = c("model_fun", "calculate_outcomes", "report_format"),
+  funs = c("model_fun", "calculate_outcomes", "prediction_functions",
+           "scenario_analysis", "report_format"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
                "flexsurv", "survival"),
   set_theme = FALSE
@@ -24,46 +25,113 @@ setup_report(
 ```
 
 ```{r run-scenarios, include=FALSE}
+# Every scenario in this table is defined in the pipeline (issue #157):
+#   define_scenarios()          WTP and nivolumab-price scenarios
+#                               (scenario_analysis.R; the PSA/EVPPI scenario
+#                               set run by 12_scenario_EVPPIs.R)
+#   dsa_structural_scenarios()  discount rate, time horizon, post-progression
+#                               cost, second treatment sequence
+#                               (parameter_distributions.R; run by 09_DSA.R and
+#                               reported in OWSA.qmd and Table 1), applied here
+#                               through the same apply_structural_scenario()
+#                               that 09_DSA.R uses
+#   define_utility_scenarios()  alternative utilities (scenario_analysis.R)
+# All scenarios are run deterministically on the base-case curves.
 base_params <- l_params_base
-scenario_defs <- list(
-  list(name = "Base case", params = base_params, wtp = WTP),
-  list(name = "Biosimilar pricing",
-       params = within(base_params, { c_drug_nivo <- 4641 }), wtp = WTP),
-  list(name = "WTP EUR 100,000", params = base_params, wtp = 100000),
-  list(name = "Discount rate 0%",
-       params = within(base_params, { dr_costs <- 0; dr_effects <- 0 }), wtp = WTP),
-  list(name = "Discount rate 8%",
-       params = within(base_params, { dr_costs <- 0.08; dr_effects <- 0.08 }), wtp = WTP),
-  list(name = "Literature utilities",
-       params = within(base_params, { u_np <- 0.80; u_p <- 0.65 }), wtp = WTP)
-)
 
-scenario_results <- data.frame()
-for (scenario in scenario_defs) {
-  result <- model_fun(scenario$params)
+run_scenario <- function(name, params, wtp = WTP, horizon = time_horizon,
+                         definition = "") {
+  result <- model_fun(params, time_horizon = horizon)
   result <- result[result$Strategy %in% names(strategy_labels), ]
-  nmb <- result$Effect * scenario$wtp - result$Cost
-
-  scenario_results <- rbind(scenario_results, data.frame(
-    Scenario = scenario$name,
-    WTP = scenario$wtp,
-    Strategy = strategy_labels[result$Strategy],
+  nmb <- result$Effect * wtp - result$Cost
+  data.frame(
+    Scenario = name,
+    Definition = definition,
+    WTP = wtp,
+    Strategy = unname(strategy_labels[result$Strategy]),
     Cost = result$Cost,
     QALYs = result$Effect,
     NMB = nmb,
     Optimal = ifelse(seq_along(nmb) == which.max(nmb), "Yes", ""),
     stringsAsFactors = FALSE
-  ))
+  )
 }
+
+runs <- list()
+
+# 1. WTP and nivolumab-price scenarios (the base case is the first row)
+psa_scenarios <- define_scenarios(base_wtp = WTP,
+                                  base_c_drug_nivo = base_params$c_drug_nivo)
+for (k in seq_len(nrow(psa_scenarios))) {
+  params <- base_params
+  params$c_drug_nivo <- psa_scenarios$c_drug_nivo[k]
+  runs[[length(runs) + 1]] <- run_scenario(
+    gsub("\u20ac", "EUR ", psa_scenarios$scenario_name[k]),
+    params, wtp = psa_scenarios$wtp[k],
+    definition = sprintf("WTP EUR %s per QALY; nivolumab EUR %s per administration",
+                         format(psa_scenarios$wtp[k], big.mark = ",", scientific = FALSE),
+                         format(psa_scenarios$c_drug_nivo[k], big.mark = ",", scientific = FALSE))
+  )
+}
+
+# 2. Structural scenarios, exactly as 09_DSA.R runs them
+structural <- dsa_structural_scenarios(
+  base_dr = dr,
+  base_horizon_years = time_horizon / 52,
+  base_pp_cost = base_params$c_other_pp
+)
+horizon_models <- list(os = models$best_fit$os, pfs = models$best_fit$pfs)
+for (scenario_name in names(structural)) {
+  scenario <- structural[[scenario_name]]
+  for (side in structural_scenario_sides(scenario)) {
+    value <- scenario[[side]]
+    applied <- apply_structural_scenario(
+      scenario_name, value, base_params,
+      base_horizon = time_horizon,
+      models = horizon_models,
+      strategies_df = strategies_df,
+      data_complete = data_complete
+    )
+    runs[[length(runs) + 1]] <- run_scenario(
+      structural_scenario_label(scenario_name, value),
+      applied$params, horizon = applied$time_horizon,
+      definition = sprintf("%s: %s %s (base case %s %s)", scenario$label,
+                           format(value), scenario$unit,
+                           format(scenario$base), scenario$unit)
+    )
+  }
+}
+
+# 3. Alternative utilities
+utility_scenarios <- define_utility_scenarios()
+for (k in seq_len(nrow(utility_scenarios))) {
+  params <- base_params
+  params$u_np <- utility_scenarios$u_np[k]
+  params$u_p <- utility_scenarios$u_p[k]
+  params$u_decrement <- params$u_np - params$u_p
+  runs[[length(runs) + 1]] <- run_scenario(
+    utility_scenarios$scenario_name[k], params,
+    definition = sprintf("u_np %.2f, u_p %.2f (base case %.2f, %.2f); source: %s",
+                         utility_scenarios$u_np[k], utility_scenarios$u_p[k],
+                         base_params$u_np, base_params$u_p,
+                         utility_scenarios$source[k])
+  )
+}
+
+scenario_results <- do.call(rbind, runs)
+utility_source_note <- paste(utility_scenarios$source, collapse = "; ")
 ```
 
 ```{r display-table}
 display_df <- scenario_results %>%
-  mutate(
+  transmute(
+    Scenario,
     WTP = scales::dollar(WTP, prefix = "EUR ", accuracy = 1),
+    Strategy,
     Cost = scales::dollar(Cost, prefix = "EUR ", accuracy = 1),
     QALYs = sprintf("%.2f", QALYs),
-    NMB = scales::dollar(NMB, prefix = "EUR ", accuracy = 1)
+    NMB = scales::dollar(NMB, prefix = "EUR ", accuracy = 1),
+    Optimal
   )
 
 kable(
@@ -74,15 +142,31 @@ kable(
 ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 11) %>%
-  pack_rows(index = table(factor(display_df$Scenario, levels = unique(display_df$Scenario)))) %>%
+  pack_rows(index = table(factor(display_df$Scenario,
+                                 levels = unique(display_df$Scenario)))) %>%
   footnote(
     general = c(
-      paste0("Base case WTP: EUR ", format(WTP, big.mark = ","), "/QALY."),
-      "Biosimilar pricing sets nivolumab to EUR 4,641 per administration.",
+      paste0("Base case WTP: EUR ", format(WTP, big.mark = ","), "/QALY; base-case discount rate ",
+             sprintf("%g%%", 100 * dr), "; base-case time horizon ",
+             sprintf("%g years", time_horizon / 52), "."),
+      "Every scenario is a pipeline definition: WTP and nivolumab-price scenarios from define_scenarios() (scenario_analysis.R), structural scenarios from dsa_structural_scenarios() applied with apply_structural_scenario() (parameter_distributions.R, shared with 09_DSA.R), alternative utilities from define_utility_scenarios() (scenario_analysis.R). All are deterministic runs on the base-case survival curves.",
+      "Biosimilar (decreased) nivolumab pricing sets nivolumab to EUR 4,641 per administration.",
+      paste0("Literature utilities: ", utility_source_note, "."),
       "Optimal strategy is the highest-NMB strategy within each scenario."
     ),
     general_title = "Notes: "
   )
+```
+
+```{r definitions-table}
+definitions_df <- scenario_results %>%
+  distinct(Scenario, Definition)
+
+kable(definitions_df,
+      caption = "Scenario definitions",
+      format = "html", align = c("l", "l")) %>%
+  kable_styling(bootstrap_options = c("striped", "condensed"),
+                full_width = FALSE, font_size = 11)
 ```
 
 ```{r save-table, include=FALSE}

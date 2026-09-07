@@ -23,12 +23,16 @@ execute:
 # economic pipeline deliberately EXCLUDES) only to illustrate the poster's
 # methodological point. Does not modify the main pipeline.
 #
-# Outputs: figs/poster_forest.png, tables/poster_cea.csv,
-#          tables/poster_forest_data.csv
+# Outputs: figs/poster_forest.png, figs/poster_ceac.png, tables/poster_cea.csv,
+#          tables/poster_forest_data.csv, tables/poster_ceac_data.csv
+#
+# Script 06 is sourced for the sampling cache (joint-model coefficient draws)
+# and sample_survival_coefficients(), which the CEAC section reuses for the
+# single-biomarker models (issue #157).
 # ==============================================================================
 source(here::here("scripts/R/functions/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "04", "05"),
+  sources = c("02", "03", "04", "05", "06"),
   funs = c("model_fun", "calculate_outcomes", "prediction_functions",
            "report_format"),
   packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
@@ -189,6 +193,16 @@ m_os3  <- flexsurvreg(Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb
 m_pfs3 <- flexsurvreg(Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx, data = d3, dist = dist_for$PFS)
 
 prev <- sapply(bms, function(b) mean(as.numeric(as.character(d3[[b]]))))
+# TLR is read on treatment at the first CT (about week 8-9) and its prevalence
+# differs by arm. The share relevant to a TLR-guided strategy is the share of
+# experimental-arm patients who respond, so the pooled value is replaced by
+# the experimental-arm value (issue #157). CRP and TMB/BRAF keep the pooled
+# value, as in the economic model.
+exp_rx3 <- levels(d3$Rx)[2]
+tlr_num3 <- as.numeric(as.character(d3$tlr))
+n_exp3 <- sum(d3$Rx == exp_rx3);  tlr_pos_exp3 <- sum(tlr_num3[d3$Rx == exp_rx3])
+n_ctrl3 <- sum(d3$Rx != exp_rx3); tlr_pos_ctrl3 <- sum(tlr_num3[d3$Rx != exp_rx3])
+prev[["tlr"]] <- tlr_pos_exp3 / n_exp3
 strategies_df3 <- data.frame(id = c("control", bms),
                              prevalence = c(1, prev[bms]), stringsAsFactors = FALSE)
 
@@ -212,6 +226,9 @@ l_params_base3$p_pfs <- p_pfs3
 l_params_base3$p_crp      <- prev[["crp"]]
 l_params_base3$p_tlr      <- prev[["tlr"]]
 l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
+# Simplification (stated in the table notes): TLR is treated as if it were
+# known at treatment selection, at no separate test cost, because it is read
+# from the first on-treatment CT that is already in the monitoring schedule.
 l_params_base3$c_test_TLR <- 0
 l_params_base3 <- sync_biomarker_test_costs(l_params_base3)
 
@@ -223,6 +240,17 @@ cea_tbl <- as.data.frame(icer3) %>%
   mutate(Strategy = label_strategy[as.character(Strategy)],
          NMB = Effect * WTP - Cost)
 write.csv(cea_tbl, here("tables", "poster_cea.csv"), row.names = FALSE)
+
+# Conclusion computed from the dampack frontier status, not typed (issue #157)
+ctrl_label3 <- label_strategy[[get_control_strategy()]]
+guided_status3 <- cea_tbl$Status[cea_tbl$Strategy != ctrl_label3]
+frontier3 <- cea_tbl$Strategy[cea_tbl$Status == "ND"]
+cea_conclusion <- if (all(guided_status3 %in% c("D", "ED"))) {
+  "All guided strategies are dominated or extendedly dominated by standard care."
+} else {
+  sprintf("Strategies on the cost-effectiveness frontier: %s.",
+          paste(frontier3, collapse = ", "))
+}
 })
 ```
 
@@ -246,11 +274,14 @@ kable(cea_display,
   footnote(general = c(
     "Comprehensive joint model: OS/PFS ~ Age + sex + Rx + crp*Rx + tlr*Rx + tmb_braf*Rx.",
     "TLR is a post-randomization mediator, included here only to illustrate the poster point.",
-    sprintf("Prevalence: CRP %.0f%%, TLR %.0f%%, TMB/BRAF %.0f%%.",
-            100*prev[["crp"]], 100*prev[["tlr"]], 100*prev[["tmb_braf"]]),
-    sprintf("Utilities: %s (UTILITY_SOURCE = %d). All guided strategies are dominated by standard care.",
+    sprintf("Prevalence in the poster's %d-patient TLR-complete cohort: CRP %.1f%% (arms pooled), TLR %.1f%% (experimental arm, %d/%d; control arm %d/%d), TMB/BRAF %.1f%% (arms pooled). The economic model uses the full complete-case cohort (TMB/BRAF %.1f%%).",
+            n3, 100*prev[["crp"]], 100*prev[["tlr"]], tlr_pos_exp3, n_exp3,
+            tlr_pos_ctrl3, n_ctrl3, 100*prev[["tmb_braf"]],
+            100*strategies_df$prevalence[strategies_df$id == "tmb_braf"]),
+    "Simplification: TLR is modelled as if it were known at treatment selection, at no separate test cost (it is read from the first on-treatment CT, which is in the monitoring schedule). In the trial it is observed only after two nivolumab doses; a faithful TLR strategy would be a run-in design that the partitioned survival model cannot represent, which is one reason TLR is excluded from the economic model.",
+    sprintf("Utilities: %s (UTILITY_SOURCE = %d). %s",
             if (resolve_util_label() == "correct") "CORRECT trial" else "METIMMOX IPD",
-            UTILITY_SOURCE)),
+            UTILITY_SOURCE, cea_conclusion)),
     general_title = "Notes: ")
 ```
 
@@ -260,64 +291,77 @@ kable(cea_display,
 # Two CEAC panels for the two PRE-IMMUNOTHERAPY economic biomarkers (CRP, TMB/BRAF):
 #   Panel A  "one biomarker"  - each guided strategy from its OWN single-biomarker model
 #   Panel B  "two biomarkers" - both guided strategies from the joint model
-# Same control model and the SAME cached economic-parameter draws are used in both
-# panels, so the only thing that differs is single vs joint survival modelling.
-# Survival uncertainty is propagated by a parametric bootstrap (MVN draws on the
-# flexsurv coefficient vector). Shown at biosimilar nivolumab pricing, where the
-# decision is a close call and the modelling choice is economically visible (at
-# list price the two panels are essentially identical). The poster-only TLR
-# override above has already restored the canonical economic configuration.
+# The SAME cached economic-parameter draws are used in both panels, so the only
+# thing that differs is single vs joint survival modelling.
+#
+# Survival uncertainty follows the pipeline (issue #156, reused here per issue
+# #157): multivariate-normal coefficient draws around each fitted model, OS and
+# PFS drawn independently. The joint-model draws ARE the repository sampling
+# cache, aligned to the cached economic-parameter draws through model_idx, so
+# panel B is the repository PSA at biosimilar pricing. The single-biomarker
+# models are drawn with the same sampler (sample_survival_coefficients() from
+# 06_sampling.R). The control curve is the joint model with Rx = control in
+# BOTH panels (issue #151), so the panels differ only in the guided-strategy
+# curves. Curves are predicted with the pipeline's predict_pop_avg() on the
+# materialised sampled models and each draw goes through model_fun() in PSA
+# mode, which caps a PFS > OS crossing instead of aborting (the deterministic
+# path stops on any crossing; with independent OS and PFS draws about half of
+# the draws cross somewhere on the grid, as in the repository PSA).
+#
+# Shown at biosimilar nivolumab pricing, where the decision is a close call and
+# the modelling choice is economically visible. The poster-only TLR override
+# above has already restored the canonical economic configuration.
 
 dc <- data_complete
 times_c <- seq(0, time_horizon)
 ctrl_rx <- levels(dc$Rx)[1]; exp_rx <- levels(dc$Rx)[2]
-fitc <- function(lhs, rhs, dist) flexsurvreg(as.formula(paste(lhs, rhs)), data = dc, dist = dist)
-mC <- list(
-  ctrl_os  = fitc("Surv(OSwk,Death)","~ Age + sex",dist_for$OS),
-  ctrl_pfs = fitc("Surv(PFSwk,Progression)","~ Age + sex",dist_for$PFS),
-  joint_os = fitc("Surv(OSwk,Death)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",dist_for$OS),
-  joint_pfs= fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",dist_for$PFS),
-  crp_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*crp",dist_for$OS),
-  crp_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*crp",dist_for$PFS),
-  tmb_os   = fitc("Surv(OSwk,Death)","~ Age + sex + Rx*tmb_braf",dist_for$OS),
-  tmb_pfs  = fitc("Surv(PFSwk,Progression)","~ Age + sex + Rx*tmb_braf",dist_for$PFS))
-
-Xof <- function(rhs, nd) model.matrix(as.formula(rhs), data = nd)
 set_rx <- function(nd, rx) { nd$Rx <- factor(rx, levels = levels(dc$Rx)); nd }
 bm_sub <- function(bm, val) dc[as.numeric(as.character(dc[[bm]])) == val, ]
-rj <- "~ Age + sex + Rx + crp*Rx + tmb_braf*Rx"
-XC <- list(ctrl = Xof("~ Age + sex", set_rx(dc, ctrl_rx)),
-  j_crp_p = Xof(rj, set_rx(bm_sub("crp",1), exp_rx)),       j_crp_n = Xof(rj, set_rx(bm_sub("crp",0), ctrl_rx)),
-  j_tmb_p = Xof(rj, set_rx(bm_sub("tmb_braf",1), exp_rx)),  j_tmb_n = Xof(rj, set_rx(bm_sub("tmb_braf",0), ctrl_rx)),
-  s_crp_p = Xof("~ Age + sex + Rx*crp", set_rx(bm_sub("crp",1), exp_rx)),
-  s_crp_n = Xof("~ Age + sex + Rx*crp", set_rx(bm_sub("crp",0), ctrl_rx)),
-  s_tmb_p = Xof("~ Age + sex + Rx*tmb_braf", set_rx(bm_sub("tmb_braf",1), exp_rx)),
-  s_tmb_n = Xof("~ Age + sex + Rx*tmb_braf", set_rx(bm_sub("tmb_braf",0), ctrl_rx)))
+newdata <- list(
+  ctrl  = set_rx(dc, ctrl_rx),
+  crp_p = set_rx(bm_sub("crp", 1), exp_rx),      crp_n = set_rx(bm_sub("crp", 0), ctrl_rx),
+  tmb_p = set_rx(bm_sub("tmb_braf", 1), exp_rx), tmb_n = set_rx(bm_sub("tmb_braf", 0), ctrl_rx))
 
-curve_draw <- function(pars, Xm, dist) {
-  cn <- colnames(Xm)
-  # flexsurv location / ancillary parameter per family (coef() is on the log scale
-  # for positive parameters): Weibull scale/shape, log-normal meanlog/sdlog,
-  # gamma rate/shape (covariates act on the log rate).
-  loc <- switch(dist, weibull = "scale", lognormal = "meanlog", gamma = "rate",
-                stop("curve_draw(): unsupported distribution ", dist))
-  anc <- switch(dist, weibull = "shape", lognormal = "sdlog", gamma = "shape")
-  beta <- setNames(numeric(length(cn)), cn)
-  beta["(Intercept)"] <- pars[[loc]]; oth <- setdiff(cn, "(Intercept)"); beta[oth] <- pars[oth]
-  lp <- as.numeric(Xm %*% beta); a <- exp(pars[[anc]])
-  M <- switch(dist,
-    weibull   = exp(-outer(times_c, exp(lp), function(t,s)(t/s)^a)),
-    lognormal = 1 - outer(times_c, lp, function(t,mu) pnorm((log(t)-mu)/a)),
-    gamma     = 1 - outer(times_c, exp(lp), function(t,r) pgamma(t, shape = a, rate = r)))
-  M[1, ] <- 1; rowMeans(M)
-}
-draw_pars <- function(mod) MASS::mvrnorm(1, coef(mod), vcov(mod))
-
+N <- 1000
 psa_params <- readRDS(psa_params_path())
-NIVO_FACTOR <- 4641 / 13923            # biosimilar nivolumab price (repo biosimilar scenario)
-N <- 1000; set.seed(2026); idx <- sample(nrow(psa_params), N)
+if (is.null(psa_params$model_idx)) stop("psa_params has no model_idx column; regenerate the PSA cache (10_PSA.R, issue #156)")
+set.seed(2026); idx <- sample(nrow(psa_params), N)
 
-run_panel <- function(d_row, dp, panel) {
+# Joint model: the repository sampling cache (06_sampling.R)
+joint_cache <- get_joint_sampling_models(sampling_models)
+stopifnot(identical(joint_cache$dist_os, dist_for$OS), identical(joint_cache$dist_pfs, dist_for$PFS))
+# Single-biomarker models: same sampler, same distributions, N draws each
+single_draws <- list(
+  crp = sample_survival_coefficients(
+    Surv(OSwk, Death) ~ Age + sex + Rx * crp,
+    Surv(PFSwk, Progression) ~ Age + sex + Rx * crp,
+    data = dc, dist_os = dist_for$OS, dist_pfs = dist_for$PFS,
+    n_samples = N, seed = 2027L),
+  tmb_braf = sample_survival_coefficients(
+    Surv(OSwk, Death) ~ Age + sex + Rx * tmb_braf,
+    Surv(PFSwk, Progression) ~ Age + sex + Rx * tmb_braf,
+    data = dc, dist_os = dist_for$OS, dist_pfs = dist_for$PFS,
+    n_samples = N, seed = 2028L))
+
+NIVO_FACTOR <- 4641 / 13923            # biosimilar nivolumab price (repo biosimilar scenario)
+
+curve <- function(sm, outcome, nd) {
+  s <- predict_pop_avg(sm[[outcome]]$model, nd, times_c)
+  if (is.null(s)) stop("Prediction failed in the poster CEAC draw")
+  s[1] <- 1
+  s
+}
+guided_curves <- function(sm_crp, sm_tmb) list(
+  os = list(crp_pos_OS = curve(sm_crp, "os", newdata$crp_p),
+            crp_neg_OS = curve(sm_crp, "os", newdata$crp_n),
+            tmb_braf_pos_OS = curve(sm_tmb, "os", newdata$tmb_p),
+            tmb_braf_neg_OS = curve(sm_tmb, "os", newdata$tmb_n)),
+  pfs = list(crp_pos_PFS = curve(sm_crp, "pfs", newdata$crp_p),
+             crp_neg_PFS = curve(sm_crp, "pfs", newdata$crp_n),
+             tmb_braf_pos_PFS = curve(sm_tmb, "pfs", newdata$tmb_p),
+             tmb_braf_neg_PFS = curve(sm_tmb, "pfs", newdata$tmb_n)))
+
+run_panel <- function(d_row, ctrl, guided) {
   p <- l_params_base
   # Take whatever the PSA cache actually sampled. Unit prices are fixed in the
   # PSA since issue #154 and keep their base-case values; a hardcoded name list
@@ -325,43 +369,55 @@ run_panel <- function(d_row, dp, panel) {
   for (nm in intersect(names(d_row), names(l_params_base))) p[[nm]] <- d_row[[nm]]
   p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
-  oc <- curve_draw(dp$ctrl_os, XC$ctrl, dist_for$OS); pc <- curve_draw(dp$ctrl_pfs, XC$ctrl, dist_for$PFS)
-  if (panel == "joint") { co<-"joint_os";cf<-"joint_pfs";to<-"joint_os";tf<-"joint_pfs"
-    Xcp<-XC$j_crp_p;Xcn<-XC$j_crp_n;Xtp<-XC$j_tmb_p;Xtn<-XC$j_tmb_n
-  } else { co<-"crp_os";cf<-"crp_pfs";to<-"tmb_os";tf<-"tmb_pfs"
-    Xcp<-XC$s_crp_p;Xcn<-XC$s_crp_n;Xtp<-XC$s_tmb_p;Xtn<-XC$s_tmb_n }
-  p$p_os <- list(control_OS=oc, crp_pos_OS=curve_draw(dp[[co]],Xcp,dist_for$OS),
-                 crp_neg_OS=curve_draw(dp[[co]],Xcn,dist_for$OS),
-                 tmb_braf_pos_OS=curve_draw(dp[[to]],Xtp,dist_for$OS),
-                 tmb_braf_neg_OS=curve_draw(dp[[to]],Xtn,dist_for$OS))
-  p$p_pfs <- list(control_PFS=pc, crp_pos_PFS=curve_draw(dp[[cf]],Xcp,dist_for$PFS),
-                  crp_neg_PFS=curve_draw(dp[[cf]],Xcn,dist_for$PFS),
-                  tmb_braf_pos_PFS=curve_draw(dp[[tf]],Xtp,dist_for$PFS),
-                  tmb_braf_neg_PFS=curve_draw(dp[[tf]],Xtn,dist_for$PFS))
-  # Bootstrap draws may occasionally let PFS exceed OS; PSA mode (no sim_idx)
-  # uses the supplied curves and caps the crossing instead of aborting.
+  p$p_os  <- c(list(control_OS = ctrl$os), guided$os)
+  p$p_pfs <- c(list(control_PFS = ctrl$pfs), guided$pfs)
+  # PSA mode without sim_idx uses the supplied curves and caps a PFS > OS
+  # crossing instead of aborting.
   suppressWarnings(model_fun(p, determpsa = "psa"))
 }
 
 cj <- ej <- cs <- es <- matrix(NA, N, 3, dimnames = list(NULL, c("control","crp","tmb_braf")))
+t_start <- Sys.time()
 for (i in seq_len(N)) {
-  dr <- psa_params[idx[i], ]; dp <- lapply(mC, draw_pars)
-  a <- run_panel(dr, dp, "joint");  cj[i,] <- a$Cost; ej[i,] <- a$Effect
-  b <- run_panel(dr, dp, "single"); cs[i,] <- b$Cost; es[i,] <- b$Effect
+  r <- idx[i]
+  sm_joint <- sampled_survival_models(joint_cache, psa_params$model_idx[r])
+  sm_crp   <- sampled_survival_models(single_draws$crp, i)
+  sm_tmb   <- sampled_survival_models(single_draws$tmb_braf, i)
+  ctrl <- list(os = curve(sm_joint, "os", newdata$ctrl), pfs = curve(sm_joint, "pfs", newdata$ctrl))
+  a <- run_panel(psa_params[r, ], ctrl, guided_curves(sm_joint, sm_joint)); cj[i,] <- a$Cost; ej[i,] <- a$Effect
+  b <- run_panel(psa_params[r, ], ctrl, guided_curves(sm_crp, sm_tmb));     cs[i,] <- b$Cost; es[i,] <- b$Effect
+  if (i %% 100 == 0) cat(sprintf("  CEAC draw %d/%d (%.1f min)\n", i, N,
+                                 as.numeric(difftime(Sys.time(), t_start, units = "mins"))))
 }
 mk_psa <- function(co, ef) dampack::make_psa_obj(as.data.frame(co), as.data.frame(ef),
             parameters = NULL, strategies = c("control","crp","tmb_braf"))
-wtp_range <- seq(0, 150000, by = 2000)
-c1 <- dampack::ceac(wtp_range, mk_psa(cs, es)); c1$Panel <- "One biomarker (modelled in isolation)"
-c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- "Two biomarkers (joint, correlation-adjusted)"
+panel_single <- "One biomarker (modelled in isolation)"
+panel_joint  <- "Two biomarkers (joint, correlation-adjusted)"
+wtp_range <- sort(unique(c(seq(0, 150000, by = 2000), WTP)))   # base-case WTP is a grid point
+c1 <- dampack::ceac(wtp_range, mk_psa(cs, es)); c1$Panel <- panel_single
+c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- panel_joint
 ceac_df <- rbind(as.data.frame(c1), as.data.frame(c2))
 names(ceac_df)[names(ceac_df) == "Proportion"] <- "Probability"
 ceac_df$Strategy <- strategy_label(as.character(ceac_df$Strategy))
 write.csv(ceac_df, here("tables", "poster_ceac_data.csv"), row.names = FALSE)
+
+# Caption computed from the curves at the base-case WTP (issue #157)
+soc_lab <- strategy_label("control"); crp_lab <- strategy_label("crp"); tmb_lab <- strategy_label("tmb_braf")
+at_wtp <- ceac_df[ceac_df$WTP == WTP, ]
+pct <- function(panel, strat) sprintf("%.0f%%", 100 * at_wtp$Probability[at_wtp$Panel == panel & at_wtp$Strategy == strat])
+ceac_caption <- sprintf(paste(
+  "Cost-effectiveness acceptability curves at biosimilar nivolumab pricing (EUR 4,641 per administration).",
+  "Left: each biomarker-guided strategy from its own single-biomarker survival model.",
+  "Right: both from the joint, correlation-adjusted economic model.",
+  "The standard-of-care curve is the joint model with treatment set to control in both panels, so the panels differ only in the guided-strategy curves.",
+  "At EUR %s per QALY (dotted line) the probability of being optimal is: standard of care %s (single) vs %s (joint); CRP-guided %s vs %s; TMB/BRAF-guided %s vs %s.",
+  "Survival uncertainty: multivariate-normal coefficient draws (n = %d; joint model from the repository sampling cache, single-biomarker models with the same sampler), OS and PFS drawn independently as in the repository PSA; PFS > OS crossings are capped in PSA mode."),
+  format(WTP, big.mark = ","), pct(panel_single, soc_lab), pct(panel_joint, soc_lab),
+  pct(panel_single, crp_lab), pct(panel_joint, crp_lab), pct(panel_single, tmb_lab), pct(panel_joint, tmb_lab), N)
 ```
 
 ```{r ceac-plot, fig.width=11, fig.height=5}
-#| fig-cap: "Cost-effectiveness acceptability curves at biosimilar nivolumab pricing. Left: each biomarker-guided strategy estimated from its own single-biomarker survival model. Right: both estimated from the joint, correlation-adjusted model. Standard of care remains the most probable optimal strategy in both panels, but single-biomarker modelling inflates the apparent cost-effectiveness of TMB/BRAF-guided treatment (higher probability at every threshold); CRP-guided is essentially unchanged. At list price (not shown) the two panels are indistinguishable. Dotted line = EUR 51,000/QALY."
+#| fig-cap: !expr ceac_caption
 p_ceac <- ggplot(ceac_df, aes(WTP, Probability, colour = Strategy)) +
   geom_vline(xintercept = WTP, linetype = "dotted", colour = "grey40") +
   geom_line(linewidth = 0.9) +

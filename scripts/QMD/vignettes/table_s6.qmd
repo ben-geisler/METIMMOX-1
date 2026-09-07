@@ -37,6 +37,7 @@ display_df <- enriched_comparison %>%
     Enr_Effect = sprintf("%.3f", Enr_Effect),
     Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
     Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_Screening = format_eur(Enr_Screening_Cost),
     Enr_ICER = format_icer(Enr_ICER, Enr_Status),
     Pct_Change = ifelse(is.na(Pct_Change), "--", sprintf("%+.1f%%", Pct_Change))
   )
@@ -52,6 +53,7 @@ kable(
   footnote(
     general = c(
       "All ICERs are pairwise comparisons against standard of care. Base case compares each guided strategy with overall standard care; enriched analysis compares biomarker-positive experimental and biomarker-positive control arms.",
+      "Enr_Screening is the expected screening cost per identified positive (biomarker test cost divided by the canonical prevalence); it is included in Enr_Cost in place of a single test, while Enr_Ctrl_Cost includes no test.",
       "Base_Frontier is the dampack efficiency-frontier status of the guided strategy among the three base-case strategies. A frontier-dominated strategy (more costly and less effective than the other guided strategy) still has a finite pairwise ICER; the percentage change is shown only for frontier strategies with finite, positive pairwise ICERs in both analyses."
     ),
     general_title = "Notes: "

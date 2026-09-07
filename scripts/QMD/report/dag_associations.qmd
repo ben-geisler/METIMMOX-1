@@ -317,6 +317,25 @@ covariate_sig <- sig_items(c("Age -> TMB_BRAF", "Sex -> TMB_BRAF", "Age -> OS"))
 
 list_or_none <- function(x) if (length(x) == 0) "none" else paste(x, collapse = "; ")
 
+# Sentences for the Conclusion, computed here so that the counts and the named
+# edges cannot drift from the tables (issue #157).
+interaction_sig_text <- if (length(interaction_sig) == 0) {
+  "none is below p = 0.05 in this small sample"
+} else {
+  paste0(paste0("`", interaction_sig, "`", collapse = " and "),
+         if (length(interaction_sig) == 1) " is the only one" else " are the ones",
+         " below p = 0.05 in this small sample, and ",
+         if (length(interaction_sig) == 1) "it" else "they",
+         " should be read together with the adjusted interaction estimates in the clinical effectiveness report")
+}
+ci_violation_summary <- if (length(ci_violations) == 0) {
+  "no conditional-independence violation"
+} else {
+  paste0(length(ci_violations), " conditional-independence violation",
+         if (length(ci_violations) > 1) "s" else "",
+         " (", paste(ci_violations, collapse = "; "), ")")
+}
+
 if (length(supported_edges) == 0) {
   supported_edge_text <- "No direct edge reached p < 0.05."
 } else {
@@ -379,12 +398,12 @@ cat(paste0(
 
 # Conclusion
 
-This report adds a data-facing complement to the causal DAG by testing, from the same `dag` object that `dag.qmd` renders, every observable edge and every implied conditional independence of the graph. The prognostic biomarker edges and the two disease-course edges, now estimated with a time-dependent progression indicator and a landmark cohort rather than tautological baseline covariates, are where the empirical signal is clearest. The direct treatment edges are uncertain; of the interaction edges, `TxCRP -> PFS` is the only one below p = 0.05 in this small sample, and it should be read together with the adjusted interaction estimates in the clinical effectiveness report.
+This report adds a data-facing complement to the causal DAG by testing, from the same `dag` object that `dag.qmd` renders, every observable edge and every implied conditional independence of the graph. The prognostic biomarker edges and the two disease-course edges, now estimated with a time-dependent progression indicator and a landmark cohort rather than tautological baseline covariates, are where the empirical signal is clearest. The direct treatment edges are uncertain; of the interaction edges, `r interaction_sig_text`.
 
-The data also surface two CRP-related tensions with the assumed graph, both traceable to the chance arm imbalance in week-4 CRP. The most defensible takeaway is therefore that the DAG captures much of the prognostic structure in the data, while the CRP-related balance and interaction structure may need refinement or stronger justification in future versions.
+The data also surface `r ci_violation_summary` against the assumed graph, traceable to the chance arm imbalance in week-4 CRP. The most defensible takeaway is therefore that the DAG captures much of the prognostic structure in the data, while the CRP-related balance and interaction structure may need refinement or stronger justification in future versions.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 1.2

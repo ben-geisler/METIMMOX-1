@@ -85,7 +85,7 @@ result <- model_fun(l_params_base, determpsa = "det", return_traces = FALSE)
 #### Common Function Dependencies
 - **model_fun.R** requires:
   - `calculate_outcomes.R` (cost/QALY calculations)
-  - `prediction_functions.R` (for PSA mode with resampled models)
+  - `prediction_functions.R` (population-averaged survival predictions; the draw-specific PSA predictions come from `generate_psa_population_averaged_predictions()` in script 06)
 
 - **PSA/EVPPI scripts** (12, 13) require:
   - `model_fun.R`
@@ -96,7 +96,7 @@ result <- model_fun(l_params_base, determpsa = "det", return_traces = FALSE)
 ```bash
 # Test a fix by sourcing all dependencies
 "C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" -e "
-  setwd('c:/Users/benjampg/git/METIMMOX-1');
+  setwd(here::here());  # run from the repository root
   source('scripts/R/analysis/02_setup_and_global_variables.R');
   source('scripts/R/analysis/03_biomarker_strategies.R');
   source('scripts/R/analysis/04_parametric_survival_analysis.R');
@@ -125,7 +125,7 @@ source("scripts/R/analysis/03_biomarker_strategies.R")
 source("scripts/R/analysis/04_parametric_survival_analysis.R")
 source("scripts/R/analysis/05_basecase_input_parameters.R")
 
-# Survival resampling (generates cache - takes time on first run)
+# Survival coefficient draws (generates the fingerprint-checked sampling cache; seconds)
 source("scripts/R/analysis/06_sampling.R")
 
 # Model execution
@@ -298,7 +298,7 @@ The model uses different approaches for base case vs PSA, both properly accounti
 
 **Base Case** (Issue #69): Population averaging across all patients using `generate_population_averaged_predictions()` in [prediction_functions.R](scripts/R/functions/prediction_functions.R:199-340). Predicts for all patients using their actual age, sex, and biomarker values, then averages.
 
-**PSA** (Issue #70): Second-order Monte Carlo sampling one patient per iteration. See detailed methodology in [model_fun.R](scripts/R/functions/model_fun.R:17-148) comments. Over 5000 iterations, the distribution of sampled patients correctly propagates uncertainty from patient heterogeneity.
+**PSA** (issues #70, #156): second-order Monte Carlo over the survival-model coefficients, with the same population averaging as the base case inside every draw. `06_sampling.R` (`sample_survival_coefficients()`) draws `n_samples` coefficient vectors for the joint OS model and for the joint PFS model from a multivariate normal N(estimate, covariance) on flexsurvreg's optimisation scale. PSA draw `sim_idx` takes row `sim_idx` of both draw matrices, rebuilds the two flexsurvreg objects (`sampled_survival_models()`), and `model_fun()` predicts every patient of `data_complete` (control: all patients with `Rx = control`; biomarker-positive: the positives with `Rx = experimental`; biomarker-negative: the negatives with `Rx = control`) and averages the predicted curves (`generate_psa_population_averaged_predictions()` in script 06). Parameter uncertainty therefore varies between draws while patient heterogeneity is integrated out within each draw, so EVPI measures the value of reducing parameter uncertainty. No patient is sampled per iteration; the earlier "one patient per iteration" description and the nonparametric bootstrap it referred to no longer apply (see "Survival Parameter Sampling" below).
 
 Both approaches are methodologically valid for their respective analytical purposes (deterministic point estimates vs. probabilistic uncertainty quantification).
 
@@ -323,7 +323,7 @@ model_fun(params, time_horizon = 520, cl = 1/52,
 
 **Parameters**:
 - `determpsa`: "det" for deterministic, "psa" for probabilistic
-- `sim_idx`: Resampled model index (required for PSA mode)
+- `sim_idx`: Coefficient-draw index, the row of the OS and PFS draw matrices in the sampling cache (required for PSA mode)
 - `return_traces`: If TRUE, returns state occupancy over time
 
 **PSA Mode Behavior** (lines 17-148):
@@ -423,8 +423,8 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[model_fun.R](scripts/R/functions/model_fun.R)**: Main partitioned survival model with PSA support
 - **[calculate_outcomes.R](scripts/R/functions/calculate_outcomes.R)**: Calculates QALYs and costs from state occupancy traces
 - **[prediction_functions.R](scripts/R/functions/prediction_functions.R)**: Generate survival predictions from fitted models; sampling-cache accessors `get_joint_sampling_models()`, `sampled_survival_models()` and `build_sampled_flexsurv_model()` (issue #156)
-- **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`, `calculate_pairwise_icers()`, `frontier_status()`, `frontier_label()`). Renamed from the legacy `multi_model_cea.R`. **Dominance conventions (issue #153)**: `CEA.qmd` reports dampack *frontier* ICERs (status ND/D/ED across all three strategies). The biosimilar, enriched-population and Table S6 outputs report *pairwise* ICERs of each guided strategy versus standard of care (`Status` values "Reference", "Pairwise ICER vs SoC", "Dominated by SoC", "Cost-saving vs SoC") and always print the dampack `Frontier_Status` alongside, with captions stating "pairwise versus standard of care". A strategy can be frontier-dominated (more costly and less effective than the other guided strategy) yet have a finite pairwise ICER; percentage changes between pairwise ICERs are only reported for frontier strategies with finite, positive ICERs in both analyses (`Pct_Change` in `08b_enriched_population_analysis.R`).
-- **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`, `parameter_group_lookup()`, `apply_derived_psa_parameters()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`, `structural_scenario_sides()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years, post-progression cost EUR 5,000 per quarter, second sequence omitted). The spec carries `psa`, `dsa` and `derived` flags, so PSA membership and DSA membership are no longer the same set: unit prices are `psa = FALSE, dsa = TRUE`, and `u_p` is `derived` (issue #154). `build_dsa_ranges()` takes the spec, not the distribution list. `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). A time-horizon scenario re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules (`build_horizon_params()` in `09_DSA.R`); scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
+- **[cea_helpers.R](scripts/R/functions/cea_helpers.R)**: Single-model CEA execution and summary helpers wrapping dampack (`run_basecase()`, `load_psa_cache()`, `create_ceac_plot()`, `create_psa_summary_table()`, `calculate_pairwise_icers()`, `frontier_status()`, `frontier_label()`). Renamed from the legacy `multi_model_cea.R`. **Reports stop on missing or stale caches (issue #157)**: `validate_psa_cache()` mirrors the acceptance checks of `10_PSA.R` (strategy set, requested `n_sim`, failed-draw policy, `model_idx`, sampling fingerprint, full `psa_cache_fingerprint()` with the differing input named); `load_psa_cache()` and `load_psa_params_cache()` take `required = TRUE` plus the expected fingerprint, strategies, `n_sim`, seed and sampling fingerprint, and `CEA.qmd` and `EVPPIs.qmd` pass them (both source script 06 to compute the fingerprint) instead of rendering "--" placeholders; `EVPPIs.qmd` also stops when the EVPPI cache was built from a different PSA fingerprint. Callers without expectations (snapshot script, tests, `table_5.qmd`) behave as before. **Dominance conventions (issue #153)**: `CEA.qmd` reports dampack *frontier* ICERs (status ND/D/ED across all three strategies). The biosimilar, enriched-population and Table S6 outputs report *pairwise* ICERs of each guided strategy versus standard of care (`Status` values "Reference", "Pairwise ICER vs SoC", "Dominated by SoC", "Cost-saving vs SoC") and always print the dampack `Frontier_Status` alongside, with captions stating "pairwise versus standard of care". A strategy can be frontier-dominated (more costly and less effective than the other guided strategy) yet have a finite pairwise ICER; percentage changes between pairwise ICERs are only reported for frontier strategies with finite, positive ICERs in both analyses (`Pct_Change` in `08b_enriched_population_analysis.R`).
+- **[parameter_distributions.R](scripts/R/functions/parameter_distributions.R)**: Single source of truth for the PSA/DSA/EVPPI parameter set (`parameter_distribution_spec()`, `configure_parameter_distributions()`, `parameter_group_lookup()`, `apply_derived_psa_parameters()`), the one-way DSA bounds (`build_dsa_ranges()`: base +/- `DSA_mult`, capped at 0 for costs and prevalences and at 1 for utilities and prevalences) and the deterministic structural scenarios (`dsa_structural_scenarios()`, `structural_scenario_sides()`: discount rate 0% and 8% applied to costs and QALYs, time horizon 5 and 20 years, post-progression cost EUR 5,000 per quarter, second sequence omitted). The spec carries `psa`, `dsa` and `derived` flags, so PSA membership and DSA membership are no longer the same set: unit prices are `psa = FALSE, dsa = TRUE`, and `u_p` is `derived` (issue #154). `build_dsa_ranges()` takes the spec, not the distribution list. `09_DSA.R`, `figure2.qmd` and `table_1.qmd` all read these helpers, so the published ranges in Table 1 are exactly the ranges run (issue #153). The scenario code is also here (issue #157): `apply_structural_scenario(scenario_name, value, base_params, base_horizon, models, strategies_df, data_complete)` returns `list(params, time_horizon)` for `model_fun()`, using `build_horizon_params()` (re-predicts the base-case curves on the new weekly grid from `models$best_fit` and rebuilds the schedule vectors with the script-05 rules) and `drop_second_sequence()`; `structural_scenario_label()` names an endpoint. `09_DSA.R` (`run_structural_scenario()`) and `table_s8.qmd` both call it, so the DSA and Table S8 run identical scenarios; scenario rows enter `dsa_results` with `group = "structural"` and appear in the tornado plots and in the OWSA structural-scenario table.
 - **[eq5d5l_utility.R](scripts/R/functions/eq5d5l_utility.R)**: Vectorized Danish and UK EQ-5D-5L value-set functions retained from the archived QALY notebook
 
 **Shared Report and Clinical-Analysis Helpers**:
@@ -433,12 +433,12 @@ See [model_configs.R](scripts/R/functions/model_configs.R) for the canonical for
 - **[dag_helpers.R](scripts/R/functions/dag_helpers.R)**: Shared DAG construction, styling, validation, and rendering helpers
 - **[dag_association_tests.R](scripts/R/functions/dag_association_tests.R)**: DAG-derived edge and conditional-independence test lists with coverage assertions, the time-dependent `PFS -> OS` test and the landmark `TLR -> PFS` test, used by `dag_associations.qmd` and `clin_effect_table_s2.qmd` (issue #155)
 - **[tlr_landmark.R](scripts/R/functions/tlr_landmark.R)**: Single definition of the TLR landmark cohorts (fixed week 9 primary; per-patient scan date and fixed week 12 sensitivity) with first-scan-progressor diagnostics (issue #155)
-- **[report_format.R](scripts/R/functions/report_format.R)**: Shared strategy/biomarker labels and economic-result number formatting
+- **[report_format.R](scripts/R/functions/report_format.R)**: Shared strategy/biomarker labels and economic-result number formatting. `format_icer()` prints "Cost-saving" for a "Cost-saving vs SoC"/"Dominant" status and "--" for a negative ratio with no informative status (a negative ICER is never printed as a cost per QALY); `restricted_mean_survival(y, cycle_length)` is the trapezoidal restricted mean of a weekly survival curve in years, restricted to the curve's horizon (520 weeks) and used by `biomarker_decomposition.qmd` and `age_effect_analysis.qmd` (issue #157)
 
 **Sensitivity Analysis Functions**:
 - **[psa_functions.R](scripts/R/functions/psa_functions.R)**: PSA-related utilities, including `generate_psa_samples()` (which skips `derived` distributions and then calls `apply_derived_psa_parameters()`) and `utility_reversal_fraction()`, the `u_p > u_np` diagnostic printed by `CEA.qmd`. **Replaced draws keep their parameter row but not their model index (issue #156)**: `run_psa_analysis()` returns `model_idx`, the cached survival model behind each retained row (equal to the draw number except for replaced draws, which record the model that finally succeeded); `build_psa_obj()` stores it as `psa_obj$model_idx` and `psa_params$model_idx` and binds `additional_params` (the interaction coefficients in the scenario PSA) by `model_idx` after the run, never by draw number. `11_EVPPIs.R` indexes the interaction coefficients by `psa_params$model_idx`. The pre-#156 cache had five replaced rows (708, 716, 1598, 3400, 3552) whose `b_*` columns came from the failed draw's model rather than the model that produced the outcomes.
 - **[evppi_functions.R](scripts/R/functions/evppi_functions.R)**: Regression-based EVPPI via `voi::evppi()` (`calculate_evppi_regression()`, `run_evppi_analysis()`, `evppi_gam_formula()`), group-consistency checks (`check_evppi_group_consistency()`, `assert_evppi_group_consistency()`), population-level EVPPI scaling (`calculate_population_evppi()`), and interaction coefficient EVPPI (`extract_interaction_coefficients()`, `get_interaction_evppi_params()`, `add_interaction_param_groups()`)
-- **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework
+- **[scenario_analysis.R](scripts/R/functions/scenario_analysis.R)**: Scenario analysis framework. `define_scenarios()` (WTP 51,000/100,000/150,000 by list-price and decreased nivolumab price) is the PSA/EVPPI scenario set of script 12; `define_utility_scenarios()` (issue #157) holds the deterministic literature-utility scenario of Table S8 (u_np 0.80, u_p 0.65) with a `source` column that is still a **citation placeholder**: the reference must be supplied before publication, and the placeholder text is printed in the Table S8 footnote so it cannot be overlooked
 
 **Survival Modeling Functions**:
 - **[para_model_fit.R](scripts/R/functions/para_model_fit.R)**: Parametric model fitting helper
@@ -469,11 +469,24 @@ Treatment administration is defined by binary vectors aligned to `time_points <-
 
 Positions 25-39 (modeled weeks 24-38) are the **second treatment sequence**, and the model gives it to every patient still progression-free at that point in both arms. See "Cost and Scope Decisions (issue #154)" above; the `Second_sequence` structural scenario zeroes those positions and rebuilds `l_visit`.
 
+### Report and Vignette Housekeeping (issue #157)
+
+Issue #157 changed no model logic and no headline number; the base case, PSA and EVPPI caches are unchanged. What it fixed, so that it is not undone:
+
+- **Enriched-population screening cost.** `08b_enriched_population_analysis.R` charges the test-and-treat arm the expected screening cost per identified positive, `c_test / prevalence` (canonical `strategies_df` prevalence; CRP EUR 47, TMB/BRAF EUR 5,605), in place of one test, and the standard-of-care arm no test; both are explicit columns (`Enr_Test_Cost`, `Enr_Screening_Cost`) in `enriched_population.qmd`, Table 6 and Table S6. Enriched CRP pairwise ICER moved from 1,587,067 to 1,578,523; TMB/BRAF stays dominated.
+- **Restricted mean survival** is the trapezoidal rule over the 521-point weekly grid, restricted to the 10-year horizon and stated as such (`restricted_mean_survival()`); the earlier left Riemann sum counted t = 0 as a full cycle.
+- **Hard-coded numbers.** HRs, CIs, p-values, ridge values and counts in `clinical_effectiveness.qmd`, `dag_associations.qmd`, `biomarker_decomposition.qmd` and `table_s2.qmd` are inline R from the objects the document computes. The only typed numbers left are the baseline-CRP counts (8/38 vs 7/35, p = 1) in the clinical report, because `CRP0cat` is not carried into `data`.
+- **Table S5** is the full result set with the pairwise comparison against standard of care, the frontier ICER and the frontier status; before #157 it was a byte-identical copy of Table 4.
+- **Tornado (Figure 2)** has a lower-/upper-bound legend and omits parameters whose bounds leave the increment unchanged (`create_tornado_plot(drop_empty = TRUE)`, the omitted names are listed under the figure). **CEAC grids** contain the base-case WTP as an evaluated point (Figure 4, poster). **Population EVPPI** in Figure 5 and Table S7 comes from `calculate_population_evppi()` (years 1 to 10); there is no local annuity fallback.
+- **Table S1** uses the 68-patient economic cohort and reports censored outcomes descriptively (see the vignette list); **Table S8** is built from the pipeline's scenario definitions, and its literature-utility scenario still needs its citation (see `scenario_analysis.R`).
+- **Cycle length and horizon** print as "1 week (1/52 year = 0.0192 years)" and "520 weeks (10 years)" in `input_parameters.qmd`.
+- `test_sim_idx_validation.R` and the AGENTS.md command example use `here::here()`; no file in the live tree carries a machine-specific path.
+
 ## Important Modeling Considerations
 
 ### Ensuring Non-Negative States
 
-The model enforces `p_p = pmax(os - pfs, 0)` to prevent negative progressed state occupancy when PFS and OS curves cross (can happen in resampled models).
+The model enforces `p_p = pmax(os - pfs, 0)` to prevent negative progressed state occupancy when PFS and OS curves cross (can happen for a sampled coefficient draw, because OS and PFS coefficients are drawn independently).
 
 ### Initial State Constraints
 
@@ -517,6 +530,8 @@ The B1 cleanup deleted obsolete or superseded files rather than leaving dead ent
 - `scripts/R/tests/test_sampling_convergence_rate.R`
 - `scripts/R/tests/test_sex_variable_fix.R`
 - `scripts/R/tests/tlr.R`
+
+Issue #157 deleted `figs/forrest-plot.png`, an orphaned June 2026 image that no vignette wrote (user decision); every file in `figs/` and `tables/` now has a generating vignette listed under "Figure Vignettes".
 
 `scripts/R/tests/fit_independent_biomarker_models.R` was moved to `scripts/R/archive/fit_independent_biomarker_models.R`; it was archived, not deleted.
 
@@ -571,7 +586,7 @@ Each report has specific dependencies:
 
 **[scenario_effect.qmd](scripts/QMD/report/scenario_effect.qmd)** - Scenario Analysis
 - **Sources**: 02, 03; loads scenario results generated by script 12
-- **Shows**: Alternative scenario results (e.g., different time horizons, discount rates)
+- **Shows**: PSA and EVPPI results under the scenarios of `define_scenarios()` in [scenario_analysis.R](scripts/R/functions/scenario_analysis.R), which vary only the willingness-to-pay threshold (EUR 51,000, 100,000, 150,000) and the nivolumab price (base case versus biosimilar EUR 4,641 per administration). Discount-rate and time-horizon variations are not scenarios of this report: they are the deterministic structural scenarios of `dsa_structural_scenarios()` reported in `OWSA.qmd`
 
 **[biosimilar_scenario.qmd](scripts/QMD/report/biosimilar_scenario.qmd)** - Biosimilar Nivolumab Pricing Scenario
 - **Sources**: 02, 03, 04, 05
@@ -602,20 +617,30 @@ Each report has specific dependencies:
 - **[bug_fix_impact.qmd](scripts/QMD/technical_docs/bug_fix_impact.qmd)**: Bug fix impact documentation for the single economic model
 
 **Figure Vignettes** (in `scripts/QMD/vignettes/`):
-- **figure1-4.qmd**: Publication-ready figures
-- **suppl_figure_pfs_plots.qmd**: Supplementary PFS figures
-- **figure_pfs_os_curves.qmd**: OS and PFS in the same panel, one PNG per strategy (`figs/figure_pfs_os_curves_{soc,crp,tmb_braf}.png`). Overlays Kaplan-Meier step curves (complete-case data) on the base-case parametric curves from the `predictions` object; biomarker panels show positive (experimental arm) and negative (control arm) subgroups. Sources 02/03/04 only; unnumbered for now.
+- Each vignette is self-contained (HTML, `embed-resources: true`) and writes its outputs to `figs/` or `tables/`; every file listed here is regenerated by the named vignette and by nothing else:
+  - `figure1.qmd` → `figs/figure1.png` (CRP-guided strategy survival curves: `models$best_fit` predicted for the plotted subsets, the control-arm patients and the observed CRP-guided cohort, with 95% percentile ribbons from 500 sampling-cache draws predicted for the same subsets; the shared legend is extracted with a local `extract_legend()` because `cowplot::get_legend()` returns an empty grob under ggplot2 3.5; issue #157)
+  - `figure2.qmd` → `figs/figure2.png` (one-way tornado of the incremental NMB, CRP-guided versus standard of care, with a lower-/upper-bound legend; parameters whose bounds leave the increment unchanged are omitted and listed under the figure; issue #157)
+  - `figure3.qmd` → `figs/figure3.png` and `figs/figure_s3.png` (Figure S3: the same PSA cost-effectiveness plane drawn with smaller, fainter points)
+  - `figure4.qmd` → `figs/figure4.png` (CEACs, base case and biosimilar pricing, faceted) and `figs/figure_s4.png` (Figure S4: base-case CEAC alone with a WTP 100,000 reference line); the WTP grid contains the base-case threshold as an evaluated point and strategy labels are looked up by name (issue #157)
+  - `figure5.qmd` → `figs/figure5.png` (population EVPPI by parameter group and scenario, `[GROUP]` rows only)
+  - `figure_s1.qmd` → `figs/figure_s1.png` (Kaplan-Meier versus parametric fits by biomarker subgroup); `figure_s2.qmd` → `figs/figure_s2.png` (extrapolations under alternative distributions, predicted for the control-arm patients that the Kaplan-Meier reference curve uses; issue #157); `figure_s5.qmd` → `figs/figure_s5.png` (base-case cost-effectiveness frontier)
+  - `table_1.qmd` → `tables/table_1.csv`; `table_4.qmd` → `tables/table_4.csv` (dampack frontier results) and `tables/table_s5.csv` (Table S5: full results with the pairwise comparison against standard of care, the frontier ICER and the frontier status; before issue #157 it was a byte-identical copy of `table_4.csv`); `table_5.qmd` → `tables/table_5.csv`; `table_6.qmd` → `tables/table_6.csv` and `table_s6.qmd` → `tables/table_s6.csv` (enriched-population results from script 08b, including the screening cost per identified positive; issue #157); `table_s1.qmd`, `table_s2.qmd`, `table_s4.qmd`, `table_s7.qmd`, `table_s8.qmd` → the matching `tables/table_s*.csv`; `table_s3.qmd` → `tables/table_s3.csv` and `tables/table_s3_pairs.csv`
+  - `table_s1.qmd` → `tables/table_s1.csv` (patient characteristics on the 68-patient economic complete-case cohort `data_complete`, TLR shown with a "Not assessed" level for the 3 early deaths; follow-up as the reverse Kaplan-Meier median (IQR), deaths and progression-or-death counts, and Kaplan-Meier medians with 95% CI reported without tests; `n` is computed; issue #157)
+  - `table_s8.qmd` → `tables/table_s8.csv` (deterministic scenario table built only from pipeline definitions: `define_scenarios()` for WTP and nivolumab price, `dsa_structural_scenarios()` applied with `apply_structural_scenario()` for discount rate, horizon, post-progression cost and second sequence, and `define_utility_scenarios()` for the literature utilities; issue #157)
+- **figure_pfs_os_curves.qmd**: OS and PFS in the same panel, one PNG per strategy (`figs/figure_pfs_os_curves_{soc,crp,tmb_braf}.png`). Overlays Kaplan-Meier step curves of a patient subset (control arm; biomarker-positive patients from the experimental arm; biomarker-negative patients from the control arm) on the selected joint models (`models$best_fit`) predicted for exactly those patients and averaged (issue #157). Sources 02/03/04 only; unnumbered for now.
+
+**KM overlay convention (issue #157)**: a Kaplan-Meier curve of a subset is only ever overlaid on a parametric curve predicted for that same subset (each patient's own covariates and actual arm, then averaged), so the overlay is a fit check. The economic model's curves (`predictions`, `l_params_base`) are standardised to all 68 complete-case patients with `Rx` set by strategy; they are never drawn over a subset KM curve, because the covariate mix differs (the control arm has 6/32 CRP-positive patients against 23/68 in the full cohort) and the gap would read as lack of fit. Captions and notes in `figure1.qmd`, `figure_s2.qmd` and `figure_pfs_os_curves.qmd` say which curves are shown.
 
 **Clinical effectiveness vignettes** (in `scripts/QMD/vignettes/`): Files for the clinical effectiveness paper use the prefix `clin_effect_` followed by the paper figure/table label. Each vignette is self-contained (HTML, `embed-resources: true`) and saves its output to `figs/` (figures, via `ggsave`) or `tables/` (CSV, via `write.csv`). Naming examples:
-- `clin_effect_figure1.qmd` → `figs/clin_effect_figure1.png` (six-panel Kaplan-Meier grid: OS left / PFS right columns; CRP, TMB/BRAF, and TLR rows, with the TLR row on the week-9 landmark cohorts from `tlr_landmark.R`; every panel carries its own time-axis title because the time origin differs between rows, and the caption, built as `fig1_caption` and passed through `!expr`, states both landmark cohort sizes, the retained first-scan progressors and the after-landmark scans; issue #155)
+- `clin_effect_figure1.qmd` → `figs/clin_effect_figure1.png` and `figs/clin_effect_figure1.eps` (the same figure in PNG and in EPS for journal submission; six-panel Kaplan-Meier grid: OS left / PFS right columns; CRP, TMB/BRAF, and TLR rows, with the TLR row on the week-9 landmark cohorts from `tlr_landmark.R`; every panel carries its own time-axis title because the time origin differs between rows, and the caption, built as `fig1_caption` and passed through `!expr`, states both landmark cohort sizes, the retained first-scan progressors and the after-landmark scans; issue #155)
 - `clin_effect_figure_s1.qmd` → `figs/clin_effect_figure_s1.png` (full DAG)
 - `clin_effect_table_s2.qmd` → `tables/clin_effect_table_s2.csv` (DAG association consolidated summary from `dag_association_tests.R`: 18 tested edges including both `TxCRP` edges, 19 implied independencies with two marked as holding by construction, landmark `TLR -> PFS` and time-dependent `PFS -> OS`; issue #155)
 - `clin_effect_figure_simplified_dag.qmd` → `figs/clin_effect_figure_simplified_dag.png` (simplified DAG; unpublished, off the numbered figure sequence)
 - `clin_effect_figure_sensitivity_dag.qmd` → `figs/clin_effect_figure_sensitivity_dag.png` (sensitivity DAG; unpublished, off the numbered figure sequence)
 
-**Poster vignette** (in `scripts/QMD/vignettes/`): `poster_biomarker_correlation.qmd` supports the SMDM poster "Modeling Multiple Biomarkers in Precision Oncology: How Ignoring Biomarker Correlations Can Reverse Clinical Conclusions". Self-contained (HTML, `embed-resources: true`). **Standalone and intentionally off-pipeline**: it re-introduces TLR as a third biomarker-guided strategy purely to illustrate the methodological point, even though the main economic model deliberately excludes TLR as a post-randomization mediator. It sources 02/03/06/07 + `model_fun`/`calculate_outcomes`/`prediction_functions`, then overrides `get_strategies()`/`get_biomarkers()` locally to add `tlr`; it does not modify the main pipeline. Outputs:
+**Poster vignette** (in `scripts/QMD/vignettes/`): `poster_biomarker_correlation.qmd` supports the SMDM poster "Modeling Multiple Biomarkers in Precision Oncology: How Ignoring Biomarker Correlations Can Reverse Clinical Conclusions". Self-contained (HTML, `embed-resources: true`). **Standalone and intentionally off-pipeline**: it re-introduces TLR as a third biomarker-guided strategy purely to illustrate the methodological point, even though the main economic model deliberately excludes TLR as a post-randomization mediator. It sources 02 to 06 (06 for the sampling cache and `sample_survival_coefficients()`) + `model_fun`/`calculate_outcomes`/`prediction_functions`, then overrides `get_strategies()`/`get_biomarkers()` locally to add `tlr`; it does not modify the main pipeline. **Stated simplifications (issue #157)**: TLR is modelled as if it were known at treatment selection at no separate test cost (it is read from the first on-treatment CT, which is in the monitoring schedule), its prevalence is the experimental-arm response rate (19/36, not the pooled 41/65, because it is measured on treatment and differs by arm), and all prevalences are those of the 65-patient TLR-complete cohort; the table notes say so, and the conclusion sentence is computed from the dampack `Status` column, not typed. The CEAC uses the pipeline's survival sampler: joint-model draws come from the sampling cache aligned to the cached economic-parameter draws through `model_idx`, single-biomarker models are drawn with `sample_survival_coefficients()` (same distributions, 1,000 draws), the standard-of-care curve is the joint model with `Rx = control` in both panels (issue #151), curves are predicted with `predict_pop_avg()` and each draw runs `model_fun(determpsa = "psa")`, which caps PFS > OS crossings instead of stopping; the WTP grid contains the base-case threshold and the caption reports the probabilities at that threshold from the curves. Rendering takes about 11 minutes. Outputs:
 - `figs/poster_forest.png` (treatment x biomarker interaction, single-biomarker vs joint correlation-adjusted model, parametric AFT time ratios, PFS + OS)
-- `figs/poster_ceac.png` (two-panel cost-effectiveness acceptability curves: single-biomarker vs joint modelling, at biosimilar nivolumab pricing; built via a self-contained parametric-bootstrap PSA reusing the cached economic-parameter draws)
+- `figs/poster_ceac.png` (two-panel cost-effectiveness acceptability curves: single-biomarker vs joint modelling, at biosimilar nivolumab pricing)
 - `tables/poster_cea.csv` (three-strategy CEA), `tables/poster_forest_data.csv` (forest interaction estimates), and `tables/poster_ceac_data.csv` (CEAC probabilities)
 
 ### Quarto Report Structure Pattern
@@ -758,7 +783,7 @@ source("scripts/R/analysis/06_sampling.R")
 - **Prediction methodology changes** (e.g., issues #69, #70 fixes to survival curve generation)
 - Base parameters change (costs, time horizon, discount rates)
 - **UTILITY_SOURCE changes** (cache filenames encode utility source to prevent mixing)
-- **Sampling cache is regenerated** (PSA depends on specific resampled models - always regenerate PSA after regenerating sampling cache)
+- **Sampling cache is regenerated** (the PSA depends on the specific coefficient draws; always regenerate the PSA after regenerating the sampling cache — the PSA fingerprint enforces this)
 - Parameter distributions change (distributional assumptions, means, SDs, correlations)
 - **PSA parameter membership changes** — moving a parameter between sampled, fixed and derived in `parameter_distribution_spec()` changes the PSA draws and every EVPPI group (issue #154)
 

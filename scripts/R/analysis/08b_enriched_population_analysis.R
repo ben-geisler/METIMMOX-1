@@ -16,10 +16,17 @@
 #
 # Economic biomarkers are defined by get_biomarkers(); TLR is not included.
 #
+# Screening cost (issue #157): the experimental (test-and-treat) arm carries the
+# expected screening cost per identified positive, c_test / prevalence, in place
+# of the single per-patient test charged by calculate_outcomes(); the control
+# arm (positives on FLOX, which every patient receives under standard of care)
+# carries no test cost. The screening cost is reported as an explicit column.
+#
 # Prerequisites:
 #   - 02_setup_and_global_variables.R (global vars)
 #   - 03_biomarker_strategies.R (biomarker definitions)
-#   - 06/07 are re-sourced once by run_enriched_analysis()
+#   - 04/05 (survival fits and l_params_base) are re-sourced once by
+#     run_enriched_analysis() through refresh_single_model_inputs()
 # ===============================================================================
 
 if (!require("pacman")) install.packages("pacman")
@@ -37,7 +44,7 @@ source(here::here("scripts/R/functions/prediction_functions.R"))
 
 #' Refresh survival fits and base-case inputs for the single model
 #'
-#' Re-sources scripts 06 and 07 once so data_complete, models, time_points, and
+#' Re-sources scripts 04 and 05 once so data_complete, models, time_points, and
 #' l_params_base are synchronized before enriched counterfactual curves are made.
 refresh_single_model_inputs <- function(verbose = TRUE) {
   if (verbose) {
@@ -104,6 +111,8 @@ generate_enriched_control_curves <- function(biomarker_name) {
 #' For each economic biomarker, computes:
 #'   - Enriched experimental: biomarker-positive patients on experimental treatment
 #'   - Enriched control: biomarker-positive patients on standard treatment
+#'   - Screening cost per identified positive: c_test / prevalence, charged to
+#'     the experimental arm in place of a single test (issue #157)
 #'   - Enriched ICER: (exp_cost - ctrl_cost) / (exp_effect - ctrl_effect)
 #'
 #' @param verbose Logical, print progress messages
@@ -161,15 +170,39 @@ run_enriched_analysis <- function(verbose = TRUE) {
       cl = cl
     )
 
+    # Screening cost to identify one biomarker-positive patient (issue #157).
+    # calculate_outcomes() charged one biomarker test per patient in both arms
+    # above (undiscounted, at t = 0), which cancels in the increment. In the
+    # enriched comparison the treated strategy must first find its positives:
+    # 1 / prevalence patients are tested per positive identified, so the
+    # expected screening cost per identified positive is c_test / prevalence
+    # (canonical full-cohort prevalence from strategies_df). That amount
+    # replaces the single test in the experimental arm; the control arm
+    # (positives on FLOX, which every patient receives under standard of care)
+    # carries no test cost. Both quantities are kept as explicit columns.
+    test_cost <- l_params_base$c_test_biomarker[[biomarker]]
+    prevalence <- strategies_df$prevalence[strategies_df$id == biomarker]
+    if (!is.numeric(test_cost) || length(test_cost) != 1 || !is.finite(test_cost)) {
+      stop("No diagnostic-test cost configured for biomarker '", biomarker, "'")
+    }
+    if (length(prevalence) != 1 || !is.finite(prevalence) || prevalence <= 0) {
+      stop("No positive prevalence available for biomarker '", biomarker, "'")
+    }
+    screening_cost <- test_cost / prevalence
+    exp_cost <- exp_outcomes$costs_total - test_cost + screening_cost
+    ctrl_cost <- ctrl_outcomes$costs_total - test_cost
+
     pairwise <- calculate_pairwise_icers(data.frame(
       Strategy = c(get_control_strategy(), biomarker),
-      Cost = c(ctrl_outcomes$costs_total, exp_outcomes$costs_total),
+      Cost = c(ctrl_cost, exp_cost),
       Effect = c(ctrl_outcomes$qalys_total, exp_outcomes$qalys_total)
     ))[2, ]
     enriched_rows[[biomarker]] <- transform(
       pairwise,
-      Ctrl_Cost = ctrl_outcomes$costs_total,
-      Ctrl_Effect = ctrl_outcomes$qalys_total
+      Ctrl_Cost = ctrl_cost,
+      Ctrl_Effect = ctrl_outcomes$qalys_total,
+      Test_Cost = test_cost,
+      Screening_Cost = screening_cost
     )
   }
 
@@ -200,6 +233,8 @@ run_enriched_analysis <- function(verbose = TRUE) {
     Enr_Cost = enriched_rows$Cost, Enr_Effect = enriched_rows$Effect,
     Enr_Ctrl_Cost = enriched_rows$Ctrl_Cost,
     Enr_Ctrl_Effect = enriched_rows$Ctrl_Effect,
+    Enr_Test_Cost = enriched_rows$Test_Cost,
+    Enr_Screening_Cost = enriched_rows$Screening_Cost,
     Enr_ICER = enriched_rows$ICER, Enr_Status = enriched_rows$Status,
     Pct_Change = ifelse(
       base_rows$Frontier_Status == "ND" &

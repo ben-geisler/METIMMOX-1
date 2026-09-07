@@ -32,32 +32,72 @@ execute:
 
 ```{r setup, include=FALSE}
 source(here::here("scripts/R/functions/report_setup.R"))
+# Scripts 04-06 are sourced (a few seconds) so that the PSA cache can be
+# checked against the fingerprint 10_PSA.R stamps on it (issue #156): the
+# report stops on an absent or stale cache instead of printing placeholders
+# (issue #157).
 setup_report(
-  sources = c("02", "03"),
-  funs = c("cea_helpers", "report_format"),
-  set_theme = FALSE
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "evppi_functions"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
 )
 
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+psa_obj <- load_psa_cache(
+  verbose = FALSE, required = TRUE,
+  expected_fingerprint = expected_psa,
+  strategies = strategies, n_sim = n_sim,
+  sampling_fingerprint = sampling_models$fingerprint
+)
+
+evppi_cache_file <- evppi_path()
+if (!file.exists(evppi_cache_file)) {
+  stop("EVPPI cache not found: ", evppi_cache_file,
+       ". Run scripts/R/analysis/11_EVPPIs.R before rendering this report.",
+       call. = FALSE)
+}
 evppi_results <- NULL
 evpi_manual <- NA_real_
-evppi_cache_file <- evppi_path()
-if (file.exists(evppi_cache_file)) {
-  load(evppi_cache_file)
+evppi_psa_fingerprint <- NULL
+load(evppi_cache_file)
+if (!identical(evppi_psa_fingerprint, psa_obj$fingerprint)) {
+  stop("Stale EVPPI cache ", evppi_cache_file,
+       ": it was built from a PSA with a different fingerprint than the ",
+       "current PSA cache. Rerun scripts/R/analysis/11_EVPPIs.R before ",
+       "rendering this report.", call. = FALSE)
+}
+if (!is.finite(evpi_manual)) {
+  stop("EVPPI cache ", evppi_cache_file, " carries no EVPI value. Rerun ",
+       "scripts/R/analysis/11_EVPPIs.R.", call. = FALSE)
 }
 
 has_evppi <- !is.null(evppi_results) && nrow(evppi_results) > 0
-# Distinguish an absent cache from a cache with no rows: a zero EVPI (control
-# optimal in every PSA draw) makes every EVPPI zero and the analysis script
-# stores no rows (issue #156).
-no_evppi_msg <- if (!file.exists(evppi_cache_file)) {
-  "EVPPI cache not found. Run scripts/R/analysis/11_EVPPIs.R before rendering this report."
-} else if (is.finite(evpi_manual) && evpi_manual <= 0.01) {
-  sprintf(paste("EVPI is %s per patient: standard of care has the highest net monetary benefit in",
-                "every PSA draw, so the EVPPI of every parameter and group is zero and no",
-                "rows are stored (analysis script short-circuit)."), format_eur(evpi_manual, accuracy = 0.01))
-} else {
-  "EVPPI cache contains no rows."
+# A cache with no rows is legitimate only when EVPI is zero (standard of care
+# optimal in every PSA draw): every EVPPI is then zero and 11_EVPPIs.R stores
+# no rows (issue #156). No rows with a positive EVPI is a broken cache.
+evpi_is_zero <- evpi_manual <= 0.01
+if (!has_evppi && !evpi_is_zero) {
+  stop("EVPPI cache ", evppi_cache_file, " contains no EVPPI rows although ",
+       "EVPI is ", format_eur(evpi_manual, accuracy = 0.01), " per patient. ",
+       "Rerun scripts/R/analysis/11_EVPPIs.R.", call. = FALSE)
 }
+no_evppi_msg <- sprintf(
+  paste("EVPI is %s per patient: standard of care has the highest net monetary benefit in",
+        "every PSA draw, so the EVPPI of every parameter and group is zero and no",
+        "rows are stored (analysis script short-circuit)."),
+  format_eur(evpi_manual, accuracy = 0.01)
+)
 group_consistency <- if (has_evppi) attr(evppi_results, "group_consistency") else NULL
 if (has_evppi) {
   for (col in c("evppi_se", "evppi_percent_of_evpi", "evppi_population_millions")) {
@@ -67,10 +107,15 @@ if (has_evppi) {
   evppi_results$is_group <- grepl("^\\[GROUP\\] ", evppi_results$parameter)
 }
 
+# "--" marks an estimate that could not be computed (NA by design, never zero).
 format_percent <- function(x) ifelse(is.finite(x), sprintf("%.1f%%", x), "--")
 format_population <- function(x) ifelse(is.finite(x), paste0("EUR ", sprintf("%.2f", x), "M"), "--")
-
-psa_obj <- load_psa_cache(verbose = FALSE)
+evpi_population_millions <- calculate_population_evppi(
+  evpi_manual,
+  annual_incidence = annual_incidence_norway,
+  research_horizon = research_horizon_years,
+  discount_rate = discount_rate_research
+)
 ```
 
 # Overview
@@ -82,25 +127,22 @@ EVPPI is estimated by nonparametric regression of net monetary benefit on the pa
 # PSA Decision Uncertainty
 
 ```{r evpi-summary}
-if (is.null(psa_obj)) {
-  cat("PSA cache not found. Run scripts/R/analysis/10_PSA.R before rendering this report.")
-} else {
-  psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
-    mutate(
-      Mean_Cost = format_eur(Mean_Cost),
-      Mean_QALY = sprintf("%.3f", Mean_QALY),
-      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
-    )
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Mean_Cost = format_eur(Mean_Cost),
+    Mean_QALY = sprintf("%.3f", Mean_QALY),
+    Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+  )
 
-  knitr::kable(
-    psa_summary,
-    booktabs = TRUE,
-    align = c("l", "r", "r", "r"),
-    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
-    caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
-  ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
-}
+knitr::kable(
+  psa_summary,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+  caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```
 
 ```{r evpi-value}
@@ -108,11 +150,7 @@ evpi_display <- data.frame(
   Metric = c("Per-patient EVPI", "Population EVPI"),
   Value = c(
     format_eur(evpi_manual, accuracy = 0.01),
-    if (has_evppi && "evpi_population_millions" %in% names(evppi_results)) {
-      format_population(max(evppi_results$evpi_population_millions, na.rm = TRUE))
-    } else {
-      "--"
-    }
+    format_population(evpi_population_millions)
   ),
   stringsAsFactors = FALSE
 )
@@ -184,7 +222,7 @@ if (has_evppi && any(evppi_results$is_group)) {
 }
 ```
 
-Each group row is one joint estimate for all parameters in the group. The all-costs group covers the drug, test and other cost groups; the biomarker-treatment interaction group covers the OS and PFS treatment-by-biomarker coefficients of both biomarkers.
+Each group row is one joint estimate for all parameters in the group. The resource-use cost group covers the sampled visit, baseline, follow-up and end-of-life costs (unit drug and test prices are fixed in the PSA, issue #154, so there is no drug-cost, test-cost or all-costs group); the utilities group is the progression-free utility and the utility decrement; the biomarker-treatment interaction group covers the OS and PFS treatment-by-biomarker coefficients of both biomarkers.
 
 ## Group Consistency Check
 
@@ -221,7 +259,7 @@ if (!is.null(group_consistency) && nrow(group_consistency) > 0) {
 if (!has_evppi) {
   ggplot() +
     annotate("text", x = 0.5, y = 0.5,
-             label = if (is.finite(evpi_manual) && evpi_manual <= 0.01) "EVPI = 0: all EVPPI are zero" else "EVPPI cache not available", size = 5) +
+             label = "EVPI = 0: all EVPPI are zero", size = 5) +
     theme_void()
 } else {
   plot_df <- evppi_results %>%
@@ -252,7 +290,7 @@ if (!has_evppi) {
 
 EVPPI values are estimated with the nonparametric regression method of Strong, Oakley and Brennan (2014) as implemented in the `voi` package (`voi::evppi()`). For each parameter or parameter group, the incremental net monetary benefit of every strategy relative to standard of care is regressed on the parameter(s) with a generalized additive model. The fitted values estimate the expected net benefit conditional on the parameter(s), and EVPPI is the mean over PSA draws of the maximum fitted value across strategies minus the maximum of the mean fitted values.
 
-Groups of up to four parameters use a tensor-product cubic regression spline of all members (the `voi` default). Larger groups, currently only the all-costs group, use additive cubic regression splines; this form is well specified for cost parameters because net monetary benefit is linear and additive in unit costs. The Monte Carlo standard error is the standard deviation of the EVPPI recomputed for 1,000 draws of the regression coefficients from their asymptotic posterior distribution. It reflects uncertainty in the fitted regression, not structural uncertainty about the regression form, and it shrinks as the number of PSA draws grows.
+Groups of up to four parameters use a tensor-product cubic regression spline of all members (the `voi` default). Larger groups use additive cubic regression splines, a form that is well specified for cost parameters because net monetary benefit is linear and additive in unit costs; no group in the current parameter set has more than four members since the unit prices were fixed in issue #154. The Monte Carlo standard error is the standard deviation of the EVPPI recomputed for 1,000 draws of the regression coefficients from their asymptotic posterior distribution. It reflects uncertainty in the fitted regression, not structural uncertainty about the regression form, and it shrinks as the number of PSA draws grows.
 
 A zero estimate means that the fitted net-benefit curves never change which strategy is optimal over the sampled range of the parameter(s); it is a regression result, not a floored value. Small negative estimates within one or two standard errors of zero are Monte Carlo noise and are shown as estimated. Estimates that could not be computed are reported as missing rather than zero.
 

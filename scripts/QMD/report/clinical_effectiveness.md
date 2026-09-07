@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-06
+2026-09-07
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -91,13 +91,14 @@ has not yet been given at week 4 and both arms receive identical FLOX
 until then, the DAG carries no `T -> CRP` edge. Two consequences follow.
 First, week-4 CRP-positivity differs by arm (experimental 17/36, control
 7/35; Fisher p = 0.023) whereas baseline CRP was balanced (8/38 vs 7/35;
-p = 1); this is treated as chance imbalance on a week-4 measurement in a
+p = 1; `CRP0cat` in `01_data_prep.R`, which is not part of the analysis
+data); this is treated as chance imbalance on a week-4 measurement in a
 small trial, not as a failure of randomization, and is what the `CRP:Rx`
-interaction is estimated against. Second, the three patients with no
-week-4 CRP are early deaths (weeks 2.4, 15.7 and 20.9) and are excluded
-from the complete-case data, so the CRP subgroups are conditional on
-surviving to the week-4 measurement. The clock remains randomization; a
-landmark analysis at week 4 would drop no further patients from the CRP
+interaction is estimated against. Second, the 3 patients with no week-4
+CRP are early deaths (weeks 2.4, 15.7, 20.9) and are excluded from the
+complete-case data, so the CRP subgroups are conditional on surviving to
+the week-4 measurement. The clock remains randomization; a landmark
+analysis at week 4 would drop no further patients from the CRP
 subgroups.
 
 **Model specification is motivated by the causal DAG** (see `dag.qmd`
@@ -675,12 +676,12 @@ samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The
 CRP direction (HR 0.42) is consistent with the DAG association test
-showing CRP → PFS (HR 0.41, p = 0.001; see the DAG associations report)
-and the biological hypothesis that low CRP (reflecting lower systemic
-inflammation) identifies patients more likely to respond to
-immunotherapy. However, the OS CRP interaction estimate (HR 0.65) is
-closer to null, suggesting that any PFS benefit does not clearly
-translate to an OS benefit in this dataset.
+showing CRP → PFS (unadjusted Firth HR 0.41, p = 0.001; see the DAG
+associations report) and the biological hypothesis that low CRP
+(reflecting lower systemic inflammation) identifies patients more likely
+to respond to immunotherapy. However, the OS CRP interaction estimate
+(HR 0.65) is closer to null, suggesting that any PFS benefit does not
+clearly translate to an OS benefit in this dataset.
 
 ## Proportional hazards
 
@@ -851,6 +852,6 @@ Neither supports baseline treatment selection on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-06  
+**Report completed on:** 2026-09-07  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.6
+**Report version:** 3.7

@@ -51,6 +51,7 @@ enriched_display <- enriched_comparison %>%
     Enr_Effect = sprintf("%.3f", Enr_Effect),
     Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
     Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_Screening = format_eur(Enr_Screening_Cost),
     Enr_ICER = format_icer(Enr_ICER, Enr_Status),
     Pct_Change = ifelse(is.na(Pct_Change), "--", sprintf("%+.1f%%", Pct_Change))
   )
@@ -61,6 +62,8 @@ enriched_display <- enriched_comparison %>%
 This report presents a ceiling scenario for the economic biomarkers included in the single joint model. The analysis compares biomarker-positive patients receiving FLOX + nivolumab with biomarker-positive patients receiving FLOX only.
 
 Economic biomarkers are CRP and TMB/BRAF.
+
+**Screening cost.** To treat one biomarker-positive patient the guided strategy must first identify one. On average 1 / prevalence patients are tested per positive found, so the experimental arm carries the expected screening cost per identified positive, the biomarker test cost divided by the canonical full-cohort prevalence, in place of a single test (issue #157). The control arm carries no test cost, because every patient receives FLOX under standard of care whether or not the biomarker is known. The screening cost is reported as its own column in the detailed table; it is `r paste(sprintf("%s for %s", format_eur(enriched_comparison$Enr_Screening_Cost), enriched_comparison$Biomarker), collapse = " and ")` per identified positive.
 
 # Biomarker Prevalence
 
@@ -112,17 +115,27 @@ knitr::kable(
 
 ```{r enriched-detail}
 detail_cols <- c("Biomarker", "Enr_Cost", "Enr_Effect",
-                 "Enr_Ctrl_Cost", "Enr_Ctrl_Effect", "Enr_ICER")
+                 "Enr_Ctrl_Cost", "Enr_Ctrl_Effect", "Enr_Screening", "Enr_ICER")
 
 knitr::kable(
   enriched_display[, detail_cols],
   booktabs = TRUE,
-  align = c("l", "r", "r", "r", "r", "r"),
+  align = c("l", "r", "r", "r", "r", "r", "r"),
   col.names = c("Biomarker", "Experimental Cost", "Experimental QALYs",
-                "Control Cost", "Control QALYs", "Enriched ICER"),
-  caption = "Detailed enriched-population results"
+                "Control Cost", "Control QALYs",
+                "Screening cost per identified positive", "Enriched ICER"),
+  caption = "Detailed enriched-population results (pairwise versus standard of care)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
+  kableExtra::footnote(
+    general = paste(
+      "The experimental cost includes the screening cost per identified positive",
+      "(biomarker test cost divided by the canonical prevalence) in place of a",
+      "single test; the control cost includes no test. The enriched ICER is the",
+      "pairwise comparison of the two arms."
+    ),
+    threeparttable = TRUE
+  )
 ```
 
 ```{r enriched-plot, fig.cap="Base case and enriched-population ICERs"}
@@ -152,10 +165,10 @@ ggplot(plot_df, aes(x = Biomarker, y = ICER, fill = Analysis)) +
 
 # Interpretation
 
-The enriched analysis isolates expected value among biomarker-positive patients and removes dilution from biomarker-negative patients who would receive standard care under a guided strategy. The enriched control arm is counterfactual and is generated from the fitted single joint survival model.
+The enriched analysis isolates expected value among biomarker-positive patients and removes dilution from biomarker-negative patients who would receive standard care under a guided strategy. The enriched control arm is counterfactual and is generated from the fitted single joint survival model. The comparison is not free of the biomarker-negative patients altogether: finding each positive requires testing 1 / prevalence patients, and that screening cost is charged to the experimental arm.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

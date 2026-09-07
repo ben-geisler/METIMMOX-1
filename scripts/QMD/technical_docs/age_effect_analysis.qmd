@@ -50,7 +50,9 @@ mean_age_predictions <- generate_population_averaged_predictions(
   prevalences = setNames(strategies_df$prevalence, strategies_df$id)
 )
 
-restricted_mean <- function(y) sum(y) * cl
+# Restricted mean survival over the modelled horizon, trapezoidal rule on the
+# weekly grid (restricted_mean_survival() in report_format.R; issue #157).
+restricted_mean <- function(y) restricted_mean_survival(y, cl)
 
 base_curve <- function(strategy, endpoint) {
   if (strategy == "control") {
@@ -116,7 +118,9 @@ knitr::kable(
   booktabs = TRUE,
   align = c("l", "l", "r", "r", "r"),
   col.names = c("Strategy", "Endpoint", "Base Case Years", "Mean-Age Years", "Difference"),
-  caption = "Restricted mean survival under observed-age and mean-age predictions"
+  caption = paste0("Restricted mean survival (years) over the ", time_horizon,
+                   "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
+                   "under observed-age and mean-age predictions")
 ) %>%
   kableExtra::kable_styling(latex_options = c("HOLD_position"))
 ```

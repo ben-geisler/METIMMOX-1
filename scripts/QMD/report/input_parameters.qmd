@@ -48,13 +48,13 @@ config <- get_current_model_config()
 
 config_table <- data.frame(
   Item = c("Economic strategies", "Economic biomarkers", "OS formula",
-           "PFS formula", "Control formula"),
+           "PFS formula", "Control arm"),
   Value = c(
     paste(get_strategies(), collapse = ", "),
     paste(get_biomarkers(), collapse = ", "),
     paste(deparse(config$formulas$shared$os), collapse = " "),
     paste(deparse(config$formulas$shared$pfs), collapse = " "),
-    "Surv(time, event) ~ Age + sex"
+    "The joint OS and PFS models predicted with Rx = control for every patient (no separate control formula; issue #151)"
   ),
   stringsAsFactors = FALSE
 )
@@ -197,8 +197,8 @@ structural_table <- data.frame(
                 "Effect discount rate", "Willingness-to-pay threshold",
                 "PSA sample size"),
   Value = c(
-    paste0(cl, " years"),
-    paste0(time_horizon, " weeks"),
+    paste0(cl * 52, " week (1/52 year = ", format(cl, digits = 3), " years)"),
+    paste0(time_horizon, " weeks (", time_horizon * cl, " years)"),
     fmt_pct(dr),
     fmt_pct(dr),
     fmt_eur(WTP),
@@ -220,4 +220,4 @@ knitr::kable(
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2
