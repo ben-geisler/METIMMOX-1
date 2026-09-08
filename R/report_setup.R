@@ -51,7 +51,12 @@ setup_report <- function(sources = character(0),
   }
 
   if (!require("pacman")) install.packages("pacman")
+  # kableExtra sets knitr.table.format to "html" on load whenever the output is
+  # not LaTeX, which turns every knitr::kable() into an HTML table in the gfm
+  # render. Disable that and pin the default to pipe tables outside LaTeX.
+  options(kableExtra.auto_format = FALSE)
   pacman::p_load(char = packages)
+  options(knitr.table.format = report_table_format())
 
   if (isTRUE(set_knitr)) {
     knitr::opts_chunk$set(

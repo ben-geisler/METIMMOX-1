@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-09-07
+2026-09-08
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -207,7 +207,7 @@ after a recorded progression with the hazard before it.
 | CRP -\> PFS | Firth Cox | 68 | 0.41 (95% CI 0.23 to 0.71) | 0.001 | Association detected (p \< 0.05) |
 | CRP -\> TLR | Firth logistic | 68 | 3.48 (95% CI 1.14 to 12.59) | 0.028 | Association detected (p \< 0.05) |
 | PFS -\> OS | Firth Cox, time-dependent progression | 68 | 3.75 (95% CI 2.09 to 7.12) | \<0.001 | Association detected (p \< 0.05) |
-| Sex -\> TMB_BRAF | Fisher’s exact | 69 | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
+| Sex -\> TMB_BRAF | Fisher's exact | 69 | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
 | T -\> OS | Firth Cox | 68 | 0.96 (95% CI 0.58 to 1.61) | 0.873 | No association detected (p \>= 0.05) |
 | T -\> PFS | Firth Cox | 68 | 0.80 (95% CI 0.49 to 1.33) | 0.392 | No association detected (p \>= 0.05) |
 | T -\> TLR | Firth logistic | 68 | 0.33 (95% CI 0.11 to 0.90) | 0.030 | Association detected (p \< 0.05) |
@@ -235,12 +235,12 @@ week-4 value (before the first nivolumab dose, after two FLOX cycles
 common to both arms), so its check asks whether the arms were balanced
 on CRP at the point where the immunotherapy decision is made.
 
-| Item              | p-value | Conclusion                       |
-|:------------------|:--------|:---------------------------------|
-| Age *\|\|* T      | 0.172   | Compatible with arm balance      |
-| CRP *\|\|* T      | 0.023   | Arm imbalance in realised sample |
-| Sex *\|\|* T      | 0.254   | Compatible with arm balance      |
-| T *\|\|* TMB_BRAF | 1.000   | Compatible with arm balance      |
+| Item                | p-value | Conclusion                       |
+|:--------------------|:--------|:---------------------------------|
+| Age \_\|\|\_ T      | 0.172   | Compatible with arm balance      |
+| CRP \_\|\|\_ T      | 0.023   | Arm imbalance in realised sample |
+| Sex \_\|\|\_ T      | 0.254   | Compatible with arm balance      |
+| T \_\|\|\_ TMB_BRAF | 1.000   | Compatible with arm balance      |
 
 Arm balance checks implied by the DAG
 
@@ -269,25 +269,25 @@ of `T` and the biomarker the interaction node is constant.
 
 | CI statement | Test | N | Effect | p-value | Arm balance check | Conclusion |
 |:---|:---|:---|:---|:---|:---|:---|
-| Age *\|\|* CRP | Wilcoxon rank-sum | 71 | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
-| Age *\|\|* Sex | Wilcoxon rank-sum | 74 | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
-| Age *\|\|* T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with arm balance |
-| Age *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.03 (95% CI 0.98 to 1.08) | 0.292 | No | Compatible with DAG-implied CI |
-| Age *\|\|* TxCRP | Wilcoxon rank-sum | 71 | Median Age: TxCRP=0=65.0, TxCRP=1=68.0 | 0.557 | No | Compatible with DAG-implied CI |
-| Age *\|\|* TxTMB \| {TMB_BRAF} | Conditional permutation test | 69 | Standardized Z = 0.77 | 0.457 | No | Compatible with DAG-implied CI |
-| CRP *\|\|* Sex | Fisher’s exact | 71 | 0.74 (95% CI 0.25 to 2.23) | 0.619 | No | Compatible with DAG-implied CI |
-| CRP *\|\|* T | Fisher’s exact (arm balance at week 4) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Arm imbalance in realised sample |
-| CRP *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 68 | 21.67 (95% CI 2.23 to 210.11) | 0.007 | No | CI contradicted by data |
-| Sex *\|\|* T | Fisher’s exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with arm balance |
-| Sex *\|\|* TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.13 (95% CI 0.40 to 3.21) | 0.812 | No | Compatible with DAG-implied CI |
-| Sex *\|\|* TxCRP | Fisher’s exact | 71 | 0.66 (95% CI 0.19 to 2.27) | 0.578 | No | Compatible with DAG-implied CI |
-| Sex *\|\|* TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 69 | 0.52 (95% CI 0.12 to 2.17) | 0.592 | No | Compatible with DAG-implied CI |
-| T *\|\|* TMB_BRAF | Fisher’s exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with arm balance |
-| TLR *\|\|* TxCRP \| {CRP, T} | Firth logistic | 68 | 1.25 (95% CI 0.01 to 20.93) | 0.898 | No | Compatible with DAG-implied CI |
-| TLR *\|\|* TxTMB \| {T, TMB_BRAF} | Firth logistic | 65 | 2.31 (95% CI 0.29 to 19.27) | 0.426 | No | Compatible with DAG-implied CI |
-| TMB_BRAF *\|\|* TxCRP \| {CRP} | Mantel-Haenszel | 68 | 7.14 (95% CI 0.68 to 75.22) | 0.203 | No | Compatible with DAG-implied CI |
-| TxCRP *\|\|* TxTMB \| {T, TMB_BRAF} | Definitional (constant within every stratum) | 74 | – | – | No | Holds by construction |
-| TxCRP *\|\|* TxTMB \| {CRP, T} | Definitional (constant within every stratum) | 74 | – | – | No | Holds by construction |
+| Age \_\|\|\_ CRP | Wilcoxon rank-sum | 71 | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
+| Age \_\|\|\_ Sex | Wilcoxon rank-sum | 74 | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | No | Compatible with DAG-implied CI |
+| Age \_\|\|\_ T | Wilcoxon rank-sum (randomization check) | 74 | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Yes | Compatible with arm balance |
+| Age \_\|\|\_ TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.03 (95% CI 0.98 to 1.08) | 0.292 | No | Compatible with DAG-implied CI |
+| Age \_\|\|\_ TxCRP | Wilcoxon rank-sum | 71 | Median Age: TxCRP=0=65.0, TxCRP=1=68.0 | 0.557 | No | Compatible with DAG-implied CI |
+| Age \_\|\|\_ TxTMB \| {TMB_BRAF} | Conditional permutation test | 69 | Standardized Z = 0.77 | 0.457 | No | Compatible with DAG-implied CI |
+| CRP \_\|\|\_ Sex | Fisher's exact | 71 | 0.74 (95% CI 0.25 to 2.23) | 0.619 | No | Compatible with DAG-implied CI |
+| CRP \_\|\|\_ T | Fisher's exact (arm balance at week 4) | 71 | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Yes | Arm imbalance in realised sample |
+| CRP \_\|\|\_ TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 68 | 21.67 (95% CI 2.23 to 210.11) | 0.007 | No | CI contradicted by data |
+| Sex \_\|\|\_ T | Fisher's exact (randomization check) | 74 | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Yes | Compatible with arm balance |
+| Sex \_\|\|\_ TLR \| {CRP, TMB_BRAF} | Firth logistic | 65 | 1.13 (95% CI 0.40 to 3.21) | 0.812 | No | Compatible with DAG-implied CI |
+| Sex \_\|\|\_ TxCRP | Fisher's exact | 71 | 0.66 (95% CI 0.19 to 2.27) | 0.578 | No | Compatible with DAG-implied CI |
+| Sex \_\|\|\_ TxTMB \| {TMB_BRAF} | Mantel-Haenszel | 69 | 0.52 (95% CI 0.12 to 2.17) | 0.592 | No | Compatible with DAG-implied CI |
+| T \_\|\|\_ TMB_BRAF | Fisher's exact (randomization check) | 69 | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Yes | Compatible with arm balance |
+| TLR \_\|\|\_ TxCRP \| {CRP, T} | Firth logistic | 68 | 1.25 (95% CI 0.01 to 20.93) | 0.898 | No | Compatible with DAG-implied CI |
+| TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF} | Firth logistic | 65 | 2.31 (95% CI 0.29 to 19.27) | 0.426 | No | Compatible with DAG-implied CI |
+| TMB_BRAF \_\|\|\_ TxCRP \| {CRP} | Mantel-Haenszel | 68 | 7.14 (95% CI 0.68 to 75.22) | 0.203 | No | Compatible with DAG-implied CI |
+| TxCRP \_\|\|\_ TxTMB \| {T, TMB_BRAF} | Definitional (constant within every stratum) | 74 | -- | -- | No | Holds by construction |
+| TxCRP \_\|\|\_ TxTMB \| {CRP, T} | Definitional (constant within every stratum) | 74 | -- | -- | No | Holds by construction |
 
 Conditional-independence tests
 
@@ -313,25 +313,25 @@ Conditional-independence tests
 | Direct edge | TxCRP -\> PFS | 0.26 (95% CI 0.08 to 0.91) | 0.036 | Association detected (p \< 0.05) |
 | Direct edge | TxTMB -\> OS | 0.63 (95% CI 0.22 to 1.79) | 0.385 | No association detected (p \>= 0.05) |
 | Direct edge | TxTMB -\> PFS | 0.36 (95% CI 0.13 to 1.00) | 0.051 | No association detected (p \>= 0.05) |
-| Conditional independence | Age *\|\|* CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
-| Conditional independence | Age *\|\|* Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
-| Conditional independence | Age *\|\|* T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with arm balance |
-| Conditional independence | Age *\|\|* TLR \| {CRP, TMB_BRAF} | 1.03 (95% CI 0.98 to 1.08) | 0.292 | Compatible with DAG-implied CI |
-| Conditional independence | Age *\|\|* TxCRP | Median Age: TxCRP=0=65.0, TxCRP=1=68.0 | 0.557 | Compatible with DAG-implied CI |
-| Conditional independence | Age *\|\|* TxTMB \| {TMB_BRAF} | Standardized Z = 0.77 | 0.457 | Compatible with DAG-implied CI |
-| Conditional independence | CRP *\|\|* Sex | 0.74 (95% CI 0.25 to 2.23) | 0.619 | Compatible with DAG-implied CI |
-| Conditional independence | CRP *\|\|* T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Arm imbalance in realised sample |
-| Conditional independence | CRP *\|\|* TxTMB \| {TMB_BRAF} | 21.67 (95% CI 2.23 to 210.11) | 0.007 | CI contradicted by data |
-| Conditional independence | Sex *\|\|* T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with arm balance |
-| Conditional independence | Sex *\|\|* TLR \| {CRP, TMB_BRAF} | 1.13 (95% CI 0.40 to 3.21) | 0.812 | Compatible with DAG-implied CI |
-| Conditional independence | Sex *\|\|* TxCRP | 0.66 (95% CI 0.19 to 2.27) | 0.578 | Compatible with DAG-implied CI |
-| Conditional independence | Sex *\|\|* TxTMB \| {TMB_BRAF} | 0.52 (95% CI 0.12 to 2.17) | 0.592 | Compatible with DAG-implied CI |
-| Conditional independence | T *\|\|* TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with arm balance |
-| Conditional independence | TLR *\|\|* TxCRP \| {CRP, T} | 1.25 (95% CI 0.01 to 20.93) | 0.898 | Compatible with DAG-implied CI |
-| Conditional independence | TLR *\|\|* TxTMB \| {T, TMB_BRAF} | 2.31 (95% CI 0.29 to 19.27) | 0.426 | Compatible with DAG-implied CI |
-| Conditional independence | TMB_BRAF *\|\|* TxCRP \| {CRP} | 7.14 (95% CI 0.68 to 75.22) | 0.203 | Compatible with DAG-implied CI |
-| Conditional independence | TxCRP *\|\|* TxTMB \| {T, TMB_BRAF} | – | – | Holds by construction |
-| Conditional independence | TxCRP *\|\|* TxTMB \| {CRP, T} | – | – | Holds by construction |
+| Conditional independence | Age \_\|\|\_ CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
+| Conditional independence | Age \_\|\|\_ Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
+| Conditional independence | Age \_\|\|\_ T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with arm balance |
+| Conditional independence | Age \_\|\|\_ TLR \| {CRP, TMB_BRAF} | 1.03 (95% CI 0.98 to 1.08) | 0.292 | Compatible with DAG-implied CI |
+| Conditional independence | Age \_\|\|\_ TxCRP | Median Age: TxCRP=0=65.0, TxCRP=1=68.0 | 0.557 | Compatible with DAG-implied CI |
+| Conditional independence | Age \_\|\|\_ TxTMB \| {TMB_BRAF} | Standardized Z = 0.77 | 0.457 | Compatible with DAG-implied CI |
+| Conditional independence | CRP \_\|\|\_ Sex | 0.74 (95% CI 0.25 to 2.23) | 0.619 | Compatible with DAG-implied CI |
+| Conditional independence | CRP \_\|\|\_ T | 3.51 (95% CI 1.12 to 12.10) | 0.023 | Arm imbalance in realised sample |
+| Conditional independence | CRP \_\|\|\_ TxTMB \| {TMB_BRAF} | 21.67 (95% CI 2.23 to 210.11) | 0.007 | CI contradicted by data |
+| Conditional independence | Sex \_\|\|\_ T | 0.58 (95% CI 0.21 to 1.59) | 0.254 | Compatible with arm balance |
+| Conditional independence | Sex \_\|\|\_ TLR \| {CRP, TMB_BRAF} | 1.13 (95% CI 0.40 to 3.21) | 0.812 | Compatible with DAG-implied CI |
+| Conditional independence | Sex \_\|\|\_ TxCRP | 0.66 (95% CI 0.19 to 2.27) | 0.578 | Compatible with DAG-implied CI |
+| Conditional independence | Sex \_\|\|\_ TxTMB \| {TMB_BRAF} | 0.52 (95% CI 0.12 to 2.17) | 0.592 | Compatible with DAG-implied CI |
+| Conditional independence | T \_\|\|\_ TMB_BRAF | 0.96 (95% CI 0.33 to 2.76) | 1.000 | Compatible with arm balance |
+| Conditional independence | TLR \_\|\|\_ TxCRP \| {CRP, T} | 1.25 (95% CI 0.01 to 20.93) | 0.898 | Compatible with DAG-implied CI |
+| Conditional independence | TLR \_\|\|\_ TxTMB \| {T, TMB_BRAF} | 2.31 (95% CI 0.29 to 19.27) | 0.426 | Compatible with DAG-implied CI |
+| Conditional independence | TMB_BRAF \_\|\|\_ TxCRP \| {CRP} | 7.14 (95% CI 0.68 to 75.22) | 0.203 | Compatible with DAG-implied CI |
+| Conditional independence | TxCRP \_\|\|\_ TxTMB \| {T, TMB_BRAF} | -- | -- | Holds by construction |
+| Conditional independence | TxCRP \_\|\|\_ TxTMB \| {CRP, T} | -- | -- | Holds by construction |
 
 Consolidated summary of direct edge and conditional-independence tests
 
@@ -408,6 +408,6 @@ need refinement or stronger justification in future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-07  
+**Report completed on:** 2026-09-08  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.2

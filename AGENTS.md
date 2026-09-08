@@ -187,7 +187,7 @@ Rscript publish/publish_reports.R            # all reports, both formats, then _
 Rscript publish/publish_reports.R --only CEA,OWSA
 ```
 
-- Tables: `knitr::kable()` piped into the `tbl_*` wrappers of [report_tables.R](R/report_tables.R) (`tbl_style`, `tbl_column_spec`, `tbl_row_spec`, `tbl_header_above`, `tbl_pack_rows`, `tbl_footnote`, `tbl_landscape`; `format = report_table_format()` where a format is needed). They apply kableExtra under LaTeX only; calling kableExtra directly makes the GFM pass fail with `Functions that produce HTML output found in document targeting commonmark output`. Under GFM, group headers and spanners are dropped and footnotes become a paragraph below the table.
+- Tables: `knitr::kable()` piped into the `tbl_*` wrappers of [report_tables.R](R/report_tables.R) (`tbl_style`, `tbl_column_spec`, `tbl_row_spec`, `tbl_header_above`, `tbl_pack_rows`, `tbl_footnote`, `tbl_landscape`; `format = report_table_format()` where a format is needed). They apply kableExtra under LaTeX only; `setup_report()` also sets `kableExtra.auto_format = FALSE` and pins `knitr.table.format` to `pipe` outside LaTeX, because attaching kableExtra otherwise switches every `knitr::kable()` to HTML in the GFM render. Calling kableExtra directly makes the GFM pass fail with `Functions that produce HTML output found in document targeting commonmark output`. Under GFM, group headers and spanners are dropped and footnotes become a paragraph below the table.
 - Verify content from the `.md`; `pdftotext` (poppler, `/mingw64/bin`) is the fallback for PDF-only checks (`pdftoppm` is not installed, so PDFs cannot be read visually).
 
 **Prerequisites for rendering**:
