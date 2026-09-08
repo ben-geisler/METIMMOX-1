@@ -1,0 +1,151 @@
+---
+title: "Biomarker Effect Decomposition"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("report_format"),
+  set_theme = FALSE
+)
+
+curve_df <- function(biomarker, endpoint = c("os", "pfs")) {
+  endpoint <- match.arg(endpoint)
+  source_list <- if (endpoint == "os") l_params_base$p_os else l_params_base$p_pfs
+  suffix <- if (endpoint == "os") "OS" else "PFS"
+
+  data.frame(
+    Week = time_points,
+    Positive = source_list[[paste0(biomarker, "_pos_", suffix)]],
+    Negative = source_list[[paste0(biomarker, "_neg_", suffix)]],
+    Weighted = source_list[[paste0(biomarker, "_weighted_", suffix)]],
+    Control = source_list[[paste0("control_", suffix)]],
+    Biomarker = biomarker_label(biomarker),
+    Endpoint = ifelse(endpoint == "os", "Overall survival", "Progression-free survival"),
+    stringsAsFactors = FALSE
+  ) %>%
+    pivot_longer(cols = c(Positive, Negative, Weighted, Control),
+                 names_to = "Curve", values_to = "Survival")
+}
+
+# Restricted mean survival over the modelled horizon (time_horizon weeks),
+# trapezoidal rule on the weekly grid (restricted_mean_survival() in
+# report_format.R). The earlier sum(y) * cl was a left Riemann sum that counted
+# the t = 0 point as a full cycle (issue #157).
+restricted_mean <- function(y) restricted_mean_survival(y, cl)
+```
+
+# Overview
+
+This report decomposes the survival contribution of the two economic biomarker strategies in the single joint model. Each strategy is shown as biomarker-positive, biomarker-negative, prevalence-weighted, and standard-of-care survival curves.
+
+# Biomarker Prevalence
+
+```{r prevalence}
+prev_df <- strategies_df %>%
+  filter(id %in% get_biomarkers()) %>%
+  transmute(
+    Biomarker = biomarker_label(id),
+    Prevalence = scales::percent(prevalence, accuracy = 0.1)
+  )
+
+knitr::kable(prev_df, booktabs = TRUE, align = c("l", "r"),
+             caption = "Economic biomarker prevalences") %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Restricted Mean Survival
+
+Restricted mean survival is the area under each survival curve over the modelled horizon of `r time_horizon` weeks (`r time_horizon * cl` years), integrated with the trapezoidal rule on the weekly model grid; it is therefore bounded by `r time_horizon * cl` years and is not an estimate of unrestricted mean survival.
+
+```{r rmst-table}
+rmst_rows <- lapply(get_biomarkers(), function(bm) {
+  os <- l_params_base$p_os
+  pfs <- l_params_base$p_pfs
+  data.frame(
+    Biomarker = biomarker_label(bm),
+    Endpoint = rep(c("Overall survival", "Progression-free survival"), each = 4),
+    Curve = rep(c("Positive", "Negative", "Weighted", "Control"), times = 2),
+    Years = c(
+      restricted_mean(os[[paste0(bm, "_pos_OS")]]),
+      restricted_mean(os[[paste0(bm, "_neg_OS")]]),
+      restricted_mean(os[[paste0(bm, "_weighted_OS")]]),
+      restricted_mean(os$control_OS),
+      restricted_mean(pfs[[paste0(bm, "_pos_PFS")]]),
+      restricted_mean(pfs[[paste0(bm, "_neg_PFS")]]),
+      restricted_mean(pfs[[paste0(bm, "_weighted_PFS")]]),
+      restricted_mean(pfs$control_PFS)
+    ),
+    stringsAsFactors = FALSE
+  )
+})
+
+rmst_df <- bind_rows(rmst_rows) %>%
+  mutate(Years = sprintf("%.2f", Years))
+
+knitr::kable(
+  rmst_df,
+  booktabs = TRUE,
+  align = c("l", "l", "l", "r"),
+  caption = paste0("Restricted mean survival (years) over the ", time_horizon,
+                   "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
+                   "by biomarker subgroup and strategy curve")
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Survival Decomposition
+
+```{r decomposition-plot, fig.cap="Survival decomposition by economic biomarker", fig.height=8, fig.width=10}
+plot_data <- bind_rows(
+  lapply(get_biomarkers(), curve_df, endpoint = "os"),
+  lapply(get_biomarkers(), curve_df, endpoint = "pfs")
+)
+
+ggplot(plot_data, aes(x = Week, y = Survival, color = Curve, linetype = Curve)) +
+  geom_line(linewidth = 0.8) +
+  facet_grid(Biomarker ~ Endpoint) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Weeks", y = "Survival probability", color = NULL, linetype = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+# Interpretation
+
+The prevalence-weighted strategy curve combines biomarker-positive patients assigned to experimental treatment and biomarker-negative patients assigned to standard care. The distance between the weighted strategy curve and the control curve is the survival component of the economic strategy effect.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.0

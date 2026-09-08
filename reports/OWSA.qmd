@@ -1,0 +1,276 @@
+---
+title: "One-Way Sensitivity Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "09"),
+  funs = c("report_format"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+```
+
+# Overview
+
+This one-way sensitivity analysis varies economic parameters by the deterministic sensitivity-analysis range and summarizes the impact on net monetary benefit (NMB). The analysis uses the single joint economic model and the economic strategies returned by `get_strategies()`.
+
+# Parameter Ranges
+
+```{r parameter-ranges}
+ranges_display <- dsa_ranges %>%
+  mutate(
+    Parameter = pars,
+    Low = ifelse(grepl("^c_", pars), format_eur(min), sprintf("%.3f", min)),
+    High = ifelse(grepl("^c_", pars), format_eur(max), sprintf("%.3f", max))
+  ) %>%
+  select(Parameter, Low, High)
+
+knitr::kable(
+  ranges_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r"),
+  caption = "One-way sensitivity-analysis parameter ranges"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Base Case and Optimal Strategy
+
+```{r basecase}
+base_display <- dsa_results %>%
+  filter(Parameter == "base_case") %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    NMB = format_eur(NMB)
+  ) %>%
+  select(Strategy, Cost, Effect, NMB)
+
+knitr::kable(
+  base_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
+  caption = paste0("Base case at WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Tornado Plots
+
+Two tornado diagrams are shown for each guided strategy. The first ranks parameters by how far they move the strategy's own NMB. Parameters that move every strategy by the same amount (the progression-free utility, the end-of-life cost) rank highly there without affecting the choice between strategies. The second ranks parameters by the change in **incremental NMB versus standard of care**, which is the decision-relevant quantity and the measure used in Figure 2 (issue #156).
+
+```{r tornado-plots, fig.cap="Tornado plots by economic strategy (change in the strategy's own NMB)", fig.height=8, fig.width=10}
+par(mfrow = c(length(get_strategies()), 1), mar = c(4, 8, 3, 1))
+for (strategy in get_strategies()) {
+  create_tornado_plot(strategy, dsa_results)
+}
+par(mfrow = c(1, 1))
+```
+
+```{r tornado-plots-incremental, fig.cap="Incremental tornado plots for the guided strategies (change in NMB versus standard of care)", fig.height=6, fig.width=10}
+par(mfrow = c(length(get_biomarkers()), 1), mar = c(4, 8, 3, 1))
+for (strategy in get_biomarkers()) {
+  create_tornado_plot(strategy, dsa_results_inmb, measure = "INMB_diff")
+}
+par(mfrow = c(1, 1))
+```
+
+# Parameter Impact Ranking
+
+```{r impact-ranking}
+impact_display <- impact_summary %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Impact = format_eur(Impact)
+  )
+
+knitr::kable(
+  impact_display,
+  booktabs = TRUE,
+  align = c("l", "r", "l", "r"),
+  col.names = c("Strategy", "Rank", "Parameter", "NMB Range"),
+  caption = "Top one-way sensitivity drivers by strategy (strategy's own NMB)"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+```{r impact-ranking-incremental}
+incremental_display <- incremental_impact_summary %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Impact = format_eur(Impact)
+  )
+
+knitr::kable(
+  incremental_display,
+  booktabs = TRUE,
+  align = c("l", "r", "l", "r"),
+  col.names = c("Strategy", "Rank", "Parameter", "Incremental NMB Range"),
+  caption = "Top drivers of incremental NMB versus standard of care (decision sensitivity)"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Survival Distribution Sensitivity
+
+```{r model-sensitivity}
+if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
+  n_eval <- model_impact_summary$N_Evaluated[1]
+  n_cand <- model_impact_summary$N_Candidates[1]
+  model_sens_display <- model_impact_summary %>%
+    mutate(
+      Strategy = strategy_label(Strategy),
+      Base_NMB = paste0(format_eur(Base_NMB), " (", Base_Dist, ")"),
+      Min_NMB = paste0(format_eur(Min_NMB), " (", Min_Dist, ")"),
+      Max_NMB = paste0(format_eur(Max_NMB), " (", Max_Dist, ")"),
+      Range = format_eur(Range)
+    ) %>%
+    select(Strategy, Base_NMB, Min_NMB, Max_NMB, Range)
+
+  knitr::kable(
+    model_sens_display,
+    booktabs = TRUE,
+    align = c("l", "r", "r", "r", "r"),
+    col.names = c("Strategy", "Base NMB (selected pair)", "Lowest NMB", "Highest NMB", "Range"),
+    caption = sprintf(
+      "Structural sensitivity to the parametric survival family (%d of %d candidate families evaluated; same family for OS and PFS)",
+      n_eval, n_cand)
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position"))
+} else {
+  cat("Survival-distribution sensitivity results were not available.")
+}
+```
+
+```{r distribution-status}
+if (exists("dsa_distribution_status") && !is.null(dsa_distribution_status)) {
+  status_display <- dsa_distribution_status %>%
+    mutate(
+      Status = ifelse(Evaluated, "Evaluated", "Not evaluated"),
+      Selected = ifelse(Selected, "Yes", ""),
+      Reason = ifelse(is.na(Reason), "", Reason)
+    ) %>%
+    select(Distribution, Selected, Status, Reason)
+
+  knitr::kable(
+    status_display,
+    booktabs = TRUE,
+    align = c("l", "c", "l", "l"),
+    col.names = c("Family", "Base case", "Status", "Reason not evaluated"),
+    caption = "Candidate survival families in the structural sensitivity analysis"
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position"), font_size = 9) %>%
+    tbl_column_spec(4, width = "8cm")
+}
+```
+
+Families whose OS and PFS pair violates the OS >= PFS ordering at some modeled time point are not run through the model, because the deterministic model stops on an ordering violation; they are listed above with the number of violating curve-time points so the table is complete. The base-case row is the ordering-constrained pair selected in the survival analysis, which is the base case by construction.
+```
+
+# Structural Scenarios
+
+The discount rate (applied to costs and QALYs together), the model time horizon, the post-progression treatment cost and the second treatment sequence are not sampled in the PSA. They are varied here as deterministic structural scenarios (issues #153 and #154); these are the ranges reported for those parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
+
+Two of the scenarios test scope assumptions rather than parameter values. The base case applies **no post-progression treatment cost**: second-line systemic therapy, imaging and visits after progression are outside the modeled scope, so the progressed state accrues only the quarterly follow-up contact and the end-of-life cost. Because the strategies differ in time spent progressed, this omission is differential, and the scenario charges EUR 5,000 per quarter in the progressed state as an illustrative upper bound. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
+
+Unit drug and test costs are fixed in the PSA (issue #154) because they are published tariffs or assumed list prices rather than quantities a study could resolve; their influence is quantified in the one-way analysis above, not in the value-of-information results.
+
+```{r structural-scenarios}
+scenario_rows <- dsa_results %>%
+  filter(Parameter %in% names(dsa_scenarios) | Parameter == "base_case")
+
+if (any(scenario_rows$Parameter != "base_case")) {
+  # Short labels keep the table within the page width.
+  short_strategy <- c(control = "SoC", crp = "CRP-guided", tmb_braf = "TMB/BRAF-guided")
+  scenario_value_label <- function(parameter, value, param_value) {
+    if (parameter == "base_case") return("Base case")
+    if (parameter == "Discount_rate") return(sprintf("Discount rate %g%%", 100 * param_value))
+    if (parameter == "Time_horizon") return(sprintf("Time horizon %g years", param_value))
+    if (parameter == "Post_progression_cost") {
+      return(sprintf("Post-progression cost EUR %s per quarter",
+                     format(param_value, big.mark = ",")))
+    }
+    if (parameter == "Second_sequence") {
+      return(if (param_value == 0) "No second treatment sequence" else
+        "Second treatment sequence given")
+    }
+    sprintf("%s = %g", parameter, param_value)
+  }
+  scenario_display <- scenario_rows %>%
+    mutate(
+      Scenario = mapply(scenario_value_label, Parameter, Value, ParamValue),
+      Strategy = unname(short_strategy[Strategy])
+    ) %>%
+    group_by(Scenario) %>%
+    mutate(Optimal = Strategy[which.max(NMB)]) %>%
+    ungroup() %>%
+    select(Scenario, Strategy, NMB, Optimal) %>%
+    tidyr::pivot_wider(names_from = Strategy, values_from = NMB)
+
+  nmb_cols <- setdiff(names(scenario_display), c("Scenario", "Optimal"))
+  out <- scenario_display[, c("Scenario", nmb_cols, "Optimal")]
+  out[nmb_cols] <- lapply(out[nmb_cols], format_eur)
+
+  knitr::kable(
+    out,
+    booktabs = TRUE,
+    align = c("l", rep("r", length(nmb_cols)), "l"),
+    col.names = c("Scenario", paste("NMB", nmb_cols), "Optimal"),
+    caption = paste0("Net monetary benefit under structural scenarios at WTP = EUR ",
+                     format(WTP, big.mark = ","), " (discount rate applies to costs and QALYs)")
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+} else {
+  cat("No structural scenario results are available (see the 09_DSA.R log for failed scenarios).")
+}
+```
+
+```{r structural-scenario-failures}
+failed <- names(dsa_scenario_status)[!unlist(dsa_scenario_status)]
+if (length(failed) > 0) {
+  cat("The following structural scenarios could not be evaluated and are omitted above:",
+      paste(failed, collapse = ", "), ".")
+}
+```
+
+# Interpretation
+
+The tornado plots and rankings show which parameters drive uncertainty in NMB for the single economic model; the incremental tornado plots show which of them drive the decision between a guided strategy and standard of care. Survival distribution sensitivity is shown separately because it reflects extrapolation uncertainty rather than a scalar model input. The structural scenarios show how the discount rate, time horizon, post-progression cost and second treatment sequence move the NMB of every strategy; these parameters are fixed in the PSA, as are the unit drug and test costs.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.3

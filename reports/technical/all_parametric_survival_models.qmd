@@ -1,0 +1,156 @@
+---
+title: "All Parametric Survival Models"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  packages = c("here", "knitr", "kableExtra", "dplyr", "tidyr", "survival", "flexsurv"),
+  set_theme = FALSE
+)
+
+extract_model_coefs <- function(fit, endpoint, distribution) {
+  if (is.null(fit)) return(NULL)
+  tab <- as.data.frame(fit$res)
+  tab$Parameter <- rownames(tab)
+  rownames(tab) <- NULL
+  tab %>%
+    transmute(
+      Endpoint = endpoint,
+      Distribution = distribution,
+      Parameter,
+      Estimate = est,
+      SE = se,
+      L95 = `L95%`,
+      U95 = `U95%`
+    )
+}
+```
+
+# Overview
+
+This technical appendix lists every fitted parametric distribution for the single joint economic survival model. Overall survival (OS) and progression-free survival (PFS) are not selected independently. The base-case pair is the pair with the lowest combined AIC among candidates that preserve OS $\geq$ PFS for control and every economic biomarker subgroup at every weekly time point over the modeled horizon.
+
+With the current data and 10-year horizon, this ordering-constrained procedure selects **gamma for OS and gamma for PFS**.
+
+```{r formula-table}
+formula_df <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  Formula = c(
+    paste(deparse(get_strategy_formula("crp", "os")), collapse = " "),
+    paste(deparse(get_strategy_formula("crp", "pfs")), collapse = " ")
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(formula_df, booktabs = TRUE, align = c("l", "l"),
+             caption = "Fitted economic survival formulas") %>%
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "11cm")
+```
+
+# Information Criteria
+
+```{r ic-table}
+ic_table <- bind_rows(
+  models$full$os_ic %>% mutate(Endpoint = "Overall survival"),
+  models$full$pfs_ic %>% mutate(Endpoint = "Progression-free survival")
+) %>%
+  filter(!is.na(AIC)) %>%
+  group_by(Endpoint) %>%
+  arrange(AIC, .by_group = TRUE) %>%
+  mutate(
+    Delta_AIC = AIC - min(AIC),
+    Delta_BIC = BIC - min(BIC)
+  ) %>%
+  ungroup()
+
+knitr::kable(
+  ic_table,
+  booktabs = TRUE,
+  digits = 2,
+  align = "r",
+  caption = "Information criteria for all fitted distributions"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+# Coefficient Tables
+
+```{r all-coefficients}
+coef_rows <- list()
+for (dist in names(models$full$os)) {
+  coef_rows[[paste0("os_", dist)]] <- extract_model_coefs(models$full$os[[dist]], "OS", dist)
+}
+for (dist in names(models$full$pfs)) {
+  coef_rows[[paste0("pfs_", dist)]] <- extract_model_coefs(models$full$pfs[[dist]], "PFS", dist)
+}
+
+coef_df <- bind_rows(coef_rows) %>%
+  mutate(
+    Estimate = sprintf("%.4f", Estimate),
+    SE = sprintf("%.4f", SE),
+    `95% CI` = sprintf("[%.4f, %.4f]", L95, U95)
+  ) %>%
+  select(Endpoint, Distribution, Parameter, Estimate, SE, `95% CI`)
+
+knitr::kable(
+  coef_df,
+  booktabs = TRUE,
+  align = c("l", "l", "l", "r", "r", "r"),
+  caption = "Coefficient estimates for all fitted parametric models"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 8)
+```
+
+# Ordering-Constrained Selection Summary
+
+```{r best-fit}
+best_fit <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  Distribution = c(models$best_fit$os_distribution, models$best_fit$pfs_distribution),
+  AIC = c(models$best_fit$os_aic, models$best_fit$pfs_aic),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(best_fit, booktabs = TRUE, digits = 2,
+             caption = "Selected minimum-combined-AIC pair satisfying OS >= PFS") %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+The pair is selected jointly. Consequently, an endpoint's selected family need not be its independently lowest-AIC family. The full candidate-pair audit and the combined-AIC penalty relative to independent endpoint selection are stored in `models$ordered_selection` and `models$best_fit$ordering_aic_penalty`, respectively.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 5.0

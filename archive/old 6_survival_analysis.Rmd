@@ -1,0 +1,984 @@
+---
+title: "Survival Analysis"
+author: "Ben Geisler"
+date: "2025-09-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## load faster binary format
+```{r}
+rm(list = ls())
+setwd("..") 
+METIMMOX <- readRDS(file="data/tidy/METIMMOX.rds")
+```
+
+# Survival Analysis 1: PFS
+
+```{r}
+rm(list = ls())
+METIMMOX <- readRDS(file="METIMMOX.rds")
+
+METIMMOX_control <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1])
+METIMMOX_experimental <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2])
+```
+
+## Overall
+
+```{r}
+surv_object_pfs <- Surv(time = METIMMOX$PFSmo, event = METIMMOX$`Progression exit`)
+fit.km <- survfit(surv_object_pfs ~ 1, data = METIMMOX)
+plot(fit.km, xlab = "Months", ylab = "Progression-free Survival")
+legend("topright", legend = c("Kaplan-Meier Estimate w/ 95% CI"), lty = 1, col = "black")
+
+rm(fit.km)
+```
+
+###Compare this to Weibull
+
+```{r}
+fit.weibull <- flexsurvreg(surv_object_pfs ~ 1, data = METIMMOX, dist="weibull")
+plot(fit.weibull, xlab = "Months", ylab = "Progression-free Survival")
+legend("topright", legend = c("Weibull Estimate w/ 95% CI"), lty = 1, col = "red")
+
+rm(fit.weibull)
+```
+
+## Control vs. Experimental arm
+
+```{r}
+fit.km <- survfit(surv_object_pfs ~ Rx, data = METIMMOX)
+plot(fit.km, xlab = "Months", ylab = "Progression-free Survival", col = c("blue", "pink"))
+legend("topright", legend = levels(METIMMOX$Rx), lty = 1, col = c("blue", "pink"))
+
+median_pfs <- summary(fit.km)$table[, "median"]
+group_levels <- levels(METIMMOX$Rx)
+
+# evenly spaced y-values for text annotations
+n_groups <- length(group_levels)
+y_values <- seq(from = 0.8, to = 0.8 - (n_groups - 1) * 0.1, length.out = n_groups)
+
+# Define x-axis offset for text annotations
+x_offset <- 0.05 * max(METIMMOX$PFSmo)
+
+# Add median PFS annotations to the plot for each treatment group
+for (i in 1:n_groups) {
+  text(x = median_pfs[i] + x_offset, y = y_values[i],
+       labels = paste("Median PFS (", group_levels[i], "):", round(median_pfs[i], 1)),
+       pos = 4)
+}
+
+```
+
+### log rank tests and hazarad ratios from Cox PH regression models for PFS
+
+```{r}
+
+#  median PFS for each treatment group
+cat("Median PFS by Treatment Group:\n")
+for (i in 1:length(group_levels)) {
+  cat(group_levels[i], ": ", round(median_pfs[i], 2), " months\n", sep = "")
+}
+
+log_rank_test <- survdiff(surv_object_pfs ~ Rx, data = METIMMOX)
+print(log_rank_test)
+
+# Cox PH regression model with Rx as the predictor variable
+cox_model <- coxph(surv_object_pfs ~ Rx, data = METIMMOX)
+summary(cox_model)
+
+# HR and CI 
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (Rx):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+
+rm(fit.km,group_levels,i,median_pfs,n_groups,x_offset,y_values)
+```
+
+```{r}
+fit.weibull <- flexsurvreg(surv_object_pfs ~ Rx, data = METIMMOX, dist="weibull")
+plot(fit.weibull, xlab = "Months", ylab = "Progression-free Survival", col = c("blue", "pink"))
+legend("topright", legend = levels(METIMMOX$Rx), lty = 1, col = c("blue", "pink"))
+```
+
+```{r}
+km_control <- survfit(surv_object_pfs ~ 1, data = METIMMOX, subset = (Rx == levels(Rx)[1]))
+
+# KM for  control arm only
+ggsurvplot(km_control, data = METIMMOX, conf.int = TRUE,
+           conf.int.style = "ribbon", surv.median.line = "hv", ggtheme = theme_bw(),
+           palette = "blue", risk.table = TRUE, legend = "none",
+           xlim = c(0, max(METIMMOX$PFSmo)), title = "Control Arm", surv.scale="percent")
+```
+
+```{r}
+
+km_experimental <- survfit(surv_object_pfs ~ 1, data = METIMMOX, subset = (Rx == levels(Rx)[2]))
+ggsurvplot(km_experimental, data = METIMMOX, conf.int = TRUE,
+           conf.int.style = "ribbon", surv.median.line = "hv", ggtheme = theme_bw(),
+           palette = "pink", risk.table = TRUE, legend = "none",
+           xlim = c(0, max(METIMMOX$PFSmo)), title = "Experimental Arm", surv.scale="percent")
+```
+
+##by TL reduction ≥10% (experimental arm)
+
+```{r}
+
+surv_control <- Surv(time = METIMMOX_control$PFSmo, event = METIMMOX_control$`Progression exit`)
+surv_experimental <- Surv(time = METIMMOX_experimental$PFSmo, event = METIMMOX_experimental$`Progression exit`)
+
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_tlr1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TLRcat == 1))
+km_tlr0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TLRcat == 0))
+
+plot(km_control, xlab = "Months", ylab = "Progression-free Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# TLRcat=1 curve from the experimental group in pink
+lines(km_tlr1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# TLRcat=0 curve from the experimental group as a dashed black line
+lines(km_tlr0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+legend("topright", legend = c("Control Group", "≥10% TL reduction", "<10% TL reduction"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+### log rank tests and hazarad ratios from Cox PH regression models for PFS
+
+```{r}
+
+medians <- tapply(METIMMOX_experimental$PFSmo, METIMMOX_experimental$TLRcat, median, na.rm = TRUE)
+cat("Medians of PFSmo stratified by TLRcat (experimental arm):\n")
+print(medians)
+
+log_rank_test <- survdiff(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in PFS between the TLRcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in PFS between the TLRcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression model, stratified by TL reduction <10% (experimental arm)
+cox_model <- coxph(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+summary(cox_model)
+
+# HR and CI for TL reduction <10% (experimental arm)
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (TLRcat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(medians,log_rank_test,cox_model,hr,ci)
+```
+
+### PH assumption 
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("<10% TL reduction", "≥10% TL reduction"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+##by CRP \<5 after two FLOX cycles (experimental arm)
+
+```{r}
+
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_crp1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 1))
+km_crp0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 0))
+
+# KM for the control group in blue
+plot(km_control, xlab = "Months", ylab = "Progression-free Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# CRP1cat=1 curve from the experimental group in pink
+lines(km_crp1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# CRP1cat=0 curve from the experimental group as a dashed black line
+lines(km_crp0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+legend("topright", legend = c("Control Group", "CRP < 5.0", "CRP ≥ 5.0"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+## same without control arm
+
+```{r}
+# Create the survival object using the METIMMOX_experimental dataset
+surv_object_pfs_exp <- Surv(time = METIMMOX_experimental$PFSmo, event = METIMMOX_experimental$`Progression exit`)
+
+# Fit the Kaplan-Meier model using the METIMMOX_experimental dataset and survival object
+fit.km <- survfit(surv_object_pfs_exp ~ CRP1cat, data = METIMMOX_experimental)
+
+plot(fit.km, xlab = "Months", ylab = "Progression-free Survival", col = c("black", "pink"), lty = c("dashed", "solid"))
+
+legend("topright", legend = c("CRP ≥5.0", "CRP <5.0"), lty = c("dashed", "solid"), col = c("black", "pink"))
+
+median_pfs <- summary(fit.km)$table[, "median"]
+
+group_levels <- c("CRP ≥5.0", "CRP <5.0")
+
+# evenly spaced y-values for text annotations
+n_groups <- length(group_levels)
+y_values <- seq(from = 0.8, to = 0.8 - (n_groups - 1) * 0.1, length.out = n_groups)
+
+# Define x-axis offset for text annotations
+x_offset <- 0.05 * max(METIMMOX_experimental$PFSmo)
+
+# Add median PFS annotations to the plot for each CRP1cat group
+for (i in 1:n_groups) {
+  text(x = median_pfs[i] + x_offset, y = y_values[i],
+       labels = paste("Median PFS (", group_levels[i], "):", round(median_pfs[i], 1)),
+       pos = 4)
+}
+```
+
+### log rank tests and hazarad ratios from Cox PH regression models for PFS
+
+```{r}
+medians <- tapply(METIMMOX_experimental$PFSmo, METIMMOX_experimental$CRP1cat, median, na.rm = TRUE)
+cat("Medians of PFSmo stratified by CRP1cat (experimental arm):\n")
+print(medians)
+
+log_rank_test <- survdiff(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in PFS between the CRP1cat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in PFS between the CRP1cat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression model, stratified by CRP ≥5 after two FLOX cycles (experimental arm)
+cox_model <- coxph(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+summary(cox_model)
+
+# HR and CI for CRP ≥5 after two FLOX cycles (experimental arm)
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (CRP1cat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(medians,log_rank_test,cox_model,hr,ci)
+```
+
+## same analysis, but similar to poster
+
+```{r}
+km_control_crp1 <- survfit(surv_control ~ 1, data = METIMMOX_control, subset = (CRP1cat == 1))
+km_control_crp0 <- survfit(surv_control ~ 1, data = METIMMOX_control, subset = (CRP1cat == 0))
+km_experimental_crp1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 1))
+km_experimental_crp0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 0))
+
+# KM for the control group with CRP < 5.0 as a solid darker blue line
+plot(km_control_crp1, xlab = "Months", ylab = "Progression-free Survival", col = "cadetblue", lwd = 2,
+     conf.int = FALSE, xlim = c(0, 44), xaxt = "n")
+axis(1, at = seq(0, 44, by = 2), labels = seq(0, 44, by = 2))
+
+# KM for the control group with CRP ≥ 5.0 as a dotted darker blue line
+lines(km_control_crp0, col = "cadetblue", lty = 2, lwd = 2, conf.int = FALSE)
+
+# KM for the experimental group with CRP < 5.0 as a solid magenta line
+lines(km_experimental_crp1, col = "deeppink3", lwd = 2, conf.int = FALSE)
+
+# KM for the experimental group with CRP ≥ 5.0 as a dotted magenta line
+lines(km_experimental_crp0, col = "deeppink3", lty = 2, lwd = 2, conf.int = FALSE)
+
+legend("topright", legend = c("Control, CRP < 5.0", "Control, CRP ≥ 5.0",
+                              "Experimental, CRP < 5.0", "Experimental, CRP ≥ 5.0"),
+       col = c("cadetblue", "cadetblue", "deeppink3", "deeppink3"), lty = c(1, 2, 1, 2), lwd = 2)
+```
+
+### PH assumption
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("CRP ≥5", "CRP <5"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+##by TMB >8 Mut/Mb
+
+```{r}
+
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_tmb1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TMBcat == 1))
+km_tmb0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TMBcat == 0))
+
+# KM for the control group in blue
+plot(km_control, xlab = "Months", ylab = "Progression-free Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# TMBcat=1 curve from the experimental group in pink
+lines(km_tmb1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# TMBcat=0 curve from the experimental group as a dashed black line
+lines(km_tmb0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+legend("topright", legend = c("Control Group", "TMB >8 Mut/Mb", "TMB ≤8 Mut/Mb"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+## same without control arm
+
+```{r}
+# Create the survival object using the METIMMOX_experimental dataset
+surv_object_pfs_exp <- Surv(time = METIMMOX_experimental$PFSmo, event = METIMMOX_experimental$`Progression exit`)
+
+# Fit the Kaplan-Meier model using the METIMMOX_experimental dataset and survival object
+fit.km <- survfit(surv_object_pfs_exp ~ TMBcat, data = METIMMOX_experimental)
+
+plot(fit.km, xlab = "Months", ylab = "Progression-free Survival", col = c("black", "pink"), lty = c("dashed", "solid"))
+
+legend("topright", legend = c("TMB ≤8", "TMB >8"), lty = c("dashed", "solid"), col = c("black", "pink"))
+
+median_pfs <- summary(fit.km)$table[, "median"]
+
+group_levels <- c("TMB ≤8", "TMB >8")
+
+# evenly spaced y-values for text annotations
+n_groups <- length(group_levels)
+y_values <- seq(from = 0.8, to = 0.8 - (n_groups - 1) * 0.1, length.out = n_groups)
+
+# Define x-axis offset for text annotations
+x_offset <- 0.05 * max(METIMMOX_experimental$PFSmo)
+
+# Add median PFS annotations to the plot for each CRP1cat group
+for (i in 1:n_groups) {
+  text(x = median_pfs[i] + x_offset, y = y_values[i],
+       labels = paste("Median PFS (", group_levels[i], "):", round(median_pfs[i], 1)),
+       pos = 4)
+}
+```
+
+### log rank tests and hazarad ratios from Cox PH regression models for PFS
+
+```{r}
+log_rank_test <- survdiff(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in PFS between the TMBcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in PFS between the TMBcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression model, stratified by TMB ≥10 Mut/Mb (experimental arm)
+cox_model <- coxph(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+summary(cox_model)
+
+# HR and CI for TMB ≥10 Mut/Mb (experimental arm)
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (TMBcat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(medians,log_rank_test,cox_model,hr,ci)
+```
+
+### PH assumption
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("TMB <=8", "TMB >8"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+## same analysis, but similar to poster
+
+```{r}
+surv_object_pfs_exp <- Surv(time = METIMMOX_experimental$PFSmo, event = METIMMOX_experimental$`Progression exit`)
+fit.km <- survfit(surv_object_pfs_exp ~ TMBcat, data = METIMMOX_experimental)
+plot(fit.km, xlab = "Months", ylab = "Progression-free Survival", col = c("cadetblue", "deeppink3"), lty = c("solid", "solid"), xlim = c(0, 48), axes = FALSE)
+axis(1, at = seq(0, 48, by = 12), labels = seq(0, 48, by = 12))
+axis(2)
+legend("topright", legend = c("TMB ≤8", "TMB >8"), lty = c("solid", "solid"), col = c("cadetblue", "deeppink3"))
+median_pfs <- summary(fit.km)$table[, "median"]
+group_levels <- c("TMB ≤8", "TMB >8")
+n_groups <- length(group_levels)
+y_values <- seq(from = 0.8, to = 0.8 - (n_groups - 1) * 0.1, length.out = n_groups)
+x_offset <- 0.05 * 48
+for (i in 1:n_groups) {
+  text(x = median_pfs[i] + x_offset, y = y_values[i],
+       labels = paste("Median PFS (", group_levels[i], "):", round(median_pfs[i], 1)),
+       pos = 4)
+}
+```
+
+# Survival Analysis 2: OS
+
+```{r}
+rm(list = setdiff(ls(), "METIMMOX"))
+
+METIMMOX <- readRDS("METIMMOX.rds")
+METIMMOX_control <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[1])
+METIMMOX_experimental <- subset(METIMMOX, Rx == levels(METIMMOX$Rx)[2])
+
+```
+
+## Overall
+
+```{r}
+surv_object_os <- Surv(time = METIMMOX$OSmo, event = METIMMOX$Death)
+fit.km <- survfit(surv_object_os ~ 1, data = METIMMOX)
+plot(fit.km, xlab = "Months", ylab = "Overall Survival")
+legend("topright", legend = c("Kaplan-Meier Estimate w/ 95% CI"), lty = 1, col = "black")
+```
+
+###compare to a quick Weibull
+
+```{r}
+fit.weibull <- flexsurvreg(surv_object_os ~ 1, data = METIMMOX, dist="weibull")
+plot(fit.weibull, xlab = "Months", ylab = "Overall Survival")
+legend("topright", legend = c("Weibull Estimate w/ 95% CI"), lty = 1, col = "red")
+```
+
+##Control vs. Experimental arm
+
+```{r}
+fit.km <- survfit(surv_object_os ~ Rx, data = METIMMOX)
+plot(fit.km, xlab = "Months", ylab = "Overall Survival", col = c("blue", "pink"))
+legend("topright", legend = levels(METIMMOX$Rx), lty = 1, col = c("blue", "pink"))
+
+# median PFS for each treatment group
+median_os <- summary(fit.km)$table[, "median"]
+group_levels <- levels(METIMMOX$Rx)
+
+# evenly spaced y-values for text annotations
+n_groups <- length(group_levels)
+y_values <- seq(from = 0.8, to = 0.8 - (n_groups - 1) * 0.1, length.out = n_groups)
+
+# Define x-axis offset for text annotations
+x_offset <- 0.05 * max(METIMMOX$OSmo)
+
+# Add median PFS annotations to the plot for each treatment group
+for (i in 1:n_groups) {
+  text(x = median_os[i] + x_offset, y = y_values[i],
+       labels = paste("Median OS (", group_levels[i], "):", round(median_os[i], 1)),
+       pos = 4)
+}
+```
+
+```{r}
+fit.weibull <- flexsurvreg(surv_object_os ~ Rx, data = METIMMOX, dist="weibull")
+plot(fit.weibull, xlab = "Months", ylab = "Overall Survival", col = c("blue", "pink"))
+legend("topright", legend = levels(METIMMOX$Rx), lty = 1, col = c("blue", "pink"))
+```
+
+```{r}
+km_control <- survfit(surv_object_os ~ 1, data = METIMMOX, subset = (Rx == levels(Rx)[1]))
+
+ggsurvplot(km_control, data = METIMMOX, conf.int = TRUE,
+           conf.int.style = "ribbon", surv.median.line = "hv", ggtheme = theme_bw(),
+           palette = "blue", risk.table = TRUE, legend = "none",
+           xlim = c(0, max(METIMMOX$OSmo)), title = "Control Arm", surv.scale="percent")
+```
+
+```{r}
+km_experimental <- survfit(surv_object_os ~ 1, data = METIMMOX, subset = (Rx == levels(Rx)[2]))
+
+ggsurvplot(km_experimental, data = METIMMOX, conf.int = TRUE,
+           conf.int.style = "ribbon", surv.median.line = "hv", ggtheme = theme_bw(),
+           palette = "pink", risk.table = TRUE, legend = "none",
+           xlim = c(0, max(METIMMOX$OSmo)), title = "Experimental Arm", surv.scale="percent")
+```
+
+##by TL reduction ≥10% (experimental arm)
+
+```{r}
+
+surv_control <- Surv(time = METIMMOX_control$OSmo, event = METIMMOX_control$Death)
+surv_experimental <- Surv(time = METIMMOX_experimental$OSmo, event = METIMMOX_experimental$Death)
+
+# Fit the Kaplan-Meier curves
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_tlr1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TLRcat == 1))
+km_tlr0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TLRcat == 0))
+
+# Plot the Kaplan-Meier curve for the control group in blue
+plot(km_control, xlab = "Months", ylab = "Overall Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# Add the TLRcat=1 curve from the experimental group in pink
+lines(km_tlr1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# Add the TLRcat=0 curve from the experimental group as a dashed black line
+lines(km_tlr0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+# Add a legend
+legend("topright", legend = c("Control Group", "≥10% TL reduction", "<10% TL reduction"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+##by CRP ≤5 after two FLOX cycles (experimental arm)
+
+```{r}
+
+# Fit the Kaplan-Meier curves
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_crp1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 1))
+km_crp0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (CRP1cat == 0))
+
+# Plot the Kaplan-Meier curve for the control group in blue
+plot(km_control, xlab = "Months", ylab = "Overall Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# Add the CRP1cat=1 curve from the experimental group in pink
+lines(km_crp1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# Add the CRP1cat=0 curve from the experimental group as a dashed black line
+lines(km_crp0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+# Add a legend
+legend("topright", legend = c("Control Group", "CRP ≤ 5.0", "CRP > 5.0"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+##by TMB >8 Mut/Mb (experimental arm)
+
+```{r}
+
+# Fit the Kaplan-Meier curves
+km_control <- survfit(surv_control ~ 1, data = METIMMOX_control)
+km_tmb1 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TMBcat == 1))
+km_tmb0 <- survfit(surv_experimental ~ 1, data = METIMMOX_experimental, subset = (TMBcat == 0))
+
+# Plot the Kaplan-Meier curve for the control group in blue
+plot(km_control, xlab = "Months", ylab = "Overall Survival", col = "blue", lwd = 2, 
+     conf.int = FALSE)
+
+# Add the TMBcat=1 curve from the experimental group in pink
+lines(km_tmb1, col = "pink", lwd = 2, conf.int = FALSE)
+
+# Add the CRP1cat=0 curve from the experimental group as a dashed black line
+lines(km_tmb0, col = "black", lty = 2, lwd = 2, conf.int = FALSE)
+
+# Add a legend
+legend("topright", legend = c("Control Group", "TMB >8 Mut/Mb", "TMB ≤8 Mut/Mb"),
+       col = c("blue", "pink", "black"), lty = c(1, 1, 2), lwd = 2)
+```
+
+## log rank tests and hazarad ratios from Cox PH regression models for OS
+
+### Control vs. experimental
+
+```{r}
+
+median_os <- summary(fit.km)$table[, "median"]
+group_levels <- levels(METIMMOX$Rx)
+cat("Median OS by Treatment Group:\n")
+for (i in 1:length(group_levels)) {
+  cat(group_levels[i], ": ", round(median_os[i], 2), " months\n", sep = "")
+}
+
+log_rank_test <- survdiff(surv_object_os ~ Rx, data = METIMMOX)
+print(log_rank_test)
+
+# Cox PH regression model with Rx as the predictor variable
+cox_model <- coxph(surv_object_os ~ Rx, data = METIMMOX)
+summary(cox_model)
+
+# HR and CI for Rx
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+
+# Print the hazard ratio and confidence interval
+cat("Hazard Ratio (Rx):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(median_os,group_levels,log_rank_test,cox_model,hr,ci)
+```
+
+##by TL reduction ≥10% (experimental arm)
+
+```{r}
+
+log_rank_test <- survdiff(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in OS between the TLRcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in OS between the TLRcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression  model stratified by TLRcat in the experimental group
+cox_model <- coxph(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+
+# Print the summary of the Cox model
+summary(cox_model)
+
+# Extract the hazard ratio and confidence interval for TLRcat
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+
+# Print the hazard ratio and confidence interval
+cat("Hazard Ratio (TLRcat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(log_rank_test,cox_model,hr,ci)
+```
+
+### PH assumption
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ TLRcat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("TLR <=10%", "TLR >10%"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+##by CRP <5 after two FLOX cycles (experimental arm)
+
+```{r}
+
+log_rank_test <- survdiff(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in OS between the CRP1cat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in OS between the CRP1cat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression model stratified by CRP1cat in the experimental group
+cox_model <- coxph(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+summary(cox_model)
+
+# HR and CI for CRP1cat
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (CRP1cat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(log_rank_test,cox_model,hr,ci)
+```
+
+### PH assumption
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ CRP1cat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("CRP >=5", "CRP <5"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+##by TMB >8 Mut/Mb (experimental arm)
+
+```{r}
+
+log_rank_test <- survdiff(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+print(log_rank_test)
+if (log_rank_test$pvalue < 0.05) {
+  cat("There is a significant difference in OS between the TMBcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+} else {
+  cat("There is no significant difference in OS between the TMBcat groups in the experimental arm (p =", log_rank_test$pvalue, ")\n")
+}
+
+# Cox PH regression model, stratified by TMBcat in the experimental group
+cox_model <- coxph(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+summary(cox_model)
+
+# HR and CI for TMBcat
+hr <- exp(coef(cox_model))
+ci <- exp(confint(cox_model))
+cat("Hazard Ratio (TMBcat):", round(hr, 2), "\n")
+cat("95% Confidence Interval:", round(ci[, 1], 2), "-", round(ci[, 2], 2), "\n")
+rm(log_rank_test,cox_model,hr,ci)
+```
+
+### PH assumption
+```{r}
+# 1. Log-log plots
+km_fit_exp <- survfit(surv_experimental ~ TMBcat, data = METIMMOX_experimental)
+par(mfrow = c(1, 2))
+plot(km_fit_exp, fun = "cloglog", xlab = "Log(Time)", ylab = "Log(-Log(Survival))",
+     col = c("black", "pink"), lty = c(2, 1), lwd = 2,
+     main = "Log-Log Survival Curves")
+legend("bottomright", legend = c("TMB <=8", "TMB >8"),
+       col = c("black", "pink"), lty = c(2, 1), lwd = 2)
+
+# 2. Schoenfeld residuals test and plot
+cox_zph_result <- cox.zph(cox_model)
+plot(cox_zph_result)
+
+# 3. Output test results
+print(cox_zph_result)
+
+# 4. Interpretation
+cat("\n--- Interpretation of Proportional Hazards Assumption ---\n")
+if (cox_zph_result$table[1, "p"] < 0.05) {
+  cat("The proportional hazards assumption appears to be violated (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("Consider using an extended Cox model with time-dependent coefficients\n")
+  cat("or stratification for the TMBcat variable.\n")
+} else {
+  cat("The proportional hazards assumption appears to be met (p =", 
+      round(cox_zph_result$table[1, "p"], 4), ").\n")
+  cat("The Cox proportional hazards model is appropriate for your data.\n")
+}
+```
+
+# Survival Analyis 3: compare biomarkers
+
+## PFS
+```{r}
+library(survival)
+library(survminer)
+
+surv_obj <- Surv(time = METIMMOX_experimental$PFSmo, event = METIMMOX_experimental$`Progression exit`)
+```
+
+```{r}
+multivariate_cox <- coxph(surv_obj ~ TLRcat + CRP1cat + TMBcat, 
+                          data = METIMMOX_experimental)
+
+summary_result <- summary(multivariate_cox)
+print(summary_result)
+
+hr <- exp(coef(multivariate_cox))
+ci <- exp(confint(multivariate_cox))
+
+results_table <- data.frame(
+  Variable = c("TLRcat (positive)", "CRP1cat (positive)", "TMBcat (positive)"),
+  HR = sprintf("%.2f", hr),
+  CI_95 = sprintf("%.2f-%.2f", ci[,1], ci[,2]),
+  P_value = sprintf("%.3f", summary_result$coefficients[,5])
+)
+print(results_table)
+
+ph_test <- cox.zph(multivariate_cox)
+print(ph_test)
+
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# concordance index (C-index)
+c_index <- summary_result$concordance
+cat("\nModel Performance:\n")
+cat("Concordance Index (C-index):", round(c_index[1], 3), 
+    "\nStandard Error:", round(c_index[2], 3), "\n")
+rm(multivariate_cox,summary_result,results_table,ph_test,c_index)
+```
+
+```{r}
+multivariate_cox <- coxph(surv_obj ~ TLRcat + CRP1cat, 
+                          data = METIMMOX_experimental)
+
+summary_result <- summary(multivariate_cox)
+print(summary_result)
+
+hr <- exp(coef(multivariate_cox))
+ci <- exp(confint(multivariate_cox))
+
+results_table <- data.frame(
+  Variable = c("TLRcat (positive)", "CRP1cat (positive)"),
+  HR = sprintf("%.2f", hr),
+  CI_95 = sprintf("%.2f-%.2f", ci[,1], ci[,2]),
+  P_value = sprintf("%.3f", summary_result$coefficients[,5])
+)
+print(results_table)
+
+ph_test <- cox.zph(multivariate_cox)
+print(ph_test)
+
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# concordance index (C-index)
+c_index <- summary_result$concordance
+cat("\nModel Performance:\n")
+cat("Concordance Index (C-index):", round(c_index[1], 3), 
+    "\nStandard Error:", round(c_index[2], 3), "\n")
+rm(multivariate_cox,summary_result,results_table,ph_test,c_index)
+```
+## OS
+
+```{r}
+rm(surv_obj)
+surv_obj <- Surv(time = METIMMOX_experimental$OSmo, event = METIMMOX_experimental$`Death`)
+```
+
+
+
+```{r}
+multivariate_cox <- coxph(surv_obj ~ TLRcat + CRP1cat + TMBcat, 
+                          data = METIMMOX_experimental)
+
+summary_result <- summary(multivariate_cox)
+print(summary_result)
+
+hr <- exp(coef(multivariate_cox))
+ci <- exp(confint(multivariate_cox))
+
+results_table <- data.frame(
+  Variable = c("TLRcat (positive)", "CRP1cat (positive)", "TMBcat (positive)"),
+  HR = sprintf("%.2f", hr),
+  CI_95 = sprintf("%.2f-%.2f", ci[,1], ci[,2]),
+  P_value = sprintf("%.3f", summary_result$coefficients[,5])
+)
+print(results_table)
+
+ph_test <- cox.zph(multivariate_cox)
+print(ph_test)
+
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# concordance index (C-index)
+c_index <- summary_result$concordance
+cat("\nModel Performance:\n")
+cat("Concordance Index (C-index):", round(c_index[1], 3), 
+    "\nStandard Error:", round(c_index[2], 3), "\n")
+rm(multivariate_cox,summary_result,results_table,ph_test,c_index)
+```
+
+```{r}
+multivariate_cox <- coxph(surv_obj ~ TLRcat + CRP1cat, 
+                          data = METIMMOX_experimental)
+
+summary_result <- summary(multivariate_cox)
+print(summary_result)
+
+hr <- exp(coef(multivariate_cox))
+ci <- exp(confint(multivariate_cox))
+
+results_table <- data.frame(
+  Variable = c("TLRcat (positive)", "CRP1cat (positive)"),
+  HR = sprintf("%.2f", hr),
+  CI_95 = sprintf("%.2f-%.2f", ci[,1], ci[,2]),
+  P_value = sprintf("%.3f", summary_result$coefficients[,5])
+)
+print(results_table)
+
+ph_test <- cox.zph(multivariate_cox)
+print(ph_test)
+
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# concordance index (C-index)
+c_index <- summary_result$concordance
+cat("\nModel Performance:\n")
+cat("Concordance Index (C-index):", round(c_index[1], 3), 
+    "\nStandard Error:", round(c_index[2], 3), "\n")
+rm(multivariate_cox,summary_result,results_table,ph_test,c_index)
+```

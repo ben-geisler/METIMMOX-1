@@ -1,0 +1,249 @@
+---
+title: "PFS and OS Curves by Strategy: Kaplan-Meier and Parametric Fits"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+# ===============================================================================
+# Three figures, one per strategy, each overlaying OS and PFS in the same panel:
+#   outputs/figs/figure_pfs_os_curves_soc.png       Standard of care (control arm)
+#   outputs/figs/figure_pfs_os_curves_crp.png       CRP-guided: CRP+ (FLOX+nivo) and CRP- (FLOX)
+#   outputs/figs/figure_pfs_os_curves_tmb_braf.png  TMB/BRAF-guided: TMB/BRAF+ and TMB/BRAF-
+#
+# Each panel shows the observed Kaplan-Meier step curve of a patient subset and
+# the ordering-constrained best-fit parametric models (the economic model's
+# joint OS and PFS fits) predicted for exactly those patients and averaged, so
+# the overlay is a fit check on matched patients (issue #157). Subgroups use
+# the same treatment assignment as the economic model: biomarker-positive on
+# the experimental arm, biomarker-negative on the control arm. The economic
+# model's own curves are standardised to the full complete-case cohort with Rx
+# set by strategy and are not shown.
+# ===============================================================================
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = c("prediction_functions", "report_format"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "survival", "flexsurv"),
+  set_theme = FALSE
+)
+
+theme_set(theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, colour = "grey30"),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0, "pt"),
+    legend.margin = margin(t = 2, b = 0),
+    legend.box.margin = margin(t = 0, b = 0),
+    plot.caption = element_text(size = 8.5, colour = "grey30", hjust = 0),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 9),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(colour = "grey90", linewidth = 0.3),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+
+exp_rx  <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+
+# Plot window: trial follow-up plus a margin so the parametric extrapolation
+# beyond the observed data is visible (in years).
+max_follow_up_wk <- max(c(data_complete$OSwk, data_complete$PFSwk), na.rm = TRUE)
+x_max_years <- ceiling(max_follow_up_wk / 52) + 1
+
+# Colour encodes endpoint (OS vs PFS); linetype encodes subgroup; the KM step
+# vs smooth parametric line is distinguished by geometry and alpha.
+endpoint_cols <- c(OS = "#2a78d6", PFS = "#eb6834")
+```
+
+```{r build-curves, include=FALSE}
+# Observed KM curve as a step-ready data frame (starting at t = 0, S = 1)
+km_df <- function(d, endpoint) {
+  fit <- if (endpoint == "OS") {
+    survfit(Surv(OSwk, Death) ~ 1, data = d)
+  } else {
+    survfit(Surv(PFSwk, Progression) ~ 1, data = d)
+  }
+  km <- extract_km_data(fit)
+  data.frame(years = c(0, km$time) / 52, surv = c(1, km$surv),
+             endpoint = endpoint, stringsAsFactors = FALSE)
+}
+
+# Parametric curve predicted for exactly the patients in the KM subset (their
+# own age, sex and biomarker values, and the arm they were actually in), then
+# averaged (issue #157). The economic model uses curves standardised to all
+# complete-case patients with Rx set by strategy (the `predictions` object);
+# those are not shown here, because overlaying them on a subset KM curve
+# reads covariate mix as lack of fit.
+para_df <- function(d, endpoint) {
+  model <- if (endpoint == "OS") models$best_fit$os else models$best_fit$pfs
+  surv <- predict_pop_avg(model, d, time_points)
+  if (is.null(surv)) stop("Parametric prediction failed for ", endpoint)
+  data.frame(years = time_points / 52, surv = surv, endpoint = endpoint,
+             stringsAsFactors = FALSE)
+}
+
+# Assemble KM + parametric curves for a named subgroup
+curve_set <- function(d, subgroup) {
+  list(
+    km = rbind(km_df(d, "OS"), km_df(d, "PFS")) |>
+      mutate(subgroup = subgroup),
+    para = rbind(para_df(d, "OS"), para_df(d, "PFS")) |>
+      mutate(subgroup = subgroup),
+    n = nrow(d)
+  )
+}
+
+# --- Standard of care: control arm patients -----------------------------------
+d_soc <- data_complete[data_complete$Rx == ctrl_rx, ]
+soc <- curve_set(d_soc, subgroup = "Standard of care")
+
+# --- Biomarker-guided strategies: positive on experimental, negative on control -
+# The subsets already carry the strategy's treatment (positives were in the
+# experimental arm, negatives in the control arm), so no Rx is forced.
+biomarker_sets <- function(biomarker, label) {
+  bm <- as.numeric(as.character(data_complete[[biomarker]]))
+  d_pos <- data_complete[bm == 1 & data_complete$Rx == exp_rx, ]
+  d_neg <- data_complete[bm == 0 & data_complete$Rx == ctrl_rx, ]
+  pos <- curve_set(d_pos, subgroup = paste0(label, "+ (FLOX + nivolumab)"))
+  neg <- curve_set(d_neg, subgroup = paste0(label, "- (FLOX)"))
+  list(
+    km = rbind(pos$km, neg$km),
+    para = rbind(pos$para, neg$para),
+    n_pos = pos$n, n_neg = neg$n,
+    levels = c(pos$km$subgroup[1], neg$km$subgroup[1])
+  )
+}
+
+crp <- biomarker_sets("crp", "CRP")
+tmb <- biomarker_sets("tmb_braf", "TMB/BRAF")
+
+os_dist  <- models$best_fit$os_distribution
+pfs_dist <- models$best_fit$pfs_distribution
+```
+
+```{r plot-function, include=FALSE}
+plot_pfs_os <- function(km, para, subgroup_levels, title, subtitle) {
+  km$subgroup   <- factor(km$subgroup, levels = subgroup_levels)
+  para$subgroup <- factor(para$subgroup, levels = subgroup_levels)
+  km$endpoint   <- factor(km$endpoint, levels = c("OS", "PFS"))
+  para$endpoint <- factor(para$endpoint, levels = c("OS", "PFS"))
+  para <- para[para$years <= x_max_years, ]
+
+  single_subgroup <- length(subgroup_levels) == 1
+  lt_values <- if (single_subgroup) "solid" else c("solid", "22")
+
+  p <- ggplot() +
+    geom_step(data = km,
+              aes(x = years, y = surv, colour = endpoint, linetype = subgroup),
+              linewidth = 0.9, alpha = 0.45) +
+    geom_line(data = para,
+              aes(x = years, y = surv, colour = endpoint, linetype = subgroup),
+              linewidth = 1.0) +
+    scale_colour_manual(values = endpoint_cols, name = "Endpoint") +
+    scale_linetype_manual(values = lt_values, name = NULL) +
+    scale_x_continuous(breaks = seq(0, x_max_years, by = 1),
+                       expand = expansion(mult = c(0, 0.02))) +
+    scale_y_continuous(labels = percent_format(accuracy = 1),
+                       breaks = seq(0, 1, by = 0.2), limits = c(0, 1),
+                       expand = expansion(mult = c(0, 0.02))) +
+    labs(title = title, subtitle = subtitle, caption = fit_note,
+         x = "Years from randomisation", y = "Survival probability") +
+    guides(colour = guide_legend(order = 1, override.aes = list(alpha = 1)),
+           linetype = guide_legend(order = 2))
+
+  if (single_subgroup) p <- p + guides(linetype = "none")
+  p
+}
+
+fit_note <- sprintf(
+  "Faint step lines: Kaplan-Meier (observed, complete-case data).\nSmooth lines: parametric fit (%s OS, %s PFS) predicted for the same patients as the step line and averaged;\nthe economic model uses the same fitted models standardised to the full complete-case cohort (not shown).",
+  os_dist, pfs_dist
+)
+```
+
+```{r make-plots, include=FALSE}
+p_soc <- plot_pfs_os(
+  soc$km, soc$para, "Standard of care",
+  title = "Standard of care (FLOX)",
+  subtitle = sprintf("Control arm, n = %d", soc$n)
+)
+
+p_crp <- plot_pfs_os(
+  crp$km, crp$para, crp$levels,
+  title = "CRP-guided strategy",
+  subtitle = sprintf("CRP+ on FLOX + nivolumab (n = %d); CRP- on FLOX (n = %d)",
+                     crp$n_pos, crp$n_neg)
+)
+
+p_tmb <- plot_pfs_os(
+  tmb$km, tmb$para, tmb$levels,
+  title = "TMB/BRAF-guided strategy",
+  subtitle = sprintf("TMB/BRAF+ on FLOX + nivolumab (n = %d); TMB/BRAF- on FLOX (n = %d)",
+                     tmb$n_pos, tmb$n_neg)
+)
+```
+
+```{r save, include=FALSE}
+figs_dir <- here("outputs", "figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+
+outputs <- list(
+  soc = p_soc, crp = p_crp, tmb_braf = p_tmb
+)
+for (nm in names(outputs)) {
+  ggsave(
+    filename = here("outputs", "figs", paste0("figure_pfs_os_curves_", nm, ".png")),
+    plot = outputs[[nm]], width = 8, height = 5.5, dpi = 300, bg = "white"
+  )
+}
+```
+
+## Standard of care
+
+```{r show-soc, fig.width=8, fig.height=5.5}
+p_soc
+```
+
+## CRP-guided strategy
+
+```{r show-crp, fig.width=8, fig.height=5.5}
+p_crp
+```
+
+## TMB/BRAF-guided strategy
+
+```{r show-tmb, fig.width=8, fig.height=5.5}
+p_tmb
+```
+
+## Notes
+
+- Parametric curves are the selected joint OS and PFS models from
+  `04_parametric_survival_analysis.R` (`models$best_fit`) predicted for each
+  patient in the plotted subset with that patient's own covariates and actual
+  arm, then averaged. The observed and parametric curves in a panel are
+  therefore estimated on the same patients.
+- The economic model uses the same fitted models standardised to all
+  `r nrow(data_complete)` complete-case patients with treatment set by
+  strategy (the `predictions` object feeding `l_params_base`). Those
+  standardised curves differ from the subset-matched curves shown here because
+  the covariate mix differs (for example, the control arm has fewer
+  CRP-positive patients than the full cohort); they are not overlaid on the
+  subset Kaplan-Meier curves for that reason (issue #157).
+- Subgroup treatment assignment mirrors the economic model: biomarker-positive
+  patients from the experimental arm, biomarker-negative patients from the
+  control arm.
+- Figures are saved to `outputs/figs/figure_pfs_os_curves_{soc,crp,tmb_braf}.png`.

@@ -1,0 +1,333 @@
+---
+title: "Parametric Model Results"
+output: html_document
+---
+
+ ===============================================================================
+ PARAMETRIC SURVIVAL MODEL COMPARISON AND VALIDATION
+ ===============================================================================
+ This file displays results from parametric survival model fitting and comparison
+ Shows AIC/BIC comparisons, reference values, and biomarker-specific plots
+ ===============================================================================
+
+# Start-up
+```{r}
+# load required packages
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(survival, flexsurv, dplyr, ggplot2, scales)
+
+# load results and run analysis if needed
+setwd("..") 
+if (!exists("models")) {
+  cat("Running main parametric survival analysis...\n")
+  source("analysis/02_setup_and_global_variables.R")
+  source("analysis/03_biomarker_strategies.R") 
+  source("analysis/04_parametric_survival_analysis.R")
+}
+```
+
+# Reference values for population predictions
+```{r}
+if (exists("ref_age") && exists("predictions")) {
+  
+  cat("Reference values for population predictions\n")
+  cat("==========================================\n\n")
+  
+  # continuous variables (means)
+  cat("Continuous variables:\n")
+  cat("- Age (mean):", round(ref_age, 2), "years\n\n")
+  
+  # categorical variables (modal categories)
+  cat("Categorical variables (most frequent category used):\n")
+  cat("- Sex:", ref_sex, "(0=female, 1=male)\n")
+  cat("- CRP:", ref_crp, "(0=negative, 1=positive)\n") 
+  cat("- TLR:", ref_tlr, "(0=negative, 1=positive)\n")
+  cat("- TMB_BRAF:", ref_tmb_braf, "(0=negative, 1=positive)\n\n")
+  
+  # biomarker prevalences
+  cat("Biomarker prevalences in population:\n")
+  for (strategy in strategies_df$id[strategies_df$id != "control"]) {
+    prevalence <- strategies_df$prevalence[strategies_df$id == strategy]
+    cat("- ", toupper(strategy), " positive:", round(prevalence * 100, 1), "%\n")
+  }
+  
+  # data completeness
+  cat("\nData completeness:\n")
+  cat("- Complete cases used:", nrow(data_complete), "of", nrow(data), "observations")
+  cat(" (", round(nrow(data_complete)/nrow(data) * 100, 1), "%)\n\n")
+  
+} else {
+  cat("Reference values not available. Run main analysis first.\n")
+}
+```
+
+# Model fit comparison using AIC/BIC
+
+AIC is more appropriate here because:
+- BIC penalizes model complexity more heavily (uses log(n) vs 2 for AIC)
+- For prediction purposes, we want the model that best balances fit and complexity
+- BIC tends to select overly simple models that might miss important biomarker interactions
+- AIC is better for predictive modeling while BIC is better for identifying the "true" model
+
+```{r}
+if (exists("models") && !is.null(models$full)) {
+  
+  # OSl models
+  os_comparison <- rbind(
+    data.frame(Structure = "Full", models$full$os_ic),
+    data.frame(Structure = "No Age/Sex", models$no_age_sex$os_ic)
+  )
+  
+  os_comparison <- os_comparison[order(os_comparison$AIC, na.last = TRUE), ]
+  valid_aic <- !is.na(os_comparison$AIC)
+  os_comparison$AIC_Rank <- NA
+  os_comparison$AIC_Rank[valid_aic] <- rank(os_comparison$AIC[valid_aic])
+  os_comparison$AIC <- round(os_comparison$AIC, 2)
+  os_comparison$BIC <- round(os_comparison$BIC, 2)
+  
+  if (exists("models") && !is.null(models$best_fit$os_aic)) {
+    best_idx <- which.min(abs(os_comparison$AIC - models$best_fit$os_aic))
+    if (length(best_idx) > 0) {
+      os_comparison$Selected <- ""
+      os_comparison$Selected[best_idx] <- "***"
+    }
+  }
+  
+  print(os_comparison)
+  
+  # PFS models
+  pfs_comparison <- rbind(
+    data.frame(Structure = "Full", models$full$pfs_ic),
+    data.frame(Structure = "No Age/Sex", models$no_age_sex$pfs_ic)
+  )
+  
+  pfs_comparison <- pfs_comparison[order(pfs_comparison$AIC, na.last = TRUE), ]
+  valid_aic <- !is.na(pfs_comparison$AIC)
+  pfs_comparison$AIC_Rank <- NA
+  pfs_comparison$AIC_Rank[valid_aic] <- rank(pfs_comparison$AIC[valid_aic])
+  pfs_comparison$AIC <- round(pfs_comparison$AIC, 2)
+  pfs_comparison$BIC <- round(pfs_comparison$BIC, 2)
+  
+  if (exists("models") && !is.null(models$best_fit$pfs_aic)) {
+    best_idx <- which.min(abs(pfs_comparison$AIC - models$best_fit$pfs_aic))
+    if (length(best_idx) > 0) {
+      pfs_comparison$Selected <- ""
+      pfs_comparison$Selected[best_idx] <- "***"
+    }
+  }
+  
+  print(pfs_comparison)
+  
+} else {
+  cat("Model comparison tables not available.\n")
+}
+
+#NB: first data frame is OS, second PFS 
+```
+
+# Population survival curves
+```{r}
+# function to create population survival plots
+create_population_plots <- function(models, data_complete, time_points, outcome_type = "OS") {
+  
+  # get kaplan-meier estimates
+  if (outcome_type == "OS") {
+    km_fit <- survfit(Surv(OSwk, Death) ~ 1, data = data_complete)
+  } else {
+    km_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_complete)
+  }
+  
+  # create plotting data for km
+  km_data <- data.frame(
+    time = km_fit$time,
+    survival = km_fit$surv,
+    lower = km_fit$lower,
+    upper = km_fit$upper,
+    model = "Kaplan-Meier",
+    structure = "Observed"
+  )
+  
+  plot_data <- km_data
+  
+  # create representative patient (modal categories + mean age)
+  ref_patient <- data.frame(
+    Age = mean(data_complete$Age, na.rm = TRUE),
+    sex = get_modal_category(data_complete$sex),
+    Rx = get_modal_category(data_complete$Rx),
+    crp = get_modal_category(data_complete$crp),
+    tlr = get_modal_category(data_complete$tlr),
+    tmb_braf = get_modal_category(data_complete$tmb_braf)
+  )
+  
+  # ensure factors have correct levels
+  ref_patient$sex <- factor(ref_patient$sex, levels = levels(data_complete$sex))
+  ref_patient$Rx <- factor(ref_patient$Rx, levels = levels(data_complete$Rx))
+  ref_patient$crp <- factor(ref_patient$crp, levels = levels(data_complete$crp))
+  ref_patient$tlr <- factor(ref_patient$tlr, levels = levels(data_complete$tlr))
+  ref_patient$tmb_braf <- factor(ref_patient$tmb_braf, levels = levels(data_complete$tmb_braf))
+  
+  # add parametric model predictions
+  for (structure in c("full", "no_age_sex")) {
+    structure_models <- models[[structure]]
+    outcome_models <- if (outcome_type == "OS") structure_models$os else structure_models$pfs
+    
+    for (dist_name in names(outcome_models)) {
+      model_obj <- outcome_models[[dist_name]]
+      
+      if (inherits(model_obj, "flexsurvreg")) {
+        tryCatch({
+          # temporarily attach data for prediction
+          model_obj$data <- data_complete
+          
+          # use summary() method for flexsurvreg objects
+          pred_summary <- summary(model_obj, t = time_points, newdata = ref_patient, type = "survival")
+
+          # handle the actual structure - it's a named list, not a data frame
+          if (is.list(pred_summary) && length(pred_summary) > 0) {
+            # extract the first (and typically only) element which contains the data frame
+            first_result <- pred_summary[[1]]
+  
+            if (is.data.frame(first_result) && all(c("time", "est") %in% names(first_result))) {
+              temp_data <- data.frame(
+                time = first_result$time,
+                survival = first_result$est,
+                lower = if("lcl" %in% names(first_result)) first_result$lcl else NA,
+                upper = if("ucl" %in% names(first_result)) first_result$ucl else NA,
+                model = dist_name,
+                structure = structure
+              )
+    
+              plot_data <- rbind(plot_data, temp_data)
+            }
+          }
+          
+          # remove data again to keep models clean
+          model_obj$data <- NULL
+          
+        }, error = function(e) {
+          # silently handle errors
+        })
+      }
+    }
+  }
+  
+  return(plot_data)
+}
+
+# generate and display population curves
+if (exists("models") && exists("data_complete")) {
+  
+  # OS curves - full models
+  os_full_data <- create_population_plots(models, data_complete, time_points, "OS")
+  os_full_data <- os_full_data[os_full_data$structure %in% c("Observed", "full"), ]
+  
+  if (nrow(os_full_data) > 0) {
+    p_os_full <- ggplot(os_full_data, aes(x = time, y = survival, color = model)) +
+      geom_line(linewidth = 1) +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+      theme_minimal() +
+      labs(title = "Overall Survival - Full Models vs Kaplan-Meier",
+           x = "Time (weeks)", y = "Survival Probability") +
+      scale_y_continuous(limits = c(0, 1)) +
+      theme(legend.position = "bottom")
+    
+    print(p_os_full)
+  }
+  
+  # OS curves - no age/sex models
+  os_simple_data <- create_population_plots(models, data_complete, time_points, "OS")
+  os_simple_data <- os_simple_data[os_simple_data$structure %in% c("Observed", "no_age_sex"), ]
+  
+  if (nrow(os_simple_data) > 0) {
+    p_os_simple <- ggplot(os_simple_data, aes(x = time, y = survival, color = model)) +
+      geom_line(linewidth = 1) +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+      theme_minimal() +
+      labs(title = "Overall Survival - No Age/Sex Models vs Kaplan-Meier",
+           x = "Time (weeks)", y = "Survival Probability") +
+      scale_y_continuous(limits = c(0, 1)) +
+      theme(legend.position = "bottom")
+    
+    print(p_os_simple)
+  }
+  
+  # PFS curves - full models
+  pfs_full_data <- create_population_plots(models, data_complete, time_points, "PFS")
+  pfs_full_data <- pfs_full_data[pfs_full_data$structure %in% c("Observed", "full"), ]
+  
+  if (nrow(pfs_full_data) > 0) {
+    p_pfs_full <- ggplot(pfs_full_data, aes(x = time, y = survival, color = model)) +
+      geom_line(linewidth = 1) +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+      theme_minimal() +
+      labs(title = "Progression-Free Survival - Full Models vs Kaplan-Meier",
+           x = "Time (weeks)", y = "Survival Probability") +
+      scale_y_continuous(limits = c(0, 1)) +
+      theme(legend.position = "bottom")
+    
+    print(p_pfs_full)
+  }
+  
+  # PFS curves - no age/sex models
+  pfs_simple_data <- create_population_plots(models, data_complete, time_points, "PFS")
+  pfs_simple_data <- pfs_simple_data[pfs_simple_data$structure %in% c("Observed", "no_age_sex"), ]
+  
+  if (nrow(pfs_simple_data) > 0) {
+    p_pfs_simple <- ggplot(pfs_simple_data, aes(x = time, y = survival, color = model)) +
+      geom_line(linewidth = 1) +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, color = NA) +
+      theme_minimal() +
+      labs(title = "Progression-Free Survival - No Age/Sex Models vs Kaplan-Meier",
+           x = "Time (weeks)", y = "Survival Probability") +
+      scale_y_continuous(limits = c(0, 1)) +
+      theme(legend.position = "bottom")
+    
+    print(p_pfs_simple)
+  }
+}
+```
+
+# Biomarker-specific survival plots
+```{r}
+# source plotting functions and execute
+if (exists("predictions") && exists("strategies_df") && exists("time_points")) {
+  
+  # source plotting functions
+  setwd("..") 
+  source("R/survival_plots.R")
+  
+  # generate plots
+  survival_plots <- list()
+  biomarkers <- strategies_df$id[strategies_df$id != "control"]
+  
+  for (biomarker in biomarkers) {
+    
+    # OS plot
+    os_plot <- plot_biomarker_survival(
+      predictions = predictions,
+      biomarker_name = biomarker,
+      outcome_type = "OS",
+      time_points = time_points
+    )
+    
+    if (!is.null(os_plot)) {
+      survival_plots[[paste0(biomarker, "_os")]] <- os_plot
+      print(os_plot)
+    }
+    
+    # PFS plot
+    pfs_plot <- plot_biomarker_survival(
+      predictions = predictions, 
+      biomarker_name = biomarker,
+      outcome_type = "PFS",
+      time_points = time_points
+    )
+    
+    if (!is.null(pfs_plot)) {
+      survival_plots[[paste0(biomarker, "_pfs")]] <- pfs_plot
+      print(pfs_plot)
+    }
+  }
+}
+```

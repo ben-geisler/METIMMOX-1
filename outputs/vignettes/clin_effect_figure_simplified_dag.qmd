@@ -1,0 +1,43 @@
+---
+title: "Simplified Causal DAG (Unpublished)"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  funs = c("dag_helpers"),
+  packages = c("here", "ggplot2", "dplyr", "dagitty", "ggdag", "ggtext"),
+  set_theme = FALSE
+)
+```
+
+```{r dag-simple-plot, fig.width=9, fig.height=6}
+#| fig-cap: "Simplified causal DAG for METIMMOX-1 (unpublished). Solid arrows denote assumed causal effects. The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction and latent-variable nodes are shown in the full DAG (Figure S1). Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
+
+p <- plot_simple_dag()
+print(p)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("outputs", "figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+
+ggsave(
+  filename = here("outputs", "figs", "clin_effect_figure_simplified_dag.png"),
+  plot = p,
+  width = 9, height = 6, dpi = 300, bg = "white"
+)
+cat("Figure saved to:", here("outputs", "figs", "clin_effect_figure_simplified_dag.png"), "\n")
+```
+
+Figure saved to `outputs/figs/clin_effect_figure_simplified_dag.png`.

@@ -1,0 +1,168 @@
+---
+title: "Age Effect Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("report_format"),
+  packages = c("here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyr",
+               "scales", "survival", "flexsurv"),
+  set_theme = FALSE
+)
+
+mean_age <- mean(data_complete$Age, na.rm = TRUE)
+mean_age_data <- data_complete
+mean_age_data$Age <- mean_age
+
+mean_age_predictions <- generate_population_averaged_predictions(
+  models = list(os = models$best_fit$os, pfs = models$best_fit$pfs),
+  strategies_df = strategies_df,
+  data_complete = mean_age_data,
+  time_points = time_points,
+  prevalences = setNames(strategies_df$prevalence, strategies_df$id)
+)
+
+# Restricted mean survival over the modelled horizon, trapezoidal rule on the
+# weekly grid (restricted_mean_survival() in report_format.R; issue #157).
+restricted_mean <- function(y) restricted_mean_survival(y, cl)
+
+base_curve <- function(strategy, endpoint) {
+  if (strategy == "control") {
+    return(l_params_base[[ifelse(endpoint == "os", "p_os", "p_pfs")]][[paste0("control_", toupper(endpoint))]])
+  }
+  l_params_base[[ifelse(endpoint == "os", "p_os", "p_pfs")]][[paste0(strategy, "_weighted_", toupper(endpoint))]]
+}
+```
+
+# Overview
+
+This technical note evaluates how population averaging over observed ages affects survival predictions for the single joint economic model. The comparison holds all patients at the mean observed age while retaining their observed sex and biomarker values.
+
+# Age Distribution
+
+```{r age-summary}
+age_summary <- data.frame(
+  Metric = c("Patients", "Mean age", "Median age", "Minimum age", "Maximum age"),
+  Value = c(
+    nrow(data_complete),
+    sprintf("%.1f", mean_age),
+    sprintf("%.1f", median(data_complete$Age, na.rm = TRUE)),
+    sprintf("%.1f", min(data_complete$Age, na.rm = TRUE)),
+    sprintf("%.1f", max(data_complete$Age, na.rm = TRUE))
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(age_summary, booktabs = TRUE, align = c("l", "r"),
+             caption = "Age distribution in the economic survival complete-case data") %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Restricted Mean Survival Comparison
+
+```{r rmst-comparison}
+strategies_to_show <- get_strategies()
+
+rmst_rows <- lapply(strategies_to_show, function(strategy) {
+  data.frame(
+    Strategy = strategy_label(strategy),
+    Endpoint = c("Overall survival", "Progression-free survival"),
+    Base_Case = c(
+      restricted_mean(base_curve(strategy, "os")),
+      restricted_mean(base_curve(strategy, "pfs"))
+    ),
+    Mean_Age = c(
+      restricted_mean(mean_age_predictions[[strategy]]$os),
+      restricted_mean(mean_age_predictions[[strategy]]$pfs)
+    ),
+    stringsAsFactors = FALSE
+  )
+})
+
+rmst_df <- bind_rows(rmst_rows) %>%
+  mutate(
+    Difference = Mean_Age - Base_Case,
+    across(c(Base_Case, Mean_Age, Difference), ~ sprintf("%.3f", .x))
+  )
+
+knitr::kable(
+  rmst_df,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r"),
+  col.names = c("Strategy", "Endpoint", "Base Case Years", "Mean-Age Years", "Difference"),
+  caption = paste0("Restricted mean survival (years) over the ", time_horizon,
+                   "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
+                   "under observed-age and mean-age predictions")
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+```{r age-plot, fig.cap="Observed-age and mean-age survival predictions", fig.height=8, fig.width=10}
+curve_rows <- lapply(strategies_to_show, function(strategy) {
+  data.frame(
+    Week = rep(time_points, 4),
+    Survival = c(
+      base_curve(strategy, "os"),
+      mean_age_predictions[[strategy]]$os,
+      base_curve(strategy, "pfs"),
+      mean_age_predictions[[strategy]]$pfs
+    ),
+    Endpoint = rep(c("Overall survival", "Progression-free survival"),
+                   each = length(time_points) * 2),
+    Scenario = rep(c("Observed ages", "Mean age"), times = 2,
+                   each = length(time_points)),
+    Strategy = strategy_label(strategy),
+    stringsAsFactors = FALSE
+  )
+})
+
+plot_df <- bind_rows(curve_rows)
+
+ggplot(plot_df, aes(x = Week, y = Survival, color = Scenario, linetype = Scenario)) +
+  geom_line(linewidth = 0.8) +
+  facet_grid(Strategy ~ Endpoint) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Weeks", y = "Survival probability", color = NULL, linetype = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+# Interpretation
+
+The base case averages predictions over the observed age distribution. The mean-age scenario is a diagnostic check that removes age heterogeneity while keeping the same fitted survival model and strategy definitions.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.0

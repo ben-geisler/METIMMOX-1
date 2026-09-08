@@ -1,0 +1,397 @@
+---
+title: "Figure 1: CRP-Guided Strategy Survival Curves"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = c("prediction_functions"),
+  packages = c("here", "ggplot2", "dplyr", "scales", "cowplot",
+               "flexsurv", "survival"),
+  set_theme = FALSE
+)
+
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+```
+
+```{r load-data, include=FALSE}
+# Get treatment level references
+exp_rx <- levels(data_complete$Rx)[2]
+ctrl_rx <- levels(data_complete$Rx)[1]
+crp_prev <- strategies_df$prevalence[strategies_df$id == "crp"]
+
+cat("CRP prevalence:", crp_prev, "\n")
+cat("Treatment levels:", ctrl_rx, "(control),", exp_rx, "(experimental)\n")
+
+# Plotted subsets (issue #157). The parametric curves and their intervals are
+# predicted for exactly these patients (own covariates, the arm they were
+# actually in), so each overlay is a fit check on matched patients. The
+# economic model's curves are standardised to all complete-case patients with
+# Rx set by strategy (the `predictions` object) and are not shown.
+data_control <- data_complete[data_complete$Rx == ctrl_rx, ]
+
+# CRP-guided strategy: CRP+ patients from the experimental arm + CRP- patients
+# from the control arm, the observed analogue of biomarker-guided assignment.
+# The CRP+ share of this cohort is its own mixing weight.
+data_crp_guided <- rbind(
+  data_complete[as.numeric(as.character(data_complete$crp)) == 1 &
+                data_complete$Rx == exp_rx, ],
+  data_complete[as.numeric(as.character(data_complete$crp)) == 0 &
+                data_complete$Rx == ctrl_rx, ]
+)
+n_crp_guided_pos <- sum(as.numeric(as.character(data_crp_guided$crp)) == 1)
+```
+
+```{r fit-models, include=FALSE}
+# ===============================================================================
+# Base-case curves from the selected joint economic model (models$best_fit,
+# the ordering-constrained pair chosen in script 04; no refit, no hard-coded
+# distribution), predicted for the plotted subsets
+# ===============================================================================
+
+# Helper for population-averaged predictions
+predict_population_avg <- function(model, newdata, time_points) {
+  tryCatch({
+    pred <- predict(model, newdata = newdata, type = "survival", times = time_points)
+    if (".pred" %in% names(pred)) {
+      surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
+      surv_matrix <- do.call(cbind, surv_probs)
+      return(rowMeans(surv_matrix, na.rm = TRUE))
+    } else if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
+      surv_probs <- sapply(pred, function(x) x$est)
+      if (is.matrix(surv_probs)) {
+        return(rowMeans(surv_probs, na.rm = TRUE))
+      } else {
+        return(surv_probs)
+      }
+    } else {
+      return(NULL)
+    }
+  }, error = function(e) {
+    return(NULL)
+  })
+}
+
+# Fit models and generate base-case predictions
+fitted_models <- list()
+base_predictions <- list()
+
+for (model_name in "joint") {
+  fitted_models[[model_name]] <- list(os = models$best_fit$os, pfs = models$best_fit$pfs)
+  base_predictions[[model_name]] <- list()
+
+  if (is.null(fitted_models[[model_name]]$os) || is.null(fitted_models[[model_name]]$pfs)) next
+
+  for (outcome in c("os", "pfs")) {
+    # Control: the control-arm patients with their own covariates
+    base_predictions[[model_name]][[paste0("control_", outcome)]] <-
+      predict_population_avg(fitted_models[[model_name]][[outcome]], data_control, time_points)
+    # CRP-guided: the observed guided cohort, each patient on the arm they were in
+    base_predictions[[model_name]][[paste0("crp_", outcome)]] <-
+      predict_population_avg(fitted_models[[model_name]][[outcome]], data_crp_guided, time_points)
+  }
+}
+
+cat("Base-case predictions generated for models:",
+    paste(names(base_predictions), collapse = ", "), "\n")
+```
+
+```{r bootstrap-ci, include=FALSE}
+# ===============================================================================
+# Load sampling caches and compute 95% bootstrap CIs
+# ===============================================================================
+
+n_boot_subset <- 500  # Subset of 5000 for speed
+
+ci_data <- list()
+
+for (model_name in "joint") {
+  # Single joint economic model; sampling cache has no structure label
+  cache_pattern <- sampling_cache_path()
+
+  if (!file.exists(cache_pattern)) {
+    cat("Sampling cache not found - skipping bootstrap CI\n")
+    next
+  }
+
+  cat("Loading sampling cache ...\n")
+  sampling_models_cache <- readRDS(cache_pattern)
+
+  joint_cache <- get_joint_sampling_models(sampling_models_cache)
+  n_available <- min(n_boot_subset, joint_cache$n_samples)
+  set.seed(analysis_seed)
+  boot_indices <- sample(seq_len(joint_cache$n_samples), n_available)
+
+  ci_data[[model_name]] <- list()
+
+  for (outcome in c("os", "pfs")) {
+    # Storage for bootstrap predictions
+    control_boot <- matrix(NA, nrow = length(time_points), ncol = n_available)
+    crp_boot <- matrix(NA, nrow = length(time_points), ncol = n_available)
+
+    for (j in seq_along(boot_indices)) {
+      idx <- boot_indices[j]
+
+      # Both curves come from the SAME sampled joint model (issue #151), each
+      # predicted for the same subset as its base-case line (issue #157).
+      sampled_idx <- tryCatch(sampled_survival_models(joint_cache, idx),
+                              error = function(e) NULL)
+      boot_model <- sampled_idx[[outcome]]$model
+      if (!is.null(boot_model)) {
+        ctrl_pred <- tryCatch(
+          predict_population_avg(boot_model, data_control, time_points),
+          error = function(e) NULL
+        )
+        if (!is.null(ctrl_pred)) control_boot[, j] <- ctrl_pred
+
+        crp_pred <- tryCatch(
+          predict_population_avg(boot_model, data_crp_guided, time_points),
+          error = function(e) NULL
+        )
+        if (!is.null(crp_pred)) crp_boot[, j] <- crp_pred
+      }
+
+      if (j %% 100 == 0) cat("  ", model_name, outcome, ":", j, "/", n_available, "\n")
+    }
+
+    # Compute percentile CIs
+    ci_data[[model_name]][[paste0("control_", outcome, "_lower")]] <-
+      apply(control_boot, 1, quantile, probs = 0.025, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("control_", outcome, "_upper")]] <-
+      apply(control_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("crp_", outcome, "_lower")]] <-
+      apply(crp_boot, 1, quantile, probs = 0.025, na.rm = TRUE)
+    ci_data[[model_name]][[paste0("crp_", outcome, "_upper")]] <-
+      apply(crp_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
+  }
+
+  # Free memory
+  rm(sampling_models_cache, joint_cache)
+  gc()
+
+  cat("Bootstrap CIs computed for", model_name, "\n")
+}
+
+has_ci <- length(ci_data) > 0
+cat("Bootstrap CI available:", has_ci, "\n")
+```
+
+```{r km-data, include=FALSE}
+# ===============================================================================
+# Compute Kaplan-Meier curves from observed data
+# ===============================================================================
+
+# Same subsets as the parametric curves (defined in the load-data chunk)
+km_control_os <- survfit(Surv(OSwk, Death) ~ 1, data = data_control)
+km_control_pfs <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_control)
+
+km_crp_os <- survfit(Surv(OSwk, Death) ~ 1, data = data_crp_guided)
+km_crp_pfs <- survfit(Surv(PFSwk, Progression) ~ 1, data = data_crp_guided)
+
+km_data_list <- list(
+  control_os = extract_km_data(km_control_os),
+  control_pfs = extract_km_data(km_control_pfs),
+  crp_os = extract_km_data(km_crp_os),
+  crp_pfs = extract_km_data(km_crp_pfs)
+)
+
+cat("KM curves computed. Control arm:", nrow(data_control), "patients.",
+    "CRP-guided:", nrow(data_crp_guided), "patients.\n")
+```
+
+```{r create-panels, include=FALSE}
+# ===============================================================================
+# Build individual panels: 3 models x 2 outcomes
+# ===============================================================================
+
+model_display <- c(joint = "Joint model")
+strategy_colors <- c("Control" = "gray50", "CRP Strategy" = "#E69F00")
+
+create_survival_panel <- function(model_name, outcome, show_legend = FALSE) {
+  outcome_label <- if (outcome == "os") "Overall Survival" else "Progression-Free Survival"
+  km_ctrl_key <- paste0("control_", outcome)
+  km_crp_key <- paste0("crp_", outcome)
+  pred_ctrl_key <- paste0("control_", outcome)
+  pred_crp_key <- paste0("crp_", outcome)
+
+  # Build plot data: parametric base-case curves
+  plot_df <- data.frame()
+
+  ctrl_pred <- base_predictions[[model_name]][[pred_ctrl_key]]
+  crp_pred <- base_predictions[[model_name]][[pred_crp_key]]
+
+  if (!is.null(ctrl_pred)) {
+    plot_df <- rbind(plot_df, data.frame(
+      time = time_points, surv = ctrl_pred, group = "Control"))
+  }
+  if (!is.null(crp_pred)) {
+    plot_df <- rbind(plot_df, data.frame(
+      time = time_points, surv = crp_pred, group = "CRP Strategy"))
+  }
+
+  if (nrow(plot_df) == 0) return(NULL)
+
+  p <- ggplot()
+
+  # Layer 1: Bootstrap CI ribbon (if available)
+  if (model_name %in% names(ci_data)) {
+    ci <- ci_data[[model_name]]
+
+    ctrl_lower <- ci[[paste0("control_", outcome, "_lower")]]
+    ctrl_upper <- ci[[paste0("control_", outcome, "_upper")]]
+    crp_lower <- ci[[paste0("crp_", outcome, "_lower")]]
+    crp_upper <- ci[[paste0("crp_", outcome, "_upper")]]
+
+    if (!is.null(ctrl_lower) && !all(is.na(ctrl_lower))) {
+      ci_ctrl_df <- data.frame(time = time_points, lower = ctrl_lower, upper = ctrl_upper)
+      p <- p + geom_ribbon(data = ci_ctrl_df, aes(x = time, ymin = lower, ymax = upper),
+                           fill = "gray50", alpha = 0.15)
+    }
+    if (!is.null(crp_lower) && !all(is.na(crp_lower))) {
+      ci_crp_df <- data.frame(time = time_points, lower = crp_lower, upper = crp_upper)
+      p <- p + geom_ribbon(data = ci_crp_df, aes(x = time, ymin = lower, ymax = upper),
+                           fill = "#E69F00", alpha = 0.15)
+    }
+  }
+
+  # Layer 2: Parametric base-case curves (solid lines)
+  p <- p +
+    geom_line(data = plot_df, aes(x = time, y = surv, color = group), linewidth = 0.8)
+
+  # Layer 3: KM overlay (step functions)
+  km_ctrl <- km_data_list[[km_ctrl_key]]
+  km_crp <- km_data_list[[km_crp_key]]
+
+  if (!is.null(km_ctrl) && nrow(km_ctrl) > 0) {
+    km_ctrl$group <- "Control"
+    p <- p + geom_step(data = km_ctrl, aes(x = time, y = surv, color = group),
+                       linetype = "dashed", linewidth = 0.4, alpha = 0.7)
+  }
+  if (!is.null(km_crp) && nrow(km_crp) > 0) {
+    km_crp$group <- "CRP Strategy"
+    p <- p + geom_step(data = km_crp, aes(x = time, y = surv, color = group),
+                       linetype = "dashed", linewidth = 0.4, alpha = 0.7)
+  }
+
+  # Formatting
+  p <- p +
+    scale_color_manual(values = strategy_colors, name = NULL) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    scale_x_continuous(
+      breaks = seq(0, max(time_points), by = 104),
+      labels = function(x) x / 52
+    ) +
+    labs(x = "Time (years)", y = outcome_label,
+         title = outcome_label) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 11, face = "bold", hjust = 0.5),
+      panel.grid.minor = element_blank()
+    )
+
+  if (show_legend) {
+    p <- p + theme(legend.position = "bottom",
+                   legend.text = element_text(size = 8))
+  } else {
+    p <- p + theme(legend.position = "none")
+  }
+
+  return(p)
+}
+
+# Generate panels for the single joint model (OS, PFS)
+panels <- list()
+for (model_name in "joint") {
+  for (outcome in c("os", "pfs")) {
+    key <- paste0(model_name, "_", outcome)
+    panels[[key]] <- create_survival_panel(model_name, outcome, show_legend = FALSE)
+  }
+}
+```
+
+```{r combined-figure, fig.width=10, fig.height=5}
+# Extract a shared legend from one panel
+legend_panel <- create_survival_panel("joint", "os", show_legend = TRUE)
+# cowplot::get_legend() returns an empty grob under ggplot2 >= 3.5 (the legend
+# grob is now named "guide-box-<position>"), which left the committed figure
+# without its legend. Pick the first non-empty guide-box grob instead.
+extract_legend <- function(p) {
+  g <- ggplot2::ggplotGrob(p)
+  idx <- which(grepl("guide-box", g$layout$name))
+  for (i in idx) {
+    if (!inherits(g$grobs[[i]], "zeroGrob")) return(g$grobs[[i]])
+  }
+  stop("No legend found in the panel used for the shared legend")
+}
+shared_legend <- extract_legend(legend_panel)
+
+# Assemble 2 columns x 1 row grid (OS, PFS) for the single joint model
+plot_grid_main <- plot_grid(
+  panels$joint_os, panels$joint_pfs,
+  ncol = 2, nrow = 1,
+  labels = c("A", "B"),
+  label_size = 14
+)
+
+# Add shared legend at bottom
+combined_plot <- plot_grid(
+  plot_grid_main, shared_legend,
+  ncol = 1, rel_heights = c(1, 0.08)
+)
+
+print(combined_plot)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("outputs", "figs")
+if (!dir.exists(figs_dir)) {
+  dir.create(figs_dir, recursive = TRUE)
+}
+
+ggsave(
+  filename = here("outputs", "figs", "figure1.png"),
+  plot = combined_plot,
+  width = 10,
+  height = 5,
+  dpi = 300,
+  bg = "white"
+)
+
+cat("Figure saved to:", here("outputs", "figs", "figure1.png"), "\n")
+```
+
+Figure 1 has been saved to `outputs/figs/figure1.png`.
+
+**Notes.** Solid lines are the selected joint parametric models
+(`r models$best_fit$os_distribution` OS, `r models$best_fit$pfs_distribution`
+PFS) predicted for each patient in the plotted subset with that patient's own
+covariates and actual arm, then averaged; ribbons are 95% percentile intervals
+from `r n_boot_subset` of the `r n_samples` multivariate-normal coefficient
+draws of the sampling cache, predicted for the same subsets. Dashed step lines
+are the Kaplan-Meier curves of the same patients: the `r nrow(data_control)`
+control-arm patients (Control) and the `r nrow(data_crp_guided)` patients of
+the observed CRP-guided cohort (`r n_crp_guided_pos` CRP-positive patients from
+the experimental arm and `r nrow(data_crp_guided) - n_crp_guided_pos`
+CRP-negative patients from the control arm). The economic model uses the same
+fitted models standardised to all `r nrow(data_complete)` complete-case
+patients with treatment set by strategy and the canonical CRP prevalence
+(`r sprintf("%.1f%%", 100 * crp_prev)`); those standardised curves are not
+shown because their covariate mix differs from the subsets (issue #157).

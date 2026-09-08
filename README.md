@@ -29,30 +29,34 @@ This repository is designed for **health economists** and researchers developing
 
 ```
 METIMMOX-1/
-├── scripts/
-│   ├── R/
-│   │   ├── analysis/      # Numbered analysis scripts (01-13)
-│   │   ├── functions/     # Reusable model functions
-│   │   ├── tests/         # Validation and diagnostic scripts
-│   │   └── archive/       # Deprecated code (for reference)
-│   └── QMD/
-│       ├── report/        # Publication-ready Quarto reports (PDF)
-│       ├── vignettes/     # Figure generation (Figures 1-4, supplemental)
-│       └── technical_docs/# Technical documentation (bug impacts, methodological analyses)
+├── R/                     # Reusable model functions (sourced, not a package)
+├── analysis/              # Numbered analysis scripts (01-13)
+├── tests/                 # Validation and diagnostic scripts
+├── archive/               # Deprecated code (for reference)
+├── reports/               # Quarto reports -> .pdf + .md (technical/ for technical documentation)
+├── outputs/
+│   ├── vignettes/         # Figure and table generators (Figures 1-5, supplement, poster)
+│   ├── figs/              # Publication figures
+│   └── tables/            # Publication tables (CSV)
 ├── data/                  # Data files (not included - confidential)
-│   ├── tidy/             # Processed data and caches
-│   └── output/           # Analysis outputs and snapshots
-└── METIMMOX-1.Rproj      # RStudio project file
+│   ├── tidy/              # Processed data and caches
+│   └── output/snapshots/  # Bug-fix impact snapshots (tracked)
+├── docs/                  # manuscript/ and references/
+├── validation/            # External validation reports (validateHE)
+├── publish/               # publish_reports.R: render all reports, publish PDFs to GitHub Pages / releases
+└── METIMMOX-1.Rproj       # RStudio project file
 ```
+
+Rendered Markdown reports are tracked in git and readable on GitHub; PDFs are published to the `gh-pages` branch (`Rscript publish/publish_reports.R --push`) or as release assets (`--release`).
 
 ### Key Files
 
-- **Analysis scripts** (`scripts/R/analysis/`): Numbered R scripts (01-13) containing the core decision-analytic model workflow and optional extended analyses
-- **Functions** (`scripts/R/functions/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
-- **Quarto reports** (`scripts/QMD/report/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
-- **Vignettes** (`scripts/QMD/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
-- **Technical docs** (`scripts/QMD/technical_docs/`): Bug fix impact assessments and methodological analyses
-- **Tests** (`scripts/R/tests/`): Validation, diagnostic, and convergence testing scripts
+- **Analysis scripts** (`analysis/`): Numbered R scripts (01-13) containing the core decision-analytic model workflow and optional extended analyses
+- **Functions** (`R/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
+- **Quarto reports** (`reports/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
+- **Vignettes** (`outputs/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
+- **Technical docs** (`reports/technical/`): Bug fix impact assessments and methodological analyses
+- **Tests** (`tests/`): Validation, diagnostic, and convergence testing scripts
 
 The shared report and clinical-analysis helper modules introduced in B2 are:
 
@@ -120,33 +124,33 @@ pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
 
 ## Usage
 
-Run the numbered analysis scripts in the `scripts/R/analysis/` folder in sequential order:
+Run the numbered analysis scripts in the `analysis/` folder in sequential order:
 
 ```r
 # Core setup
-source("scripts/R/analysis/01_data_prep.R")
-source("scripts/R/analysis/02_setup_and_global_variables.R")
-source("scripts/R/analysis/03_biomarker_strategies.R")
+source("analysis/01_data_prep.R")
+source("analysis/02_setup_and_global_variables.R")
+source("analysis/03_biomarker_strategies.R")
 
 # Survival analysis
-source("scripts/R/analysis/04_parametric_survival_analysis.R")
-source("scripts/R/analysis/05_basecase_input_parameters.R")
+source("analysis/04_parametric_survival_analysis.R")
+source("analysis/05_basecase_input_parameters.R")
 
 # Survival resampling (first run generates cache - takes time)
-source("scripts/R/analysis/06_sampling.R")
+source("analysis/06_sampling.R")
 
 # Model execution
-source("scripts/R/analysis/07_traces.R")
-source("scripts/R/analysis/08_basecase_analysis.R")
+source("analysis/07_traces.R")
+source("analysis/08_basecase_analysis.R")
 
 # Sensitivity analyses
-source("scripts/R/analysis/09_DSA.R")   # Deterministic sensitivity analysis
-source("scripts/R/analysis/10_PSA.R")   # Probabilistic sensitivity analysis
-source("scripts/R/analysis/11_EVPPIs.R") # Expected value of perfect partial information
+source("analysis/09_DSA.R")   # Deterministic sensitivity analysis
+source("analysis/10_PSA.R")   # Probabilistic sensitivity analysis
+source("analysis/11_EVPPIs.R") # Expected value of perfect partial information
 ```
 
 **Notes**:
-- The obsolete `04_baseline_characteristics.Rmd` and `05_QALYs.Rmd` exploratory notebooks are retained in `scripts/R/archive/`; their reusable EQ-5D-5L scoring functions are in `scripts/R/functions/eq5d5l_utility.R`
+- The obsolete `04_baseline_characteristics.Rmd` and `05_QALYs.Rmd` exploratory notebooks are retained in `archive/`; their reusable EQ-5D-5L scoring functions are in `R/eq5d5l_utility.R`
 - The clinical trial dataset is confidential and not included in this repository
 - First runs of scripts 06 (sampling) and 10 (PSA) generate caches and may take significant time; subsequent runs are much faster
 
@@ -164,10 +168,10 @@ Additional analysis scripts provide extended functionality:
 
 ```r
 # Extended analyses (optional)
-source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
+source("analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
 
 # Standalone snapshot utility (run from a terminal, not with source())
-# Rscript scripts/R/analysis/13_save_snapshot.R <issue_number> <baseline|fixed>
+# Rscript analysis/13_save_snapshot.R <issue_number> <baseline|fixed>
 ```
 
 **When to use**:
@@ -178,34 +182,31 @@ source("scripts/R/analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analys
 
 The B1 cleanup deleted these obsolete or superseded files:
 
-- `scripts/R/analysis/14b_scenario_preview.R`
-- `scripts/R/functions/para_model_fit_table.R`
-- `scripts/R/tests/diagnose_prediction_failures.R`
-- `scripts/R/tests/test_psa_error_rate.R`
-- `scripts/R/tests/test_sampling_convergence_rate.R`
-- `scripts/R/tests/test_sex_variable_fix.R`
-- `scripts/R/tests/tlr.R`
+- `analysis/14b_scenario_preview.R`
+- `R/para_model_fit_table.R`
+- `tests/diagnose_prediction_failures.R`
+- `tests/test_psa_error_rate.R`
+- `tests/test_sampling_convergence_rate.R`
+- `tests/test_sex_variable_fix.R`
+- `tests/tlr.R`
 
-The full scenario cache produced by `12_scenario_EVPPIs.R` is the only supported scenario output. The former `scripts/R/tests/fit_independent_biomarker_models.R` was moved to `scripts/R/archive/fit_independent_biomarker_models.R` rather than deleted.
+The full scenario cache produced by `12_scenario_EVPPIs.R` is the only supported scenario output. The former `tests/fit_independent_biomarker_models.R` was moved to `archive/fit_independent_biomarker_models.R` rather than deleted.
 
 ### Generating Reports
 
-The project includes comprehensive Quarto reports in `scripts/QMD/report/` that generate publication-ready PDFs:
+The Quarto reports in `reports/` render to PDF and to GitHub-flavoured Markdown:
 
 ```bash
-# Render individual reports (from project root)
-quarto render scripts/QMD/report/para_models.qmd
-quarto render scripts/QMD/report/input_parameters.qmd
-quarto render scripts/QMD/report/clinical_effectiveness.qmd
-quarto render scripts/QMD/report/CEA.qmd
-quarto render scripts/QMD/report/OWSA.qmd
-quarto render scripts/QMD/report/EVPPIs.qmd
-quarto render scripts/QMD/report/scenario_effect.qmd
-quarto render scripts/QMD/report/biomarker_decomposition.qmd
-quarto render scripts/QMD/report/biomarker_distributions.qmd
+# All reports, both formats, plus a _site/ folder with the PDFs (from project root)
+Rscript publish/publish_reports.R
+Rscript publish/publish_reports.R --push      # publish the PDFs to the gh-pages branch
+Rscript publish/publish_reports.R --release   # attach the PDFs to a GitHub release
+
+# A single report: PDF first, then Markdown (the PDF pass deletes the figure directory)
+quarto render reports/CEA.qmd --to pdf && quarto render reports/CEA.qmd --to gfm
 ```
 
-Clinical/DAG/descriptive reports may be rendered to all declared formats. Economic reports use HTML-producing tables and must be rendered individually with `--to pdf` (for example, `quarto render scripts/QMD/report/CEA.qmd --to pdf`). Do not render the whole report directory in one command.
+Tables go through the `tbl_*` wrappers in `R/report_tables.R`, which apply kableExtra styling under LaTeX only, so every report renders cleanly to Markdown.
 
 **Report Descriptions**:
 1. **para_models.qmd** - Parametric survival model fits and diagnostics
@@ -273,7 +274,7 @@ Adverse-event/toxicity costs and disutilities are not modeled separately. This i
 
 ## Publication Figures
 
-The repository includes Quarto vignettes (`scripts/QMD/vignettes/`) for generating publication-ready figures:
+The repository includes Quarto vignettes (`outputs/vignettes/`) for generating publication-ready figures:
 
 - **figure1.qmd** - Figure 1 (model structure/patient flow)
 - **figure2.qmd** - Figure 2 (survival curves)
@@ -283,14 +284,14 @@ The repository includes Quarto vignettes (`scripts/QMD/vignettes/`) for generati
 
 Render individual figures or all at once:
 ```bash
-quarto render scripts/QMD/vignettes/figure1.qmd
+quarto render outputs/vignettes/figure1.qmd
 # Or render all figures
-quarto render scripts/QMD/vignettes/
+quarto render outputs/vignettes/
 ```
 
 ## Technical Documentation
 
-The `scripts/QMD/technical_docs/` directory contains methodological documentation:
+The `reports/technical/` directory contains methodological documentation:
 
 - **bug_fix_impact.qmd** - Template for documenting bug fix impacts on model results
 - **age_effect_analysis.qmd** - Analysis of age as prognostic factor in survival models

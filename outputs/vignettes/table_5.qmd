@@ -1,0 +1,69 @@
+---
+title: "Table 5: Probabilistic Sensitivity Analysis Summary"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("cea_helpers", "report_format"),
+  set_theme = FALSE
+)
+```
+
+```{r load-psa, include=FALSE}
+psa_obj <- load_psa_cache(verbose = FALSE)
+
+display_df <- if (!is.null(psa_obj)) {
+  create_psa_summary_table(psa_obj, wtp = WTP) %>%
+    filter(Strategy %in% names(strategy_labels)) %>%
+    mutate(
+      Strategy = strategy_labels[Strategy],
+      Mean_Cost = format_eur(Mean_Cost),
+      Mean_QALY = sprintf("%.2f", Mean_QALY),
+      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+    )
+} else {
+  data.frame()
+}
+```
+
+```{r display-table}
+if (nrow(display_df) > 0) {
+  kable(
+    display_df,
+    caption = "Table 5: PSA summary at the base-case willingness-to-pay threshold",
+    format = "html",
+    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+    align = c("l", "r", "r", "r")
+  ) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width = FALSE, font_size = 12) %>%
+    footnote(
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY."),
+      general_title = "Notes: "
+    )
+} else {
+  cat("PSA cache not available. Run analysis/10_PSA.R first.")
+}
+```
+
+```{r save-table, include=FALSE}
+if (nrow(display_df) > 0) {
+  tables_dir <- here("outputs", "tables")
+  if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+  write.csv(display_df, file = here("outputs", "tables", "table_5.csv"), row.names = FALSE)
+}
+```
+
+Table 5 has been saved to `outputs/tables/table_5.csv`.
