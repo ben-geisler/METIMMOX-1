@@ -1,0 +1,251 @@
+---
+title: "Figure 1 (Clinical Effectiveness): Kaplan-Meier Survival by Biomarker Status and Treatment Arm"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("tlr_landmark"),
+  packages = c("here", "ggplot2", "dplyr", "survival", "survminer", "cowplot"),
+  set_theme = FALSE
+)
+```
+
+```{r data-prep, include=FALSE}
+# Complete cases for CRP and TMB/BRAF plots
+data_complete <- data[complete.cases(data[, c(
+  "Age", "sex", "Rx", "crp", "tmb_braf",
+  "OSwk", "Death", "PFSwk", "Progression"
+)]), ]
+
+# Separate subset for TLR (post-treatment mediator — more NAs expected)
+data_tlr <- data[complete.cases(data[, c(
+  "Age", "sex", "Rx", "tlr",
+  "OSwk", "Death", "PFSwk", "Progression"
+)]), ]
+
+# Treatment indicator: 0 = Control, 1 = Experimental
+data_complete$Rx_num <- as.numeric(data_complete$Rx == "Experimental arm")
+data_tlr$Rx_num      <- as.numeric(data_tlr$Rx      == "Experimental arm")
+
+# Helper: create 4-level group factor (treatment x biomarker)
+make_group <- function(rx_num, biomarker, pos_label, neg_label) {
+  treated_label   <- ifelse(rx_num == 1, "Treated", "Untreated")
+  biomarker_label <- ifelse(biomarker == 1, pos_label, neg_label)
+  factor(
+    paste0(treated_label, " / ", biomarker_label),
+    levels = c(
+      paste0("Treated / ",   pos_label),
+      paste0("Treated / ",   neg_label),
+      paste0("Untreated / ", pos_label),
+      paste0("Untreated / ", neg_label)
+    )
+  )
+}
+
+# Create group variables for each biomarker
+data_complete$grp_crp <- make_group(
+  data_complete$Rx_num, data_complete$crp, "CRP+", "CRP-"
+)
+data_complete$grp_tmb <- make_group(
+  data_complete$Rx_num, data_complete$tmb_braf, "TMB/BRAF+", "TMB/BRAF-"
+)
+data_tlr$grp_tlr <- make_group(
+  data_tlr$Rx_num, data_tlr$tlr, "TLR+", "TLR-"
+)
+
+# Week-9 landmark cohorts for TLR, built by the shared helper in
+# tlr_landmark.R (issue #155) so that this figure, clinical_effectiveness.qmd
+# and the DAG association tests use one definition. TLR (tumour lesion
+# reduction) is a post-randomization response measured at the first
+# on-treatment CT, so plotting it from randomization would introduce
+# guarantee-time bias. The landmark (i) is fixed at week 9, (ii) restricts to
+# patients still at risk after the landmark, and (iii) resets the clock so
+# t = 0 is the landmark. At-risk sets are endpoint-specific: the OS cohort is
+# alive after week 9; the PFS cohort is alive and progression-free after
+# week 9, so the two panels of the TLR row have different denominators.
+lm9 <- build_tlr_landmark_cohorts(data_tlr, landmark = "week9")
+data_tlr_lm_os  <- lm9$os
+data_tlr_lm_pfs <- lm9$pfs
+n_lm_os  <- nrow(data_tlr_lm_os)
+n_lm_pfs <- nrow(data_tlr_lm_pfs)
+n_first_scan_kept <- lm9$diagnostics$n_first_scan_progressors_kept
+n_scan_after_kept <- lm9$diagnostics$n_scan_after_landmark_kept
+
+fig1_caption <- paste0(
+  "Kaplan-Meier survival by biomarker status and treatment arm. Columns: ",
+  "overall survival (left) and progression-free survival (right). Rows: CRP ",
+  "(week-4 value, measured before the first nivolumab dose after two FLOX cycles ",
+  "common to both arms; n = ", nrow(data_complete), ") and TMB/BRAF (baseline; ",
+  "n = ", nrow(data_complete), "), both with follow-up measured from ",
+  "randomization, and TLR (tumour lesion reduction, a post-randomization ",
+  "response) on the week-9 landmark cohorts with follow-up measured from the ",
+  "landmark: patients alive after week 9 for overall survival (n = ", n_lm_os,
+  ") and patients alive and progression-free after week 9 for progression-free ",
+  "survival (n = ", n_lm_pfs, ", of ", nrow(data_tlr), " TLR-classified ",
+  "patients). Because first on-treatment scans fell between weeks 6.7 and 12.1, ",
+  n_first_scan_kept, " retained PFS patients progressed at the first scan itself ",
+  "(landmark time under 1 week) and ", n_scan_after_kept,
+  " had their TLR read after week 9; see the clinical effectiveness report for ",
+  "the scan-date and week-12 landmark sensitivity analyses. Within each panel, ",
+  "curves are stratified by treatment arm and biomarker status ",
+  "(Treated/Untreated x positive/negative); for TLR the treatment split is ",
+  "descriptive because response is measured after randomization. CRP-positive = ",
+  "CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; ",
+  "TLR-positive = tumour lesion reduction at the first on-treatment CT."
+)
+
+# Shared palette and linetypes
+km_palette   <- c("#B2182B", "#F4A582", "#2166AC", "#92C5DE")
+km_linetypes <- c("solid", "dashed", "solid", "dashed")
+
+km_theme <- theme_minimal() + theme(
+  axis.title       = element_text(size = 10),
+  axis.text        = element_text(size = 9),
+  legend.title     = element_blank(),
+  legend.text      = element_text(size = 8),
+  legend.position  = "bottom",
+  legend.key.width = unit(1.5, "lines")
+)
+```
+
+```{r km-plots, include=FALSE}
+# Build one KM plot (no title, no p-value)
+# time_col/event_col/group_col are column names in data so ggsurvplot can
+# resolve the formula internally
+km_plot <- function(data, time_col, event_col, group_col,
+                    show_xlab = TRUE, show_ylab = TRUE, tag = NULL,
+                    xlab_text = "Time since randomization (weeks)") {
+  # Keep only group levels actually present (e.g. after a landmark
+  # restriction), preserving the fixed colour/linetype mapping per level.
+  full_lvls <- levels(data[[group_col]])
+  present   <- full_lvls[full_lvls %in% unique(as.character(data[[group_col]]))]
+  idx       <- match(present, full_lvls)
+
+  formula <- as.formula(paste0("Surv(", time_col, ", ", event_col, ") ~ ", group_col))
+  km_fit  <- eval(bquote(survfit(.(formula), data = data)))
+
+  sp <- ggsurvplot(
+    km_fit, data = data,
+    pval        = FALSE, conf.int = FALSE,
+    palette     = km_palette[idx],
+    linetype    = km_linetypes[idx],
+    legend      = "bottom",
+    legend.labs = present,
+    xlab        = if (show_xlab) xlab_text else "",
+    ylab        = if (show_ylab) "Survival probability" else "",
+    ggtheme     = km_theme,
+    font.x      = 10,
+    font.y      = 10,
+    font.tickslab = 9
+  )
+
+  p <- sp$plot
+
+  # Suppress axis titles when not needed
+  if (!show_xlab) p <- p + theme(axis.title.x = element_blank())
+  if (!show_ylab) p <- p + theme(axis.title.y = element_blank())
+
+  # Subplot tag (e.g. "a)") in top-left corner
+  if (!is.null(tag)) {
+    p <- p + labs(tag = tag) +
+      theme(
+        plot.tag          = element_text(size = 11, face = "bold"),
+        plot.tag.position = "topleft"
+      )
+  }
+
+  p
+}
+
+# Column order: OS (left), PFS (right). Row order: CRP, TMB/BRAF, TLR.
+# Only the left column shows the y-axis title. Every panel carries its own
+# time-axis title because the time origin differs between rows (randomization
+# for CRP and TMB/BRAF, the week-9 landmark for TLR); issue #155.
+
+# Row 1 — CRP  (week-4 value, before first nivolumab dose; clock from randomization)
+p_os_crp  <- km_plot(data_complete, "OSwk",  "Death",       "grp_crp",
+                     show_xlab = TRUE, show_ylab = TRUE,  tag = "a)")
+p_pfs_crp <- km_plot(data_complete, "PFSwk", "Progression", "grp_crp",
+                     show_xlab = TRUE, show_ylab = FALSE, tag = "b)")
+
+# Row 2 — TMB/BRAF  (baseline biomarker, clock from randomization)
+p_os_tmb  <- km_plot(data_complete, "OSwk",  "Death",       "grp_tmb",
+                     show_xlab = TRUE, show_ylab = TRUE,  tag = "c)")
+p_pfs_tmb <- km_plot(data_complete, "PFSwk", "Progression", "grp_tmb",
+                     show_xlab = TRUE, show_ylab = FALSE, tag = "d)")
+
+# Row 3 — TLR  (post-randomization response; week-9 landmark, clock reset)
+p_os_tlr  <- km_plot(data_tlr_lm_os,  "OSwk_lm",  "Death",       "grp_tlr",
+                     show_xlab = TRUE,  show_ylab = TRUE,  tag = "e)",
+                     xlab_text = sprintf("Time since week-9 landmark (weeks); alive at week 9, n = %d", n_lm_os))
+p_pfs_tlr <- km_plot(data_tlr_lm_pfs, "PFSwk_lm", "Progression", "grp_tlr",
+                     show_xlab = TRUE,  show_ylab = FALSE, tag = "f)",
+                     xlab_text = sprintf("Time since week-9 landmark (weeks); progression-free at week 9, n = %d", n_lm_pfs))
+```
+
+```{r panel, fig.width=14, fig.height=17}
+#| fig-cap: !expr fig1_caption
+
+# Column and row label grobs
+col_os  <- ggdraw() + draw_label("Overall Survival",
+                                 fontface = "bold", size = 13)
+col_pfs <- ggdraw() + draw_label("Progression-Free Survival",
+                                 fontface = "bold", size = 13)
+row_crp <- ggdraw() + draw_label("CRP",
+                                 fontface = "bold", size = 13, angle = 90)
+row_tmb <- ggdraw() + draw_label("TMB/BRAF",
+                                 fontface = "bold", size = 13, angle = 90)
+row_tlr <- ggdraw() + draw_label("TLR (week-9 landmark)",
+                                 fontface = "bold", size = 13, angle = 90)
+
+# Assemble: thin left column for row labels, thin top row for column labels
+header <- plot_grid(NULL, col_os, col_pfs,
+                    ncol = 3, rel_widths = c(0.08, 1, 1))
+row1   <- plot_grid(row_crp, p_os_crp, p_pfs_crp,
+                    ncol = 3, rel_widths = c(0.08, 1, 1))
+row2   <- plot_grid(row_tmb, p_os_tmb, p_pfs_tmb,
+                    ncol = 3, rel_widths = c(0.08, 1, 1))
+row3   <- plot_grid(row_tlr, p_os_tlr, p_pfs_tlr,
+                    ncol = 3, rel_widths = c(0.08, 1, 1))
+
+p <- plot_grid(header, row1, row2, row3,
+               ncol = 1, rel_heights = c(0.05, 1, 1, 1))
+p
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("outputs", "figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+
+ggsave(
+  filename = here("outputs", "figs", "clin_effect_figure1.png"),
+  plot     = p,
+  width    = 14, height = 17, dpi = 300, bg = "white"
+)
+cat("Figure saved to:", here("outputs", "figs", "clin_effect_figure1.png"), "\n")
+
+# Vector EPS for publication (solid/dashed lines only, no transparency, so the
+# classic PostScript device gives a clean, fully editable EPS).
+ggsave(
+  filename = here("outputs", "figs", "clin_effect_figure1.eps"),
+  plot     = p,
+  width    = 14, height = 17, device = "eps", bg = "white"
+)
+cat("Figure saved to:", here("outputs", "figs", "clin_effect_figure1.eps"), "\n")
+```
+
+Figure saved to `outputs/figs/clin_effect_figure1.png` and `outputs/figs/clin_effect_figure1.eps`.
+
+`r fig1_caption`

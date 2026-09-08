@@ -1,0 +1,100 @@
+---
+title: "Figures 3 and S3: Cost-Effectiveness Planes"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02"),
+  funs = c("report_format"),
+  packages = c("here", "ggplot2", "dplyr", "scales"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+cache_file <- psa_obj_path()
+psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
+
+scatter_data <- data.frame()
+if (!is.null(psa_obj)) {
+  cost_df <- as.data.frame(psa_obj$cost)
+  effect_df <- if (!is.null(psa_obj$effect)) {
+    as.data.frame(psa_obj$effect)
+  } else {
+    as.data.frame(psa_obj$effectiveness)
+  }
+
+  control_strategy <- get_control_strategy()
+  for (strategy in intersect(get_biomarkers(), psa_obj$strategies)) {
+    scatter_data <- rbind(scatter_data, data.frame(
+      inc_effect = effect_df[[strategy]] - effect_df[[control_strategy]],
+      inc_cost = cost_df[[strategy]] - cost_df[[control_strategy]],
+      Strategy = strategy_labels[[strategy]],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+make_ce_plane <- function(data, point_alpha, point_size) {
+  ggplot(data, aes(x = inc_effect, y = inc_cost, color = Strategy)) +
+    geom_point(alpha = point_alpha, size = point_size) +
+    geom_abline(intercept = 0, slope = WTP, linetype = "dashed", color = "black") +
+    geom_hline(yintercept = 0, color = "gray70", linewidth = 0.3) +
+    geom_vline(xintercept = 0, color = "gray70", linewidth = 0.3) +
+    scale_y_continuous(labels = scales::label_currency(prefix = "EUR ", big.mark = ",")) +
+    scale_x_continuous(labels = scales::number_format(accuracy = 0.01)) +
+    scale_color_manual(values = c("CRP-guided" = "#E69F00",
+                                  "TMB/BRAF-guided" = "#0072B2")) +
+    labs(x = "Incremental effectiveness (QALYs)",
+         y = "Incremental cost (EUR)",
+         color = NULL) +
+    theme_minimal() +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+}
+```
+
+## Figure 3
+
+```{r figure-3, fig.width=9, fig.height=8}
+if (nrow(scatter_data) > 0) {
+  p_ce <- make_ce_plane(scatter_data, point_alpha = 0.18, point_size = 0.5)
+  print(p_ce)
+} else {
+  cat("PSA cache not available. Run analysis/10_PSA.R first.")
+}
+```
+
+## Figure S3
+
+```{r figure-s3, fig.width=9, fig.height=7}
+if (nrow(scatter_data) > 0) {
+  p_ce_s3 <- make_ce_plane(scatter_data, point_alpha = 0.12, point_size = 0.35)
+  print(p_ce_s3)
+}
+```
+
+```{r save-figure, include=FALSE}
+if (exists("p_ce")) {
+  figs_dir <- here("outputs", "figs")
+  if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+  ggsave(here("outputs", "figs", "figure3.png"), p_ce, width = 9, height = 8,
+         dpi = 300, bg = "white")
+}
+if (exists("p_ce_s3")) {
+  ggsave(here("outputs", "figs", "figure_s3.png"), p_ce_s3, width = 9, height = 7,
+         dpi = 300, bg = "white")
+}
+```
+
+Figures 3 and S3 have been saved to `outputs/figs/figure3.png` and `outputs/figs/figure_s3.png`.

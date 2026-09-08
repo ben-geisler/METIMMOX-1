@@ -1,0 +1,155 @@
+---
+title: "Table S7: EVPPI Results"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02"),
+  funs = c("evppi_functions", "report_format"),
+  packages = c("here", "dplyr", "tidyr", "knitr", "kableExtra", "scales"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+cache_file <- scenario_evppi_path()
+if (!file.exists(cache_file)) {
+  stop(
+    "Full scenario cache not found: ", cache_file, ". Run ",
+    "analysis/12_scenario_EVPPIs.R before rendering Table S7."
+  )
+}
+evppi_cache <- readRDS(cache_file)
+
+# Table S7 reports the joint ([GROUP]) EVPPI rows only, one row per group and
+# scenario, plus total EVPI as the reference. Per-parameter rows are never added
+# to group rows: EVPPI is not additive, and summing them produced group values
+# above total EVPI in earlier versions (issue #152).
+# Drug and test unit prices are fixed in the PSA since issue #154, so those
+# groups are absent from current caches; they stay in the ordering so older
+# caches still sort correctly.
+group_order <- c(
+  "other_costs", "drug_costs", "test_costs", "all_costs",
+  "utilities", "prevalence",
+  paste0("interaction_", get_biomarkers()), "interaction_all"
+)
+
+to_population <- function(x) {
+  calculate_population_evppi(
+    x,
+    annual_incidence = annual_incidence_norway,
+    research_horizon = research_horizon_years,
+    discount_rate = discount_rate_research
+  )
+}
+
+evppi_table <- data.frame()
+if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
+  evppi_all <- evppi_cache$evppi_all_scenarios
+  if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
+  if (!"n_params" %in% names(evppi_all)) evppi_all$n_params <- NA_integer_
+
+  scenario_order <- evppi_cache$scenarios$scenario_id
+
+  group_rows <- evppi_all %>%
+    filter(grepl("^\\[GROUP\\] ", parameter)) %>%
+    transmute(
+      scenario_id, scenario_name, wtp,
+      group = sub("^\\[GROUP\\] ", "", parameter),
+      param_group = evppi_group_label(parameter),
+      n_params,
+      evppi, evppi_se, evppi_percent_of_evpi, evpi,
+      evppi_population_millions = to_population(evppi),
+      evppi_se_population_millions = to_population(evppi_se)
+    )
+
+  evpi_rows <- evppi_all %>%
+    distinct(scenario_id, scenario_name, wtp, evpi) %>%
+    transmute(
+      scenario_id, scenario_name, wtp,
+      group = "evpi",
+      param_group = "All parameters (EVPI)",
+      n_params = NA_integer_,
+      evppi = evpi, evppi_se = NA_real_, evppi_percent_of_evpi = 100, evpi,
+      evppi_population_millions = to_population(evpi),
+      evppi_se_population_millions = NA_real_
+    )
+
+  evppi_table <- bind_rows(evpi_rows, group_rows) %>%
+    mutate(
+      scenario_rank = match(scenario_id, scenario_order),
+      group_rank = match(group, c("evpi", group_order))
+    ) %>%
+    arrange(scenario_rank, group_rank) %>%
+    select(-scenario_rank, -group_rank)
+
+  missing_groups <- setdiff(paste0("[GROUP] ", group_order), unique(evppi_all$parameter))
+  if (length(missing_groups) > 0) {
+    warning("Table S7: group rows absent from the scenario cache: ",
+            paste(missing_groups, collapse = ", "),
+            ". Rerun analysis/12_scenario_EVPPIs.R.")
+  }
+}
+```
+
+```{r display-table}
+if (nrow(evppi_table) > 0) {
+  display_df <- evppi_table %>%
+    mutate(
+      WTP = scales::dollar(wtp, prefix = "EUR ", accuracy = 1),
+      Parameters = ifelse(is.finite(n_params), as.character(n_params), "--"),
+      EVPPI = format_eur(evppi, accuracy = 0.01),
+      SE = format_eur(evppi_se, accuracy = 0.01),
+      `Percent of EVPI` = ifelse(is.finite(evppi_percent_of_evpi),
+                                 sprintf("%.1f%%", evppi_percent_of_evpi), "--"),
+      `Population EVPPI` = paste0("EUR ", sprintf("%.2f", evppi_population_millions), "M")
+    ) %>%
+    select(Scenario = scenario_name, WTP, `Parameter Group` = param_group,
+           Parameters, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`)
+
+  kable(
+    display_df,
+    caption = "Table S7: Joint EVPPI by parameter group and scenario",
+    format = "html",
+    align = c("l", "r", "l", "r", "r", "r", "r", "r")
+  ) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width = FALSE, font_size = 11) %>%
+    footnote(
+      general = paste0(
+        "EVPPI estimated by nonparametric regression (voi::evppi, GAM; Strong et al. 2014) ",
+        "with Monte Carlo standard errors (SE) from 1,000 regression-coefficient draws. ",
+        "Each group row is one joint estimate for all parameters in the group; group ",
+        "rows are not sums of single-parameter EVPPIs. 'All parameters (EVPI)' is the ",
+        "total expected value of perfect information for the scenario. Population ",
+        "scaling: ", annual_incidence_norway, " patients/year over ",
+        research_horizon_years, " years, discounted at ",
+        scales::percent(discount_rate_research, accuracy = 0.1), "."
+      ),
+      general_title = "Notes: "
+    )
+} else {
+  cat("Scenario EVPPI cache not available. Run analysis/12_scenario_EVPPIs.R first.")
+}
+```
+
+```{r save-table, include=FALSE}
+if (nrow(evppi_table) > 0) {
+  tables_dir <- here("outputs", "tables")
+  if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+  write.csv(evppi_table, file = here("outputs", "tables", "table_s7.csv"), row.names = FALSE)
+}
+```
+
+Table S7 has been saved to `outputs/tables/table_s7.csv`.

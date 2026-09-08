@@ -1,0 +1,217 @@
+---
+title: "Table S3: Parametric Distribution Selection"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "flexsurv", "survival"),
+  set_theme = FALSE
+)
+```
+
+```{r extract-ic-tables, include=FALSE}
+# =============================================================================
+# Distribution selection rule (04_parametric_survival_analysis.R, issue #153):
+# the OS and PFS distributions are selected JOINTLY as the pair with the lowest
+# combined AIC among all pairs whose population-averaged curves satisfy
+# OS >= PFS for control and every economic biomarker subgroup at every weekly
+# time point of the 10-year horizon. The selected distributions therefore need
+# not be the lowest-AIC distribution of each endpoint taken on its own. The
+# selected pair and the full pair audit are read from `models`, never
+# hard-coded.
+# =============================================================================
+selected_os  <- models$best_fit$os_distribution
+selected_pfs <- models$best_fit$pfs_distribution
+ordered_selection <- models$ordered_selection
+pairs <- ordered_selection$pairs
+
+os_ic <- models$full$os_ic %>%
+  filter(!is.na(AIC)) %>%
+  arrange(AIC) %>%
+  mutate(
+    AIC_rank = rank(AIC),
+    BIC_rank = rank(BIC),
+    delta_AIC = AIC - min(AIC),
+    delta_BIC = BIC - min(BIC),
+    Selected = Distribution == selected_os
+  )
+
+pfs_ic <- models$full$pfs_ic %>%
+  filter(!is.na(AIC)) %>%
+  arrange(AIC) %>%
+  mutate(
+    AIC_rank = rank(AIC),
+    BIC_rank = rank(BIC),
+    delta_AIC = AIC - min(AIC),
+    delta_BIC = BIC - min(BIC),
+    Selected = Distribution == selected_pfs
+  )
+
+stopifnot(sum(os_ic$Selected) == 1, sum(pfs_ic$Selected) == 1)
+
+lowest_aic_os  <- os_ic$Distribution[1]
+lowest_aic_pfs <- pfs_ic$Distribution[1]
+selected_row_os  <- which(os_ic$Selected)
+selected_row_pfs <- which(pfs_ic$Selected)
+
+cat("OS distributions fitted:", nrow(os_ic), "\n")
+cat("PFS distributions fitted:", nrow(pfs_ic), "\n")
+cat("Selected (ordering-constrained) pair: OS", selected_os, "/ PFS", selected_pfs, "\n")
+cat("Lowest marginal AIC: OS", lowest_aic_os, "/ PFS", lowest_aic_pfs, "\n")
+cat("Ordering-constraint AIC penalty:", round(ordered_selection$ic_penalty, 2), "\n")
+```
+
+## Overall Survival
+
+```{r display-os-table}
+os_display <- os_ic %>%
+  mutate(
+    AIC = sprintf("%.2f", AIC),
+    BIC = sprintf("%.2f", BIC),
+    delta_AIC = sprintf("%.2f", delta_AIC),
+    delta_BIC = sprintf("%.2f", delta_BIC),
+    Selected = ifelse(Selected, "Yes", "")
+  ) %>%
+  select(Distribution, AIC, delta_AIC, BIC, delta_BIC, AIC_rank, Selected)
+
+kable(os_display,
+      caption = "Overall survival: parametric distribution comparison (joint economic model), ordered by marginal AIC",
+      format = "html",
+      col.names = c("Distribution", "AIC", "Delta AIC", "BIC", "Delta BIC", "AIC Rank", "Selected"),
+      align = c("l", rep("r", 5), "c")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  row_spec(selected_row_os, bold = TRUE, background = "#e8f5e9")
+```
+
+## Progression-Free Survival
+
+```{r display-pfs-table}
+pfs_display <- pfs_ic %>%
+  mutate(
+    AIC = sprintf("%.2f", AIC),
+    BIC = sprintf("%.2f", BIC),
+    delta_AIC = sprintf("%.2f", delta_AIC),
+    delta_BIC = sprintf("%.2f", delta_BIC),
+    Selected = ifelse(Selected, "Yes", "")
+  ) %>%
+  select(Distribution, AIC, delta_AIC, BIC, delta_BIC, AIC_rank, Selected)
+
+kable(pfs_display,
+      caption = "Progression-free survival: parametric distribution comparison (joint economic model), ordered by marginal AIC",
+      format = "html",
+      col.names = c("Distribution", "AIC", "Delta AIC", "BIC", "Delta BIC", "AIC Rank", "Selected"),
+      align = c("l", rep("r", 5), "c")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  row_spec(selected_row_pfs, bold = TRUE, background = "#e8f5e9")
+```
+
+## Joint (OS, PFS) Pair Selection Under the Ordering Constraint
+
+```{r display-pair-audit}
+n_pairs_show <- min(12, nrow(pairs))
+selected_pair_idx <- which(pairs$os_distribution == selected_os &
+                             pairs$pfs_distribution == selected_pfs)
+show_idx <- sort(unique(c(seq_len(n_pairs_show), selected_pair_idx)))
+
+pairs_display <- pairs[show_idx, ] %>%
+  mutate(
+    Rank = show_idx,
+    combined_ic = sprintf("%.2f", combined_ic),
+    delta_combined = sprintf("%.2f", pairs$combined_ic[show_idx] - min(pairs$combined_ic)),
+    Ordered = ifelse(ordered, "Yes", "No"),
+    n_violations = ifelse(is.na(n_violations), "--", as.character(n_violations)),
+    max_gap = ifelse(is.finite(max_pfs_minus_os), sprintf("%.4f", max_pfs_minus_os), "--"),
+    Selected = ifelse(os_distribution == selected_os & pfs_distribution == selected_pfs, "Yes", "")
+  ) %>%
+  select(Rank, os_distribution, pfs_distribution, combined_ic, delta_combined,
+         Ordered, n_violations, max_gap, Selected)
+
+kable(pairs_display,
+      caption = sprintf("Candidate (OS, PFS) distribution pairs ordered by combined AIC (top %d of %d pairs shown, plus the selected pair)",
+                        n_pairs_show, nrow(pairs)),
+      format = "html",
+      col.names = c("Rank", "OS distribution", "PFS distribution", "Combined AIC",
+                    "Delta combined AIC", "OS >= PFS", "Violating time points",
+                    "Max PFS - OS", "Selected"),
+      align = c("r", "l", "l", "r", "r", "c", "r", "r", "c"),
+      row.names = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 11) %>%
+  row_spec(which(pairs_display$Selected == "Yes"), bold = TRUE, background = "#e8f5e9") %>%
+  footnote(
+    general = c(
+      "OS >= PFS: whether the population-averaged OS curve is at least the PFS curve for control and every economic biomarker subgroup at every weekly time point of the model horizon.",
+      "Violating time points: number of (subgroup, week) points at which PFS exceeds OS; Max PFS - OS: the largest such exceedance.",
+      "The selected pair is the lowest combined-AIC pair with OS >= PFS everywhere."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r combined-summary}
+summary_df <- data.frame(
+  Endpoint = c("Overall survival", "Progression-free survival"),
+  `Selected distribution` = c(selected_os, selected_pfs),
+  `AIC (selected)` = sprintf("%.2f", c(os_ic$AIC[selected_row_os], pfs_ic$AIC[selected_row_pfs])),
+  `Lowest marginal AIC` = c(lowest_aic_os, lowest_aic_pfs),
+  `AIC (lowest)` = sprintf("%.2f", c(os_ic$AIC[1], pfs_ic$AIC[1])),
+  `Delta AIC vs lowest` = sprintf("%.2f", c(os_ic$delta_AIC[selected_row_os], pfs_ic$delta_AIC[selected_row_pfs])),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+kable(summary_df,
+      caption = "Table S3: Summary of parametric distribution selection",
+      format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Models fitted to the joint economic model specification: Surv ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx.",
+      sprintf("Selection rule: OS and PFS distributions are chosen jointly as the pair with the lowest combined AIC among pairs whose population-averaged curves satisfy OS >= PFS for every subgroup at every weekly time point. Selected: OS %s, PFS %s; combined AIC %.2f, which is %.2f AIC above the unconstrained minimum (OS %s, PFS %s).",
+              selected_os, selected_pfs, models$best_fit$combined_aic,
+              ordered_selection$ic_penalty, lowest_aic_os, lowest_aic_pfs),
+      "Delta AIC/BIC in the endpoint tables = difference from the lowest-AIC (BIC) distribution for that endpoint. Distributions with Delta AIC > 10 have essentially no empirical support.",
+      "Candidate distributions: exponential, Weibull, Weibull PH, log-logistic, log-normal, gamma, Gompertz, generalized gamma, generalized F."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("outputs", "tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+combined_ic <- rbind(
+  os_ic %>% mutate(Endpoint = "OS"),
+  pfs_ic %>% mutate(Endpoint = "PFS")
+)
+
+write.csv(combined_ic, file = here("outputs", "tables", "table_s3.csv"), row.names = FALSE)
+write.csv(pairs %>% mutate(Selected = os_distribution == selected_os & pfs_distribution == selected_pfs),
+          file = here("outputs", "tables", "table_s3_pairs.csv"), row.names = FALSE)
+cat("Tables saved to:", here("outputs", "tables", "table_s3.csv"), "and",
+    here("outputs", "tables", "table_s3_pairs.csv"), "\n")
+```
+
+Table S3 has been saved to `outputs/tables/table_s3.csv`; the joint pair audit is in `outputs/tables/table_s3_pairs.csv`.
