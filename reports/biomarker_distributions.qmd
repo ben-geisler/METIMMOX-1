@@ -40,7 +40,7 @@ setup_report(
 )
 
 # Set knitr options for PDF
-options(knitr.table.format = "latex")
+options(knitr.table.format = report_table_format())
 ```
 
 ```{r load-data}
@@ -174,9 +174,9 @@ sample_df <- data.frame(
 sample_df %>%
   kable(col.names = c("Characteristic", "N (%)"),
         caption = "Sample Characteristics",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("HOLD_position"), font_size = 10) %>%
-  row_spec(c(4, 7), bold = FALSE, extra_css = "border-bottom: none;")
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10) %>%
+  tbl_row_spec(c(4, 7), bold = FALSE, extra_css = "border-bottom: none;")
 ```
 
 # CRP Stratification
@@ -210,7 +210,7 @@ kable(tab_crp_mat,
       caption = "Patient Characteristics by Treatment Arm and CRP Status",
       booktabs = TRUE,
       linesep = "") %>%
-  kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"),
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
                 font_size = 10)
 ```
 
@@ -249,7 +249,7 @@ kable(tab_tlr_mat,
       caption = "Patient Characteristics by Treatment Arm and TLR Status",
       booktabs = TRUE,
       linesep = "") %>%
-  kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"),
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
                 font_size = 10)
 ```
 
@@ -284,7 +284,7 @@ kable(tab_tmb_mat,
       caption = "Patient Characteristics by Treatment Arm and TMB/BRAF Status",
       booktabs = TRUE,
       linesep = "") %>%
-  kable_styling(latex_options = c("striped", "HOLD_position", "scale_down"),
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
                 font_size = 10)
 ```
 
@@ -328,8 +328,8 @@ correlation_df <- data.frame(
 correlation_df %>%
   kable(col.names = c("Biomarker Pair", "Cramer's V", "Interpretation"),
         caption = "Biomarker Correlations (Cramer's V)",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10)
 ```
 
 **Note:** Cramer's V interpretation: <0.1 = Negligible, 0.1-0.3 = Weak, >0.3 = Moderate/Strong. The observed correlations are weak to negligible.

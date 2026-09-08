@@ -82,7 +82,7 @@ knitr::kable(
   align = c("l", "r", "r"),
   caption = "Economic biomarker-positive prevalences"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Base Case vs Enriched Population
@@ -99,8 +99,8 @@ knitr::kable(
                 "Base frontier", "Enriched ICER (vs SoC)", "Change"),
   caption = "Base case and enriched-population ICERs (pairwise versus standard of care)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
+  tbl_footnote(
     general = paste(
       "Both ICER columns are pairwise comparisons against standard of care.",
       "'Base Case Frontier' is the dampack efficiency-frontier status of the",
@@ -126,8 +126,8 @@ knitr::kable(
                 "Screening cost per identified positive", "Enriched ICER"),
   caption = "Detailed enriched-population results (pairwise versus standard of care)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(
     general = paste(
       "The experimental cost includes the screening cost per identified positive",
       "(biomarker test cost divided by the canonical prevalence) in place of a",

@@ -82,7 +82,7 @@ tbl <- kable(node_defs,
              caption = "DAG node definitions",
              booktabs = TRUE)
 if (knitr::is_latex_output()) {
-  tbl |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+  tbl |> tbl_style(latex_options = c("HOLD_position"), font_size = 10)
 } else {
   tbl
 }
@@ -161,7 +161,7 @@ if (length(indep) == 0) {
                caption   = "Conditional independencies implied by the causal DAG",
                booktabs  = TRUE)
   if (knitr::is_latex_output()) {
-    tbl2 |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+    tbl2 |> tbl_style(latex_options = c("HOLD_position"), font_size = 10)
   } else {
     tbl2
   }
@@ -227,7 +227,7 @@ if (length(indep_sens) == 0) {
     booktabs  = TRUE
   )
   if (knitr::is_latex_output()) {
-    tbl3 |> kable_styling(latex_options = c("HOLD_position"), font_size = 10)
+    tbl3 |> tbl_style(latex_options = c("HOLD_position"), font_size = 10)
   } else {
     tbl3
   }

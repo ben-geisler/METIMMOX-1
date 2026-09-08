@@ -65,8 +65,8 @@ knitr::kable(
   align = c("l", "l"),
   caption = "Single economic model configuration"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
-  kableExtra::column_spec(2, width = "11cm")
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "11cm")
 ```
 
 # Biomarker Prevalence
@@ -86,7 +86,7 @@ knitr::kable(
   align = c("l", "r", "l"),
   caption = "Economic biomarker prevalences"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Utilities
@@ -111,7 +111,7 @@ knitr::kable(
   col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High"),
   caption = "Health-state utilities"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Costs
@@ -171,8 +171,8 @@ knitr::kable(
   col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High", "PSA"),
   caption = "Cost inputs"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(
     general = c(
       "Fixed parameters are not sampled in the PSA and therefore carry no value-of-information; they are varied in the one-way analysis.",
       "c_other_pp is zero in the base case: post-progression treatment is outside the modeled scope (see below). Its deterministic range is degenerate, so it is tested as a structural scenario rather than in the one-way analysis."
@@ -213,7 +213,7 @@ knitr::kable(
   align = c("l", "r"),
   caption = "Structural model parameters"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ---

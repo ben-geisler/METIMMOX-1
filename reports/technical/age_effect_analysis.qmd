@@ -19,6 +19,8 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
+  gfm:
+    toc: true
 execute:
   echo: false
   warning: false
@@ -83,7 +85,7 @@ age_summary <- data.frame(
 
 knitr::kable(age_summary, booktabs = TRUE, align = c("l", "r"),
              caption = "Age distribution in the economic survival complete-case data") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Restricted Mean Survival Comparison
@@ -122,7 +124,7 @@ knitr::kable(
                    "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
                    "under observed-age and mean-age predictions")
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r age-plot, fig.cap="Observed-age and mean-age survival predictions", fig.height=8, fig.width=10}

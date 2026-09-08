@@ -90,7 +90,7 @@ if (is.null(scenario_cache)) {
     caption = paste0("Scenario definitions loaded from ",
                      gsub("_", "\\\\_", cache_source))
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
 }
 ```
 
@@ -136,7 +136,7 @@ if (!is.null(scenario_cache)) {
     col.names = c("Scenario", "WTP", "Strategy", "Mean Cost", "Mean QALYs", "Mean NMB"),
     caption = "PSA summary by scenario"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
 }
 ```
 
@@ -178,7 +178,7 @@ if (!is.null(scenario_cache) &&
     align = c("l", "r", "l", "r", "r", "r", "r"),
     caption = "Top EVPPI parameters and groups by scenario (regression estimates with Monte Carlo SE)"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
 } else if (!is.null(scenario_cache)) {
   cat("Scenario cache was found, but no EVPPI rows were available.")
 }

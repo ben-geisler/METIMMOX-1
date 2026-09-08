@@ -61,7 +61,7 @@ knitr::kable(
   align = c("l", "r", "r"),
   caption = "One-way sensitivity-analysis parameter ranges"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Base Case and Optimal Strategy
@@ -84,7 +84,7 @@ knitr::kable(
   col.names = c("Strategy", "Cost", "QALYs", "NMB"),
   caption = paste0("Base case at WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Tornado Plots
@@ -123,7 +123,7 @@ knitr::kable(
   col.names = c("Strategy", "Rank", "Parameter", "NMB Range"),
   caption = "Top one-way sensitivity drivers by strategy (strategy's own NMB)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r impact-ranking-incremental}
@@ -140,7 +140,7 @@ knitr::kable(
   col.names = c("Strategy", "Rank", "Parameter", "Incremental NMB Range"),
   caption = "Top drivers of incremental NMB versus standard of care (decision sensitivity)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Survival Distribution Sensitivity
@@ -168,7 +168,7 @@ if (exists("model_impact_summary") && !is.null(model_impact_summary)) {
       "Structural sensitivity to the parametric survival family (%d of %d candidate families evaluated; same family for OS and PFS)",
       n_eval, n_cand)
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+    tbl_style(latex_options = c("HOLD_position"))
 } else {
   cat("Survival-distribution sensitivity results were not available.")
 }
@@ -191,8 +191,8 @@ if (exists("dsa_distribution_status") && !is.null(dsa_distribution_status)) {
     col.names = c("Family", "Base case", "Status", "Reason not evaluated"),
     caption = "Candidate survival families in the structural sensitivity analysis"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"), font_size = 9) %>%
-    kableExtra::column_spec(4, width = "8cm")
+    tbl_style(latex_options = c("HOLD_position"), font_size = 9) %>%
+    tbl_column_spec(4, width = "8cm")
 }
 ```
 
@@ -251,7 +251,7 @@ if (any(scenario_rows$Parameter != "base_case")) {
     caption = paste0("Net monetary benefit under structural scenarios at WTP = EUR ",
                      format(WTP, big.mark = ","), " (discount rate applies to costs and QALYs)")
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+    tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
 } else {
   cat("No structural scenario results are available (see the 09_DSA.R log for failed scenarios).")
 }

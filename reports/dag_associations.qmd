@@ -85,10 +85,10 @@ render_table <- function(df, caption, font_size = 9,
       latex_options <- c(latex_options, "scale_down")
     }
     tbl <- tbl |>
-      kable_styling(latex_options = latex_options, font_size = font_size)
+      tbl_style(latex_options = latex_options, font_size = font_size)
     if (landscape_pdf) {
       tbl <- tbl |>
-        landscape()
+        tbl_landscape()
     }
   }
   tbl

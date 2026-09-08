@@ -248,7 +248,7 @@ for (f in fun_files) {
   for (n in nm) defines[[n]] <- c(defines[[n]], tools::file_path_sans_ext(basename(f)))
 }
 # Sourced unconditionally by 02_setup_and_global_variables.R, so always in scope.
-always <- c("model_configs", "cache_paths", "report_setup")
+always <- c("model_configs", "cache_paths", "report_setup", "report_tables")
 
 # A declared analysis script brings its own source() calls with it. e.g. 04
 # sources prediction_functions.R, so a report declaring sources = "04" may call
@@ -261,7 +261,7 @@ sourced_by_analysis <- function(prefix) {
   if (length(hits) == 0) return(character(0))
   src <- readLines(hits[1], warn = FALSE)
   refs <- unlist(regmatches(
-    src, gregexpr('functions[/", ]+[A-Za-z0-9._]+\\.R', src)
+    src, gregexpr('"?R"?[/", ]+[A-Za-z0-9._]+\\.R', src)
   ))
   unique(tools::file_path_sans_ext(basename(gsub('[", ]+', "/", refs))))
 }

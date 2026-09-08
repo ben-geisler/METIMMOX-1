@@ -19,6 +19,8 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
+  gfm:
+    toc: true
 execute:
   echo: false
   warning: false
@@ -72,8 +74,8 @@ formula_df <- data.frame(
 
 knitr::kable(formula_df, booktabs = TRUE, align = c("l", "l"),
              caption = "Fitted economic survival formulas") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
-  kableExtra::column_spec(2, width = "11cm")
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "11cm")
 ```
 
 # Information Criteria
@@ -99,7 +101,7 @@ knitr::kable(
   align = "r",
   caption = "Information criteria for all fitted distributions"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 # Coefficient Tables
@@ -127,7 +129,7 @@ knitr::kable(
   align = c("l", "l", "l", "r", "r", "r"),
   caption = "Coefficient estimates for all fitted parametric models"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 8)
+  tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 8)
 ```
 
 # Ordering-Constrained Selection Summary
@@ -142,7 +144,7 @@ best_fit <- data.frame(
 
 knitr::kable(best_fit, booktabs = TRUE, digits = 2,
              caption = "Selected minimum-combined-AIC pair satisfying OS >= PFS") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 The pair is selected jointly. Consequently, an endpoint's selected family need not be its independently lowest-AIC family. The full candidate-pair audit and the combined-AIC penalty relative to independent endpoint selection are stored in `models$ordered_selection` and `models$best_fit$ordering_aic_penalty`, respectively.

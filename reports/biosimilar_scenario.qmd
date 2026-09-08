@@ -76,7 +76,7 @@ knitr::kable(
   col.names = c("Scenario", "Nivolumab Cost per Administration", "Change"),
   caption = "Nivolumab pricing scenarios"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Deterministic Results
@@ -103,7 +103,7 @@ knitr::kable(
   col.names = c("Scenario", "Strategy", "Cost", "QALYs"),
   caption = "Base case and biosimilar deterministic results: discounted cost and QALYs per patient"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r scenario-incremental}
@@ -115,8 +115,8 @@ knitr::kable(
                 "Pairwise status", "Frontier"),
   caption = "Incremental results versus standard of care (pairwise convention) with the efficiency-frontier status"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9) %>%
+  tbl_footnote(
     general = paste(
       "Incremental cost, incremental QALYs and ICER compare each guided strategy",
       "with standard of care (pairwise convention). 'Frontier' is the dampack",

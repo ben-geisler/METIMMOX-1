@@ -29,21 +29,25 @@ This repository is designed for **health economists** and researchers developing
 
 ```
 METIMMOX-1/
-├── scripts/
-│   ├── R/
-│   │   ├── analysis/      # Numbered analysis scripts (01-13)
-│   │   ├── functions/     # Reusable model functions
-│   │   ├── tests/         # Validation and diagnostic scripts
-│   │   └── archive/       # Deprecated code (for reference)
-│   └── QMD/
-│       ├── report/        # Publication-ready Quarto reports (PDF)
-│       ├── vignettes/     # Figure generation (Figures 1-4, supplemental)
-│       └── technical_docs/# Technical documentation (bug impacts, methodological analyses)
+├── R/                     # Reusable model functions (sourced, not a package)
+├── analysis/              # Numbered analysis scripts (01-13)
+├── tests/                 # Validation and diagnostic scripts
+├── archive/               # Deprecated code (for reference)
+├── reports/               # Quarto reports -> .pdf + .md (technical/ for technical documentation)
+├── outputs/
+│   ├── vignettes/         # Figure and table generators (Figures 1-5, supplement, poster)
+│   ├── figs/              # Publication figures
+│   └── tables/            # Publication tables (CSV)
 ├── data/                  # Data files (not included - confidential)
-│   ├── tidy/             # Processed data and caches
-│   └── output/           # Analysis outputs and snapshots
-└── METIMMOX-1.Rproj      # RStudio project file
+│   ├── tidy/              # Processed data and caches
+│   └── output/snapshots/  # Bug-fix impact snapshots (tracked)
+├── docs/                  # manuscript/ and references/
+├── validation/            # External validation reports (validateHE)
+├── publish/               # publish_reports.R: render all reports, publish PDFs to GitHub Pages / releases
+└── METIMMOX-1.Rproj       # RStudio project file
 ```
+
+Rendered Markdown reports are tracked in git and readable on GitHub; PDFs are published to the `gh-pages` branch (`Rscript publish/publish_reports.R --push`) or as release assets (`--release`).
 
 ### Key Files
 
@@ -190,22 +194,19 @@ The full scenario cache produced by `12_scenario_EVPPIs.R` is the only supported
 
 ### Generating Reports
 
-The project includes comprehensive Quarto reports in `reports/` that generate publication-ready PDFs:
+The Quarto reports in `reports/` render to PDF and to GitHub-flavoured Markdown:
 
 ```bash
-# Render individual reports (from project root)
-quarto render reports/para_models.qmd
-quarto render reports/input_parameters.qmd
-quarto render reports/clinical_effectiveness.qmd
-quarto render reports/CEA.qmd
-quarto render reports/OWSA.qmd
-quarto render reports/EVPPIs.qmd
-quarto render reports/scenario_effect.qmd
-quarto render reports/biomarker_decomposition.qmd
-quarto render reports/biomarker_distributions.qmd
+# All reports, both formats, plus a _site/ folder with the PDFs (from project root)
+Rscript publish/publish_reports.R
+Rscript publish/publish_reports.R --push      # publish the PDFs to the gh-pages branch
+Rscript publish/publish_reports.R --release   # attach the PDFs to a GitHub release
+
+# A single report: PDF first, then Markdown (the PDF pass deletes the figure directory)
+quarto render reports/CEA.qmd --to pdf && quarto render reports/CEA.qmd --to gfm
 ```
 
-Clinical/DAG/descriptive reports may be rendered to all declared formats. Economic reports use HTML-producing tables and must be rendered individually with `--to pdf` (for example, `quarto render reports/CEA.qmd --to pdf`). Do not render the whole report directory in one command.
+Tables go through the `tbl_*` wrappers in `R/report_tables.R`, which apply kableExtra styling under LaTeX only, so every report renders cleanly to Markdown.
 
 **Report Descriptions**:
 1. **para_models.qmd** - Parametric survival model fits and diagnostics

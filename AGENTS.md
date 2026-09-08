@@ -4,6 +4,27 @@ METIMMOX-1 is a cost-effectiveness analysis comparing biomarker-guided immunothe
 
 **Target Audience**: Health economists and researchers developing decision-analytic models in R.
 
+## Repository Layout
+
+Research-compendium layout (September 2026; the earlier `scripts/R/...` and `scripts/QMD/...` tree is gone):
+
+```
+R/                  model and helper functions (not an R package; sourced with here::here("R", ...))
+analysis/           numbered pipeline scripts 01-13 (run in order; 13 is a standalone Rscript)
+tests/              executable regression tests (run from the repo root with Rscript tests/<file>.R)
+archive/            superseded code kept for reference
+reports/            Quarto reports: each .qmd renders to .pdf + .md (+ <name>_files/ images)
+reports/technical/  technical documentation (bug-fix impact, survival model specification, ...)
+outputs/vignettes/  figure/table/poster generators (HTML); they write to outputs/figs and outputs/tables
+outputs/figs/, outputs/tables/   publication figures and tables (tracked)
+data/               confidential trial data and caches (ignored) except data/output/snapshots/
+docs/manuscript/, docs/references/   manuscript sources and bibliography (currently placeholders)
+validation/         external validation reports (validateHE_Opus_2026-07-12: report.qmd + findings/*.json)
+publish/            publish_reports.R renders every report and publishes the PDFs
+```
+
+Git policy for renders: the `.md` files and their `_files/` assets are tracked so the reports are readable on GitHub and by LLMs; `.pdf`, `.html` and LaTeX intermediates are ignored and published by `Rscript publish/publish_reports.R --push` (gh-pages branch) or `--release` (GitHub release). No CI renders anything because rendering needs the confidential data. The validateHE skill writes its report to a sibling directory of the repo; copy a finished run into `validation/validateHE_<model>_<date>/` to keep it.
+
 ## Version Control
 
 This repository uses Git for version control. The agent may create local commits as part of analysis workflows. Pushing to remote repositories remains the responsibility of the user unless the user explicitly requests it.
@@ -158,22 +179,16 @@ pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape
 
 ### Rendering Quarto Reports
 
-Output format depends on report type, and this changes the render command:
-
-- **Clinical/DAG/descriptive** reports (`clinical_effectiveness`, `dag`, `dag_associations`, `biomarker_distributions`, `survival_model_specification`) declare `format:` with both `pdf:` and `gfm:` and render cleanly to **both** a `.pdf` and a readable `.md` (e.g. `reports/clinical_effectiveness.md`).
-- **Economic** reports (`CEA`, `OWSA`, `EVPPIs`, `scenario_effect`, `biosimilar_scenario`, `enriched_population`, `biomarker_decomposition`, `input_parameters`, `para_models`) plus the survival technical docs use kableExtra HTML tables, so their **GFM pass fails** (`Functions that produce HTML output found in document targeting commonmark output`) and aborts the whole render, leaving a STALE `.pdf`. Render these with `--to pdf` and verify the text with `pdftotext` (no `.md` is produced).
+Every report and technical doc declares `format:` with both `pdf:` and `gfm:` and renders to a `.pdf` (people) and a `.md` (LLMs, GitHub). Render PDF first and GFM second: the PDF pass deletes the `<name>_files/` image directory, so the reverse order leaves the `.md` with dangling links.
 
 ```bash
-# Clinical/DAG report -> PDF + MD (read the .md directly)
-quarto render reports/clinical_effectiveness.qmd
-
-# Economic report -> PDF only, then verify content as text
-quarto render reports/CEA.qmd --to pdf
-pdftotext reports/CEA.pdf - | grep -ciE '\btlr\b'   # economic reports: expect 0
+quarto render reports/CEA.qmd --to pdf && quarto render reports/CEA.qmd --to gfm
+Rscript publish/publish_reports.R            # all reports, both formats, then _site/ for publishing
+Rscript publish/publish_reports.R --only CEA,OWSA
 ```
 
-- Do NOT run `quarto render reports/` (whole directory) — it fails on every economic report's GFM pass. Render economic reports one at a time with `--to pdf`.
-- `pdftotext` (poppler) is at `/mingw64/bin`; `pdftoppm` (needed for the Read tool's visual PDF rendering) is NOT installed — verify PDFs with `pdftotext`, not by reading them directly.
+- Tables: `knitr::kable()` piped into the `tbl_*` wrappers of [report_tables.R](R/report_tables.R) (`tbl_style`, `tbl_column_spec`, `tbl_row_spec`, `tbl_header_above`, `tbl_pack_rows`, `tbl_footnote`, `tbl_landscape`; `format = report_table_format()` where a format is needed). They apply kableExtra under LaTeX only; calling kableExtra directly makes the GFM pass fail with `Functions that produce HTML output found in document targeting commonmark output`. Under GFM, group headers and spanners are dropped and footnotes become a paragraph below the table.
+- Verify content from the `.md`; `pdftotext` (poppler, `/mingw64/bin`) is the fallback for PDF-only checks (`pdftoppm` is not installed, so PDFs cannot be read visually).
 
 **Prerequisites for rendering**:
 - Run the analysis scripts required by the report (up to 11 for the full core analysis; script 12 additionally generates scenario outputs)
@@ -418,6 +433,7 @@ See [model_configs.R](R/model_configs.R) for the canonical formula definitions.
 - **[pfs_endpoint.R](R/pfs_endpoint.R)**: Single source of truth for the composite PFS endpoint (progression or death). Auto-sourced by `02_setup_and_global_variables.R`. Key function: `derive_pfs_endpoint()`.
 - **[cache_paths.R](R/cache_paths.R)**: Single source of truth for the utility-source label, cached-object file paths (sampling, PSA, EVPPI, scenario) and cache fingerprints (issue #156). Auto-sourced by `02_setup_and_global_variables.R`. Key functions: `resolve_util_label()`, `sampling_cache_path()`, `psa_obj_path()`, `psa_params_path()`, `evppi_path()`, `scenario_evppi_path()`, `cache_fingerprint()` (rlang hash of a canonicalised object; formulas deparsed, factors as character, list and column order ignored), `sampling_cache_fingerprint()` (formulas, fitting data, distributions, n_samples, seed, method), `psa_cache_fingerprint()` (sampling fingerprint, the whole `l_params_base`, the PSA distributions, strategies, n_sim, seed, horizon, cycle length), `cache_file_provenance()` (md5 and mtime of a file).
 - **[report_setup.R](R/report_setup.R)**: One-call Quarto report setup (knitr options, package loading, shared ggplot theme, and sourcing of analysis scripts/function files), used to remove duplicated setup boilerplate across the economic reports. Key function: `setup_report(sources, funs, packages, set_theme)`.
+- **[report_tables.R](R/report_tables.R)**: Format-aware table wrappers (`tbl_style()`, `tbl_column_spec()`, `tbl_row_spec()`, `tbl_header_above()`, `tbl_pack_rows()`, `tbl_footnote()`, `tbl_landscape()`, `report_table_format()`) that apply kableExtra under LaTeX only, so every report renders to PDF and GFM. Sourced by `report_setup.R`.
 
 **Core Model Functions**:
 - **[model_fun.R](R/model_fun.R)**: Main partitioned survival model with PSA support
@@ -516,8 +532,10 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
 - **Functions directory** (`R/`): Reusable components that are sourced by analysis scripts
 - **Archive directory** (`archive/`): Deprecated/unused code preserved for reference, including the former baseline-characteristics and QALY exploratory notebooks
 - **Tests directory** (`tests/`): Validation and diagnostic scripts
-- **Quarto reports** (`reports/`): Publication-ready PDF reports with embedded R code
+- **Quarto reports** (`reports/`): Publication-ready reports with embedded R code, rendered to PDF and Markdown
 - **Technical docs** (`reports/technical/`): Bug fix impact reports and technical documentation
+- **Vignettes and outputs** (`outputs/vignettes/`, `outputs/figs/`, `outputs/tables/`): figure and table generators and their products
+- **Validation and publishing** (`validation/`, `publish/`): external validation reports; the render-and-publish script (see "Repository Layout")
 
 ### Retired Files
 
@@ -542,7 +560,7 @@ The Quarto reports in `reports/` are self-contained documents that:
 2. Load all required packages and helper functions
 3. Source the necessary analysis scripts (02, 03, etc.) to recreate the analysis environment
 4. Generate formatted tables, plots, and results
-5. Output to PDF with consistent styling
+5. Output to PDF and GitHub-flavoured Markdown with consistent styling
 
 ### Report Dependencies & Execution Order
 
@@ -606,10 +624,10 @@ Each report has specific dependencies:
 - **Shows**: Biomarker prevalence and distribution analyses, including clinical-only TLR summaries
 - **Stratum labels (issue #153)**: arm-by-biomarker strata are built by `make_arm_strata()`, which uses `interaction(..., lex.order = TRUE)` and relabels by level name; never relabel `interaction()` output positionally (its default order is Control/-, Exp/-, Control/+, Exp/+, which swapped two columns in every stratified table)
 
-**[survival_model_specification.qmd](reports/survival_model_specification.qmd)** - Parametric Survival Model Specification
+**[survival_model_specification.qmd](reports/technical/survival_model_specification.qmd)** - Parametric Survival Model Specification
 - **Sources**: 02, 03, 04 (uses the `models`, `os_candidates`/`pfs_candidates`, and `models$ordered_selection` objects created by script 04; no refitting)
 - **Shows**: (1) regression coefficients of the single joint OS and PFS models for all nine candidate distributions (selected gamma/gamma first, then the previously used Weibull and log-normal), with exp(coefficient) interpreted per family (time ratio / hazard ratio / gamma rate ratio); (2) the current gamma/gamma pair versus the previous unconstrained Weibull-OS/log-normal-PFS pair on the population-averaged subgroup curves, with OS >= PFS violation counts and a PFS-minus-OS gap plot; (3) a gallery of all candidate distributions per subgroup (OS | PFS facets), unlabelled first and then labelled, over the Kaplan-Meier curves
-- **Render**: dual-format (`pdf` + `gfm`). Render `--to pdf` first and `--to gfm` second: the PDF pass deletes the `_files/` figure directory, so a combined render leaves the `.md` with dangling image links
+- **Render**: PDF first, then GFM, like every report (see "Rendering Quarto Reports")
 
 **Technical Documentation** (in `reports/technical/`):
 - **[age_effect_analysis.qmd](reports/technical/age_effect_analysis.qmd)**: Age effect on survival outcomes
@@ -746,7 +764,7 @@ Key points for the signature:
 
 **Error Handling**: Reports use `tryCatch()` blocks when loading data to provide informative error messages if prerequisites are missing.
 
-**Output Location**: PDFs are generated in the same directory as the `.qmd` files (`reports/`).
+**Output Location**: PDFs and `.md` files are generated next to the `.qmd` files (`reports/`); PDFs are gitignored and published with `publish/publish_reports.R`.
 
 ### Common Quarto Report Issues
 

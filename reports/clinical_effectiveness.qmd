@@ -134,9 +134,9 @@ render_std_firth_comparison_table <- function(comparison_df, caption,
 
   if (knitr::is_latex_output()) {
     comparison_table %>%
-      kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-      pack_rows(first_group_label, 1, first_group_end, bold = TRUE) %>%
-      pack_rows(second_group_label, first_group_end + 1, nrow(comparison_df), bold = TRUE)
+      tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+      tbl_pack_rows(first_group_label, 1, first_group_end, bold = TRUE) %>%
+      tbl_pack_rows(second_group_label, first_group_end + 1, nrow(comparison_df), bold = TRUE)
   } else {
     comparison_table
   }
@@ -474,15 +474,15 @@ table1_df %>%
                       "Positive", "Negative",
                       "Positive", "Negative"),
         caption = "Sample Characteristics by Biomarker Status",
-        booktabs = TRUE, format = "latex", align = c("l", rep("c", 7))) %>%
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
-  add_header_above(c(" " = 2, "CRP" = 2, "TLR" = 2, "TMB/BRAF" = 2),
+        booktabs = TRUE, format = report_table_format(), align = c("l", rep("c", 7))) %>%
+  tbl_style(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  tbl_header_above(c(" " = 2, "CRP" = 2, "TLR" = 2, "TMB/BRAF" = 2),
                    bold = TRUE) %>%
-  pack_rows("Demographics",          2, 4,  bold = TRUE, italic = FALSE) %>%
-  pack_rows("Treatment arm",         5, 6,  bold = TRUE, italic = FALSE) %>%
-  pack_rows("Outcome events",        7, 8,  bold = TRUE, italic = FALSE) %>%
-  pack_rows("Biomarker prevalence",  9, 11, bold = TRUE, italic = FALSE) %>%
-  footnote(general = paste0(
+  tbl_pack_rows("Demographics",          2, 4,  bold = TRUE, italic = FALSE) %>%
+  tbl_pack_rows("Treatment arm",         5, 6,  bold = TRUE, italic = FALSE) %>%
+  tbl_pack_rows("Outcome events",        7, 8,  bold = TRUE, italic = FALSE) %>%
+  tbl_pack_rows("Biomarker prevalence",  9, 11, bold = TRUE, italic = FALSE) %>%
+  tbl_footnote(general = paste0(
              "Percentages within each column use the column subgroup as denominator. ",
              "CRP/TLR/TMB-BRAF rows in the corresponding subgroup column equal 100% by definition. ",
              "Overall, CRP and TMB/BRAF columns are the primary complete-case cohort (n = ", n_total,
@@ -498,8 +498,8 @@ table1_df %>%
 correlation_df %>%
   kable(col.names = c("Biomarker Pair", "Cramér's V", "Interpretation"),
         caption = "Biomarker Correlations (Cramér's V)",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10)
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 10)
 ```
 
 **Note:** Cramér's V interpretation: <0.1 = Negligible, 0.1–0.3 = Weak, >0.3 = Moderate/Strong. The observed correlations are weak to negligible. While modest, any correlation among candidate biomarkers supports our decision not to use LASSO, which would arbitrarily select among correlated predictors.
@@ -549,9 +549,9 @@ schoenfeld_df <- data.frame(
 schoenfeld_df %>%
   kable(col.names = c("Covariate", "χ² (OS)", "p-value", "χ² (PFS)", "p-value"),
         caption = "Schoenfeld Residual Test for Proportional Hazards Assumption",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
-  row_spec(nrow(schoenfeld_df), bold = TRUE)
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  tbl_row_spec(nrow(schoenfeld_df), bold = TRUE)
 ```
 
 **Note:** GLOBAL is the omnibus test for all covariates. Individual covariate tests help identify specific PH violations.
@@ -694,10 +694,10 @@ if (!is.null(results_os)) {
   display_os %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "Unified Model: Overall Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interactions", 1, 2, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 3, nrow(display_os), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interactions", 1, 2, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 3, nrow(display_os), bold = TRUE)
 }
 ```
 
@@ -715,10 +715,10 @@ if (!is.null(results_pfs)) {
   display_pfs %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "Unified Model: Progression-Free Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interactions", 1, 2, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 3, nrow(display_pfs), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interactions", 1, 2, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 3, nrow(display_pfs), bold = TRUE)
 }
 ```
 
@@ -876,9 +876,9 @@ data.frame(
 ) %>%
   kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
         caption = "Overall Survival: Firth vs Ridge Regression",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
+  tbl_footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
                             "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
                             "-fold CV (lambda.min = ", ridge_lambda_os, "). glmnet gives no standard errors. ",
                             "A substantial shift vs Firth = estimate sensitive to regularization."),
@@ -899,9 +899,9 @@ data.frame(
 ) %>%
   kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
         caption = "Progression-Free Survival: Firth vs Ridge Regression",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
+  tbl_footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
                             "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
                             "-fold CV (lambda.min = ", ridge_lambda_pfs, "). glmnet gives no standard errors."),
            footnote_as_chunk = TRUE, threeparttable = TRUE)
@@ -940,9 +940,9 @@ tlr_by_arm %>%
   select(Arm, n, n_tlr_pos, pct_tlr_pos) %>%
   kable(col.names = c("Treatment Arm", "N", "TLR-positive", "%"),
         caption = "TLR Prevalence by Treatment Arm (Descriptive)",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "TLR = Tumour Lesion Reduction >= 10% at first CT scan (post-treatment).",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
+  tbl_footnote(general = "TLR = Tumour Lesion Reduction >= 10% at first CT scan (post-treatment).",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1079,10 +1079,10 @@ if (!is.null(results_tlr_os)) {
   display_tlr_os %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "TLR Responder Model: Overall Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 2, nrow(display_tlr_os), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 2, nrow(display_tlr_os), bold = TRUE)
 }
 ```
 
@@ -1100,10 +1100,10 @@ if (!is.null(results_tlr_pfs)) {
   display_tlr_pfs %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "TLR Responder Model: Progression-Free Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 2, nrow(display_tlr_pfs), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 2, nrow(display_tlr_pfs), bold = TRUE)
 }
 ```
 
@@ -1233,11 +1233,11 @@ tlr_comparison_pfs <- build_tlr_comparison(results_tlr_pfs, ridge_tlr_pfs_coefs)
 tlr_comparison_os %>%
   kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
         caption = "TLR Responder Model - Overall Survival: Firth vs Ridge, all coefficients",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-  pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-  pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_os), bold = TRUE) %>%
-  footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+  tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+  tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_os), bold = TRUE) %>%
+  tbl_footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1245,11 +1245,11 @@ tlr_comparison_os %>%
 tlr_comparison_pfs %>%
   kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
         caption = "TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-  pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-  pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_pfs), bold = TRUE) %>%
-  footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+  tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+  tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_pfs), bold = TRUE) %>%
+  tbl_footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1314,9 +1314,9 @@ lm_attrition %>%
                       "N at risk at week 9", "N excluded (event/censor < week 9)",
                       "Events from week 9"),
         caption = "Week-9 landmark cohort: attrition and remaining events",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
-  footnote(general = "Patients with death, progression, or censoring before week 9 are excluded from the corresponding endpoint. Survival is measured from week 9 onward.",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position", "scale_down"), font_size = 9) %>%
+  tbl_footnote(general = "Patients with death, progression, or censoring before week 9 are excluded from the corresponding endpoint. Survival is measured from week 9 onward.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1377,7 +1377,7 @@ render_lm_char_table <- function(char_df, caption) {
           caption = caption, booktabs = TRUE, align = c("l", "r", "r", "r"),
           format = if (knitr::is_latex_output()) "latex" else "pipe")
   if (knitr::is_latex_output()) {
-    tbl %>% kable_styling(latex_options = c("hold_position"), font_size = 9)
+    tbl %>% tbl_style(latex_options = c("hold_position"), font_size = 9)
   } else {
     tbl
   }
@@ -1427,9 +1427,9 @@ tlr_by_arm_lm %>%
   select(Arm, n, n_tlr_pos, pct_tlr_pos) %>%
   kable(col.names = c("Treatment Arm", "N", "TLR-positive", "%"),
         caption = "TLR Prevalence by Treatment Arm, Week-9 Landmark Cohort (OS at-risk set)",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position"), font_size = 10) %>%
-  footnote(general = "Restricted to patients alive at week 9. TLR = Tumour Lesion Reduction >= 10% at first CT scan.",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
+  tbl_footnote(general = "Restricted to patients alive at week 9. TLR = Tumour Lesion Reduction >= 10% at first CT scan.",
            footnote_as_chunk = TRUE)
 ```
 
@@ -1539,10 +1539,10 @@ if (!is.null(results_lm_tlr_os)) {
   display_lm_tlr_os %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "Landmark TLR Model: Overall Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 2, nrow(display_lm_tlr_os), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 2, nrow(display_lm_tlr_os), bold = TRUE)
 }
 ```
 
@@ -1560,10 +1560,10 @@ if (!is.null(results_lm_tlr_pfs)) {
   display_lm_tlr_pfs %>%
     kable(col.names = c("Term", "HR (95% CI)", "PLRT p-value"),
           caption = "Landmark TLR Model: Progression-Free Survival - Full Coefficient Table",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
-    pack_rows("Main Effects and Covariates", 2, nrow(display_lm_tlr_pfs), bold = TRUE)
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("Treatment x Biomarker Interaction", 1, 1, bold = TRUE) %>%
+    tbl_pack_rows("Main Effects and Covariates", 2, nrow(display_lm_tlr_pfs), bold = TRUE)
 }
 ```
 
@@ -1607,11 +1607,11 @@ if (!is.null(lm_tlr_comparison_os)) {
   lm_tlr_comparison_os %>%
     kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
           caption = "Landmark TLR Model - Overall Survival: Firth vs Ridge, all coefficients",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-    pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_os), bold = TRUE) %>%
-    footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+    tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_os), bold = TRUE) %>%
+    tbl_footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
              footnote_as_chunk = TRUE)
 }
 ```
@@ -1621,11 +1621,11 @@ if (!is.null(lm_tlr_comparison_pfs)) {
   lm_tlr_comparison_pfs %>%
     kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
           caption = "Landmark TLR Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
-          booktabs = TRUE, format = "latex") %>%
-    kable_styling(latex_options = c("hold_position"), font_size = 9) %>%
-    pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-    pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_pfs), bold = TRUE) %>%
-    footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
+          booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
+    tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+    tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_pfs), bold = TRUE) %>%
+    tbl_footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
              footnote_as_chunk = TRUE)
 }
 ```
@@ -1681,9 +1681,9 @@ lm_sensitivity %>%
                       "OS TLR x Rx HR (95% CI)", "PLRT p",
                       "PFS TLR x Rx HR (95% CI)", "PLRT p"),
         caption = "TLR x Rx interaction under three landmark definitions (Firth Cox, full adjustment set)",
-        booktabs = TRUE, format = "latex") %>%
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 8) %>%
-  footnote(general = sprintf("Cohorts are patients with the endpoint time strictly after the landmark; time is measured from the landmark. First on-treatment scans fell between weeks %.1f and %.1f after inclusion. 'First-scan progressors retained' counts patients whose progression was recorded at the first scan (TLR-negative by construction) but who remain in the PFS cohort; 'TLR read after landmark' counts retained PFS patients whose first scan came after the landmark. The per-patient landmark sets both to zero by construction.", scan_wk_range[1], scan_wk_range[2]),
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("hold_position", "scale_down"), font_size = 8) %>%
+  tbl_footnote(general = sprintf("Cohorts are patients with the endpoint time strictly after the landmark; time is measured from the landmark. First on-treatment scans fell between weeks %.1f and %.1f after inclusion. 'First-scan progressors retained' counts patients whose progression was recorded at the first scan (TLR-negative by construction) but who remain in the PFS cohort; 'TLR read after landmark' counts retained PFS patients whose first scan came after the landmark. The per-patient landmark sets both to zero by construction.", scan_wk_range[1], scan_wk_range[2]),
            threeparttable = TRUE)
 ```
 

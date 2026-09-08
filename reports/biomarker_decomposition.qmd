@@ -80,7 +80,7 @@ prev_df <- strategies_df %>%
 
 knitr::kable(prev_df, booktabs = TRUE, align = c("l", "r"),
              caption = "Economic biomarker prevalences") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Restricted Mean Survival
@@ -120,7 +120,7 @@ knitr::kable(
                    "-week (", time_horizon * cl, "-year) horizon, trapezoidal rule, ",
                    "by biomarker subgroup and strategy curve")
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # Survival Decomposition

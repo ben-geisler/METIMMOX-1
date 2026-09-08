@@ -3,15 +3,7 @@ title: "Bug Fix Impact Analysis"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
-format-links: false
 format:
-  html:
-    toc: true
-    toc-depth: 3
-    number-sections: true
-    embed-resources: true
-    fig-width: 8
-    fig-height: 6
   pdf:
     toc: true
     toc-depth: 3
@@ -27,6 +19,8 @@ format:
     fontsize: 11pt
     documentclass: article
     classoption: [a4paper]
+  gfm:
+    toc: true
 execute:
   echo: false
   warning: false
@@ -179,23 +173,9 @@ evpi_line <- function(before, after) {
 }
 
 # Wide table needs a smaller font in PDF (scale_down is dropped by Quarto's
-# raw-table handling); HTML uses striped bootstrap styling.
-style_wide <- function(k) {
-  if (knitr::is_latex_output()) {
-    kableExtra::kable_styling(k, latex_options = "HOLD_position", font_size = 8)
-  } else {
-    kableExtra::kable_styling(k, bootstrap_options = c("striped", "hover"),
-                              full_width = FALSE)
-  }
-}
-style_narrow <- function(k) {
-  if (knitr::is_latex_output()) {
-    kableExtra::kable_styling(k, latex_options = "HOLD_position")
-  } else {
-    kableExtra::kable_styling(k, bootstrap_options = c("striped", "hover"),
-                              full_width = FALSE)
-  }
-}
+# raw-table handling); tbl_style() is a no-op under gfm.
+style_wide   <- function(k) tbl_style(k, latex_options = "HOLD_position", font_size = 8)
+style_narrow <- function(k) tbl_style(k, latex_options = "HOLD_position")
 
 ```
 
@@ -214,7 +194,7 @@ if (nrow(snapshot_info) == 0) {
     align = "l",
     caption = "Available single-model snapshots"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
 }
 ```
 

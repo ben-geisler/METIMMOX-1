@@ -104,8 +104,8 @@ knitr::kable(
   align = c("l", "l"),
   caption = "Single economic survival model"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
-  kableExtra::column_spec(2, width = "10cm")
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "10cm")
 ```
 
 ```{r strategy-table}
@@ -125,8 +125,8 @@ knitr::kable(
   align = c("l", "l"),
   caption = "Economic strategies"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
-  kableExtra::column_spec(2, width = "10cm")
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "10cm")
 ```
 
 # Base Case Results
@@ -148,7 +148,7 @@ knitr::kable(
   col.names = c("Strategy", "Cost", "QALYs", "NMB"),
   caption = paste0("Base case results at WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r icer-table}
@@ -170,7 +170,7 @@ knitr::kable(
                 "Incremental QALYs", "ICER", "Status"),
   caption = "Incremental cost-effectiveness results"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r ce-plane, fig.cap="Cost-effectiveness plane for the single joint economic model"}
@@ -222,7 +222,7 @@ knitr::kable(
   col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
   caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 The PSA and the base case use the same joint survival model: every PSA draw predicts the control, biomarker-positive, and biomarker-negative curves from one sampled coefficient vector of the joint fit (multivariate-normal draws, issue #156), with the control curve obtained by setting treatment to standard of care for every patient, exactly as in the base case. PSA means should therefore sit close to the base-case values, differing only through the nonlinearity of the partitioned survival model. The table below reports each difference in units of the PSA Monte Carlo standard error; the regression test `test_psa_basecase_alignment.R` flags any absolute difference above five standard errors. With 5,000 draws the standard errors are small, and the mean QALYs of every strategy sit a few hundredths of a QALY above the base case with the same sign: this is the mean bias of the extrapolated parametric curves under coefficient sampling, shared by all arms because they come from one fit, and it is documented as a known deviation in the test protocol.
@@ -250,7 +250,7 @@ knitr::kable(
                 "PSA SE", "Difference", "Difference (SE)"),
   caption = "PSA means versus base-case values (difference in Monte Carlo standard errors)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 Because all strategies in a PSA draw share one sampled joint model, a shift that is common to every strategy (the mean bias of the extrapolated parametric curves under coefficient sampling) cancels in the increments, whereas a control-specific shift would not. The incremental comparison below therefore isolates what matters for the decision.
@@ -278,7 +278,7 @@ knitr::kable(
                 "PSA SE", "Difference", "Difference (SE)"),
   caption = "Incremental PSA means versus base-case increments relative to standard of care"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}

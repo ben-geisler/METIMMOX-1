@@ -100,8 +100,8 @@ formula_df <- data.frame(
 
 knitr::kable(formula_df, booktabs = TRUE, align = c("l", "l"),
              caption = "Economic survival formulas") %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position")) %>%
-  kableExtra::column_spec(2, width = "11cm")
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "11cm")
 ```
 
 # Distribution Selection
@@ -131,8 +131,8 @@ knitr::kable(
   align = c("l", rep("r", 4), "c"),
   caption = "Overall survival distribution comparison (ordered by marginal AIC)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::row_spec(which(os_ic$Selected == "Yes"), bold = TRUE)
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_row_spec(which(os_ic$Selected == "Yes"), bold = TRUE)
 ```
 
 ```{r pfs-ic}
@@ -152,8 +152,8 @@ knitr::kable(
   align = c("l", rep("r", 4), "c"),
   caption = "Progression-free survival distribution comparison (ordered by marginal AIC)"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::row_spec(which(pfs_ic$Selected == "Yes"), bold = TRUE)
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_row_spec(which(pfs_ic$Selected == "Yes"), bold = TRUE)
 ```
 
 ```{r pair-audit}
@@ -181,9 +181,9 @@ knitr::kable(
   caption = sprintf("Joint (OS, PFS) pair audit: top %d of %d pairs by combined AIC plus the selected pair",
                     n_show, nrow(pairs))
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::row_spec(which(pairs_display$Selected == "Yes"), bold = TRUE) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_row_spec(which(pairs_display$Selected == "Yes"), bold = TRUE) %>%
+  tbl_footnote(
     general = "Violating points: number of (subgroup, week) points at which the population-averaged PFS curve exceeds the OS curve over the model horizon. The selected pair is the lowest combined-AIC pair with no violation.",
     threeparttable = TRUE
   )
@@ -216,8 +216,8 @@ knitr::kable(
   caption = sprintf("Selected (OS %s, PFS %s) and Weibull PH coefficient estimates",
                     selected_os, selected_pfs)
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down")) %>%
-  kableExtra::footnote(
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(
     general = "Baseline parameters are on their natural scale; covariate rows are additive effects on the log location parameter (gamma: log(rate), exp(coef) = rate ratio; Weibull PH: log(scale), exp(coef) = hazard ratio).",
     threeparttable = TRUE
   )

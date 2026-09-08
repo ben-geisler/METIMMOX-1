@@ -142,7 +142,7 @@ knitr::kable(
   col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
   caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 ```{r evpi-value}
@@ -161,7 +161,7 @@ knitr::kable(
   align = c("l", "r"),
   caption = "Expected value of perfect information"
 ) %>%
-  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position"))
 ```
 
 # EVPPI Results
@@ -189,7 +189,7 @@ if (!has_evppi) {
     align = c("l", "r", "r", "r", "r"),
     caption = "Single-parameter EVPPI with Monte Carlo standard errors"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+    tbl_style(latex_options = c("HOLD_position"))
 }
 ```
 
@@ -216,7 +216,7 @@ if (has_evppi && any(evppi_results$is_group)) {
     align = c("l", "r", "r", "r", "r", "r"),
     caption = "Joint EVPPI of parameter groups with Monte Carlo standard errors"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position"))
+    tbl_style(latex_options = c("HOLD_position"))
 } else if (has_evppi) {
   cat("The EVPPI cache contains no parameter-group rows.")
 }
@@ -249,7 +249,7 @@ if (!is.null(group_consistency) && nrow(group_consistency) > 0) {
     align = c("l", "r", "l", "r", "r", "r", "l"),
     caption = "Group EVPPI versus largest single-parameter member"
   ) %>%
-    kableExtra::kable_styling(latex_options = c("HOLD_position", "scale_down"))
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
 } else {
   cat("The group-consistency table is not stored in this EVPPI cache; rerun analysis/11_EVPPIs.R.")
 }

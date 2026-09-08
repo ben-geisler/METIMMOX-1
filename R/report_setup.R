@@ -13,6 +13,10 @@
 #                funs    = c("model_fun", "calculate_outcomes", "cea_helpers"))
 # ===============================================================================
 
+# Format-aware table wrappers (tbl_style(), tbl_footnote(), ...): kableExtra under
+# LaTeX only, so every report also renders to gfm.
+source(here::here("R", "report_tables.R"))
+
 #' Default package set for reports (superset of what the economic reports use)
 REPORT_PACKAGES <- c(
   "here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyr", "scales",
