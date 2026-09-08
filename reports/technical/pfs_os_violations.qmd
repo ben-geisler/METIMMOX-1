@@ -1,0 +1,631 @@
+---
+title: "PFS > OS Ordering Violations in the PSA"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+# ===============================================================================
+# PFS > OS ordering violations in the PSA
+#
+# The PSA draws the OS and PFS coefficient vectors of the joint gamma models
+# independently (issue #156). A sampled pair can therefore put the predicted
+# PFS curve above the predicted OS curve on part of the weekly grid, which a
+# partitioned survival model cannot represent (progressed-state occupancy would
+# be negative). model_fun() clamps PFS to OS (pmin) in PSA mode and emits a
+# survival_ordering_warning; 10_PSA.R counts the warnings but keeps no curves.
+#
+# This report re-predicts the five subgroup curves of every draw in the
+# sampling cache (R/pfs_os_violation_diagnostics.R, cached to
+# data/tidy/pfs_os_violations_n{n}.rds) and reports
+#   1. how many draws and PSA rows are affected, per curve;
+#   2. where in the horizon and how far the curves cross;
+#   3. the area under the trough (PFS above OS) before the clamp and the
+#      progressed-state area before and after it;
+#   4. the discounted-QALY consequence of the clamp per curve and strategy.
+# ===============================================================================
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "prediction_functions",
+           "cea_helpers", "report_format", "psa_functions",
+           "pfs_os_violation_diagnostics"),
+  packages = c("here", "knitr", "ggplot2", "dplyr", "tidyr", "scales",
+               "survival", "flexsurv"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+theme_set(theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(size = 12, face = "bold"),
+    plot.subtitle = element_text(size = 10, colour = "grey30"),
+    plot.caption = element_text(size = 8.5, colour = "grey30", hjust = 0),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 9),
+    strip.text = element_text(size = 10, face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(colour = "grey90", linewidth = 0.3),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9)
+  )
+)
+
+# ---- PSA cache (for the draw -> PSA row mapping) ---------------------------
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+psa_obj <- load_psa_cache(
+  verbose = FALSE, required = TRUE,
+  expected_fingerprint = expected_psa,
+  strategies = strategies, n_sim = n_sim,
+  sampling_fingerprint = sampling_models$fingerprint
+)
+
+# ---- Per-draw diagnostics (cached; ~10 minutes on first run) ---------------
+diag <- run_pfs_os_violation_diagnostics(
+  sampling_models = sampling_models,
+  data_complete = data_complete,
+  data_original = data,
+  params = l_params_base,
+  time_horizon = time_horizon,
+  verbose = FALSE
+)
+pc <- diag$per_curve
+curves_meta <- diag$curves
+curve_levels <- curves_meta$curve
+curve_labels <- setNames(curves_meta$label, curves_meta$curve)
+pc$curve <- factor(pc$curve, levels = curve_levels)
+pc$label <- curve_labels[as.character(pc$curve)]
+n_draws <- diag$n_draws
+
+# Deterministic base case, for the incremental QALYs the clamp shift is
+# compared with.
+det_results <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                         determpsa = "det")
+det_effect <- setNames(det_results$Effect, det_results$Strategy)
+n_curves <- length(curve_levels)
+
+fmt_pct <- function(x, digits = 1) sprintf(paste0("%.", digits, "f%%"), 100 * x)
+fmt_num <- function(x, digits = 3) formatC(x, format = "f", digits = digits, big.mark = ",")
+mc_se <- function(p, n) sqrt(p * (1 - p) / n)
+
+# ---- Draw-level summary ----------------------------------------------------
+by_draw <- pc %>%
+  group_by(draw) %>%
+  summarise(
+    any_violation = any(violated),
+    n_curves_violating = sum(violated),
+    excess_area_total = sum(excess_area_years),
+    .groups = "drop"
+  )
+share_any <- mean(by_draw$any_violation)
+n_any <- sum(by_draw$any_violation)
+
+# Draw -> PSA row mapping. psa_obj$model_idx is the sampling-cache draw behind
+# each retained PSA row (issue #156); replaced draws point at the model that
+# finally succeeded.
+model_idx <- psa_obj$model_idx
+psa_rows_affected <- by_draw$any_violation[match(model_idx, by_draw$draw)]
+share_psa_rows <- mean(psa_rows_affected)
+n_psa_rows <- length(model_idx)
+n_replaced <- sum(model_idx != seq_along(model_idx))
+
+# ---- Per-curve summary -----------------------------------------------------
+per_curve_summary <- pc %>%
+  group_by(curve) %>%
+  summarise(
+    n_violating = sum(violated),
+    share = mean(violated),
+    se = mc_se(mean(violated), n()),
+    .groups = "drop"
+  ) %>%
+  mutate(label = curve_labels[as.character(curve)])
+
+# ---- Extent among violating draws ------------------------------------------
+extent <- pc %>%
+  filter(violated) %>%
+  group_by(curve) %>%
+  summarise(
+    n = n(),
+    med_n_pts = median(n_violations),
+    q1_n_pts = quantile(n_violations, 0.25),
+    q3_n_pts = quantile(n_violations, 0.75),
+    max_n_pts = max(n_violations),
+    med_first = median(first_week),
+    min_first = min(first_week),
+    med_last = median(last_week),
+    max_last = max(last_week),
+    med_max_excess = median(max_excess),
+    p95_max_excess = quantile(max_excess, 0.95),
+    max_max_excess = max(max_excess),
+    .groups = "drop"
+  ) %>%
+  mutate(label = curve_labels[as.character(curve)])
+
+# ---- Area under the trough -------------------------------------------------
+area_all <- pc %>%
+  group_by(curve) %>%
+  summarise(
+    mean_excess_all = mean(excess_area_years),
+    mean_pp_raw = mean(pp_area_raw_years),
+    mean_pp_clamped = mean(pp_area_clamped_years),
+    mean_pf_raw = mean(pf_area_raw_years),
+    mean_pf_clamped = mean(pf_area_clamped_years),
+    mean_os = mean(os_area_years),
+    .groups = "drop"
+  ) %>%
+  mutate(label = curve_labels[as.character(curve)])
+
+area_viol <- pc %>%
+  filter(violated) %>%
+  group_by(curve) %>%
+  summarise(
+    mean_excess = mean(excess_area_years),
+    med_excess = median(excess_area_years),
+    p95_excess = quantile(excess_area_years, 0.95),
+    max_excess_area = max(excess_area_years),
+    .groups = "drop"
+  ) %>%
+  mutate(label = curve_labels[as.character(curve)])
+
+# ---- QALY consequence -------------------------------------------------------
+qaly_curve <- pc %>%
+  group_by(curve) %>%
+  summarise(
+    mean_diff = mean(qaly_raw_minus_clamped),
+    mean_diff_viol = mean(qaly_raw_minus_clamped[violated]),
+    p95_diff = quantile(qaly_raw_minus_clamped, 0.95),
+    max_diff = max(qaly_raw_minus_clamped),
+    mean_clamped = mean(qaly_clamped),
+    .groups = "drop"
+  ) %>%
+  mutate(label = curve_labels[as.character(curve)],
+         rel = mean_diff / mean_clamped)
+
+# Strategy-level QALY effect of the clamp: the guided strategies weight the
+# positive and negative curves by the canonical prevalence, and the QALY
+# difference is linear in the curves.
+control_strategy <- get_control_strategy()
+prev <- setNames(
+  vapply(get_biomarkers(), function(bm) l_params_base[[paste0("p_", bm)]], 1),
+  get_biomarkers()
+)
+wide_diff <- pc %>%
+  select(draw, curve, qaly_raw_minus_clamped) %>%
+  pivot_wider(names_from = curve, values_from = qaly_raw_minus_clamped)
+strategy_diff <- data.frame(draw = wide_diff$draw)
+strategy_diff[[control_strategy]] <- wide_diff[[control_strategy]]
+for (bm in get_biomarkers()) {
+  strategy_diff[[bm]] <- prev[[bm]] * wide_diff[[paste0(bm, "_pos")]] +
+    (1 - prev[[bm]]) * wide_diff[[paste0(bm, "_neg")]]
+}
+strategy_qaly <- do.call(rbind, lapply(strategies, function(s) {
+  d <- strategy_diff[[s]]
+  inc <- if (s == control_strategy) rep(0, length(d)) else d - strategy_diff[[control_strategy]]
+  data.frame(
+    Strategy = unname(strategy_display_name(s)),
+    mean_diff = mean(d), max_diff = max(d),
+    mean_inc = mean(inc), min_inc = min(inc), max_inc = max(inc),
+    mean_psa_effect = mean(psa_obj$effectiveness[[s]]),
+    stringsAsFactors = FALSE
+  )
+}))
+
+# ---- Timing curves ---------------------------------------------------------
+timing <- diag$timing
+timing$curve <- factor(timing$curve, levels = curve_levels)
+timing$label <- curve_labels[as.character(timing$curve)]
+peak_timing <- timing %>%
+  group_by(curve, label) %>%
+  summarise(peak_week = week[which.max(share_violating)],
+            peak_share = max(share_violating), .groups = "drop")
+
+# ---- Example curves (worst draw per curve) ---------------------------------
+examples <- diag$examples
+examples$curve <- factor(examples$curve, levels = curve_levels)
+examples$label <- curve_labels[as.character(examples$curve)]
+example_draws <- examples %>% distinct(curve, label, draw)
+
+validation <- diag$validation
+max_validation_diff <- max(validation$max_abs_diff)
+
+# Figure captions built here because `!expr` needs a single YAML string.
+timing_cap <- paste0(
+  "Share of the ", format(n_draws, big.mark = ","),
+  " draws in which PFS exceeds OS at each week of the horizon, by curve. ",
+  "The share rises through the horizon and is highest at its end (week ",
+  time_horizon, "): ",
+  paste(sprintf("%s %s", peak_timing$label, fmt_pct(peak_timing$peak_share, 0)),
+        collapse = "; "), "."
+)
+
+# Decomposition of the PSA-versus-base-case QALY gap: how much of it is the
+# clamp. Raw PSA mean = clamped PSA mean + mean overstatement.
+decomp <- do.call(rbind, lapply(strategies, function(s) {
+  clamped <- mean(psa_obj$effectiveness[[s]])
+  raw <- clamped + mean(strategy_diff[[s]])
+  data.frame(strategy = s, base = det_effect[[s]], clamped = clamped, raw = raw,
+             stringsAsFactors = FALSE)
+}))
+decomp$inc_base <- decomp$base - decomp$base[decomp$strategy == control_strategy]
+decomp$inc_clamped <- decomp$clamped - decomp$clamped[decomp$strategy == control_strategy]
+decomp$inc_raw <- decomp$raw - decomp$raw[decomp$strategy == control_strategy]
+decomp_crp <- decomp[decomp$strategy == "crp", ]
+clamp_share_of_gap <- (decomp_crp$inc_raw - decomp_crp$inc_clamped) /
+  (decomp_crp$inc_base - decomp_crp$inc_clamped)
+example_cap <- paste0(
+  "The draw with the largest area under the trough for each curve (draws ",
+  paste(example_draws$draw, collapse = ", "),
+  "). Solid lines are the raw sampled OS and PFS; the shaded region is the ",
+  "trough, where PFS lies above OS; the dashed line is the clamped ",
+  "PFS = min(PFS, OS) that the model uses."
+)
+```
+
+# Overview
+
+The probabilistic sensitivity analysis (PSA) draws the coefficient vectors of the joint overall survival (OS) and progression-free survival (PFS) gamma models independently from their multivariate-normal sampling distributions (issue #156). Nothing in that scheme ties a PFS draw to its OS draw, so a sampled pair can predict PFS above OS on part of the 10-year weekly grid. A partitioned survival model cannot represent that: the progressed-state occupancy OS - PFS would be negative and the three states would no longer sum to one.
+
+The model handles the problem with a clamp. In PSA mode `model_fun()` replaces the PFS curve by min(PFS, OS) for any curve that crosses and emits a `survival_ordering_warning`; the PSA script counts those warnings per subgroup but does not retain the curves. In the deterministic base case the ordering is guaranteed by the ordering-constrained distribution selection and any crossing stops the model.
+
+This report quantifies the crossings behind those warnings. For every one of the `r format(n_draws, big.mark = ",")` coefficient draws in the sampling cache it re-predicts the five population-averaged subgroup curves that the PSA uses and reports:
+
+1. the number and share of draws, and of retained PSA rows, with at least one PFS > OS violation, overall and per curve;
+2. where in the horizon the curves cross and by how much;
+3. the **area under the trough**, the region where PFS lies above OS, before the clamp (after the clamp it is zero by construction), together with the progressed-state area before and after the clamp;
+4. the discounted-QALY consequence of the clamp per curve and per strategy.
+
+# Methods
+
+## Curves examined
+
+The PSA evaluates five curves per draw, each a population average over the complete-case patients of the subgroup with `Rx` set as the strategy dictates (issue #151). They are the curves that `model_fun()` checks and clamps one by one:
+
+```{r curves-table}
+curves_tbl <- curves_meta %>%
+  transmute(
+    Curve = label,
+    Patients = n_patients,
+    `Rx set to` = ifelse(subgroup == "positive", "Experimental arm", "Control arm"),
+    `Used by strategy` = unname(strategy_display_name(strategy))
+  )
+knitr::kable(
+  curves_tbl, booktabs = TRUE, align = c("l", "r", "l", "l"),
+  caption = "Subgroup curves evaluated per draw"
+) %>%
+  tbl_style(latex_options = "HOLD_position")
+```
+
+The curves are computed in closed form from the gamma accelerated-failure-time parameters of each draw (shape and covariate-specific rate) rather than through `flexsurv::predict()`, which makes the full pass about twenty times faster. The closed form was checked against the pipeline's own prediction helper (`generate_psa_population_averaged_predictions()`) on `r length(unique(validation$draw))` draws and all five curves for both outcomes: the largest absolute difference at any of the 521 weekly points is `r formatC(max_validation_diff, format = "e", digits = 1)`. The clamped QALYs computed here reproduce the strategy QALYs that `model_fun()` returns for the same draw.
+
+## Metrics
+
+For each draw and curve, with $t$ running over the weekly grid (0 to `r time_horizon` weeks) and $\Delta_t = \max(\mathrm{PFS}_t - \mathrm{OS}_t, 0)$ the excess of PFS over OS:
+
+- **Violation**: $\Delta_t > 0$ at one or more time points. The number of violating time points, the first and last violating week, and the largest excess are recorded.
+- **Area under the trough (before the clamp)**: $\int \Delta_t \, dt$ by the trapezoidal rule on the weekly grid, in patient-years. It is the region between the PFS and OS curves where PFS lies on top. After the clamp, PFS is replaced by min(PFS, OS) and the area is zero.
+- **Progressed-state area**: $\int (\mathrm{OS}_t - \mathrm{PFS}_t)\,dt$ before the clamp (negative on the violating stretch) and $\int \max(\mathrm{OS}_t - \mathrm{PFS}_t, 0)\,dt$ after it, in patient-years. The clamp adds exactly the area under the trough to the progressed-state area and removes it from the progression-free area; OS is untouched.
+- **QALY consequence**: discounted QALYs the raw curves would have produced minus the clamped QALYs. Because the model's cycle sum gives $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ with $u_{np} = `r l_params_base$u_np`$, $u_p = `r l_params_base$u_p`$, $cl = 1/52$ and effect discount weights $w_t$ at `r fmt_pct(l_params_base$dr_effects, 0)` per year. It is the amount by which the raw curves overstate QALYs by counting the trough as progression-free time at the higher utility.
+
+Areas use the trapezoidal rule (the convention of `restricted_mean_survival()`); the QALY consequence uses the model's own cycle sum so that it matches `model_fun()` exactly.
+
+## Mapping draws to PSA rows
+
+The PSA object records, for every retained row, the sampling-cache draw that produced it (`model_idx`; issue #156). Rows whose original draw failed are re-paired with another cached model, so the share of PSA rows affected can differ from the share of draws affected. In the current cache `r n_replaced` of `r format(n_psa_rows, big.mark = ",")` rows were replaced.
+
+# Results
+
+## How many draws are affected
+
+```{r headline}
+headline <- data.frame(
+  Quantity = c(
+    "Sampling-cache draws evaluated",
+    "Draws with PFS > OS on at least one curve",
+    "Share of draws affected (Monte Carlo SE)",
+    "Retained PSA rows",
+    "PSA rows whose draw has at least one violation",
+    "Share of PSA rows affected"
+  ),
+  Value = c(
+    format(n_draws, big.mark = ","),
+    format(n_any, big.mark = ","),
+    sprintf("%s (%s)", fmt_pct(share_any), fmt_pct(mc_se(share_any, n_draws))),
+    format(n_psa_rows, big.mark = ","),
+    format(sum(psa_rows_affected), big.mark = ","),
+    fmt_pct(share_psa_rows)
+  ),
+  stringsAsFactors = FALSE
+)
+knitr::kable(headline, booktabs = TRUE, align = c("l", "r"),
+             caption = "Draws and PSA rows with a PFS > OS violation") %>%
+  tbl_style(latex_options = "HOLD_position")
+```
+
+**`r fmt_pct(share_any)` of the `r format(n_draws, big.mark = ",")` coefficient draws** put PFS above OS on at least one of the five curves, and `r fmt_pct(share_psa_rows)` of the retained PSA rows come from such a draw. The clamp is therefore not a rare safety net but acts in roughly `r if (share_any > 0.4) "half" else if (share_any > 0.2) "a quarter to a half" else "a minority"` of the PSA.
+
+```{r per-curve-table}
+per_curve_tbl <- per_curve_summary %>%
+  transmute(
+    Curve = label,
+    `Draws violating` = format(n_violating, big.mark = ","),
+    `Share of draws` = fmt_pct(share),
+    `MC SE` = fmt_pct(se, 2)
+  )
+knitr::kable(per_curve_tbl, booktabs = TRUE, align = c("l", "r", "r", "r"),
+             caption = "Draws with PFS > OS, by curve") %>%
+  tbl_style(latex_options = "HOLD_position") %>%
+  tbl_footnote(general = paste0(
+    "Each draw contributes one OS and one PFS coefficient vector shared by all five ",
+    "curves, so the same draw can violate on several curves. MC SE: binomial ",
+    "Monte Carlo standard error of the share over ", format(n_draws, big.mark = ","),
+    " draws."))
+```
+
+```{r n-curves-table}
+n_curves_tbl <- by_draw %>%
+  count(n_curves_violating, name = "draws") %>%
+  mutate(share = draws / n_draws) %>%
+  transmute(
+    `Curves violating in the draw` = n_curves_violating,
+    Draws = format(draws, big.mark = ","),
+    Share = fmt_pct(share)
+  )
+knitr::kable(n_curves_tbl, booktabs = TRUE, align = c("r", "r", "r"),
+             caption = "Number of curves (out of five) with PFS > OS per draw") %>%
+  tbl_style(latex_options = "HOLD_position")
+```
+
+## Where and how far the curves cross
+
+```{r extent-table}
+extent_tbl <- extent %>%
+  transmute(
+    Curve = label,
+    `Violating draws` = format(n, big.mark = ","),
+    `Time points (median [IQR]; max)` = sprintf("%d [%d, %d]; %d",
+                                                as.integer(med_n_pts), as.integer(q1_n_pts),
+                                                as.integer(q3_n_pts), as.integer(max_n_pts)),
+    `First week (median; min)` = sprintf("%d; %d", as.integer(med_first), as.integer(min_first)),
+    `Last week (median; max)` = sprintf("%d; %d", as.integer(med_last), as.integer(max_last)),
+    `Max excess (median; 95th; max)` = sprintf("%.4f; %.4f; %.4f",
+                                               med_max_excess, p95_max_excess, max_max_excess)
+  )
+knitr::kable(extent_tbl, booktabs = TRUE,
+             align = c("l", "r", "r", "r", "r", "r"),
+             caption = "Extent of the violation among violating draws, by curve") %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(general = paste0(
+    "Time points: number of the 521 weekly grid points (weeks 0 to ", time_horizon,
+    ") at which PFS exceeds OS. Max excess: largest PFS - OS within the draw, in ",
+    "survival-probability units."))
+```
+
+```{r timing-plot, fig.width=8, fig.height=5.5}
+#| fig-cap: !expr timing_cap
+ggplot(timing, aes(x = week, y = share_violating, colour = label)) +
+  geom_line(linewidth = 0.8) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = seq(0, time_horizon, by = 52),
+                     labels = function(x) x / 52,
+                     sec.axis = dup_axis(name = NULL, labels = NULL)) +
+  labs(x = "Years from randomisation", y = "Share of draws with PFS > OS",
+       colour = NULL, title = "When the sampled curves cross") +
+  guides(colour = guide_legend(nrow = 2))
+```
+
+```{r mean-excess-plot, fig.width=8, fig.height=5.5}
+#| fig-cap: "Mean excess of PFS over OS at each week, averaged over all draws (draws without a violation at that week contribute zero). The area under each line, in weeks, is 52 times the all-draw mean trough of that curve in the restricted-areas table."
+ggplot(timing, aes(x = week, y = mean_excess, colour = label)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_continuous(breaks = seq(0, time_horizon, by = 52),
+                     labels = function(x) x / 52) +
+  labs(x = "Years from randomisation", y = "Mean PFS - OS (where positive)",
+       colour = NULL, title = "Average depth of the trough over the horizon") +
+  guides(colour = guide_legend(nrow = 2))
+```
+
+## Area under the trough before and after the clamp
+
+```{r area-viol-table}
+area_viol_tbl <- area_viol %>%
+  transmute(
+    Curve = label,
+    `Mean` = fmt_num(mean_excess, 4),
+    `Median` = fmt_num(med_excess, 4),
+    `95th percentile` = fmt_num(p95_excess, 4),
+    `Maximum` = fmt_num(max_excess_area, 4),
+    `After clamp` = "0"
+  )
+knitr::kable(area_viol_tbl, booktabs = TRUE,
+             align = c("l", rep("r", 5)),
+             caption = "Area under the trough (patient-years) among violating draws, before and after the clamp") %>%
+  tbl_style(latex_options = "HOLD_position") %>%
+  tbl_footnote(general = paste0(
+    "Area = integral of max(PFS - OS, 0) over the ", time_horizon / 52,
+    "-year horizon, trapezoidal rule on the weekly grid, in patient-years per ",
+    "patient. After the clamp PFS = min(PFS, OS) and the area is zero for every draw."))
+```
+
+```{r area-all-table}
+area_all_tbl <- area_all %>%
+  transmute(
+    Curve = label,
+    `OS area` = fmt_num(mean_os, 3),
+    `PF area, raw` = fmt_num(mean_pf_raw, 4),
+    `PF area, clamped` = fmt_num(mean_pf_clamped, 4),
+    `Progressed area, raw` = fmt_num(mean_pp_raw, 4),
+    `Progressed area, clamped` = fmt_num(mean_pp_clamped, 4),
+    `Trough (all draws)` = fmt_num(mean_excess_all, 4)
+  )
+knitr::kable(area_all_tbl, booktabs = TRUE,
+             align = c("l", rep("r", 6)),
+             caption = "Mean restricted areas over all draws (patient-years), before and after the clamp") %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(general = paste0(
+    "Means over all ", format(n_draws, big.mark = ","), " draws (non-violating draws ",
+    "contribute a trough of zero). PF: progression-free area = integral of PFS. ",
+    "Progressed area = integral of OS - PFS (raw, negative on the violating stretch) ",
+    "or of max(OS - PFS, 0) (clamped). The clamp moves exactly the trough area from ",
+    "the PF state to the progressed state; OS area is unchanged."))
+```
+
+Averaged over all draws, the clamp moves `r fmt_num(area_all$mean_excess_all[area_all$curve == control_strategy], 4)` patient-years from the progression-free to the progressed state on the standard-of-care curve, against a mean progressed-state area after the clamp of `r fmt_num(area_all$mean_pp_clamped[area_all$curve == control_strategy], 3)` patient-years. The largest trough on any curve is `r fmt_num(max(area_viol$max_excess_area), 3)` patient-years (`r area_viol$label[which.max(area_viol$max_excess_area)]`).
+
+```{r area-distribution-plot, fig.width=8, fig.height=5}
+#| fig-cap: "Distribution of the area under the trough among violating draws, by curve (log scale)."
+ggplot(pc %>% filter(violated), aes(x = label, y = excess_area_years)) +
+  geom_boxplot(outlier.size = 0.6, width = 0.5, fill = "grey90") +
+  scale_y_log10(labels = label_number(accuracy = 0.0001)) +
+  scale_x_discrete(labels = label_wrap(18)) +
+  labs(x = NULL, y = "Area under the trough (patient-years, log scale)",
+       title = "Area under the trough among violating draws")
+```
+
+```{r example-plot, fig.width=8, fig.height=9}
+#| fig-cap: !expr example_cap
+ex_long <- examples %>%
+  mutate(pfs_clamped = pmin(pfs, os), year = week / 52)
+ggplot(ex_long, aes(x = year)) +
+  geom_ribbon(aes(ymin = os, ymax = pmax(pfs, os)), fill = "firebrick", alpha = 0.25) +
+  geom_line(aes(y = os, colour = "OS (raw)"), linewidth = 0.8) +
+  geom_line(aes(y = pfs, colour = "PFS (raw)"), linewidth = 0.8) +
+  geom_line(aes(y = pfs_clamped, colour = "PFS (clamped)"), linetype = "dashed",
+            linewidth = 0.8) +
+  facet_wrap(~ label, ncol = 2, labeller = label_wrap_gen(30)) +
+  scale_colour_manual(values = c("OS (raw)" = "black", "PFS (raw)" = "firebrick",
+                                 "PFS (clamped)" = "steelblue")) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Years from randomisation", y = "Survival probability", colour = NULL,
+       title = "Worst-case draw per curve")
+```
+
+## QALY consequence of the clamp
+
+```{r qaly-curve-table}
+qaly_curve_tbl <- qaly_curve %>%
+  transmute(
+    Curve = label,
+    `Mean, all draws` = fmt_num(mean_diff, 4),
+    `Mean, violating draws` = fmt_num(mean_diff_viol, 4),
+    `95th percentile` = fmt_num(p95_diff, 4),
+    `Maximum` = fmt_num(max_diff, 4),
+    `Mean clamped QALYs` = fmt_num(mean_clamped, 3),
+    `Relative` = fmt_pct(rel, 2)
+  )
+knitr::kable(qaly_curve_tbl, booktabs = TRUE,
+             align = c("l", rep("r", 6)),
+             caption = "Discounted QALYs the raw curves would add relative to the clamped curves, by curve") %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(general = paste0(
+    "Raw minus clamped discounted QALYs per patient = sum over cycles of ",
+    "max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight. Relative: ",
+    "mean difference as a share of the mean clamped QALYs of the curve."))
+```
+
+```{r qaly-strategy-table}
+strategy_qaly_tbl <- strategy_qaly %>%
+  transmute(
+    Strategy,
+    `Mean QALY overstatement` = fmt_num(mean_diff, 4),
+    `Max` = fmt_num(max_diff, 4),
+    `Mean effect on increment vs SoC` = ifelse(Strategy == unname(strategy_display_name(control_strategy)),
+                                               "--", fmt_num(mean_inc, 4)),
+    `Range on increment` = ifelse(Strategy == unname(strategy_display_name(control_strategy)),
+                                  "--", sprintf("%s to %s", fmt_num(min_inc, 4), fmt_num(max_inc, 4))),
+    `Mean PSA QALYs (clamped)` = fmt_num(mean_psa_effect, 3)
+  )
+knitr::kable(strategy_qaly_tbl, booktabs = TRUE,
+             align = c("l", rep("r", 5)),
+             caption = "QALY consequence of the clamp by strategy (per patient, discounted)") %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(general = paste0(
+    "Strategy values weight the positive and negative curves by the canonical ",
+    "prevalence (CRP ", sprintf("%.3f", prev[["crp"]]), ", TMB/BRAF ",
+    sprintf("%.3f", prev[["tmb_braf"]]), "). 'Effect on increment' is the raw-minus-",
+    "clamped difference of the strategy minus that of standard of care: a positive ",
+    "value means the raw curves would have made the guided strategy look better ",
+    "relative to standard of care than the clamped curves do. Mean PSA QALYs are ",
+    "the cached PSA means (clamped curves)."))
+```
+
+The clamp lowers the QALYs of every strategy, because the trough is progression-free time at utility `r l_params_base$u_np` that becomes progressed time at utility `r l_params_base$u_p`. The mean overstatement the raw curves would have produced is `r fmt_num(strategy_qaly$mean_diff[strategy_qaly$Strategy == unname(strategy_display_name(control_strategy))], 4)` QALYs for standard of care, `r fmt_num(strategy_qaly$mean_diff[strategy_qaly$Strategy == unname(strategy_display_name("crp"))], 4)` for the CRP-guided strategy and `r fmt_num(strategy_qaly$mean_diff[strategy_qaly$Strategy == unname(strategy_display_name("tmb_braf"))], 4)` for the TMB/BRAF-guided strategy. What matters for the decision is the effect on the increment: the clamp shifts the mean incremental QALYs of the CRP-guided strategy versus standard of care by `r fmt_num(-strategy_qaly$mean_inc[strategy_qaly$Strategy == unname(strategy_display_name("crp"))], 4)` and of the TMB/BRAF-guided strategy by `r fmt_num(-strategy_qaly$mean_inc[strategy_qaly$Strategy == unname(strategy_display_name("tmb_braf"))], 4)` (clamped minus raw), with a per-draw range from `r fmt_num(-strategy_qaly$max_inc[strategy_qaly$Strategy == unname(strategy_display_name("crp"))], 4)` to `r fmt_num(-strategy_qaly$min_inc[strategy_qaly$Strategy == unname(strategy_display_name("crp"))], 4)` for CRP.
+
+## Is the clamp why the PSA increments differ from the base case?
+
+```{r decomp-table}
+decomp_tbl <- decomp %>%
+  transmute(
+    Strategy = unname(strategy_display_name(strategy)),
+    `Base case` = fmt_num(base, 4),
+    `PSA mean, clamped` = fmt_num(clamped, 4),
+    `PSA mean, raw` = fmt_num(raw, 4),
+    `Increment, base case` = ifelse(strategy == control_strategy, "--", fmt_num(inc_base, 4)),
+    `Increment, PSA clamped` = ifelse(strategy == control_strategy, "--", fmt_num(inc_clamped, 4)),
+    `Increment, PSA raw` = ifelse(strategy == control_strategy, "--", fmt_num(inc_raw, 4))
+  )
+knitr::kable(decomp_tbl, booktabs = TRUE, align = c("l", rep("r", 6)),
+             caption = "Discounted QALYs per patient: deterministic base case, PSA mean with the clamp (the cached PSA), and PSA mean the raw curves would have given") %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(general = paste0(
+    "PSA mean, raw = cached PSA mean + mean overstatement of the raw curves for ",
+    "the strategy. Increments are versus standard of care."))
+```
+
+The test protocol records that the PSA incremental QALYs of the CRP-guided strategy (`r fmt_num(decomp_crp$inc_clamped, 4)`) fall well short of the base case (`r fmt_num(decomp_crp$inc_base, 4)`). Removing the clamp would move the PSA increment only to `r fmt_num(decomp_crp$inc_raw, 4)`: the clamp accounts for `r fmt_pct(clamp_share_of_gap, 1)` of the gap. The rest is the nonlinearity of the extrapolated gamma curves in their coefficients under independent OS and PFS draws, which lifts every strategy's mean QALYs above its base case by a different amount, not the ordering correction.
+
+# Interpretation
+
+- **The crossings are frequent but shallow.** About `r fmt_pct(share_any, 0)` of draws cross on at least one curve, yet the median violating draw crosses by at most `r sprintf("%.4f", median(pc$max_excess[pc$violated]))` in survival probability and carries a trough of `r sprintf("%.4f", median(pc$excess_area_years[pc$violated]))` patient-years. The crossings sit in the extrapolated tail where both curves are close to their floor, so the area involved is small relative to the restricted OS area of about `r fmt_num(mean(area_all$mean_os), 2)` patient-years.
+- **The clamp is a one-sided correction.** min(PFS, OS) accepts the OS draw as given and truncates PFS; it never raises OS. Because OS and PFS are drawn independently, the direction of the error in any one draw is unknown, and the clamp therefore shifts every strategy's QALYs downward rather than towards the base case.
+- **The consequence is differential but small.** The five curves cross at different rates (`r paste(sprintf("%s %s", per_curve_summary$label, fmt_pct(per_curve_summary$share, 0)), collapse = "; ")`), so the clamp moves the increments of the guided strategies versus standard of care, not only their levels. The mean shift on the CRP increment is `r fmt_num(-strategy_qaly$mean_inc[strategy_qaly$Strategy == unname(strategy_display_name("crp"))], 4)` QALYs against a base-case incremental gain of `r fmt_num(decomp_crp$inc_base, 4)`. Individual draws can move by up to `r fmt_num(max(abs(c(strategy_qaly$min_inc, strategy_qaly$max_inc))), 3)` QALYs, so the clamp widens the spread of the increments more than it moves their mean.
+- **The clamp does not explain the PSA-versus-base-case gap.** The known failure of `test_psa_basecase_alignment.R` on the incremental QALYs (PSA `r fmt_num(decomp_crp$inc_clamped, 4)` versus base case `r fmt_num(decomp_crp$inc_base, 4)` for CRP) would remain almost unchanged without the clamp (`r fmt_num(decomp_crp$inc_raw, 4)`). The test protocol's attribution of that gap to the clamp should be read as an attribution to the independent OS and PFS draws themselves.
+- **What would remove the violations.** A joint OS/PFS covariance (drawing the two coefficient vectors together) would restore the correlation that the earlier bootstrap preserved by refitting both models on the same resample; drawing on a latent shared frailty or sampling PFS conditionally on OS would guarantee ordering by construction. Both are changes to the sampling scheme of script 06 and are out of scope for this report, which documents the size of the problem under the current scheme (user decision, issue #156: OS and PFS are drawn independently).
+
+# Notes
+
+- The diagnostics are cached in `data/tidy/pfs_os_violations_n{n_samples}.rds` with a fingerprint of the sampling-cache fingerprint, the utilities, the discount rate, the horizon and the cycle length; `run_pfs_os_violation_diagnostics()` regenerates the cache on any mismatch. The current cache was built from sampling cache `r sampling_models$fingerprint` (method `r get_joint_sampling_models(sampling_models)$method`) in `r sprintf("%.0f", diag$elapsed)` seconds.
+- Curves are computed in closed form from the gamma parameters of each draw; `validate_direct_curves()` checks them against the pipeline's `predict()`-based helper before every regeneration and stops if they differ by more than 1e-8.
+- All values are per patient over the 10-year horizon; areas are restricted means by the trapezoidal rule, QALY differences use the model's cycle sum.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0
