@@ -1,0 +1,462 @@
+Running pipeline scripts 02-11...
+Loading required package: pacman
+Warning message:
+package 'pacman' was built under R version 4.3.3 
+Installing package into 'C:/Users/benjampg/AppData/Local/R/win-library/4.3'
+(as 'lib' is unspecified)
+Warning: unable to access index for repository http://www.stats.ox.ac.uk/pub/RWin/bin/windows/contrib/4.3:
+  cannot open URL 'http://www.stats.ox.ac.uk/pub/RWin/bin/windows/contrib/4.3/PACKAGES'
+trying URL 'http://cran.rstudio.com/bin/windows/contrib/4.3/voi_1.0.3.zip'
+Content type 'application/zip' length 4390039 bytes (4.2 MB)
+==================================================
+downloaded 4.2 MB
+
+package 'voi' successfully unpacked and MD5 sums checked
+
+The downloaded binary packages are in
+	C:\Users\benjampg\AppData\Local\Temp\RtmpEVucrM\downloaded_packages
+
+voi installed
+Warning message:
+package 'voi' was built under R version 4.3.3 
+Scripts 02-05: Setup and parametric survival analysis...
+PFS endpoint helper loaded from pfs_endpoint.R
+Model configuration functions loaded from model_configs.R
+  - Economic strategies: control, crp, tmb_braf
+  - Shared model: Age + sex + Rx + crp*Rx + tmb_braf*Rx
+  - TLR is excluded from economic strategy modeling
+Cache-path helpers loaded from cache_paths.R
+        id short_name     report_label       trace_label
+1  control    Control Standard of Care  Standard of Care
+2      crp        CRP       CRP-guided      CRP Strategy
+3 tmb_braf   TMB/BRAF  TMB/BRAF-guided TMB/BRAF Strategy
+                                                      name
+1                 Standard of care: FLOX chemotherapy only
+2                     Biomarker-guided: C-reactive protein
+3 Biomarker-guided: tumor mutation burden or BRAF mutation
+                                                                                                                                                                                                                                                                                                                                 description
+1                                                                                                                                                                                                                                                                             Standard of care - All patients receive only FLOX chemotherapy
+2 C-reactive protein with cut-off of <5 mg/L for biomarker-positive status, measured at week 4 (cycle 3 day 1) after two FLOX cycles common to both arms and before the first nivolumab dose. If CRP-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if CRP-negative: chemotherapy only
+3                                                      Combined biomarker: either Tumor Mutation Burden >= 9 or BRAF V600 mutation positive (both from next-generation sequencing). If TMB/BRAF-positive: alternating two cycles each of FLOX (chemotherapy) and nivolumab (anti-PD1 immunotherapy); if TMB/BRAF-negative: chemotherapy only
+  prevalence n_patients
+1  1.0000000         36
+2  0.3380282         45
+3  0.4492754         34
+Configuration: Joint economic survival model 
+Description: CRP and TMB/BRAF treatment interactions in one model 
+Economic strategies: control, crp, tmb_braf 
+Economic biomarkers: crp, tmb_braf 
+Formula sets to be fitted: full 
+Fitting models for formula set: full 
+Ordering-constrained model pair: gamma (OS), gamma (PFS); combined AIC: 1304.16 ; constraint penalty: 2.22 
+Generating population-averaged predictions for control strategy...
+Generating population-averaged predictions for crp strategy...
+Generating population-averaged predictions for tmb_braf strategy...
+Population-averaged predictions complete for all strategies.
+Script 06: Sampling (generating joint coefficient draws)...
+Resampling: Using Joint economic survival model 
+Description: CRP and TMB/BRAF treatment interactions in one model 
+Resolved distributions - OS: gamma | PFS: gamma 
+
+=== No cache found - will generate sampling models ===
+
+=== Starting multivariate-normal coefficient sampling ===
+Results will be cached to: C:/Users/benjampg/git/METIMMOX-1/data/tidy/sampling_models_n5000_full.rds 
+
+Generating 5000 multivariate-normal coefficient draws for the joint OS and PFS models fitted on 68 patients...
+Using OS distribution: gamma | PFS distribution: gamma 
+Coefficient draws complete: 5000 draws per outcome in 0.0 seconds; 0 failed
+Extreme-draw rate (any interaction |coefficient| > log(10)): 1/5000 (0.02%)
+Interaction coefficient draws (mean, 2.5%, 97.5%):
+  os   RxExperimental arm:crp1           -0.159 [ -0.951,   0.658]
+  os   RxExperimental arm:tmb_braf1      -0.095 [ -0.780,   0.589]
+  pfs  RxExperimental arm:crp1           -0.610 [ -1.598,   0.385]
+  pfs  RxExperimental arm:tmb_braf1      -0.298 [ -1.127,   0.526]
+
+=== Saving sampling models to cache ===
+Sampling models saved successfully to: C:/Users/benjampg/git/METIMMOX-1/data/tidy/sampling_models_n5000_full.rds 
+File size: 0.67 MB
+
+=== Sampling model structure ready ===
+- Model: Joint economic survival model 
+- Biomarker strategies sharing the joint model: crp, tmb_braf 
+- Formulas defined in: scripts/R/functions/model_configs.R
+- Number of coefficient draws: 5000 
+- Draws: multivariate normal around the fitted joint models; OS and PFS drawn independently (issue #156)
+- Control arm: joint model predicted with Rx = control (issue #151)
+
+=== Parameter distributions configured ===
+- other_costs: gamma (CV = 0.2): c_other_visit, c_other_baseline, c_other_follow, c_other_last
+- utilities: beta/gamma (CV = 0.15): u_np, u_decrement
+- prevalence: beta (CV = 0.15): p_crp, p_tmb_braf
+- Derived in the PSA (not drawn): u_p 
+- Fixed in the PSA, varied in the DSA only (issue #154): c_drug_nivo, c_drug_FLOX, c_test_CT, c_test_blood, c_test_CRP, c_test_NGS 
+- Survival parameters: multivariate-normal coefficient draws (n = 5000 )
+- PSA population averaging function ready
+
+Ready for PSA analysis
+Scripts 07-09: Traces, base case, DSA...
+Generating state occupancy traces for all strategies...
+Traces generated successfully.
+Creating faceted plot for all strategies...
+Saving all strategies plot as figs/traces_all_strategies_state_occupancy.png ...
+Creating faceted plot for crp biomarker subgroups...
+Saving crp biomarker plot as figs/traces_crp_biomarker_state_occupancy.png ...
+Creating faceted plot for tmb_braf biomarker subgroups...
+Saving tmb_braf biomarker plot as figs/traces_tmb_braf_biomarker_state_occupancy.png ...
+  Strategy     Cost   Effect
+1  control 21523.45 1.371420
+2      crp 53927.89 1.391838
+3 tmb_braf 63399.19 1.360857
+  Strategy     Cost   Effect Inc_Cost Inc_Effect    ICER Status
+1  control 21523.45 1.371420       NA         NA      NA     ND
+2      crp 53927.89 1.391838 32404.43 0.02041781 1587067     ND
+3 tmb_braf 63399.19 1.360857       NA         NA      NA      D
+  Strategy     Cost   Effect       NMB
+1  control 21523.45 1.371420 48418.983
+2      crp 53927.89 1.391838 17055.857
+3 tmb_braf 63399.19 1.360857  6004.501
+Optimal strategy at WTP threshold € 51,000 :  control 
+Strategies on the efficiency frontier:  crp 
+Parameter ranges for DSA:
+               pars          min          max
+1       c_drug_nivo 1.113840e+04 1.670760e+04
+2       c_drug_FLOX 3.416000e+02 5.124000e+02
+3         c_test_CT 3.088000e+02 4.632000e+02
+4      c_test_blood 1.280000e+01 1.920000e+01
+5        c_test_CRP 1.280000e+01 1.920000e+01
+6        c_test_NGS 2.014400e+03 3.021600e+03
+7     c_other_visit 2.640000e+01 3.960000e+01
+8  c_other_baseline 4.240000e+02 6.360000e+02
+9    c_other_follow 2.640000e+01 3.960000e+01
+10     c_other_last 1.104240e+04 1.656360e+04
+11             u_np 5.840000e-01 8.760000e-01
+12              u_p 4.720000e-01 7.080000e-01
+13            p_crp 2.704225e-01 4.056338e-01
+14       p_tmb_braf 3.594203e-01 5.391304e-01
+Running base case...
+Optimal strategy in base case: control 
+
+Testing parameter: c_drug_nivo - Min: 11138.4 Max: 16707.6 
+Testing parameter: c_drug_FLOX - Min: 341.6 Max: 512.4 
+Testing parameter: c_test_CT - Min: 308.8 Max: 463.2 
+Testing parameter: c_test_blood - Min: 12.8 Max: 19.2 
+Testing parameter: c_test_CRP - Min: 12.8 Max: 19.2 
+Testing parameter: c_test_NGS - Min: 2014.4 Max: 3021.6 
+Testing parameter: c_other_visit - Min: 26.4 Max: 39.6 
+Testing parameter: c_other_baseline - Min: 424 Max: 636 
+Testing parameter: c_other_follow - Min: 26.4 Max: 39.6 
+Testing parameter: c_other_last - Min: 11042.4 Max: 16563.6 
+Testing parameter: u_np - Min: 0.584 Max: 0.876 
+Testing parameter: u_p - Min: 0.472 Max: 0.708 
+Testing parameter: p_crp - Min: 0.2704225 Max: 0.4056338 
+Testing parameter: p_tmb_braf - Min: 0.3594203 Max: 0.5391304 
+
+Running structural scenarios...
+   Discount rate (costs and QALYs) - min = 0 rate 
+   Discount rate (costs and QALYs) - max = 0.08 rate 
+   Time horizon - min = 5 years 
+Generating population-averaged predictions for control strategy...
+Generating population-averaged predictions for crp strategy...
+Generating population-averaged predictions for tmb_braf strategy...
+Population-averaged predictions complete for all strategies.
+   Time horizon - max = 20 years 
+Generating population-averaged predictions for control strategy...
+Generating population-averaged predictions for crp strategy...
+Generating population-averaged predictions for tmb_braf strategy...
+Population-averaged predictions complete for all strategies.
+   Post-progression treatment cost (per quarter, progressed state) - max = 5000 EUR 
+   Second treatment sequence at weeks 24-38 (1 = given, 0 = omitted) - min = 0 indicator 
+Combining results...
+Calculating NMB differences...
+
+Running survival model structural sensitivity analysis...
+Distributions to test: exponential, weibull, weibullph, llogis, lognormal, gamma, gompertz, gengamma, genf 
+Base case (selected) pair: gamma 
+  Testing distribution: exponential 
+  Testing distribution: weibull 
+  Testing distribution: weibullph 
+  Testing distribution: llogis 
+  Testing distribution: lognormal 
+  Testing distribution: gamma 
+  Testing distribution: gompertz 
+  Testing distribution: gengamma 
+    Skipped: OS < PFS at 814 curve-time points across the control and biomarker subgroup curves (521 weekly time points per curve); ordering constraint 
+  Testing distribution: genf 
+    Skipped: OS < PFS at 825 curve-time points across the control and biomarker subgroup curves (521 weekly time points per curve); ordering constraint 
+
+Distributions evaluated: 7 of 9; skipped: 2
+  - genf : OS < PFS at 825 curve-time points across the control and biomarker subgroup curves (521 weekly time points per curve); ordering constraint 
+  - gengamma : OS < PFS at 814 curve-time points across the control and biomarker subgroup curves (521 weekly time points per curve); ordering constraint 
+
+Survival model sensitivity analysis complete.
+NMB range by strategy:
+                        Strategy Base_Dist  Min_Dist   Min_NMB    Max_Dist
+control.Survival_Model   control     gamma lognormal 43082.097 exponential
+crp.Survival_Model           crp     gamma  gompertz 15232.525 exponential
+tmb_braf.Survival_Model tmb_braf     gamma  gompertz  4922.199 exponential
+                         Max_NMB     Range
+control.Survival_Model  54228.38 11146.285
+crp.Survival_Model      23638.05  8405.528
+tmb_braf.Survival_Model 13855.22  8933.018
+Creating tornado plot for strategy: control ( NMB_diff )
+Omitting 5 parameter(s) with no effect on NMB_diff for control : c_drug_nivo, c_test_CRP, c_test_NGS, p_crp, p_tmb_braf 
+Creating tornado plot for strategy: crp ( NMB_diff )
+Omitting 2 parameter(s) with no effect on NMB_diff for crp : c_test_NGS, p_tmb_braf 
+Creating tornado plot for strategy: tmb_braf ( NMB_diff )
+Omitting 2 parameter(s) with no effect on NMB_diff for tmb_braf : c_test_CRP, p_crp 
+Creating tornado plot for strategy: crp ( INMB_diff )
+Omitting 2 parameter(s) with no effect on INMB_diff for crp : c_test_NGS, p_tmb_braf 
+Creating tornado plot for strategy: tmb_braf ( INMB_diff )
+Omitting 2 parameter(s) with no effect on INMB_diff for tmb_braf : c_test_CRP, p_crp 
+
+Checking if optimal strategy changes with parameter variations:
+The optimal strategy ( control ) is robust to all parameter variations.
+
+Summary of parameter impact on NMB for all strategies:
+  Strategy Rank             Parameter   Impact
+1  control    1 Post_progression_cost 19438.93
+2  control    2                  u_np 16280.56
+3  control    3                   u_p 11696.41
+4      crp    1                  u_np 18462.89
+5      crp    2       Second_sequence 16959.09
+6      crp    3 Post_progression_cost 16504.20
+7 tmb_braf    1       Second_sequence 18857.80
+8 tmb_braf    2                  u_np 17388.39
+9 tmb_braf    3 Post_progression_cost 17239.71
+
+Summary of parameter impact on incremental NMB versus control:
+  Strategy Rank       Parameter   Impact
+1      crp    1  Survival_Model 14531.01
+2      crp    2 Second_sequence 14507.06
+3      crp    3     c_drug_nivo 13220.85
+4 tmb_braf    1 Second_sequence 16405.78
+5 tmb_braf    2     c_drug_nivo 16190.85
+6 tmb_braf    3      p_tmb_braf 14763.87
+Script 10: PSA (probabilistic sensitivity analysis, ~20-60 minutes)...
+
+=== Generating new PSA results ===
+Starting PSA with 5000 simulations
+Running PSA with 5000 simulations...
+PSA iteration 100 - subgroup population averaging
+Completed 100/5000 PSA iterations (2.0%) - ETA: 28.9 min
+PSA iteration 200 - subgroup population averaging
+Completed 200/5000 PSA iterations (4.0%) - ETA: 28.9 min
+PSA iteration 300 - subgroup population averaging
+Completed 300/5000 PSA iterations (6.0%) - ETA: 30.0 min
+PSA iteration 400 - subgroup population averaging
+Completed 400/5000 PSA iterations (8.0%) - ETA: 29.2 min
+PSA iteration 500 - subgroup population averaging
+Completed 500/5000 PSA iterations (10.0%) - ETA: 27.4 min
+PSA iteration 600 - subgroup population averaging
+Completed 600/5000 PSA iterations (12.0%) - ETA: 26.0 min
+PSA iteration 700 - subgroup population averaging
+Completed 700/5000 PSA iterations (14.0%) - ETA: 24.7 min
+PSA iteration 800 - subgroup population averaging
+Completed 800/5000 PSA iterations (16.0%) - ETA: 23.7 min
+PSA iteration 900 - subgroup population averaging
+Completed 900/5000 PSA iterations (18.0%) - ETA: 22.8 min
+PSA iteration 1000 - subgroup population averaging
+Completed 1000/5000 PSA iterations (20.0%) - ETA: 23.8 min
+PSA iteration 1100 - subgroup population averaging
+Completed 1100/5000 PSA iterations (22.0%) - ETA: 23.4 min
+PSA iteration 1200 - subgroup population averaging
+Completed 1200/5000 PSA iterations (24.0%) - ETA: 23.0 min
+PSA iteration 1300 - subgroup population averaging
+Completed 1300/5000 PSA iterations (26.0%) - ETA: 22.9 min
+PSA iteration 1400 - subgroup population averaging
+Completed 1400/5000 PSA iterations (28.0%) - ETA: 22.6 min
+PSA iteration 1500 - subgroup population averaging
+Completed 1500/5000 PSA iterations (30.0%) - ETA: 22.0 min
+PSA iteration 1600 - subgroup population averaging
+Completed 1600/5000 PSA iterations (32.0%) - ETA: 21.3 min
+PSA iteration 1700 - subgroup population averaging
+Completed 1700/5000 PSA iterations (34.0%) - ETA: 21.3 min
+PSA iteration 1800 - subgroup population averaging
+Completed 1800/5000 PSA iterations (36.0%) - ETA: 20.7 min
+PSA iteration 1900 - subgroup population averaging
+Completed 1900/5000 PSA iterations (38.0%) - ETA: 20.0 min
+PSA iteration 2000 - subgroup population averaging
+Completed 2000/5000 PSA iterations (40.0%) - ETA: 19.6 min
+PSA iteration 2100 - subgroup population averaging
+Completed 2100/5000 PSA iterations (42.0%) - ETA: 19.0 min
+PSA iteration 2200 - subgroup population averaging
+Completed 2200/5000 PSA iterations (44.0%) - ETA: 18.4 min
+PSA iteration 2300 - subgroup population averaging
+Completed 2300/5000 PSA iterations (46.0%) - ETA: 17.7 min
+PSA iteration 2400 - subgroup population averaging
+Completed 2400/5000 PSA iterations (48.0%) - ETA: 17.0 min
+PSA iteration 2500 - subgroup population averaging
+Completed 2500/5000 PSA iterations (50.0%) - ETA: 16.2 min
+PSA iteration 2600 - subgroup population averaging
+Completed 2600/5000 PSA iterations (52.0%) - ETA: 15.6 min
+PSA iteration 2700 - subgroup population averaging
+Completed 2700/5000 PSA iterations (54.0%) - ETA: 14.9 min
+PSA iteration 2800 - subgroup population averaging
+Completed 2800/5000 PSA iterations (56.0%) - ETA: 14.2 min
+PSA iteration 2900 - subgroup population averaging
+Completed 2900/5000 PSA iterations (58.0%) - ETA: 13.5 min
+PSA iteration 3000 - subgroup population averaging
+Completed 3000/5000 PSA iterations (60.0%) - ETA: 12.9 min
+PSA iteration 3100 - subgroup population averaging
+Completed 3100/5000 PSA iterations (62.0%) - ETA: 12.3 min
+PSA iteration 3200 - subgroup population averaging
+Completed 3200/5000 PSA iterations (64.0%) - ETA: 11.6 min
+PSA iteration 3300 - subgroup population averaging
+Completed 3300/5000 PSA iterations (66.0%) - ETA: 11.0 min
+PSA iteration 3400 - subgroup population averaging
+Completed 3400/5000 PSA iterations (68.0%) - ETA: 10.3 min
+PSA iteration 3500 - subgroup population averaging
+Completed 3500/5000 PSA iterations (70.0%) - ETA: 9.6 min
+PSA iteration 3600 - subgroup population averaging
+Completed 3600/5000 PSA iterations (72.0%) - ETA: 8.9 min
+PSA iteration 3700 - subgroup population averaging
+Completed 3700/5000 PSA iterations (74.0%) - ETA: 8.3 min
+PSA iteration 3800 - subgroup population averaging
+Completed 3800/5000 PSA iterations (76.0%) - ETA: 7.6 min
+PSA iteration 3900 - subgroup population averaging
+Completed 3900/5000 PSA iterations (78.0%) - ETA: 6.9 min
+PSA iteration 4000 - subgroup population averaging
+Completed 4000/5000 PSA iterations (80.0%) - ETA: 6.3 min
+PSA iteration 4100 - subgroup population averaging
+Completed 4100/5000 PSA iterations (82.0%) - ETA: 5.6 min
+PSA iteration 4200 - subgroup population averaging
+Completed 4200/5000 PSA iterations (84.0%) - ETA: 5.0 min
+PSA iteration 4300 - subgroup population averaging
+Completed 4300/5000 PSA iterations (86.0%) - ETA: 4.4 min
+PSA iteration 4400 - subgroup population averaging
+Completed 4400/5000 PSA iterations (88.0%) - ETA: 3.7 min
+PSA iteration 4500 - subgroup population averaging
+Completed 4500/5000 PSA iterations (90.0%) - ETA: 3.1 min
+PSA iteration 4600 - subgroup population averaging
+Completed 4600/5000 PSA iterations (92.0%) - ETA: 2.5 min
+PSA iteration 4700 - subgroup population averaging
+Completed 4700/5000 PSA iterations (94.0%) - ETA: 1.9 min
+PSA iteration 4800 - subgroup population averaging
+Completed 4800/5000 PSA iterations (96.0%) - ETA: 1.2 min
+PSA iteration 4900 - subgroup population averaging
+Completed 4900/5000 PSA iterations (98.0%) - ETA: 0.6 min
+PSA iteration 5000 - subgroup population averaging
+Completed 5000/5000 PSA iterations (100.0%) - ETA: 0.0 min
+PSA initial pass complete: 5000 simulations in 30.7 minutes
+PSA initial-pass fallback rate: 0/5000 (0.00%; maximum permitted 2.00%)
+
+--- PFS > OS Constraint Summary (Issue #76) ---
+Violations occurred in 2422 of 5000 iterations (48.4%)
+Breakdown by subgroup:
+  Control: 746 iterations (14.9%)
+  CRP+: 1409 iterations (28.2%)
+  CRP-: 527 iterations (10.5%)
+  TMB/BRAF+: 1653 iterations (33.1%)
+  TMB/BRAF-: 495 iterations (9.9%)
+Constraint enforced: PFS capped at OS to ensure valid state occupancy.
+------------------------------------------------
+
+PSA fallback diagnostic: 0/5000 initial iterations (0.00%; maximum permitted 2.00%)
+PSA dropped-draw diagnostic: 0 unrecoverable iteration(s); effective n_sim = 5000
+
+=== PSA generation complete ===
+PSA object created with:
+ - Simulations: 5000 
+ - Strategies: 3 
+ - Cost matrix dimensions: 5000 3 
+ - Effect matrix dimensions: 5000 3 
+  Strategy meanCost meanEffect
+1  control 21467.32   1.415990
+2      crp 53592.89   1.418030
+3 tmb_braf 62948.92   1.395504
+  Strategy meanCost meanEffect   sdCost  sdEffect
+1  control 21467.32   1.415990 2560.449 0.2903857
+2      crp 53592.89   1.418030 5798.619 0.2641763
+3 tmb_braf 62948.92   1.395504 6997.329 0.2692788
+         Strategy     Cost   Effect Inc_Cost  Inc_Effect     ICER Status
+control   control 21467.32 1.415990       NA          NA       NA     ND
+crp           crp 53592.89 1.418030 32125.57 0.002039725 15749948     ND
+tmb_braf tmb_braf 62948.92 1.395504       NA          NA       NA      D
+  range_min range_max cost_eff_strat
+1         0     2e+05        control
+
+Saving PSA results to cache...
+  PSA results saved successfully to:
+    -  C:/Users/benjampg/git/METIMMOX-1/data/tidy/psa_params_correct.rds 
+    -  C:/Users/benjampg/git/METIMMOX-1/data/tidy/psa_obj_correct.rds 
+Script 11: EVPPI (expected value of perfect partial information)...
+
+=== Extracting interaction coefficients for EVPPI ===
+
+=== Extracting interaction coefficients from sampling models ===
+  b_crp_rx_os: extracted=5000, failed=0, missing=0
+  b_crp_rx_pfs: extracted=5000, failed=0, missing=0
+  b_tmb_braf_rx_os: extracted=5000, failed=0, missing=0
+  b_tmb_braf_rx_pfs: extracted=5000, failed=0, missing=0
+
+Extracted coefficient summary:
+  b_crp_rx_os: mean=-0.1590, sd=0.4187, range=[-1.5222, 1.5027], n_valid=5000
+  b_crp_rx_pfs: mean=-0.6104, sd=0.5057, range=[-2.4923, 1.4099], n_valid=5000
+  b_tmb_braf_rx_os: mean=-0.0948, sd=0.3481, range=[-1.3474, 1.0961], n_valid=5000
+  b_tmb_braf_rx_pfs: mean=-0.2978, sd=0.4217, range=[-1.7140, 1.3510], n_valid=5000
+Interaction coefficients appended to psa_params
+psa_params now has 15 columns
+=== PSA OBJECT DIAGNOSTICS ===
+PSA object structure:
+  - Number of simulations: 5000 
+  - Number of strategies: 3 
+  - Strategy names: control, crp, tmb_braf 
+
+Cost matrix summary:
+    control           crp           tmb_braf    
+ Min.   :14064   Min.   :32318   Min.   :41624  
+ 1st Qu.:19625   1st Qu.:49513   1st Qu.:58128  
+ Median :21316   Median :53419   Median :62752  
+ Mean   :21467   Mean   :53593   Mean   :62949  
+ 3rd Qu.:23109   3rd Qu.:57260   3rd Qu.:67667  
+ Max.   :35021   Max.   :75355   Max.   :90983  
+
+Effect matrix summary:
+    control            crp            tmb_braf     
+ Min.   :0.4831   Min.   :0.5083   Min.   :0.4752  
+ 1st Qu.:1.2155   1st Qu.:1.2454   1st Qu.:1.2177  
+ Median :1.4118   Median :1.4162   Median :1.3942  
+ Mean   :1.4160   Mean   :1.4180   Mean   :1.3955  
+ 3rd Qu.:1.6047   3rd Qu.:1.5976   3rd Qu.:1.5742  
+ Max.   :2.5849   Max.   :2.4354   Max.   :2.5108  
+
+=== NMB ANALYSIS ===
+NMB matrix summary:
+    control            crp            tmb_braf     
+ Min.   :  3737   Min.   :-32850   Min.   :-44400  
+ 1st Qu.: 40366   1st Qu.:  9459   1st Qu.: -2009  
+ Median : 50396   Median : 18833   Median :  8077  
+ Mean   : 50748   Mean   : 18727   Mean   :  8222  
+ 3rd Qu.: 60695   3rd Qu.: 28196   3rd Qu.: 18433  
+ Max.   :110481   Max.   : 71010   Max.   : 79269  
+EVPI calculation:
+  - EVPI (dampack::calc_evpi): 0 
+EVPPI parameters: 13 | parameter groups: 6 
+
+=== EVPPI Analysis at WTP = 51000 ===
+Total EVPI: 0 
+Estimator: voi::evppi() nonparametric regression (GAM); standard errors from B = 1000 coefficient draws
+
+EVPI is too small ( 0 ) - skipping EVPPI analysis
+
+=== Population-Level EVPPI Summary ===
+Annual incidence: 1500 patients/year
+Research horizon: 10 years
+Discount rate: 3.5%
+Total eligible population (discounted): 12475 patient-years
+
+Top 5 parameters by population-level EVPPI:
+[1] parameter                 evppi_population_millions
+[3] evppi_percent_of_evpi    
+<0 rows> (or 0-length row.names)
+
+=== EVPPI ANALYSIS SUMMARY ===
+Willingness-to-pay threshold: 51000 
+Number of PSA simulations: 5000 
+Total EVPI: 0 
+
+No EVPPI results available
+
+EVPPI analysis complete. Results saved to C:/Users/benjampg/git/METIMMOX-1/data/tidy/evppi_results_correct.RData 
+Pipeline complete! Ready to render reports.
