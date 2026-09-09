@@ -1,18 +1,21 @@
 # PFS \> OS Ordering Violations in the PSA
 Ben Geisler
-2026-09-08
+2026-09-09
 
 - [Overview](#overview)
 - [Methods](#methods)
+  - [Two sources of variation in a PSA
+    draw](#two-sources-of-variation-in-a-psa-draw)
   - [Curves examined](#curves-examined)
   - [Metrics](#metrics)
   - [Mapping draws to PSA rows](#mapping-draws-to-psa-rows)
+  - [Cache provenance](#cache-provenance)
 - [Results](#results)
   - [How many draws are affected](#how-many-draws-are-affected)
   - [Where and how far the curves
     cross](#where-and-how-far-the-curves-cross)
-  - [Area under the trough before and after the
-    clamp](#area-under-the-trough-before-and-after-the-clamp)
+  - [PFS-over-OS excess area before and after the
+    clamp](#pfs-over-os-excess-area-before-and-after-the-clamp)
   - [QALY consequence of the clamp](#qaly-consequence-of-the-clamp)
   - [Is the clamp why the PSA increments differ from the base
     case?](#is-the-clamp-why-the-psa-increments-differ-from-the-base-case)
@@ -46,28 +49,48 @@ reports:
 1.  the number and share of draws, and of retained PSA rows, with at
     least one PFS \> OS violation, overall and per curve;
 2.  where in the horizon the curves cross and by how much;
-3.  the **area under the trough**, the region where PFS lies above OS,
+3.  the **PFS-over-OS excess area**, the area between the two curves on
+    the stretch where PFS lies above OS (the trough in the figures),
     before the clamp (after the clamp it is zero by construction),
-    together with the progressed-state area before and after the clamp;
+    together with the progression-free and progressed-state areas before
+    and after the clamp;
 4.  the discounted-QALY consequence of the clamp per curve and per
     strategy.
 
 # Methods
+
+## Two sources of variation in a PSA draw
+
+Each PSA iteration draws one coefficient vector for the OS model (log
+shape, log baseline rate, and the covariate effects on the log rate) and
+one for the PFS model, each from the multivariate normal N(estimate,
+covariance) of its own fit. Within the iteration the OS vector is shared
+by every patient and every curve, and so is the PFS vector: a patient’s
+rate is the baseline rate multiplied by the exponentiated covariate
+effects for their age, sex, arm and biomarker values, with a common
+shape. Patient heterogeneity is integrated out by averaging the 68
+patient curves (or those of the subgroup), so only parameter uncertainty
+varies between draws. The OS and PFS vectors of one iteration are paired
+by index only: the two models are fitted separately and no covariance
+between them is estimated, so a slow-hazard PFS draw can be paired with
+a fast-hazard OS draw. That pairing, not patient heterogeneity, is what
+produces the crossings.
 
 ## Curves examined
 
 The PSA evaluates five curves per draw, each a population average over
 the complete-case patients of the subgroup with `Rx` set as the strategy
 dictates (issue \#151). They are the curves that `model_fun()` checks
-and clamps one by one:
+and clamps one by one. The short labels in the first column are used in
+the tables that follow.
 
-| Curve                            | Patients | Rx set to        | Used by strategy |
-|:---------------------------------|---------:|:-----------------|:-----------------|
-| Standard of care (control)       |       68 | Control arm      | Control          |
-| CRP positive (experimental)      |       23 | Experimental arm | CRP              |
-| CRP negative (control)           |       45 | Control arm      | CRP              |
-| TMB/BRAF positive (experimental) |       30 | Experimental arm | TMB/BRAF         |
-| TMB/BRAF negative (control)      |       38 | Control arm      | TMB/BRAF         |
+| Label     | Curve                            | Patients | Rx set to    | Strategy |
+|:----------|:---------------------------------|---------:|:-------------|:---------|
+| SoC       | Standard of care (control)       |       68 | Control      | Control  |
+| CRP+      | CRP positive (experimental)      |       23 | Experimental | CRP      |
+| CRP-      | CRP negative (control)           |       45 | Control      | CRP      |
+| TMB/BRAF+ | TMB/BRAF positive (experimental) |       30 | Experimental | TMB/BRAF |
+| TMB/BRAF- | TMB/BRAF negative (control)      |       38 | Control      | TMB/BRAF |
 
 Subgroup curves evaluated per draw
 
@@ -91,23 +114,26 @@ excess of PFS over OS:
 - **Violation**: $\Delta_t > 0$ at one or more time points. The number
   of violating time points, the first and last violating week, and the
   largest excess are recorded.
-- **Area under the trough (before the clamp)**: $\int \Delta_t \, dt$ by
-  the trapezoidal rule on the weekly grid, in patient-years. It is the
-  region between the PFS and OS curves where PFS lies on top. After the
-  clamp, PFS is replaced by min(PFS, OS) and the area is zero.
-- **Progressed-state area**: $\int (\mathrm{OS}_t - \mathrm{PFS}_t)\,dt$
-  before the clamp (negative on the violating stretch) and
+- **PFS-over-OS excess area (before the clamp)**: $\int \Delta_t \, dt$
+  by the trapezoidal rule on the weekly grid, in patient-years. It is
+  the area between the PFS and OS curves on the stretch where PFS lies
+  on top. After the clamp, PFS is replaced by min(PFS, OS) and the area
+  is zero.
+- **State areas**: the progression-free area $\int \mathrm{PFS}_t\,dt$
+  and the progressed-state area
+  $\int (\mathrm{OS}_t - \mathrm{PFS}_t)\,dt$ before the clamp (the
+  latter negative on the violating stretch), and
+  $\int \min(\mathrm{PFS}_t, \mathrm{OS}_t)\,dt$ and
   $\int \max(\mathrm{OS}_t - \mathrm{PFS}_t, 0)\,dt$ after it, in
-  patient-years. The clamp adds exactly the area under the trough to the
-  progressed-state area and removes it from the progression-free area;
-  OS is untouched.
+  patient-years. The clamp moves exactly the excess area from the
+  progression-free state to the progressed state; OS is untouched.
 - **QALY consequence**: discounted QALYs the raw curves would have
   produced minus the clamped QALYs. Because the model’s cycle sum gives
   $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the
   difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ with
   $u_{np} = 0.73$, $u_p = 0.59$, $cl = 1/52$ and effect discount weights
   $w_t$ at 4% per year. It is the amount by which the raw curves
-  overstate QALYs by counting the trough as progression-free time at the
+  overstate QALYs by counting the excess as progression-free time at the
   higher utility.
 
 Areas use the trapezoidal rule (the convention of
@@ -121,6 +147,28 @@ that produced it (`model_idx`; issue \#156). Rows whose original draw
 failed are re-paired with another cached model, so the share of PSA rows
 affected can differ from the share of draws affected. In the current
 cache 0 of 5,000 rows were replaced.
+
+## Cache provenance
+
+The diagnostics are cached with a fingerprint that contains the
+sampling-cache fingerprint, the utilities, the discount rate, the
+horizon and the cycle length, so a regenerated sampling cache forces a
+regeneration. The PSA cache stores the same sampling fingerprint. Before
+rendering, this report stops unless all three caches carry the same
+sampling fingerprint and the diagnostics file is younger than the
+sampling-cache file.
+
+| Cache                 | Modified         | Sampling fingerprint             |
+|:----------------------|:-----------------|:---------------------------------|
+| Sampling draws        | 2026-09-08 11:29 | c46c8e539a89d411cc8a7f26ee0aa19b |
+| PSA results           | 2026-09-08 11:59 | c46c8e539a89d411cc8a7f26ee0aa19b |
+| Violation diagnostics | 2026-09-08 16:15 | c46c8e539a89d411cc8a7f26ee0aa19b |
+
+Caches read by this report
+
+*Note:* Files in data/tidy: Sampling draws:
+sampling_models_n5000_full.rds; PSA results: psa_obj_correct.rds;
+Violation diagnostics: pfs_os_violations_n5000.rds.
 
 # Results
 
@@ -142,13 +190,13 @@ one of the five curves, and 48.4% of the retained PSA rows come from
 such a draw. The clamp is therefore not a rare safety net but acts in
 roughly half of the PSA.
 
-| Curve                            | Draws violating | Share of draws | MC SE |
-|:---------------------------------|----------------:|---------------:|------:|
-| Standard of care (control)       |             746 |          14.9% | 0.50% |
-| CRP positive (experimental)      |           1,409 |          28.2% | 0.64% |
-| CRP negative (control)           |             527 |          10.5% | 0.43% |
-| TMB/BRAF positive (experimental) |           1,653 |          33.1% | 0.67% |
-| TMB/BRAF negative (control)      |             495 |           9.9% | 0.42% |
+| Curve     | Draws violating | Share of draws | MC SE |
+|:----------|----------------:|---------------:|------:|
+| SoC       |             746 |          14.9% | 0.50% |
+| CRP+      |           1,409 |          28.2% | 0.64% |
+| CRP-      |             527 |          10.5% | 0.43% |
+| TMB/BRAF+ |           1,653 |          33.1% | 0.67% |
+| TMB/BRAF- |             495 |           9.9% | 0.42% |
 
 Draws with PFS \> OS, by curve
 
@@ -170,135 +218,172 @@ Number of curves (out of five) with PFS \> OS per draw
 
 ## Where and how far the curves cross
 
-| Curve | Violating draws | Time points (median \[IQR\]; max) | First week (median; min) | Last week (median; max) | Max excess (median; 95th; max) |
+| Curve | Violating draws | Points, median \[IQR\] | Points, max | First week | Last week |
 |:---|---:|---:|---:|---:|---:|
-| Standard of care (control) | 746 | 208 \[82, 290\]; 438 | 271; 1 | 520; 520 | 0.0024; 0.0439; 0.1221 |
-| CRP positive (experimental) | 1,409 | 249 \[106, 349\]; 520 | 220; 1 | 520; 520 | 0.0090; 0.0812; 0.2482 |
-| CRP negative (control) | 527 | 158 \[28, 254\]; 450 | 284; 1 | 520; 520 | 0.0002; 0.0115; 0.0521 |
-| TMB/BRAF positive (experimental) | 1,653 | 270 \[145, 353\]; 520 | 218; 1 | 520; 520 | 0.0077; 0.0785; 0.2658 |
-| TMB/BRAF negative (control) | 495 | 196 \[50, 291\]; 468 | 248; 1 | 520; 520 | 0.0011; 0.0323; 0.1179 |
+| SoC | 746 | 208 \[82, 290\] | 438 | 271 (1) | 520 (520) |
+| CRP+ | 1,409 | 249 \[106, 349\] | 520 | 220 (1) | 520 (520) |
+| CRP- | 527 | 158 \[28, 254\] | 450 | 284 (1) | 520 (520) |
+| TMB/BRAF+ | 1,653 | 270 \[145, 353\] | 520 | 218 (1) | 520 (520) |
+| TMB/BRAF- | 495 | 196 \[50, 291\] | 468 | 248 (1) | 520 (520) |
 
-Extent of the violation among violating draws, by curve
+Where the curves cross, among violating draws
 
-*Note:* Time points: number of the 521 weekly grid points (weeks 0 to
-520) at which PFS exceeds OS. Max excess: largest PFS - OS within the
-draw, in survival-probability units.
+*Note:* Points: number of the 521 weekly grid points (weeks 0 to 520) at
+which PFS exceeds OS. First week: median (minimum) of the first
+violating week; last week: median (maximum) of the last violating week.
+
+| Curve     | Violating draws | Median | 95th percentile | Maximum |
+|:----------|----------------:|-------:|----------------:|--------:|
+| SoC       |             746 | 0.0024 |          0.0439 |  0.1221 |
+| CRP+      |           1,409 | 0.0090 |          0.0812 |  0.2482 |
+| CRP-      |             527 | 0.0002 |          0.0115 |  0.0521 |
+| TMB/BRAF+ |           1,653 | 0.0077 |          0.0785 |  0.2658 |
+| TMB/BRAF- |             495 | 0.0011 |          0.0323 |  0.1179 |
+
+Largest PFS - OS within the draw (survival-probability units), among
+violating draws
 
 <img src="pfs_os_violations_files/figure-commonmark/timing-plot-1.png"
 style="width:100.0%" data-fig-align="center"
-alt="Share of the 5,000 draws in which PFS exceeds OS at each week of the horizon, by curve. The share rises through the horizon and is highest at its end (week 520): Standard of care (control) 13%; CRP positive (experimental) 24%; CRP negative (control) 8%; TMB/BRAF positive (experimental) 30%; TMB/BRAF negative (control) 8%." />
+alt="Share of the 5,000 draws in which PFS exceeds OS at each week of the horizon, by curve. The share rises through the horizon and is highest at its end (week 520): SoC 13%; CRP+ 24%; CRP- 8%; TMB/BRAF+ 30%; TMB/BRAF- 8%." />
 
 <img
 src="pfs_os_violations_files/figure-commonmark/mean-excess-plot-1.png"
 style="width:100.0%" data-fig-align="center"
-alt="Mean excess of PFS over OS at each week, averaged over all draws (draws without a violation at that week contribute zero). The area under each line, in weeks, is 52 times the all-draw mean trough of that curve in the restricted-areas table." />
+alt="Mean excess of PFS over OS at each week, averaged over all draws (draws without a violation at that week contribute zero). The area under each line, in weeks, is 52 times the all-draw mean excess area of that curve in the state-areas table." />
 
-## Area under the trough before and after the clamp
+## PFS-over-OS excess area before and after the clamp
 
-| Curve | Mean | Median | 95th percentile | Maximum | After clamp |
-|:---|---:|---:|---:|---:|---:|
-| Standard of care (control) | 0.0394 | 0.0054 | 0.1910 | 0.6411 | 0 |
-| CRP positive (experimental) | 0.0875 | 0.0287 | 0.3628 | 1.1751 | 0 |
-| CRP negative (control) | 0.0054 | 0.0002 | 0.0261 | 0.1691 | 0 |
-| TMB/BRAF positive (experimental) | 0.0765 | 0.0260 | 0.3316 | 1.2768 | 0 |
-| TMB/BRAF negative (control) | 0.0201 | 0.0017 | 0.1061 | 0.4497 | 0 |
+| Curve     |   Mean | Median | 95th percentile | Maximum | After clamp |
+|:----------|-------:|-------:|----------------:|--------:|------------:|
+| SoC       | 0.0394 | 0.0054 |          0.1910 |  0.6411 |           0 |
+| CRP+      | 0.0875 | 0.0287 |          0.3628 |  1.1751 |           0 |
+| CRP-      | 0.0054 | 0.0002 |          0.0261 |  0.1691 |           0 |
+| TMB/BRAF+ | 0.0765 | 0.0260 |          0.3316 |  1.2768 |           0 |
+| TMB/BRAF- | 0.0201 | 0.0017 |          0.1061 |  0.4497 |           0 |
 
-Area under the trough (patient-years) among violating draws, before and
-after the clamp
+PFS-over-OS excess area (patient-years) among violating draws, before
+and after the clamp
 
 *Note:* Area = integral of max(PFS - OS, 0) over the 10-year horizon,
 trapezoidal rule on the weekly grid, in patient-years per patient. After
 the clamp PFS = min(PFS, OS) and the area is zero for every draw.
 
-| Curve | OS area | PF area, raw | PF area, clamped | Progressed area, raw | Progressed area, clamped | Trough (all draws) |
-|:---|---:|---:|---:|---:|---:|---:|
-| Standard of care (control) | 2.272 | 1.1834 | 1.1776 | 1.0885 | 1.0943 | 0.0059 |
-| CRP positive (experimental) | 2.874 | 1.9070 | 1.8824 | 0.9668 | 0.9915 | 0.0247 |
-| CRP negative (control) | 1.914 | 1.0270 | 1.0264 | 0.8868 | 0.8874 | 0.0006 |
-| TMB/BRAF positive (experimental) | 2.285 | 1.4941 | 1.4688 | 0.7905 | 0.8158 | 0.0253 |
-| TMB/BRAF negative (control) | 2.159 | 1.0595 | 1.0575 | 1.0999 | 1.1018 | 0.0020 |
+| State            | Curve     | Before clamp | After clamp |  Change |
+|:-----------------|:----------|-------------:|------------:|--------:|
+| Progression-free | CRP+      |       1.9070 |      1.8824 | -0.0247 |
+| Progression-free | CRP-      |       1.0270 |      1.0264 | -0.0006 |
+| Progression-free | SoC       |       1.1834 |      1.1776 | -0.0059 |
+| Progression-free | TMB/BRAF+ |       1.4941 |      1.4688 | -0.0253 |
+| Progression-free | TMB/BRAF- |       1.0595 |      1.0575 | -0.0020 |
+| Progressed       | CRP+      |       0.9668 |      0.9915 |  0.0247 |
+| Progressed       | CRP-      |       0.8868 |      0.8874 |  0.0006 |
+| Progressed       | SoC       |       1.0885 |      1.0943 |  0.0059 |
+| Progressed       | TMB/BRAF+ |       0.7905 |      0.8158 |  0.0253 |
+| Progressed       | TMB/BRAF- |       1.0999 |      1.1018 |  0.0020 |
 
-Mean restricted areas over all draws (patient-years), before and after
-the clamp
+Mean state areas over all draws (patient-years), before and after the
+clamp
 
-*Note:* Means over all 5,000 draws (non-violating draws contribute a
-trough of zero). PF: progression-free area = integral of PFS. Progressed
-area = integral of OS - PFS (raw, negative on the violating stretch) or
-of max(OS - PFS, 0) (clamped). The clamp moves exactly the trough area
-from the PF state to the progressed state; OS area is unchanged.
+*Note:* Means over all 5,000 draws (non-violating draws are unchanged by
+the clamp). Progression-free area = integral of PFS (min(PFS, OS) after
+the clamp); progressed area = integral of OS - PFS (negative on the
+violating stretch before the clamp; max(OS - PFS, 0) after). The change
+is the all-draw mean excess area, moved from the progression-free to the
+progressed state; the OS area (SoC 2.272, CRP+ 2.874, CRP- 1.914,
+TMB/BRAF+ 2.285, TMB/BRAF- 2.159 patient-years) is unchanged.
 
 Averaged over all draws, the clamp moves 0.0059 patient-years from the
 progression-free to the progressed state on the standard-of-care curve,
 against a mean progressed-state area after the clamp of 1.094
-patient-years. The largest trough on any curve is 1.277 patient-years
-(TMB/BRAF positive (experimental)).
+patient-years. The largest excess area on any curve is 1.277
+patient-years (TMB/BRAF positive (experimental)).
 
 <img
 src="pfs_os_violations_files/figure-commonmark/area-distribution-plot-1.png"
 style="width:100.0%" data-fig-align="center"
-alt="Distribution of the area under the trough among violating draws, by curve (log scale)." />
+alt="Distribution of the PFS-over-OS excess area among violating draws, by curve (log scale)." />
 
 <img src="pfs_os_violations_files/figure-commonmark/example-plot-1.png"
 style="width:100.0%" data-fig-align="center"
-alt="The draw with the largest area under the trough for each curve (draws 3747, 2339, 3502, 987, 3437). Solid lines are the raw sampled OS and PFS; the shaded region is the trough, where PFS lies above OS; the dashed line is the clamped PFS = min(PFS, OS) that the model uses." />
+alt="The draw with the largest PFS-over-OS excess area for each curve (draws 3747, 2339, 3502, 987, 3437). Solid lines are the raw sampled OS and PFS; the shaded region is the excess area, the trough where PFS lies above OS; the dashed line is the clamped PFS = min(PFS, OS) that the model uses." />
 
 ## QALY consequence of the clamp
 
-| Curve | Mean, all draws | Mean, violating draws | 95th percentile | Maximum | Mean clamped QALYs | Relative |
-|:---|---:|---:|---:|---:|---:|---:|
-| Standard of care (control) | 0.0006 | 0.0043 | 0.0021 | 0.0723 | 1.417 | 0.05% |
-| CRP positive (experimental) | 0.0028 | 0.0099 | 0.0177 | 0.1392 | 1.818 | 0.15% |
-| CRP negative (control) | 0.0001 | 0.0006 | 0.0000 | 0.0205 | 1.215 | 0.01% |
-| TMB/BRAF positive (experimental) | 0.0029 | 0.0088 | 0.0173 | 0.1545 | 1.458 | 0.20% |
-| TMB/BRAF negative (control) | 0.0002 | 0.0023 | 0.0002 | 0.0533 | 1.344 | 0.02% |
+| Curve     | All draws | Violating draws | Maximum | Clamped QALYs | Relative |
+|:----------|----------:|----------------:|--------:|--------------:|---------:|
+| SoC       |    0.0006 |          0.0043 |  0.0723 |         1.417 |    0.05% |
+| CRP+      |    0.0028 |          0.0099 |  0.1392 |         1.818 |    0.15% |
+| CRP-      |    0.0001 |          0.0006 |  0.0205 |         1.215 |    0.01% |
+| TMB/BRAF+ |    0.0029 |          0.0088 |  0.1545 |         1.458 |    0.20% |
+| TMB/BRAF- |    0.0002 |          0.0023 |  0.0533 |         1.344 |    0.02% |
 
 Discounted QALYs the raw curves would add relative to the clamped
 curves, by curve
 
 *Note:* Raw minus clamped discounted QALYs per patient = sum over cycles
-of max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight.
-Relative: mean difference as a share of the mean clamped QALYs of the
-curve.
+of max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight;
+mean over all draws and over violating draws, and the maximum. Clamped
+QALYs: mean over all draws. Relative: all-draw mean difference as a
+share of the mean clamped QALYs of the curve.
 
-| Strategy | Mean QALY overstatement | Max | Mean effect on increment vs SoC | Range on increment | Mean PSA QALYs (clamped) |
-|:---|---:|---:|---:|---:|---:|
-| Control | 0.0006 | 0.0723 | – | – | 1.416 |
-| CRP | 0.0010 | 0.0471 | 0.0003 | -0.0722 to 0.0471 | 1.418 |
-| TMB/BRAF | 0.0014 | 0.0694 | 0.0008 | -0.0551 to 0.0694 | 1.396 |
+| Strategy | Mean overstatement | Maximum | Mean PSA QALYs |
+|:---------|-------------------:|--------:|---------------:|
+| Control  |             0.0006 |  0.0723 |          1.416 |
+| CRP      |             0.0010 |  0.0471 |          1.418 |
+| TMB/BRAF |             0.0014 |  0.0694 |          1.396 |
 
-QALY consequence of the clamp by strategy (per patient, discounted)
+QALY overstatement of the raw curves by strategy (per patient,
+discounted)
 
 *Note:* Strategy values weight the positive and negative curves by the
-canonical prevalence (CRP 0.338, TMB/BRAF 0.449). ‘Effect on increment’
-is the raw-minus-clamped difference of the strategy minus that of
-standard of care: a positive value means the raw curves would have made
-the guided strategy look better relative to standard of care than the
-clamped curves do. Mean PSA QALYs are the cached PSA means (clamped
-curves).
+canonical prevalence (CRP 0.338, TMB/BRAF 0.449). Mean PSA QALYs are the
+cached PSA means (clamped curves).
 
-The clamp lowers the QALYs of every strategy, because the trough is
+| Strategy | Mean shift | Largest downward | Largest upward |
+|:---------|-----------:|-----------------:|---------------:|
+| CRP      |    -0.0003 |          -0.0471 |         0.0722 |
+| TMB/BRAF |    -0.0008 |          -0.0694 |         0.0551 |
+
+Shift of the incremental QALYs versus standard of care caused by the
+clamp (clamped minus raw, per patient)
+
+*Note:* Per draw, the clamp’s effect on the strategy’s QALYs minus its
+effect on standard of care. A negative value means the clamp makes the
+guided strategy look worse relative to standard of care than the raw
+curves would.
+
+The clamp lowers the QALYs of every strategy, because the excess is
 progression-free time at utility 0.73 that becomes progressed time at
 utility 0.59. The mean overstatement the raw curves would have produced
 is 0.0006 QALYs for standard of care, 0.0010 for the CRP-guided strategy
 and 0.0014 for the TMB/BRAF-guided strategy. What matters for the
 decision is the effect on the increment: the clamp shifts the mean
 incremental QALYs of the CRP-guided strategy versus standard of care by
--0.0003 and of the TMB/BRAF-guided strategy by -0.0008 (clamped minus
-raw), with a per-draw range from -0.0471 to 0.0722 for CRP.
+-0.0003 and of the TMB/BRAF-guided strategy by -0.0008, with a per-draw
+range from -0.0471 to 0.0722 for CRP.
 
 ## Is the clamp why the PSA increments differ from the base case?
 
-| Strategy | Base case | PSA mean, clamped | PSA mean, raw | Increment, base case | Increment, PSA clamped | Increment, PSA raw |
-|:---|---:|---:|---:|---:|---:|---:|
-| Control | 1.3714 | 1.4160 | 1.4166 | – | – | – |
-| CRP | 1.3918 | 1.4180 | 1.4190 | 0.0204 | 0.0020 | 0.0024 |
-| TMB/BRAF | 1.3609 | 1.3955 | 1.3969 | -0.0106 | -0.0205 | -0.0197 |
+| Strategy | Base case | PSA, clamped | PSA, raw |
+|:---------|----------:|-------------:|---------:|
+| Control  |    1.3714 |       1.4160 |   1.4166 |
+| CRP      |    1.3918 |       1.4180 |   1.4190 |
+| TMB/BRAF |    1.3609 |       1.3955 |   1.3969 |
 
 Discounted QALYs per patient: deterministic base case, PSA mean with the
 clamp (the cached PSA), and PSA mean the raw curves would have given
 
-*Note:* PSA mean, raw = cached PSA mean + mean overstatement of the raw
-curves for the strategy. Increments are versus standard of care.
+*Note:* PSA, raw = cached PSA mean + mean overstatement of the raw
+curves for the strategy.
+
+| Strategy | Base case | PSA, clamped | PSA, raw |
+|:---------|----------:|-------------:|---------:|
+| CRP      |    0.0204 |       0.0020 |   0.0024 |
+| TMB/BRAF |   -0.0106 |      -0.0205 |  -0.0197 |
+
+Incremental discounted QALYs versus standard of care: base case, PSA
+mean with the clamp, and PSA mean without it
 
 The test protocol records that the PSA incremental QALYs of the
 CRP-guided strategy (0.0020) fall well short of the base case (0.0204).
@@ -312,9 +397,9 @@ by a different amount, not the ordering correction.
 
 - **The crossings are frequent but shallow.** About 48% of draws cross
   on at least one curve, yet the median violating draw crosses by at
-  most 0.0042 in survival probability and carries a trough of 0.0108
-  patient-years. The crossings sit in the extrapolated tail where both
-  curves are close to their floor, so the area involved is small
+  most 0.0042 in survival probability and carries an excess area of
+  0.0108 patient-years. The crossings sit in the extrapolated tail where
+  both curves are close to their floor, so the area involved is small
   relative to the restricted OS area of about 2.30 patient-years.
 - **The clamp is a one-sided correction.** min(PFS, OS) accepts the OS
   draw as given and truncates PFS; it never raises OS. Because OS and
@@ -322,14 +407,13 @@ by a different amount, not the ordering correction.
   draw is unknown, and the clamp therefore shifts every strategy’s QALYs
   downward rather than towards the base case.
 - **The consequence is differential but small.** The five curves cross
-  at different rates (Standard of care (control) 15%; CRP positive
-  (experimental) 28%; CRP negative (control) 11%; TMB/BRAF positive
-  (experimental) 33%; TMB/BRAF negative (control) 10%), so the clamp
-  moves the increments of the guided strategies versus standard of care,
-  not only their levels. The mean shift on the CRP increment is -0.0003
-  QALYs against a base-case incremental gain of 0.0204. Individual draws
-  can move by up to 0.072 QALYs, so the clamp widens the spread of the
-  increments more than it moves their mean.
+  at different rates (SoC 15%; CRP+ 28%; CRP- 11%; TMB/BRAF+ 33%;
+  TMB/BRAF- 10%), so the clamp moves the increments of the guided
+  strategies versus standard of care, not only their levels. The mean
+  shift on the CRP increment is -0.0003 QALYs against a base-case
+  incremental gain of 0.0204. Individual draws can move by up to 0.072
+  QALYs, so the clamp widens the spread of the increments more than it
+  moves their mean.
 - **The clamp does not explain the PSA-versus-base-case gap.** The known
   failure of `test_psa_basecase_alignment.R` on the incremental QALYs
   (PSA 0.0020 versus base case 0.0204 for CRP) would remain almost
@@ -339,22 +423,22 @@ by a different amount, not the ordering correction.
 - **What would remove the violations.** A joint OS/PFS covariance
   (drawing the two coefficient vectors together) would restore the
   correlation that the earlier bootstrap preserved by refitting both
-  models on the same resample; drawing on a latent shared frailty or
-  sampling PFS conditionally on OS would guarantee ordering by
-  construction. Both are changes to the sampling scheme of script 06 and
-  are out of scope for this report, which documents the size of the
-  problem under the current scheme (user decision, issue \#156: OS and
-  PFS are drawn independently).
+  models on the same resample, though it would only make crossings
+  rarer, not impossible; drawing on a latent shared frailty or sampling
+  PFS conditionally on OS would guarantee ordering by construction. Both
+  are changes to the sampling scheme of script 06 and are out of scope
+  for this report, which documents the size of the problem under the
+  current scheme (user decision, issue \#156: OS and PFS are drawn
+  independently).
 
 # Notes
 
 - The diagnostics are cached in
-  `data/tidy/pfs_os_violations_n{n_samples}.rds` with a fingerprint of
-  the sampling-cache fingerprint, the utilities, the discount rate, the
-  horizon and the cycle length; `run_pfs_os_violation_diagnostics()`
-  regenerates the cache on any mismatch. The current cache was built
-  from sampling cache c46c8e539a89d411cc8a7f26ee0aa19b (method mvn_v1)
-  in 615 seconds.
+  `data/tidy/pfs_os_violations_n{n_samples}.rds`;
+  `run_pfs_os_violation_diagnostics()` regenerates the cache on any
+  fingerprint mismatch. The current cache was built from sampling cache
+  c46c8e539a89d411cc8a7f26ee0aa19b (method mvn_v1) in 615 seconds on
+  2026-09-08 16:15.
 - Curves are computed in closed form from the gamma parameters of each
   draw; `validate_direct_curves()` checks them against the pipeline’s
   `predict()`-based helper before every regeneration and stops if they
@@ -362,9 +446,12 @@ by a different amount, not the ordering correction.
 - All values are per patient over the 10-year horizon; areas are
   restricted means by the trapezoidal rule, QALY differences use the
   model’s cycle sum.
+- “PFS-over-OS excess area” is this report’s term for the area between
+  the two curves on the stretch where they are inverted; it is not a
+  standard quantity. The figures call the same region the trough.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
+**Report completed on:** 2026-09-09  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Report version:** 1.1
