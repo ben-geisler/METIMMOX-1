@@ -1,0 +1,184 @@
+### Current base case
+ Strategy     Cost   Effect
+  control 21523.45 1.371420
+      crp 53927.89 1.391838
+ tmb_braf 63399.19 1.360857
+
+### Prevalence populations
+ biomarker canonical complete_case
+       crp 0.3380282     0.3382353
+  tmb_braf 0.4492754     0.4411765
+
+### Identical-treatment comparison at canonical prevalences
+ Strategy     Cost   Effect increment_cost increment_qaly
+  control 21523.45 1.371420      0.0000000   0.0000000000
+      crp 21523.31 1.371310     -0.1448051  -0.0001106019
+ tmb_braf 21528.60 1.372596      5.1433170   0.0011759571
+
+### Identical-treatment comparison with matched population weights
+ strategy increment_cost increment_qaly
+  control              0              0
+      crp              0              0
+ tmb_braf              0              0
+
+### Identical treatment after a supported +20% TMB/BRAF prevalence variation
+ strategy increment_qaly
+  control   0.0000000000
+      crp  -0.0001106019
+ tmb_braf   0.0142228921
+
+### No mortality and unit utilities
+ grid_points expected_years                             actual
+           1     0.00000000 ERROR: wrong sign in 'by' argument
+           2     0.01923077 ERROR: wrong sign in 'by' argument
+           5     0.07692308 ERROR: wrong sign in 'by' argument
+          12     0.21153846 ERROR: wrong sign in 'by' argument
+          13     0.23076923                               0.25
+          53     1.00000000                   1.01923076923077
+         521    10.00000000                   10.0192307692308
+
+### run_basecase ignores params$cl
+ strategy  wrapper explicit_cl
+  control 1.371420    4.979967
+      crp 1.391838    5.041562
+ tmb_braf 1.360857    4.935398
+Generating population-averaged predictions for control strategy...
+Generating population-averaged predictions for crp strategy...
+Generating population-averaged predictions for tmb_braf strategy...
+Population-averaged predictions complete for all strategies.
+
+### run_basecase on a valid five-year parameter list
+[1] "ERROR: Survival curve 'control_OS' has length 261 but expected 521 (time_horizon + 1)"
+
+### PSA with no survival draw index returns deterministic results
+$equal_to_base
+[1] TRUE
+
+$fallback_used
+[1] FALSE
+
+Running PSA with 100 simulations...
+Completed 100/100 PSA iterations (100.0%) - ETA: 0.0 min
+PSA initial pass complete: 100 simulations in 0.0 minutes
+PSA initial-pass fallback rate: 0/100 (0.00%; maximum permitted 2.00%)
+
+### Three invalid draws out of 100 under a 2% limit
+$fallback_count
+[1] 0
+
+$fallback_rate
+[1] 0
+
+$dropped_count
+[1] 3
+
+$n_sim
+[1] 97
+
+
+### Invalid survival probability accepted
+ week dead_occupancy total_cost total_qaly
+    1           -0.1   22901.67   1.372554
+
+### Direct test-price change versus explicit lookup synchronization
+ strategy unsynced_cost_change synced_cost_change
+  control                    0                  0
+      crp                    0                  0
+ tmb_braf                    0               1000
+
+### Changed model logic has the same PSA fingerprint
+$identical_fingerprint
+[1] TRUE
+
+$control_qaly_before
+[1] 1.37142
+
+$control_qaly_after
+[1] 2.742841
+
+Warning message:
+In readRDS(psa_obj_path()) :
+  strings not representable in native encoding will be translated to UTF-8
+
+### PSA parameter-cache metadata
+$seed
+[1] 123
+
+$fingerprint
+NULL
+
+$model_indices_match
+[1] TRUE
+
+
+### A reversed PSA parameter table passes the report loader
+[1] TRUE
+
+### EVPI changes with WTP while the PSA fingerprint is unchanged
+    wtp       evpi
+  51000     0.0000
+ 100000   172.6609
+ 150000  1343.4714
+ 500000 25926.5043
+
+### Deterministic-child CI statements classified as empirical tests
+                      statement definitional
+      TLR _||_ TxCRP | {CRP, T}        FALSE
+ TLR _||_ TxTMB | {T, TMB_BRAF}        FALSE
+
+### Interaction test rejects a CI that holds by construction
+ conditional_unique_TxCRP      p_value
+                        1 4.652645e-11
+
+### Endpoint-missing patient is included only in PSA subgroup prediction
+$max_positive_curve_difference
+[1] 0.003816597
+
+
+### Static syntax coverage
+$R_files
+[1] 60
+
+$Qmd_files
+[1] 44
+
+$errors
+character(0)
+
+
+Review probes completed. This probe script did not change production code or caches.
+
+### Forced failure in a temporary copy of test_sim_idx_validation.R
+Test: NULL sim_idx...              PASS - PSA block skipped (documented)
+
+================================================== 
+SUMMARY
+================================================== 
+Passed: 5 / 6
+
+Some tests failed. The sim_idx validation may not be implemented yet.
+See Issue #46 for the recommended fix.
+Observed process exit status: 0
+
+### Post-suite cache contract check (after the existing index-validation test regenerated sampling)
+  strings not representable in native encoding will be translated to UTF-8
+SKIP: EVPPI cache has no rows because EVPI = 0; row checks not applicable 
+SKIP: Scenario cache absent: scenario_evppi_results_correct.rds 
+
+1 CONTRACT FAILURE(S):
+Error: Report/cache contract check failed.
+Execution halted
+  - PSA cache was built from a different sampling cache (issue #156)
+Observed process exit status: 1
+
+### Sampling numerical follow-up
+Regenerated sampling versus the saved pre-review diagnostic example curves:
+        curve draw max_OS_difference max_PFS_difference
+      control 3747                 0                  0
+      crp_neg 3502                 0                  0
+      crp_pos 2339                 0                  0
+ tmb_braf_neg 3437                 0                  0
+ tmb_braf_pos  987                 0                  0
+This verifies five saved example curves, not all draws.
+Current sampling fingerprint: 033e43f731c26d684837db6ddb68d5bd 
+Saved diagnostics' sampling fingerprint: c46c8e539a89d411cc8a7f26ee0aa19b 
