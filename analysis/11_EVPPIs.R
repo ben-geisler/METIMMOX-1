@@ -8,6 +8,11 @@ source(here::here("R/model_fun.R"))
 source(here::here("R/calculate_outcomes.R"))
 source(here::here("R/evppi_functions.R"))
 
+# Validate the exact persisted draw/outcome pair before deriving interactions.
+source(here::here("R/cea_helpers.R"))
+psa_obj <- load_current_psa_cache()
+psa_params <- load_psa_params_cache(required = TRUE, seed = analysis_seed, n_sim = psa_obj$n_sim)
+
 # ===============================================================================
 # EXTRACT INTERACTION COEFFICIENTS FROM SAMPLING MODELS
 # ===============================================================================
@@ -231,5 +236,11 @@ if (nrow(evppi_results) > 0) {
 evppi_cache_file <- evppi_path()
 # Provenance: the PSA cache fingerprint this EVPPI run consumed (issue #156).
 evppi_psa_fingerprint <- psa_obj$fingerprint
-save(evppi_results, evpi_manual, evppi_psa_fingerprint, file = evppi_cache_file)
+evppi_identity <- evppi_cache_fingerprint(
+  psa_obj, WTP, list(params = evppi_params, groups = param_groups),
+  analysis_seed, current_population_inputs())
+evppi_fingerprint <- evppi_identity$fingerprint
+evppi_fingerprint_inputs <- evppi_identity$inputs
+save(evppi_results, evpi_manual, evppi_psa_fingerprint,
+     evppi_fingerprint, evppi_fingerprint_inputs, file = evppi_cache_file)
 cat("\nEVPPI analysis complete. Results saved to", evppi_cache_file, "\n")

@@ -15,8 +15,9 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("R/report_setup.R"))
 setup_report(
-  sources = c("02"),
-  funs = c("report_format"),
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
   packages = c("here", "ggplot2", "dplyr", "scales"),
   set_theme = FALSE
 )
@@ -24,7 +25,7 @@ setup_report(
 
 ```{r load-data, include=FALSE}
 cache_file <- psa_obj_path()
-psa_obj <- if (file.exists(cache_file)) readRDS(cache_file) else NULL
+psa_obj <- load_current_psa_cache()
 
 scatter_data <- data.frame()
 if (!is.null(psa_obj)) {

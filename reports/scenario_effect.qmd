@@ -33,9 +33,10 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("R/report_setup.R"))
 setup_report(
-  sources = c("02", "03"),
+  sources = c("02", "03", "04", "05", "06"),
   # psa_functions supplies psa_failed_draw_policy(), used by the cache check below.
-  funs = c("cea_helpers", "report_format", "psa_functions"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
   set_theme = FALSE
 )
 
@@ -46,7 +47,7 @@ if (!file.exists(scenario_cache_file)) {
     "analysis/12_scenario_EVPPIs.R before rendering this report."
   )
 }
-scenario_cache <- readRDS(scenario_cache_file)
+scenario_cache <- load_scenario_cache(path = scenario_cache_file)
 cache_source <- basename(scenario_cache_file)
 
 # Compare against the accessor rather than a literal. The identifier is bumped

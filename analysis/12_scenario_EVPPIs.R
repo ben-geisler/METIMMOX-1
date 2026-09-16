@@ -14,6 +14,10 @@ source(here::here("R/psa_functions.R"))
 source(here::here("R/evppi_functions.R"))
 source(here::here("R/scenario_analysis.R"))
 
+# Validate the base PSA against the current sampling, code and economic inputs.
+source(here::here("R/cea_helpers.R"))
+psa_obj <- load_current_psa_cache()
+
 # ===============================================================================
 # DEFINE SCENARIOS
 # ===============================================================================
@@ -172,7 +176,10 @@ if (nrow(evppi_all_scenarios) > 0) {
 # ===============================================================================
 
 # Save all results as a list in .rds format (consistent with other cache files)
+scenario_identity <- current_scenario_fingerprint()
 evppi_cache <- list(
+  fingerprint = scenario_identity$fingerprint,
+  fingerprint_inputs = scenario_identity$inputs,
   all_scenario_results = all_scenario_results,
   evppi_all_scenarios = evppi_all_scenarios,
   scenarios = scenarios,
@@ -183,6 +190,7 @@ evppi_cache <- list(
 )
 
 scenario_evppi_cache_file <- scenario_evppi_path()
+evppi_cache$result_hash <- scenario_result_hash(evppi_cache)
 saveRDS(evppi_cache, file = scenario_evppi_cache_file)
 
 cat("\n=== ANALYSIS COMPLETE ===\n")

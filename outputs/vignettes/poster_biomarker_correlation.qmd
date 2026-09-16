@@ -34,11 +34,15 @@ source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
   funs = c("model_fun", "calculate_outcomes", "prediction_functions",
-           "report_format"),
+           "report_format", "cea_helpers", "psa_functions"),
   packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
                "scales", "dampack", "knitr", "kableExtra"),
   set_theme = FALSE
 )
+
+pipeline_psa <- load_current_psa_cache()
+pipeline_psa_params <- load_psa_params_cache(required = TRUE, seed = analysis_seed,
+                                              n_sim = pipeline_psa$n_sim)
 
 # model_fun() and the prediction helpers resolve these accessors in their source
 # environment. Temporarily extend that environment for the poster-only TLR
@@ -323,7 +327,7 @@ newdata <- list(
   tmb_p = set_rx(bm_sub("tmb_braf", 1), exp_rx), tmb_n = set_rx(bm_sub("tmb_braf", 0), ctrl_rx))
 
 N <- 1000
-psa_params <- readRDS(psa_params_path())
+psa_params <- pipeline_psa_params
 if (is.null(psa_params$model_idx)) stop("psa_params has no model_idx column; regenerate the PSA cache (10_PSA.R, issue #156)")
 set.seed(2026); idx <- sample(nrow(psa_params), N)
 

@@ -224,7 +224,9 @@ validate_psa_cache <- function(psa_obj,
 #'
 #' Without expectations the loader behaves as before (a missing file gives a
 #' warning and NULL) apart from the structural checks of
-#' `validate_psa_cache()`. Reports pass `required = TRUE` and the expected
+#' `validate_psa_cache()` and mandatory outcome/parameter pair validation. Both
+#' files must exist and belong to the same generation. Reports pass
+#' `required = TRUE` and the expected
 #' fingerprint, strategies, n_sim and sampling fingerprint so that they stop on
 #' an absent or stale cache instead of rendering placeholders (issue #157).
 #'
@@ -257,6 +259,13 @@ load_psa_cache <- function(util_label = NULL,
   }
 
   psa_obj <- readRDS(cache_file)
+  paired_path <- psa_params_path(util_label, directory)
+  if (!file.exists(paired_path)) {
+    stop("PSA parameter cache missing: ", paired_path,
+         ". Rerun analysis/10_PSA.R.", call. = FALSE)
+  }
+  paired_params <- readRDS(paired_path)
+  validate_psa_pair(psa_obj, paired_params)
   validate_psa_cache(
     psa_obj,
     expected_fingerprint = expected_fingerprint,
@@ -307,6 +316,13 @@ load_psa_params_cache <- function(util_label = NULL,
   }
 
   psa_params <- readRDS(cache_file)
+  paired_path <- psa_obj_path(util_label, directory)
+  if (!file.exists(paired_path)) {
+    stop("PSA outcome cache missing: ", paired_path,
+         ". Rerun analysis/10_PSA.R.", call. = FALSE)
+  }
+  paired_obj <- readRDS(paired_path)
+  validate_psa_pair(paired_obj, psa_params)
 
   rerun <- "Rerun analysis/10_PSA.R before rendering."
   if (!is.null(seed)) {

@@ -19,7 +19,7 @@
 #'
 #' @return Absolute path to the tidy-cache directory.
 #' @export
-cache_dir <- function() here::here("data", "tidy")
+cache_dir <- function() getOption("metimmox.cache_dir", here::here("data", "tidy"))
 
 #' Path to the snapshot directory or a file within it
 #'
@@ -129,7 +129,10 @@ cache_fingerprint <- function(x) {
     if (is.function(obj)) return(paste(deparse(obj), collapse = "\n"))
     obj
   }
-  rlang::hash(canonical(x))
+  # Serialization v2 materialises ALTREP vectors, unlike hashing their internal
+  # representation. Hash canonical values, independent of lazy materialisation.
+  digest::digest(serialize(canonical(x), NULL, version = 2),
+                 algo = "sha256", serialize = FALSE)
 }
 
 #' Fingerprint of the inputs that determine the survival-sampling cache
@@ -144,16 +147,26 @@ cache_fingerprint <- function(x) {
 #' @export
 sampling_cache_fingerprint <- function(formulas, data, distributions,
                                        n_samples, seed, method) {
+  columns <- sort(unique(c(intersect("ID", names(data)),
+                           unlist(lapply(formulas, all.vars)))))
+  missing <- setdiff(columns, names(data))
+  if (length(missing)) stop("Missing sampling columns: ", paste(missing, collapse = ", "))
+  n_rows <- nrow(data)
+  data <- canonical_sampling_data(data[, columns, drop = FALSE])
   inputs <- list(
+    schema = "sampling_v2",
     formulas = lapply(formulas, function(f) paste(deparse(f), collapse = " ")),
     data_hash = cache_fingerprint(data),
-    n_rows = nrow(data),
+    data_columns = vapply(data, cache_fingerprint, character(1)),
+    n_rows = n_rows,
     distributions = distributions,
     n_samples = as.integer(n_samples),
     seed = as.integer(seed),
-    method = method
+    method = method,
+    implementation = calculation_identity("sampling")
   )
-  list(fingerprint = cache_fingerprint(inputs), inputs = inputs)
+  list(fingerprint = cache_fingerprint(inputs), inputs = inputs,
+       canonical_data = data, runtime = cache_runtime_info())
 }
 
 #' Fingerprint of the inputs that determine the PSA cache
@@ -173,7 +186,10 @@ psa_cache_fingerprint <- function(sampling_fingerprint, l_params_base,
                                   param_distributions, strategies, n_sim,
                                   seed, time_horizon, cl) {
   inputs <- list(
+    schema = "psa_v2",
     sampling_fingerprint = sampling_fingerprint,
+    implementation = calculation_identity("psa"),
+    prediction_population = prediction_population_identity(),
     params_hash = cache_fingerprint(l_params_base),
     distributions_hash = cache_fingerprint(param_distributions),
     strategies = strategies,
@@ -204,4 +220,5 @@ cache_file_provenance <- function(path) {
   )
 }
 
+source(here::here("R/cache_provenance.R"))
 message("Cache-path helpers loaded from cache_paths.R")

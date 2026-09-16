@@ -788,65 +788,47 @@ The analysis uses several cache systems to speed up computation:
 **Purpose**: Multivariate-normal coefficient draws for the joint OS and PFS models (one `joint` component; issue #156)
 **Generation**: Script [06_sampling.R](analysis/06_sampling.R) (seconds)
 **Size**: Under 1 MB
-**Validity (issue #156)**: the file name carries only `n_samples`. Script 06 computes `sampling_cache_fingerprint()` from the joint formulas, `data_complete`, the selected distributions, `n_samples`, `analysis_seed` and the sampling method, compares it with the `fingerprint` stored in the cache, and regenerates on any mismatch (printing which input differs). A cache without a `joint` component or fingerprint (pre-#156 bootstrap) is regenerated. The seed check remains as a second guard. Manual deletion is therefore only needed to force a regeneration with identical inputs:
-```r
-file.remove(sampling_cache_path())
-source("analysis/06_sampling.R")
-```
+**Validity (issues #156, #169)**: script 06 compares a versioned fingerprint of the joint formulas, selected distributions, sample size, seed, sampling implementation and runtime dependency versions. Its data identity covers only formula variables (including both endpoints) and `ID`, retaining row order, factor levels and contrasts. Canonical values are hashed using serialization version 2 and SHA-256, which avoids dependence on ALTREP materialisation. The ignored local cache stores `canonical_data`, per-column hashes in `fingerprint_inputs$data_columns`, and `runtime` (R, packages, library paths and locale) for diagnosis. Logs print column names and hashes, never patient values. The review-session data hash (`6cc5a549...`) was reproduced during this fix, but the alternate pre-review hash (`13f4cb24...`) and its cause were not. `rlang::hash()` does distinguish compact from materialised vectors with identical values; this was independently demonstrated, without establishing it as the historical cause.
+
+**Read-only consumers**: `setup_report()` temporarily sets `options(metimmox.sampling_allow_regenerate = FALSE)` and restores the caller's option on exit. Script 06 also refuses regeneration while `knitr.in.progress` is true. Missing, legacy or stale sampling caches stop report setup with a pipeline instruction. Ordinary pipeline sourcing retains regeneration by default. Tests that need caches must set `options(metimmox.cache_dir = <temporary directory>)`; the index-validation test uses synthetic functions/data and never sources the pipeline.
 
 ### 2. PSA Cache (Analysis Results)
 
-**Location**: `data/tidy/psa_obj_{ipd|correct}.rds` and `psa_params_{ipd|correct}.rds`
-**Purpose**: Cached PSA simulation results (5000 runs)
-**Generation**: Script [10_PSA.R](analysis/10_PSA.R) (~20-60 minutes first run)
-**Size**: ~660 KB total
-**When to regenerate**: Delete cache files when:
-- Economic model logic changes ([model_fun.R](R/model_fun.R), [calculate_outcomes.R](R/calculate_outcomes.R), or [model_configs.R](R/model_configs.R))
-- **Prediction methodology changes** (e.g., issues #69, #70 fixes to survival curve generation)
-- Base parameters change (costs, time horizon, discount rates)
-- **UTILITY_SOURCE changes** (cache filenames encode utility source to prevent mixing)
-- **Sampling cache is regenerated** (the PSA depends on the specific coefficient draws; always regenerate the PSA after regenerating the sampling cache — the PSA fingerprint enforces this)
-- Parameter distributions change (distributional assumptions, means, SDs, correlations)
-- **PSA parameter membership changes** — moving a parameter between sampled, fixed and derived in `parameter_distribution_spec()` changes the PSA draws and every EVPPI group (issue #154)
+**Location**: `data/tidy/psa_obj_{ipd|correct}.rds` and `psa_params_{ipd|correct}.rds`.
+**Generation**: script [10_PSA.R](analysis/10_PSA.R).
 
-**Validity (issue #156)**: `10_PSA.R` stamps the cache with `psa_cache_fingerprint()` (sampling-cache fingerprint, the entire `l_params_base` including the survival curves and schedules, the PSA distributions, strategies, `n_sim`, seed, horizon and cycle length) and regenerates when the stored fingerprint differs, printing which input differs, or when `model_idx` is absent. The earlier check only compared the column names of `psa_params`, so changing a unit price or a survival curve left the cache "valid". The list above still describes what changes the results; the fingerprint enforces it. The EVPPI cache records `evppi_psa_fingerprint` and the scenario cache `sampling_fingerprint`/`sampling_method`; `test_report_contracts.R` checks that all three agree.
+**Validity (issue #167)**: the PSA input fingerprint covers sampling provenance, base parameters, schedules/curves, distributions, strategies, time settings, seed, both current prediction populations, parsed calculation source and loaded function definitions, relevant package versions, R version, contrasts and RNG kind. Uncommitted source changes and interactive function-body edits invalidate it automatically. Code dependencies are enumerated in `calculation_identity()` in [cache_provenance.R](R/cache_provenance.R); extend that list when introducing a calculation dependency. Comments and line-ending changes do not invalidate results.
 
-**To regenerate**:
-```r
-# Delete PSA cache files (example for IPD utilities)
-file.remove(here("data", "tidy", "psa_obj_ipd.rds"))
-file.remove(here("data", "tidy", "psa_params_ipd.rds"))
-# Re-run 10_PSA.R
-source("analysis/10_PSA.R")
-```
+The existing two-file layout is retained. `bind_psa_pair()` attaches identical `pair_metadata` to the outcome object and parameter-table attributes: a content-addressed generation ID, input fingerprint, ordered parameter hash and outcome hash. The outcome object also records `sim`. `validate_psa_pair()` checks hashes, unique positive draw IDs, row counts and exact `sim`/`model_idx` alignment. Mixed generations after an interrupted save or partial restore are rejected. Both `load_psa_cache()` and `load_psa_params_cache()` validate the pair; report consumers use `load_current_psa_cache()` (or the equivalent explicit current expectations). Never stamp legacy cache metadata to make it pass: rebuild with script 10.
 
 ### 3. EVPPI Cache
 
-**Location**: `data/tidy/evppi_results_{ipd|correct}.RData`
-**Purpose**: Cached EVPPI results (`evppi_results` with `evppi`, `evppi_se`, `evpi`, `evppi_percent_of_evpi`, `method`, `n_params`, `n_sim`, `error`, population columns, and the `group_consistency` attribute; plus `evpi_manual`)
-**Generation**: Script [11_EVPPIs.R](analysis/11_EVPPIs.R)
-**When to regenerate**: Delete cache file when PSA cache is regenerated, EVPPI parameter groupings change, or the EVPPI estimator changes
+**Location**: `data/tidy/evppi_results_{ipd|correct}.RData`.
+**Generation**: script [11_EVPPIs.R](analysis/11_EVPPIs.R), which first reloads a validated PSA pair before deriving interaction columns.
+
+`evppi_fingerprint` and `evppi_fingerprint_inputs` identify the exact PSA generation/result, WTP, full parameter/group configuration, estimator code/settings/dependencies, seed and population-scaling inputs. `load_evppi_cache()` validates this identity and recalculates EVPI cheaply from the current PSA and WTP. The retained `evppi_psa_fingerprint` supports older provenance displays but is insufficient by itself. Changing WTP requires EVPPI regeneration, not PSA regeneration.
 
 ### 4. Scenario EVPPI Cache
 
-**Location**: `data/tidy/scenario_evppi_results_{ipd|correct}.rds`
-**Purpose**: Cached scenario-based EVPPI analysis results
-**Generation**: Script [12_scenario_EVPPIs.R](analysis/12_scenario_EVPPIs.R)
-**When to regenerate**: Delete cache file when PSA cache is regenerated, scenario definitions change, or the EVPPI estimator changes (Figure 5 and Table S7 read this cache)
+**Location**: `data/tidy/scenario_evppi_results_{ipd|correct}.rds`.
+**Generation**: script [12_scenario_EVPPIs.R](analysis/12_scenario_EVPPIs.R), after validating the current base PSA.
+
+The scenario-specific fingerprint covers the full expected PSA identity, scenario definitions (including WTPs and prices), parameter/groups, estimator/scenario implementation, seed and population inputs. Each scenario's embedded PSA outcome/parameter pair is bound and validated. `scenario_effect.qmd`, Figures 4/5 and Table S7 use `load_scenario_cache()` with current expectations. Figure 3, Table 5 and the poster's input PSA also use validated loaders; Figure 1 receives the sampling cache validated by script 06 in read-only report setup.
 
 ### 5. PFS/OS Violation Diagnostics Cache
 
-**Location**: `data/tidy/pfs_os_violations_n{n_samples}.rds`
-**Purpose**: Per-draw and per-curve PFS > OS violation metrics for `reports/technical/pfs_os_violations.qmd` (draw x curve table, share violating at each week, worst-case example curves, validation against the pipeline predictions)
-**Generation**: `run_pfs_os_violation_diagnostics()` in [pfs_os_violation_diagnostics.R](R/pfs_os_violation_diagnostics.R), called by the report (about 10 minutes for 5,000 draws)
-**Validity**: fingerprint of the sampling-cache fingerprint, `u_np`, `u_p`, `dr_effects`, `time_horizon`, `cl` and the number of draws; regenerated automatically on any mismatch, so it follows the sampling cache without manual deletion
+**Location**: `data/tidy/pfs_os_violations_n{n_samples}.rds`.
+**Generation**: `run_pfs_os_violation_diagnostics()` in [pfs_os_violation_diagnostics.R](R/pfs_os_violation_diagnostics.R), called by the technical report (about 10 minutes for 5,000 draws).
+**Validity**: sampling fingerprint, utilities, effect discount rate, horizon, cycle length and number of draws. The report's sampling input must already be current; rendering cannot rebuild it.
+
+**Migration for #167/#169**: implementation and isolated tests are complete; full production regeneration is deliberately deferred until the other review repairs are ready (user decision). Existing caches are retained as historical results and now fail the new contracts. After the remaining repairs, source 02?06, then 10, 11 and 12 in sequence, and refresh the affected reports/vignettes (PDF before GFM). Do not manually rewrite old provenance. Live `test_report_contracts.R` is expected to fail on legacy identities until that regeneration; this is distinct from the known PSA/base-case numerical discrepancy.
 
 ### Cache Workflow
 
 1. **First run**: [06_sampling.R](analysis/06_sampling.R) generates sampling cache
 2. **PSA uses sampling cache**: [10_PSA.R](analysis/10_PSA.R) generates PSA cache
 3. **EVPPI uses PSA cache**: [11_EVPPIs.R](analysis/11_EVPPIs.R) generates EVPPI cache
-4. **Subsequent runs**: All load from cache (fast)
+4. **Subsequent runs**: scripts 06 and 10 reuse valid caches; scripts 11 and 12 regenerate their respective analyses when explicitly sourced.
 5. **Manual invalidation**: Delete specific cache file(s) to regenerate
 
 ## Snapshot System (Bug Fix Impact Assessment)
@@ -884,7 +866,8 @@ The test suite in `tests/` includes:
 - **[test_biomarker_test_cost_mapping.R](tests/test_biomarker_test_cost_mapping.R)**: Verifies data-driven diagnostic-test cost assignment
 - **[test_canonical_prevalence.R](tests/test_canonical_prevalence.R)**: Verifies weighted curves use canonical full-cohort biomarker prevalence
 - **[test_psa_fallback_reporting.R](tests/test_psa_fallback_reporting.R)**: Verifies PSA fallback-rate reporting and its failure threshold
-- **[test_sim_idx_validation.R](tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation
+- **[test_cache_provenance.R](tests/test_cache_provenance.R)**: Synthetic cache contracts for #167/#169: fresh-session value hashes, read-only sampling guards, interactive code edits, mixed/reordered PSA files, draw indices, independent EVPPI/scenario inputs, cheap EVPI reconciliation and forced index-test failure status. Uses temporary caches only.
+- **[test_sim_idx_validation.R](tests/test_sim_idx_validation.R)**: Verifies PSA resampling-index validation with a synthetic fixture; sources no analysis scripts and exits nonzero on assertion failure
 - **[test_psa_basecase_alignment.R](tests/test_psa_basecase_alignment.R)**: Verifies structurally that the PSA control curve is the joint model with `Rx = control`, then checks that PSA strategy means (costs and QALYs) sit within 5 Monte Carlo standard errors of the base case and prints the incremental comparison (issue #151); skips the numerical check when the PSA cache is absent. The numerical criterion is a known failure at n_sim = 5000 (see the test protocol table)
 - **[test_evppi_estimator.R](tests/test_evppi_estimator.R)**: Verifies the regression EVPPI estimator on a synthetic problem with a closed-form answer, a pure-noise parameter, group-versus-member consistency (including the additive formula for more than four parameters), seed-reproducible standard errors, and NA-not-zero failure reporting (issue #152)
 - **[test_sampling_rework.R](tests/test_sampling_rework.R)**: Parameter-specification contracts — PSA membership excludes the fixed unit prices, `u_p` is derived rather than drawn, EVPPI groups exclude derived parameters and drop `all_costs` when only one cost group is sampled, the DSA still covers the fixed prices but never `u_decrement`, the derived utility never exceeds `u_np`, and one-sided structural scenarios declare only their differing endpoint (issue #154); plus the script-06 distribution-resolution helper

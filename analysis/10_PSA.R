@@ -37,6 +37,7 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
   psa_cached <- tryCatch({
     psa_obj <- readRDS(cache_file_obj)
     psa_params <- readRDS(cache_file_params)
+    validate_psa_pair(psa_obj, psa_params)
 
     # Validate cache
     cache_valid <- TRUE
@@ -206,6 +207,10 @@ plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 if (!psa_cached) {
   cat("\nSaving PSA results to cache...\n")
   tryCatch({
+    pair <- bind_psa_pair(psa_obj, psa_params)
+    psa_obj <- pair$psa_obj
+    psa_params <- pair$psa_params
+    rm(pair)
     saveRDS(psa_params, cache_file_params)
     saveRDS(psa_obj, cache_file_obj)
     cat("  PSA results saved successfully to:\n")

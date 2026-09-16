@@ -15,8 +15,9 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("R/report_setup.R"))
 setup_report(
-  sources = c("02"),
-  funs = c("evppi_functions", "report_format"),
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
   packages = c("here", "dplyr", "tidyr", "knitr", "kableExtra", "scales"),
   set_theme = FALSE
 )
@@ -30,7 +31,7 @@ if (!file.exists(cache_file)) {
     "analysis/12_scenario_EVPPIs.R before rendering Table S7."
   )
 }
-evppi_cache <- readRDS(cache_file)
+evppi_cache <- load_scenario_cache(path = cache_file)
 
 # Table S7 reports the joint ([GROUP]) EVPPI rows only, one row per group and
 # scenario, plus total EVPI as the reference. Per-parameter rows are never added

@@ -45,6 +45,9 @@ setup_report <- function(sources = character(0),
                          set_theme = TRUE,
                          quiet_sources = FALSE) {
 
+  old_sampling_option <- options(metimmox.sampling_allow_regenerate = FALSE)
+  on.exit(options(old_sampling_option), add = TRUE)
+
   if (!is.logical(quiet_sources) || length(quiet_sources) != 1L ||
       is.na(quiet_sources)) {
     stop("quiet_sources must be TRUE or FALSE.")

@@ -98,6 +98,13 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   )
   psa_obj <- psa_build$psa_obj
   scenario_psa_params <- psa_build$psa_params
+  identity <- psa_cache_fingerprint(sampling_models$fingerprint, scenario_params,
+    scenario_param_dist, strategies, n_sim, seed, time_horizon, cl)
+  psa_obj$fingerprint <- identity$fingerprint
+  psa_obj$fingerprint_inputs <- identity$inputs
+  pair <- bind_psa_pair(psa_obj, scenario_psa_params)
+  psa_obj <- pair$psa_obj
+  scenario_psa_params <- pair$psa_params
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))
@@ -128,6 +135,8 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
   cat("  Nivolumab cost:", scenario_row$c_drug_nivo, "\n")
   cat("  (PSA results reused from cost group)\n")
   cat(rep("=", 80), "\n\n", sep = "")
+
+  validate_psa_pair(psa_obj, psa_params)
 
   # Run EVPPI analysis with this scenario's WTP
   evppi_results <- run_evppi_analysis(

@@ -13,10 +13,6 @@ time_points_length <- length(time_points)
 
 # Define cache directory and file paths
 sampling_cache_dir <- cache_dir()
-if (!dir.exists(sampling_cache_dir)) {
-  dir.create(sampling_cache_dir, recursive = TRUE)
-  cat("Created sampling cache directory:", sampling_cache_dir, "\n")
-}
 
 # Create cache file path based on n_samples
 cache_file <- sampling_cache_path(n_samples)
@@ -253,15 +249,6 @@ expected_sampling <- sampling_cache_fingerprint(
   method = SAMPLING_METHOD
 )
 
-report_fingerprint_differences <- function(cached_inputs, expected_inputs) {
-  keys <- union(names(expected_inputs), names(cached_inputs))
-  for (key in keys) {
-    if (!identical(cached_inputs[[key]], expected_inputs[[key]])) {
-      cat("  - ", key, " differs\n", sep = "")
-    }
-  }
-}
-
 sampling_models <- NULL
 if (file.exists(cache_file)) {
   cat("\n=== Loading sampling models from cache ===\n")
@@ -305,6 +292,8 @@ if (file.exists(cache_file)) {
 # ===============================================================================
 
 if (is.null(sampling_models)) {
+  assert_sampling_regeneration_allowed()
+  if (!dir.exists(sampling_cache_dir)) dir.create(sampling_cache_dir, recursive = TRUE)
   cat("\n=== Starting multivariate-normal coefficient sampling ===\n")
   cat("Results will be cached to:", cache_file, "\n\n")
 
@@ -326,6 +315,8 @@ if (is.null(sampling_models)) {
     biomarkers = biomarkers_to_sample,
     fingerprint = expected_sampling$fingerprint,
     fingerprint_inputs = expected_sampling$inputs,
+    canonical_data = expected_sampling$canonical_data,
+    runtime = expected_sampling$runtime,
     creation_time = Sys.time()
   )
   rm(joint_component)
@@ -339,7 +330,7 @@ if (is.null(sampling_models)) {
     cat("WARNING: Failed to save cache:", conditionMessage(e), "\n")
   })
 }
-rm(expected_sampling, formula_keys, report_fingerprint_differences)
+rm(expected_sampling, formula_keys)
 
 # Print confirmation of model structure
 cat("\n=== Sampling model structure ready ===\n")

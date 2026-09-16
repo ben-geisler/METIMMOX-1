@@ -15,8 +15,9 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("R/report_setup.R"))
 setup_report(
-  sources = c("02"),
-  funs = c("report_format"),
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
   packages = c("here", "ggplot2", "dplyr", "scales", "dampack"),
   set_theme = FALSE
 )
@@ -24,7 +25,7 @@ setup_report(
 
 ```{r load-data, include=FALSE}
 base_psa_file <- psa_obj_path()
-base_psa <- if (file.exists(base_psa_file)) readRDS(base_psa_file) else NULL
+base_psa <- load_current_psa_cache()
 
 scenario_file <- scenario_evppi_path()
 if (!file.exists(scenario_file)) {
@@ -33,7 +34,7 @@ if (!file.exists(scenario_file)) {
     "analysis/12_scenario_EVPPIs.R before rendering Figure 4."
   )
 }
-scenario_cache <- readRDS(scenario_file)
+scenario_cache <- load_scenario_cache(path = scenario_file)
 
 biosimilar_psa <- tryCatch(
   scenario_cache$all_scenario_results$s1_decreased_nivo$psa_obj,

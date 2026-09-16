@@ -51,6 +51,8 @@ if (!file.exists(evppi_file)) {
 } else {
   e <- new.env()
   load(evppi_file, envir = e)
+  check(!is.null(e$evppi_fingerprint) && !is.null(e$evppi_fingerprint_inputs),
+        "EVPPI cache predates independent input identity (#167); regenerate script 11")
   check(!is.null(e$evppi_results), "EVPPI cache has no evppi_results object")
 
   if (!is.null(e$evppi_results) && nrow(e$evppi_results) == 0 &&
@@ -121,6 +123,7 @@ if (!file.exists(scenario_file)) {
   skip(paste("Scenario cache absent:", basename(scenario_file)))
 } else {
   sc <- readRDS(scenario_file)
+  check(!is.null(sc$fingerprint), "Scenario cache lacks its own input identity (#167)")
   check(
     identical(sc$failed_draw_policy, psa_failed_draw_policy()),
     paste0("Scenario cache failed_draw_policy is '",
@@ -149,6 +152,8 @@ if (!file.exists(psa_file)) {
   params_file <- psa_params_path()
   if (file.exists(params_file)) {
     pp <- readRDS(params_file)
+    pair_valid <- tryCatch({ validate_psa_pair(po, pp); TRUE }, error = function(e) FALSE)
+    check(pair_valid, "PSA files lack valid generation/content binding (#167); regenerate script 10")
     check("model_idx" %in% names(pp) && identical(pp$model_idx, po$model_idx),
           "psa_params model_idx column missing or not aligned with the PSA object")
   }
@@ -166,6 +171,9 @@ if (!file.exists(sampling_file)) {
   skip(paste("Sampling cache absent:", basename(sampling_file)))
 } else {
   sm <- readRDS(sampling_file)
+  check(identical(sm$fingerprint_inputs$schema, "sampling_v2") &&
+          !is.null(sm$canonical_data) && !is.null(sm$runtime),
+        "Sampling cache lacks canonical inputs/runtime diagnostics (#169); regenerate script 06")
   check(!is.null(sm$joint) && is.null(sm$crp),
         "Sampling cache should hold one joint component, not per-biomarker copies (issue #156)")
   check(is.character(sm$fingerprint) && nchar(sm$fingerprint) > 0,
@@ -248,7 +256,7 @@ for (f in fun_files) {
   for (n in nm) defines[[n]] <- c(defines[[n]], tools::file_path_sans_ext(basename(f)))
 }
 # Sourced unconditionally by 02_setup_and_global_variables.R, so always in scope.
-always <- c("model_configs", "cache_paths", "report_setup", "report_tables")
+always <- c("model_configs", "cache_paths", "cache_provenance", "report_setup", "report_tables")
 
 # A declared analysis script brings its own source() calls with it. e.g. 04
 # sources prediction_functions.R, so a report declaring sources = "04" may call
@@ -289,6 +297,13 @@ for (qmd in qmd_files) {
                    " but does not source it via setup_report(funs=)"))
     }
   }
+}
+
+# Shared cache loaders are required even in load-data chunks outside setup.
+for (file in c("figure3", "figure4", "figure5", "table_5", "table_s7")) {
+  src <- paste(readLines(here::here("outputs", "vignettes", paste0(file, ".qmd")), warn = FALSE), collapse = "\n")
+  check(grepl("load_current_psa_cache|load_scenario_cache", src), paste(file, "bypasses validated cache loading"))
+  check(!grepl("readRDS", src, fixed = TRUE), paste(file, "still reads a cache directly"))
 }
 
 # ---------------------------------------------------------------------------

@@ -15,25 +15,36 @@
 cat("=== sim_idx Validation Tests (Issue #46) ===\n\n")
 cat("Loading dependencies...\n")
 
-# Set working directory
-setwd(here::here())
+source("R/model_configs.R")
+source("R/model_fun.R")
+source("R/calculate_outcomes.R")
+source("R/prediction_functions.R")
 
-# Load required packages
-if (!require("pacman")) install.packages("pacman")
-library(pacman)
-p_load(here, survival, flexsurv, dplyr)
-
-# Source required analysis scripts
-source(here::here("analysis/02_setup_and_global_variables.R"))
-source(here::here("analysis/03_biomarker_strategies.R"))
-source(here::here("analysis/04_parametric_survival_analysis.R"))
-source(here::here("analysis/05_basecase_input_parameters.R"))
-source(here::here("analysis/06_sampling.R"))
-
-# Source model functions
-source(here::here("R/model_fun.R"))
-source(here::here("R/calculate_outcomes.R"))
-source(here::here("R/prediction_functions.R"))
+n_samples <- 2L
+time_horizon <- 52L
+cl <- 1 / 52
+curve <- exp(-seq(0, time_horizon) / 100)
+l_params_base <- list(
+  dr_costs = 0.04, dr_effects = 0.04, u_np = 0.73, u_p = 0.59,
+  c_drug_nivo = 100, c_drug_FLOX = 10, c_test_CT = 1, c_test_blood = 1,
+  c_test_CRP = 1, c_test_NGS = 1, c_test_biomarker = list(crp = 1, tmb_braf = 1),
+  c_other_visit = 1, c_other_baseline = 1, c_other_follow = 1, c_other_last = 1,
+  p_crp = 0.5, p_tmb_braf = 0.5)
+for (name in c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"))
+  l_params_base[[name]] <- rep(0, time_horizon + 1L)
+for (outcome in c("OS", "PFS")) {
+  keys <- paste0(c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"), "_", outcome)
+  l_params_base[[paste0("p_", tolower(outcome))]] <- setNames(rep(list(curve), length(keys)), keys)
+}
+data <- data_complete <- data.frame(ID = 1:2)
+sampling_models <- list(joint = list(samples = rep(list(list(failed = FALSE)), n_samples)))
+# Index validation is the unit under test; deterministic prediction fixture
+# exercises the remaining calculation without fitting or accessing any cache.
+generate_psa_population_averaged_predictions <- function(sampling_model_list,
+    biomarker_name = NULL, outcome, sample_idx, data_original, time_points) {
+  stopifnot(sample_idx %in% seq_len(n_samples))
+  if (is.null(biomarker_name)) curve else list(positive = curve, negative = curve)
+}
 
 cat("Dependencies loaded successfully.\n\n")
 
@@ -48,7 +59,7 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
   result <- tryCatch({
     # Suppress warnings for clean output (we're testing for errors)
     suppressWarnings({
-      model_fun(
+      output <- model_fun(
         params = l_params_base,
         time_horizon = time_horizon,
         cl = cl,
@@ -56,6 +67,8 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
         return_traces = FALSE,
         sim_idx = sim_idx_value
       )
+      stopifnot(!isTRUE(attr(output, "fallback_used")),
+                all(is.finite(output$Cost)), all(is.finite(output$Effect)))
     })
     # If we get here, no error was thrown
     list(status = "success", error = NULL)
@@ -65,7 +78,7 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
 
   # Evaluate pass/fail
   if (expect_error) {
-    if (result$status == "error") {
+    if (result$status == "error" && grepl("sim_idx", result$error, fixed = TRUE)) {
       cat("PASS - Got expected error\n")
       cat(sprintf("         Error message: %s\n", substr(result$error, 1, 60)))
       return(TRUE)
@@ -111,9 +124,9 @@ test_null_sim_idx <- function() {
     cat("PASS - PSA block skipped (documented)\n")
     return(TRUE)
   } else {
-    cat("INFO - Got error (could be stricter validation)\n")
+    cat("FAIL - Expected the documented NULL behaviour\n")
     cat(sprintf("         Error: %s\n", result$error))
-    return(TRUE)  # Not a failure, just documenting behavior
+    return(FALSE)  # The documented NULL behaviour is an asserted contract.
   }
 }
 
@@ -168,3 +181,5 @@ if (passed == total) {
   cat("\nSome tests failed. The sim_idx validation may not be implemented yet.\n")
   cat("See Issue #46 for the recommended fix.\n")
 }
+
+stopifnot(all(results))

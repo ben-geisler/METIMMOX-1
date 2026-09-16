@@ -62,25 +62,11 @@ psa_obj <- load_psa_cache(
 )
 
 evppi_cache_file <- evppi_path()
-if (!file.exists(evppi_cache_file)) {
-  stop("EVPPI cache not found: ", evppi_cache_file,
-       ". Run analysis/11_EVPPIs.R before rendering this report.",
-       call. = FALSE)
-}
-evppi_results <- NULL
-evpi_manual <- NA_real_
-evppi_psa_fingerprint <- NULL
-load(evppi_cache_file)
-if (!identical(evppi_psa_fingerprint, psa_obj$fingerprint)) {
-  stop("Stale EVPPI cache ", evppi_cache_file,
-       ": it was built from a PSA with a different fingerprint than the ",
-       "current PSA cache. Rerun analysis/11_EVPPIs.R before ",
-       "rendering this report.", call. = FALSE)
-}
-if (!is.finite(evpi_manual)) {
-  stop("EVPPI cache ", evppi_cache_file, " carries no EVPI value. Rerun ",
-       "analysis/11_EVPPIs.R.", call. = FALSE)
-}
+expected_evppi <- evppi_cache_fingerprint(
+  psa_obj, WTP, current_evppi_config(), analysis_seed, current_population_inputs())
+evppi_cache <- load_evppi_cache(psa_obj, expected_evppi, WTP)
+evppi_results <- evppi_cache$evppi_results
+evpi_manual <- evppi_cache$evpi_manual
 
 has_evppi <- !is.null(evppi_results) && nrow(evppi_results) > 0
 # A cache with no rows is legitimate only when EVPI is zero (standard of care

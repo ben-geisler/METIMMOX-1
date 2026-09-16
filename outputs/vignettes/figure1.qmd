@@ -15,7 +15,7 @@ execute:
 ```{r setup, include=FALSE}
 source(here::here("R/report_setup.R"))
 setup_report(
-  sources = c("02", "03", "04"),
+  sources = c("02", "03", "04", "05", "06"),
   funs = c("prediction_functions"),
   packages = c("here", "ggplot2", "dplyr", "scales", "cowplot",
                "flexsurv", "survival"),
@@ -124,16 +124,8 @@ n_boot_subset <- 500  # Subset of 5000 for speed
 ci_data <- list()
 
 for (model_name in "joint") {
-  # Single joint economic model; sampling cache has no structure label
-  cache_pattern <- sampling_cache_path()
-
-  if (!file.exists(cache_pattern)) {
-    cat("Sampling cache not found - skipping bootstrap CI\n")
-    next
-  }
-
-  cat("Loading sampling cache ...\n")
-  sampling_models_cache <- readRDS(cache_pattern)
+  # Already validated without regeneration by setup_report().
+  sampling_models_cache <- sampling_models
 
   joint_cache <- get_joint_sampling_models(sampling_models_cache)
   n_available <- min(n_boot_subset, joint_cache$n_samples)
