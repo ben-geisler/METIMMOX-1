@@ -217,6 +217,10 @@ if (is.null(psa_obj)) {
     psa_obj$sampling_method <- get_joint_sampling_models(sampling_models)$method
 
     tryCatch({
+      pair <- bind_psa_pair(psa_obj, psa_params)
+      psa_obj <- pair$psa_obj
+      psa_params <- pair$psa_params
+      rm(pair)
       saveRDS(psa_obj, cache_file_obj)
       saveRDS(psa_params, cache_file_params)
       psa_regenerated <- TRUE

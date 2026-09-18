@@ -81,6 +81,7 @@ kable(
   footnote(
     general = c(
       "Costs and QALYs discounted at 4% per year.",
+      paste0("All strategies use the same complete-case target population (n = ", nrow(l_params_base$prediction_population), ")."),
       "ICER = incremental cost-effectiveness ratio versus the next non-dominated alternative.",
       paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY.")
     ),
@@ -105,6 +106,7 @@ kable(
   footnote(
     general = c(
       "Increments and the pairwise ICER compare each guided strategy with standard of care (issue #153).",
+      "Control and both guided strategies share the same complete-case population and joint biomarker distribution (issue #166).",
       "The frontier ICER is the dampack incremental ratio versus the next non-dominated alternative, as in Table 4; a strategy that is dominated on the frontier (more costly and less effective than the other guided strategy) can still have a finite pairwise ICER.",
       "Costs and QALYs discounted at 4% per year."
     ),

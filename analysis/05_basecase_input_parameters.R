@@ -141,3 +141,10 @@ for (biomarker in get_biomarkers()) {
   l_params_base[[prevalence_key]] <-
     strategies_df$prevalence[strategies_df$id == biomarker]
 }
+
+# Shared prediction population and joint biomarker distribution (issue #166).
+l_params_base <- set_population_predictions(l_params_base, predictions)
+joint_population <- joint_biomarker_population(data_complete)
+l_params_base$joint_counts <- joint_population$counts
+for (cell in names(joint_population$probabilities))
+  l_params_base[[paste0("p_joint_", cell)]] <- unname(joint_population$probabilities[cell])

@@ -1,6 +1,6 @@
 # Bug Fix Impact Analysis
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Snapshot Inventory](#snapshot-inventory)
 - [Impact Comparisons](#impact-comparisons)
@@ -15,8 +15,9 @@ Ben Geisler
   - [Issue 155: baseline vs fixed](#issue-155-baseline-vs-fixed)
   - [Issue 156: baseline vs fixed](#issue-156-baseline-vs-fixed)
   - [Issue 157: baseline vs fixed](#issue-157-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 157
-    fixed](#cumulative-issue-145-baseline-vs-issue-157-fixed)
+  - [Issue 166: baseline vs fixed](#issue-166-baseline-vs-fixed)
+  - [Cumulative: issue 145 baseline vs issue 166
+    fixed](#cumulative-issue-145-baseline-vs-issue-166-fixed)
 - [Interpretation](#interpretation)
 
 # Snapshot Inventory
@@ -45,6 +46,8 @@ Ben Geisler
 | snapshot_156_fixed_8a89056.rds    | 156   | fixed    | 8a89056 | 2026-09-08 08:51:07 |
 | snapshot_157_baseline_efcd775.rds | 157   | baseline | efcd775 | 2026-09-08 08:51:07 |
 | snapshot_157_fixed_cdf852f.rds    | 157   | fixed    | cdf852f | 2026-09-08 08:51:07 |
+| snapshot_166_baseline_96d0710.rds | 166   | baseline | 96d0710 | 2026-09-18 09:55:46 |
+| snapshot_166_fixed_96d0710.rds    | 166   | fixed    | 96d0710 | 2026-09-18 09:57:44 |
 
 Available single-model snapshots
 
@@ -63,7 +66,8 @@ Available single-model snapshots
 | Issue 155: baseline vs fixed | snapshot_155_baseline_331a1a2.rds | snapshot_155_fixed_9e29ea6.rds |
 | Issue 156: baseline vs fixed | snapshot_156_baseline_2806457.rds | snapshot_156_fixed_8a89056.rds |
 | Issue 157: baseline vs fixed | snapshot_157_baseline_efcd775.rds | snapshot_157_fixed_cdf852f.rds |
-| Cumulative: issue 145 baseline vs issue 157 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_157_fixed_cdf852f.rds |
+| Issue 166: baseline vs fixed | snapshot_166_baseline_96d0710.rds | snapshot_166_fixed_96d0710.rds |
+| Cumulative: issue 145 baseline vs issue 166 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_166_fixed_96d0710.rds |
 
 Impact comparisons included in this report
 
@@ -81,19 +85,21 @@ files are the same cache.
 
 ## Issue 145: baseline vs fixed
 
-Table: Base case impact – Issue 145: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 20,867\| 1.4141\| EUR 21,056\| 1.3498\| EUR
-189\| -0.0644\| \|CRP-guided \| EUR 55,026\| 1.3842\| EUR 53,791\|
-1.3886\| -EUR 1,235\| 0.0043\| \|TMB/BRAF-guided \| EUR 60,798\|
-1.3530\| EUR 63,235\| 1.3514\| EUR 2,438\| -0.0017\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,867 | 1.4141 | EUR 21,056 | 1.3498 | EUR 189 | -0.0644 |
+| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,791 | 1.3886 | -EUR 1,235 | 0.0043 |
+| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 63,235 | 1.3514 | EUR 2,438 | -0.0017 |
 
-Table: Net monetary benefit impact – Issue 145: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 51,254\| EUR
-47,783\| -EUR 3,471\| \|CRP-guided \| EUR 15,570\| EUR 17,026\| EUR
-1,456\| \|TMB/BRAF-guided \| EUR 8,207\| EUR 5,684\| -EUR 2,523\|
+Base case impact – Issue 145: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 51,254 | EUR 47,783 | -EUR 3,471 |
+| CRP-guided       | EUR 15,570 | EUR 17,026 |  EUR 1,456 |
+| TMB/BRAF-guided  |  EUR 8,207 |  EUR 5,684 | -EUR 2,523 |
+
+Net monetary benefit impact – Issue 145: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -102,19 +108,21 @@ established from metadata.
 
 ## Issue 146: baseline vs fixed
 
-Table: Base case impact – Issue 146: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,056\| 1.3498\| EUR 21,056\| 1.3498\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,791\| 1.3886\| EUR 53,791\| 1.3886\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,235\| 1.3514\| EUR 63,235\|
-1.3514\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,056 | 1.3498 | EUR 21,056 | 1.3498 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,791 | 1.3886 | EUR 53,791 | 1.3886 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,235 | 1.3514 | EUR 63,235 | 1.3514 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 146: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 47,783\| EUR
-47,783\| EUR 0\| \|CRP-guided \| EUR 17,026\| EUR 17,026\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 5,684\| EUR 5,684\| EUR 0\|
+Base case impact – Issue 146: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 47,783 | EUR 47,783 |      EUR 0 |
+| CRP-guided       | EUR 17,026 | EUR 17,026 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 5,684 |  EUR 5,684 |      EUR 0 |
+
+Net monetary benefit impact – Issue 146: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -123,19 +131,21 @@ established from metadata.
 
 ## Issue 147: baseline vs fixed
 
-Table: Base case impact – Issue 147: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,056\| 1.3498\| EUR 21,056\| 1.3498\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,791\| 1.3886\| EUR 53,791\| 1.3886\|
-EUR 0\| -0.0000\| \|TMB/BRAF-guided \| EUR 63,235\| 1.3514\| EUR
-63,235\| 1.3514\| EUR 0\| -0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,056 | 1.3498 | EUR 21,056 | 1.3498 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,791 | 1.3886 | EUR 53,791 | 1.3886 | EUR 0 | -0.0000 |
+| TMB/BRAF-guided | EUR 63,235 | 1.3514 | EUR 63,235 | 1.3514 | EUR 0 | -0.0000 |
 
-Table: Net monetary benefit impact – Issue 147: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 47,783\| EUR
-47,783\| EUR 0\| \|CRP-guided \| EUR 17,026\| EUR 17,026\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 5,684\| EUR 5,684\| EUR 0\|
+Base case impact – Issue 147: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 47,783 | EUR 47,783 |      EUR 0 |
+| CRP-guided       | EUR 17,026 | EUR 17,026 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 5,684 |  EUR 5,684 |      EUR 0 |
+
+Net monetary benefit impact – Issue 147: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -144,19 +154,21 @@ established from metadata.
 
 ## Issue 149: baseline vs fixed
 
-Table: Base case impact – Issue 149: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,056\| 1.3498\| EUR 21,523\| 1.3714\| EUR
-468\| 0.0216\| \|CRP-guided \| EUR 53,791\| 1.3886\| EUR 53,928\|
-1.3918\| EUR 137\| 0.0033\| \|TMB/BRAF-guided \| EUR 63,235\| 1.3514\|
-EUR 63,399\| 1.3609\| EUR 164\| 0.0095\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,056 | 1.3498 | EUR 21,523 | 1.3714 | EUR 468 | 0.0216 |
+| CRP-guided | EUR 53,791 | 1.3886 | EUR 53,928 | 1.3918 | EUR 137 | 0.0033 |
+| TMB/BRAF-guided | EUR 63,235 | 1.3514 | EUR 63,399 | 1.3609 | EUR 164 | 0.0095 |
 
-Table: Net monetary benefit impact – Issue 149: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 47,783\| EUR
-48,419\| EUR 636\| \|CRP-guided \| EUR 17,026\| EUR 17,056\| EUR 30\|
-\|TMB/BRAF-guided \| EUR 5,684\| EUR 6,005\| EUR 320\|
+Base case impact – Issue 149: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 47,783 | EUR 48,419 |    EUR 636 |
+| CRP-guided       | EUR 17,026 | EUR 17,056 |     EUR 30 |
+| TMB/BRAF-guided  |  EUR 5,684 |  EUR 6,005 |    EUR 320 |
+
+Net monetary benefit impact – Issue 149: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -165,19 +177,21 @@ established from metadata.
 
 ## Issue 151: baseline vs fixed
 
-Table: Base case impact – Issue 151: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 151: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 151: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 151: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -186,19 +200,21 @@ established from metadata.
 
 ## Issue 152: baseline vs fixed
 
-Table: Base case impact – Issue 152: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 152: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 152: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 152: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -207,52 +223,55 @@ established from metadata.
 
 Per-patient EVPI: EUR 45.20 before, EUR 45.20 after.
 
-Table: EVPPI impact – Issue 152: baseline vs fixed \|Parameter / group
-\| EVPPI Before\| % EVPI Before\| EVPPI After\| SE After\| % EVPI
-After\| \|:—————————————\|————:\|————-:\|———–:\|——–:\|————:\| \|All
-costs (group) \| EUR 45.20\| 100.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|Drug costs (group) \| EUR 45.20\| 100.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|TMB/BRAF-treatment interaction (group) \| EUR 45.20\| 100.0%\|
-EUR 0.00\| EUR 0.00\| 0.0%\| \|Resource-use costs (group) \| EUR 45.20\|
-100.0%\| EUR 0.00\| EUR 0.04\| 0.0%\| \|b_tmb_braf_rx_os \| EUR 45.20\|
-100.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|b_tmb_braf_rx_pfs \| EUR 45.20\|
-100.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|c_drug_FLOX \| EUR 45.20\|
-100.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|c_drug_nivo \| EUR 45.20\|
-100.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_np \| EUR 45.20\| 100.0%\| EUR
-0.00\| EUR 0.00\| 0.0%\| \|c_test_CT \| EUR 43.76\| 96.8%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|c_other_last \| EUR 41.57\| 92.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|p_tmb_braf \| EUR 40.09\| 88.7%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|CRP-treatment interaction (group) \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 0.74\| 0.0%\| \|Biomarker prevalence (group) \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Test costs (group) \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Utilities (group) \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|b_crp_rx_os \| EUR 0.00\| 0.0%\|
-EUR 0.10\| EUR 1.60\| 0.2%\| \|b_crp_rx_pfs \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 0.12\| 0.0%\| \|c_other_baseline \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 0.00\| 0.0%\| \|c_other_follow \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 0.00\| 0.0%\| \|c_other_visit \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|c_test_CRP \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|c_test_NGS \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|c_test_blood \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|p_crp \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_p \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Biomarker-treatment
-interaction (group) \| –\| –\| EUR 0.00\| EUR 1.61\| 0.0%\|
+| Parameter / group | EVPPI Before | % EVPI Before | EVPPI After | SE After | % EVPI After |
+|:---|---:|---:|---:|---:|---:|
+| All costs (group) | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Drug costs (group) | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| TMB/BRAF-treatment interaction (group) | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Resource-use costs (group) | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.04 | 0.0% |
+| b_tmb_braf_rx_os | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_tmb_braf_rx_pfs | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_drug_FLOX | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_drug_nivo | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_np | EUR 45.20 | 100.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_CT | EUR 43.76 | 96.8% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_last | EUR 41.57 | 92.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_tmb_braf | EUR 40.09 | 88.7% | EUR 0.00 | EUR 0.00 | 0.0% |
+| CRP-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.74 | 0.0% |
+| Biomarker prevalence (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Test costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Utilities (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_crp_rx_os | EUR 0.00 | 0.0% | EUR 0.10 | EUR 1.60 | 0.2% |
+| b_crp_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.12 | 0.0% |
+| c_other_baseline | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_follow | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_visit | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_CRP | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_NGS | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_blood | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_crp | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_p | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Biomarker-treatment interaction (group) | – | – | EUR 0.00 | EUR 1.61 | 0.0% |
+
+EVPPI impact – Issue 152: baseline vs fixed
 
 ## Issue 153: baseline vs fixed
 
-Table: Base case impact – Issue 153: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 153: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 153: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 153: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -261,53 +280,55 @@ established from metadata.
 
 Per-patient EVPI: EUR 45.20 before, EUR 45.20 after.
 
-Table: EVPPI impact – Issue 153: baseline vs fixed \|Parameter / group
-\| EVPPI Before\| % EVPI Before\| EVPPI After\| SE After\| % EVPI
-After\| \|:—————————————\|————:\|————-:\|———–:\|——–:\|————:\|
-\|b_crp_rx_os \| EUR 0.10\| 0.2%\| EUR 0.10\| EUR 1.60\| 0.2%\| \|All
-costs (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Drug
-costs (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|Biomarker-treatment interaction (group) \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 1.61\| 0.0%\| \|CRP-treatment interaction (group) \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.74\| 0.0%\| \|TMB/BRAF-treatment
-interaction (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|Resource-use costs (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.04\|
-0.0%\| \|Biomarker prevalence (group) \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|Test costs (group) \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|Utilities (group) \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|b_crp_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.12\| 0.0%\| \|b_tmb_braf_rx_os \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|b_tmb_braf_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|c_drug_FLOX \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|c_drug_nivo \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_other_baseline \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_other_follow \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_other_last \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_other_visit \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_test_CRP \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_test_CT \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_test_NGS \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_test_blood \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|p_crp
-\| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|p_tmb_braf \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_np \| EUR 0.00\| 0.0%\|
-EUR 0.00\| EUR 0.00\| 0.0%\| \|u_p \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\|
+| Parameter / group | EVPPI Before | % EVPI Before | EVPPI After | SE After | % EVPI After |
+|:---|---:|---:|---:|---:|---:|
+| b_crp_rx_os | EUR 0.10 | 0.2% | EUR 0.10 | EUR 1.60 | 0.2% |
+| All costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Drug costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Biomarker-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 1.61 | 0.0% |
+| CRP-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.74 | 0.0% |
+| TMB/BRAF-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Resource-use costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.04 | 0.0% |
+| Biomarker prevalence (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Test costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Utilities (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_crp_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.12 | 0.0% |
+| b_tmb_braf_rx_os | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_tmb_braf_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_drug_FLOX | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_drug_nivo | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_baseline | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_follow | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_last | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_visit | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_CRP | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_CT | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_NGS | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_blood | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_crp | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_tmb_braf | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_np | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_p | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+
+EVPPI impact – Issue 153: baseline vs fixed
 
 ## Issue 154: baseline vs fixed
 
-Table: Base case impact – Issue 154: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 154: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 154: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 154: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -316,51 +337,56 @@ established from metadata.
 
 Per-patient EVPI: EUR 45.20 before, EUR 22.13 after.
 
-Table: EVPPI impact – Issue 154: baseline vs fixed \|Parameter / group
-\| EVPPI Before\| % EVPI Before\| EVPPI After\| SE After\| % EVPI
-After\| \|:—————————————\|————:\|————-:\|———–:\|——–:\|————:\|
-\|b_crp_rx_os \| EUR 0.10\| 0.2%\| EUR 0.09\| EUR 0.95\| 0.4%\| \|All
-costs (group) \| EUR 0.00\| 0.0%\| –\| –\| –\| \|Drug costs (group) \|
-EUR 0.00\| 0.0%\| –\| –\| –\| \|Biomarker-treatment interaction (group)
-\| EUR 0.00\| 0.0%\| EUR 1.18\| EUR 1.94\| 5.3%\| \|CRP-treatment
-interaction (group) \| EUR 0.00\| 0.0%\| EUR 0.04\| EUR 0.41\| 0.2%\|
-\|TMB/BRAF-treatment interaction (group) \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|Resource-use costs (group) \| EUR 0.00\| 0.0%\| EUR
-0.00\| EUR 0.00\| 0.0%\| \|Biomarker prevalence (group) \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Test costs (group) \| EUR 0.00\|
-0.0%\| –\| –\| –\| \|Utilities (group) \| EUR 0.00\| 0.0%\| EUR 0.00\|
-EUR 0.00\| 0.0%\| \|b_crp_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.08\| 0.0%\| \|b_tmb_braf_rx_os \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|b_tmb_braf_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|c_drug_FLOX \| EUR 0.00\| 0.0%\| –\| –\| –\|
-\|c_drug_nivo \| EUR 0.00\| 0.0%\| –\| –\| –\| \|c_other_baseline \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|c_other_follow \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|c_other_last \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|c_other_visit \| EUR 0.00\| 0.0%\|
-EUR 0.00\| EUR 0.00\| 0.0%\| \|c_test_CRP \| EUR 0.00\| 0.0%\| –\| –\|
-–\| \|c_test_CT \| EUR 0.00\| 0.0%\| –\| –\| –\| \|c_test_NGS \| EUR
-0.00\| 0.0%\| –\| –\| –\| \|c_test_blood \| EUR 0.00\| 0.0%\| –\| –\|
-–\| \|p_crp \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|p_tmb_braf \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_np \|
-EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_p \| EUR 0.00\|
-0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_decrement \| –\| –\| EUR 0.00\|
-EUR 0.00\| 0.0%\|
+| Parameter / group | EVPPI Before | % EVPI Before | EVPPI After | SE After | % EVPI After |
+|:---|---:|---:|---:|---:|---:|
+| b_crp_rx_os | EUR 0.10 | 0.2% | EUR 0.09 | EUR 0.95 | 0.4% |
+| All costs (group) | EUR 0.00 | 0.0% | – | – | – |
+| Drug costs (group) | EUR 0.00 | 0.0% | – | – | – |
+| Biomarker-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 1.18 | EUR 1.94 | 5.3% |
+| CRP-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.04 | EUR 0.41 | 0.2% |
+| TMB/BRAF-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Resource-use costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Biomarker prevalence (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Test costs (group) | EUR 0.00 | 0.0% | – | – | – |
+| Utilities (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_crp_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.08 | 0.0% |
+| b_tmb_braf_rx_os | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_tmb_braf_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_drug_FLOX | EUR 0.00 | 0.0% | – | – | – |
+| c_drug_nivo | EUR 0.00 | 0.0% | – | – | – |
+| c_other_baseline | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_follow | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_last | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_visit | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_test_CRP | EUR 0.00 | 0.0% | – | – | – |
+| c_test_CT | EUR 0.00 | 0.0% | – | – | – |
+| c_test_NGS | EUR 0.00 | 0.0% | – | – | – |
+| c_test_blood | EUR 0.00 | 0.0% | – | – | – |
+| p_crp | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_tmb_braf | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_np | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_p | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_decrement | – | – | EUR 0.00 | EUR 0.00 | 0.0% |
+
+EVPPI impact – Issue 154: baseline vs fixed
 
 ## Issue 155: baseline vs fixed
 
-Table: Base case impact – Issue 155: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 155: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 155: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 155: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after snapshot predates issue \#156 and did not
@@ -369,45 +395,47 @@ established from metadata.
 
 Per-patient EVPI: EUR 22.13 before, EUR 22.13 after.
 
-Table: EVPPI impact – Issue 155: baseline vs fixed \|Parameter / group
-\| EVPPI Before\| % EVPI Before\| EVPPI After\| SE After\| % EVPI
-After\| \|:—————————————\|————:\|————-:\|———–:\|——–:\|————:\|
-\|Biomarker-treatment interaction (group) \| EUR 1.18\| 5.3%\| EUR
-1.18\| EUR 1.94\| 5.3%\| \|b_crp_rx_os \| EUR 0.09\| 0.4%\| EUR 0.09\|
-EUR 0.95\| 0.4%\| \|CRP-treatment interaction (group) \| EUR 0.04\|
-0.2%\| EUR 0.04\| EUR 0.41\| 0.2%\| \|TMB/BRAF-treatment interaction
-(group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|Resource-use
-costs (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|Biomarker prevalence (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|Utilities (group) \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\| \|b_crp_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.08\|
-0.0%\| \|b_tmb_braf_rx_os \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|b_tmb_braf_rx_pfs \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|c_other_baseline \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|c_other_follow \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\|
-0.0%\| \|c_other_last \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|c_other_visit \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\|
-\|p_crp \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|p_tmb_braf
-\| EUR 0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_decrement \| EUR
-0.00\| 0.0%\| EUR 0.00\| EUR 0.00\| 0.0%\| \|u_np \| EUR 0.00\| 0.0%\|
-EUR 0.00\| EUR 0.00\| 0.0%\| \|u_p \| EUR 0.00\| 0.0%\| EUR 0.00\| EUR
-0.00\| 0.0%\|
+| Parameter / group | EVPPI Before | % EVPI Before | EVPPI After | SE After | % EVPI After |
+|:---|---:|---:|---:|---:|---:|
+| Biomarker-treatment interaction (group) | EUR 1.18 | 5.3% | EUR 1.18 | EUR 1.94 | 5.3% |
+| b_crp_rx_os | EUR 0.09 | 0.4% | EUR 0.09 | EUR 0.95 | 0.4% |
+| CRP-treatment interaction (group) | EUR 0.04 | 0.2% | EUR 0.04 | EUR 0.41 | 0.2% |
+| TMB/BRAF-treatment interaction (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Resource-use costs (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Biomarker prevalence (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| Utilities (group) | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_crp_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.08 | 0.0% |
+| b_tmb_braf_rx_os | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| b_tmb_braf_rx_pfs | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_baseline | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_follow | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_last | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| c_other_visit | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_crp | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| p_tmb_braf | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_decrement | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_np | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+| u_p | EUR 0.00 | 0.0% | EUR 0.00 | EUR 0.00 | 0.0% |
+
+EVPPI impact – Issue 155: baseline vs fixed
 
 ## Issue 156: baseline vs fixed
 
-Table: Base case impact – Issue 156: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 156: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 156: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 156: baseline vs fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
 the PSA cache md5; after PSA cache md5 fa17a8dab004ee9fc4c850ff9897b656
@@ -418,19 +446,21 @@ Per-patient EVPI: EUR 22.13 before, EUR 0.00 after.
 
 ## Issue 157: baseline vs fixed
 
-Table: Base case impact – Issue 157: baseline vs fixed \|Strategy \|
-Cost Before\| QALYs Before\| Cost After\| QALYs After\| Cost Change\|
-QALY Change\| \|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\|
-\|Standard of Care \| EUR 21,523\| 1.3714\| EUR 21,523\| 1.3714\| EUR
-0\| 0.0000\| \|CRP-guided \| EUR 53,928\| 1.3918\| EUR 53,928\| 1.3918\|
-EUR 0\| 0.0000\| \|TMB/BRAF-guided \| EUR 63,399\| 1.3609\| EUR 63,399\|
-1.3609\| EUR 0\| 0.0000\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,928 | 1.3918 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 63,399 | 1.3609 | EUR 0 | 0.0000 |
 
-Table: Net monetary benefit impact – Issue 157: baseline vs fixed
-\|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 48,419\| EUR
-48,419\| EUR 0\| \|CRP-guided \| EUR 17,056\| EUR 17,056\| EUR 0\|
-\|TMB/BRAF-guided \| EUR 6,005\| EUR 6,005\| EUR 0\|
+Base case impact – Issue 157: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,056 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,005 |      EUR 0 |
+
+Net monetary benefit impact – Issue 157: baseline vs fixed
 
 PSA cache md5 before fa17a8dab004ee9fc4c850ff9897b656 (modified
 2026-09-06 23:39), after a057d7d7856e7c3bc7602058118d9a92 (modified
@@ -439,27 +469,53 @@ because the cache predated the fix commit.
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
-## Cumulative: issue 145 baseline vs issue 157 fixed
+## Issue 166: baseline vs fixed
 
-Table: Base case impact – Cumulative: issue 145 baseline vs issue 157
-fixed \|Strategy \| Cost Before\| QALYs Before\| Cost After\| QALYs
-After\| Cost Change\| QALY Change\|
-\|:—————-\|———–:\|————:\|———-:\|———–:\|———–:\|———–:\| \|Standard of Care
-\| EUR 20,867\| 1.4141\| EUR 21,523\| 1.3714\| EUR 656\| -0.0427\|
-\|CRP-guided \| EUR 55,026\| 1.3842\| EUR 53,928\| 1.3918\| -EUR 1,098\|
-0.0076\| \|TMB/BRAF-guided \| EUR 60,798\| 1.3530\| EUR 63,399\|
-1.3609\| EUR 2,602\| 0.0078\|
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3714 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,928 | 1.3918 | EUR 53,948 | 1.3920 | EUR 20 | 0.0001 |
+| TMB/BRAF-guided | EUR 63,399 | 1.3609 | EUR 62,685 | 1.3599 | -EUR 715 | -0.0010 |
 
-Table: Net monetary benefit impact – Cumulative: issue 145 baseline vs
-issue 157 fixed \|Strategy \| NMB Before\| NMB After\| NMB Change\|
-\|:—————-\|———-:\|———-:\|———-:\| \|Standard of Care \| EUR 51,254\| EUR
-48,419\| -EUR 2,835\| \|CRP-guided \| EUR 15,570\| EUR 17,056\| EUR
-1,486\| \|TMB/BRAF-guided \| EUR 8,207\| EUR 6,005\| -EUR 2,203\|
+Base case impact – Issue 166: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,419 | EUR 48,419 |      EUR 0 |
+| CRP-guided       | EUR 17,056 | EUR 17,042 |    -EUR 14 |
+| TMB/BRAF-guided  |  EUR 6,005 |  EUR 6,670 |    EUR 665 |
+
+Net monetary benefit impact – Issue 166: baseline vs fixed
+
+PSA cache md5 before 8f061b8959fee3e221a34f65ce0d9dc1 (modified
+2026-09-18 09:55), after 39f39bd3f4f56a8fcf25acd341b6e560 (modified
+2026-09-17 16:48).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.22 after.
+
+## Cumulative: issue 145 baseline vs issue 166 fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,867 | 1.4141 | EUR 21,523 | 1.3714 | EUR 656 | -0.0427 |
+| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,948 | 1.3920 | -EUR 1,078 | 0.0077 |
+| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,685 | 1.3599 | EUR 1,887 | 0.0069 |
+
+Base case impact – Cumulative: issue 145 baseline vs issue 166 fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 51,254 | EUR 48,419 | -EUR 2,835 |
+| CRP-guided       | EUR 15,570 | EUR 17,042 |  EUR 1,472 |
+| TMB/BRAF-guided  |  EUR 8,207 |  EUR 6,670 | -EUR 1,537 |
+
+Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
+166 fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 a057d7d7856e7c3bc7602058118d9a92
-(modified 2026-09-07 09:28, regenerated inside the snapshot run).
-Identity of the two PSA files cannot be established from metadata.
+the PSA cache md5; after PSA cache md5 39f39bd3f4f56a8fcf25acd341b6e560
+(modified 2026-09-17 16:48). Identity of the two PSA files cannot be
+established from metadata.
 
 # Interpretation
 
@@ -471,8 +527,19 @@ snapshots contain obsolete multi-model components, `load_snapshot()`
 warns during render and the tables use the top-level single-model
 results.
 
+Issue \#166 aligns every economic strategy to the same 68-patient
+complete-case target. Prevalence uncertainty now samples joint biomarker
+cell masses and reweights control and guided strategies together. Both
+snapshots precede the requested fix commit and therefore carry HEAD
+`96d0710`; their distinct PSA fingerprints and result hashes identify
+the original and repaired calculations. Sampling, PSA, EVPPI and
+scenario caches were regenerated for the fix. The identical-treatment
+population tests and all 296 report/cache contracts pass; the existing
+PSA-versus-base-case numerical alignment criterion remains a failure,
+documented in `AGENTS.md`.
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.2
+**Report completed on:** 2026-09-18\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.3

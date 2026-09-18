@@ -30,10 +30,11 @@ data <- data %>%
 data_control <- subset(data, Rx == levels(data$Rx)[1])
 data_experimental <- subset(data, Rx == levels(data$Rx)[2])
 
-# Calculate prevalence rates
-p_crp <- mean(data$crp, na.rm = TRUE)
+# One complete-case economic target population; clinical TLR uses its own cohort.
+data_complete <- economic_prediction_population(data)
+p_crp <- mean(data_complete$crp)
 p_tlr <- mean(data$tlr, na.rm = TRUE)
-p_tmb_braf <- mean(data$tmb_braf, na.rm = TRUE)
+p_tmb_braf <- mean(data_complete$tmb_braf)
 
 # Create biomarker-guided datasets
 # CRP combined dataset: CRP+ from experimental, CRP- from control
@@ -73,7 +74,7 @@ prevalence_by_strategy <- c(
            biomarkers)
 )
 n_by_strategy <- setNames(
-  vapply(strategies, function(x) nrow(get(paste0("data_", x))), integer(1)),
+  rep(nrow(data_complete), length(strategies)),
   strategies
 )
 strategies_df <- transform(

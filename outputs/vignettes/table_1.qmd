@@ -30,9 +30,7 @@ setup_report(
 #   - discount-rate and time-horizon ranges: the deterministic structural
 #     scenarios run by 09_DSA.R (dsa_structural_scenarios());
 #   - utility source: UTILITY_SOURCE switch (02_setup_and_global_variables.R);
-#   - prevalence CIs: exact binomial on the canonical per-biomarker denominators
-#     (patients with a non-missing biomarker value in the trial data, i.e. the
-#     denominators behind p_crp and p_tmb_braf in 03_biomarker_strategies.R).
+#   - prevalence CIs: exact binomial in the shared complete-case economic population.
 # =============================================================================
 
 parameter_config <- configure_parameter_distributions(l_params_base)
@@ -55,11 +53,10 @@ fmt_cost <- function(x) format(round(x), big.mark = ",")
 fmt_pct  <- function(x) sprintf("%g%%", 100 * x)
 fmt_yr   <- function(x) sprintf("%g", x)
 
-# Canonical prevalence denominators: every trial patient with a biomarker value.
-n_crp <- sum(!is.na(data$crp))
-n_tmb <- sum(!is.na(data$tmb_braf))
-k_crp <- sum(data$crp == 1, na.rm = TRUE)
-k_tmb <- sum(data$tmb_braf == 1, na.rm = TRUE)
+# Every economic prevalence uses the same complete-case target population.
+n_crp <- n_tmb <- nrow(l_params_base$prediction_population)
+k_crp <- sum(l_params_base$prediction_population$crp == 1)
+k_tmb <- sum(l_params_base$prediction_population$tmb_braf == 1)
 stopifnot(isTRUE(all.equal(k_crp / n_crp, l_params_base$p_crp)),
           isTRUE(all.equal(k_tmb / n_tmb, l_params_base$p_tmb_braf)))
 
@@ -84,6 +81,7 @@ psa_dist <- function(par) {
   row <- spec[spec$parameter == par, , drop = FALSE]
   if (nrow(row) != 1 || !row$psa || is.na(row$distribution)) return("Fixed")
   if (identical(row$distribution, "derived")) {
+    if (par %in% c("p_crp", "p_tmb_braf")) return("Joint Dirichlet (derived marginal)")
     return("Derived (u_np - decrement)")
   }
   tools::toTitleCase(row$distribution)
@@ -207,7 +205,7 @@ kable(table_1 %>% select(-Category),
       "NoMA = Norwegian Medicines Agency. NGS = next-generation sequencing. Costs in 2023 euros.",
       sprintf("One-way DSA ranges are the base value +/- %.0f%% bounds run by 09_DSA.R (prevalences and utilities capped at 1, costs and prevalences at 0).", 100 * DSA_mult),
       "Discount rate and time horizon are not sampled in the PSA; the ranges are the deterministic structural scenarios run by 09_DSA.R and reported in the OWSA report.",
-      "Prevalence notes give the biomarker-positive count over all trial patients with a biomarker value (the denominators of the base-case prevalences) and the exact binomial 95% CI; the DSA range is the +/-20% bound, not the CI.",
+      "Prevalence notes use the common complete-case economic population and exact binomial 95% CIs. Joint biomarker cell probabilities are sampled together from a Dirichlet distribution with the observed cell counts; the marginal prevalences are derived. DSA bounds change one marginal by +/-20%, retaining the other marginal and joint odds ratio. Every population change reweights control and both guided strategies alike.",
       sprintf("Utilities follow the UTILITY_SOURCE switch (currently %s).", if (UTILITY_SOURCE == 1) "1 = CORRECT trial" else "0 = METIMMOX IPD"),
       "PSA distribution: family used for the probabilistic analysis (parameter_distributions.R). 'Fixed' parameters are not sampled in the PSA; drug and test unit costs are published tariffs or assumed list prices, so they are varied deterministically only and carry no value-of-information (issue #154).",
       "The post-progression utility is not sampled independently: the PSA draws a non-negative decrement and sets u_p = u_np - decrement, so no draw places the progressed utility above the progression-free utility.",

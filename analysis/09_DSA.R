@@ -253,7 +253,7 @@ if (has_models) {
       prevalences = setNames(strategies_df$prevalence, strategies_df$id),
       quiet = TRUE
     )
-    test_params <- l_params_base
+    test_params <- set_population_predictions(l_params_base, test_predictions)
     test_params$p_os[[paste0(control_strategy, "_OS")]] <-
       test_predictions[[control_strategy]]$os
     test_params$p_pfs[[paste0(control_strategy, "_PFS")]] <-

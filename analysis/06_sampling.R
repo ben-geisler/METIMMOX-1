@@ -369,7 +369,9 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
                                                          outcome = "os",
                                                          sample_idx = 1,
                                                          data_original,
-                                                         time_points) {
+                                                         time_points,
+                                                         weights = NULL) {
+  if (is.null(weights)) weights <- rep(1 / nrow(data_original), nrow(data_original))
   sampled_model <- tryCatch(
     sampled_survival_models(sampling_model_list, sample_idx),
     error = function(e) NULL
@@ -385,7 +387,7 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
     return(NULL)
   }
 
-  average_prediction <- function(subgroup_data, rx_level = NULL, label) {
+  average_prediction <- function(subgroup_data, subgroup_weights, rx_level = NULL, label) {
     if (nrow(subgroup_data) == 0) {
       warning("No patients in ", label, " subgroup")
       return(rep(NA_real_, length(time_points)))
@@ -398,7 +400,7 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
         model_obj, newdata = subgroup_data,
         type = "survival", times = time_points
       )
-      rowMeans(extract_all_survival_probabilities(prediction), na.rm = TRUE)
+      weighted_survival_average(extract_all_survival_probabilities(prediction), subgroup_weights)
     }, error = function(e) {
       warning("Prediction failed for ", label, " in sim ", sample_idx,
               ": ", conditionMessage(e))
@@ -408,7 +410,7 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
 
   if (is.null(biomarker_name)) {
     return(average_prediction(
-      data_original,
+      data_original, weights,
       rx_level = levels(data_original$Rx)[1],
       label = "control"
     ))
@@ -422,6 +424,7 @@ generate_psa_population_averaged_predictions <- function(sampling_model_list,
   lapply(subgroup_spec, function(subgroup) {
     average_prediction(
       data_original[status == subgroup$status, , drop = FALSE],
+      weights[status == subgroup$status],
       rx_level = subgroup$rx,
       label = paste0(biomarker_name, subgroup$suffix)
     )

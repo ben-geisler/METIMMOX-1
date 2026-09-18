@@ -1,6 +1,6 @@
 # Cost-Effectiveness Analysis
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Overview](#overview)
 - [Economic Survival Model](#economic-survival-model)
@@ -10,6 +10,7 @@ Ben Geisler
   - [Parameters sampled](#parameters-sampled)
   - [Results](#results)
 - [Summary](#summary)
+- [Common Target Population](#common-target-population)
 - [Scope Limitations](#scope-limitations)
 
 # Overview
@@ -45,8 +46,8 @@ surviving to the week-4 measurement.
 
 | Component | Formula |
 |:---|:---|
-| OS | Surv(OSwk, Death) ~ Age + sex + Rx + crp\*Rx + tmb_braf\*Rx |
-| PFS | Surv(PFSwk, Progression) ~ Age + sex + Rx + crp\*Rx + tmb_braf\*Rx |
+| OS | Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx |
+| PFS | Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx |
 | Control arm | Same joint OS and PFS models, predicted with Rx = control for every patient |
 
 Single economic survival model
@@ -64,16 +65,16 @@ Economic strategies
 | Strategy         |       Cost | QALYs |        NMB |
 |:-----------------|-----------:|------:|-----------:|
 | Standard of Care | EUR 21,523 | 1.371 | EUR 48,419 |
-| CRP-guided       | EUR 53,928 | 1.392 | EUR 17,056 |
-| TMB/BRAF-guided  | EUR 63,399 | 1.361 |  EUR 6,005 |
+| CRP-guided       | EUR 53,948 | 1.392 | EUR 17,042 |
+| TMB/BRAF-guided  | EUR 62,685 | 1.360 |  EUR 6,670 |
 
 Base case results at WTP = EUR 51,000
 
 | Strategy | Cost | QALYs | Incremental Cost | Incremental QALYs | ICER | Status |
 |:---|---:|---:|---:|---:|---:|:---|
-| Standard of Care | EUR 21,523 | 1.371 | -- | -- | -- | ND |
-| CRP-guided | EUR 53,928 | 1.392 | EUR 32,404 | 0.020 | EUR 1,587,067 | ND |
-| TMB/BRAF-guided | EUR 63,399 | 1.361 | -- | -- | Dominated | D |
+| Standard of Care | EUR 21,523 | 1.371 | – | – | – | ND |
+| CRP-guided | EUR 53,948 | 1.392 | EUR 32,424 | 0.021 | EUR 1,578,523 | ND |
+| TMB/BRAF-guided | EUR 62,685 | 1.360 | – | – | Dominated | D |
 
 Incremental cost-effectiveness results
 
@@ -85,15 +86,15 @@ alt="Cost-effectiveness plane for the single joint economic model" />
 
 ## Parameters sampled
 
-The PSA samples the health-state utilities, the biomarker prevalences,
-and the resource-use costs (visit, baseline work-up, quarterly
-follow-up, end-of-life care), together with the survival models. Unit
-drug and test prices are **fixed** (issue \#154): they are published
-tariffs or, for nivolumab, an assumed acquisition price, so treating
-them as uncertain would attribute decision uncertainty — and value of
-information — to quantities that no study could resolve. Their influence
-is reported in the one-way sensitivity analysis and in the biosimilar
-pricing scenario instead.
+The PSA samples the health-state utilities, the joint biomarker cell
+probabilities, and the resource-use costs (visit, baseline work-up,
+quarterly follow-up, end-of-life care), together with the survival
+models. Unit drug and test prices are **fixed** (issue \#154): they are
+published tariffs or, for nivolumab, an assumed acquisition price, so
+treating them as uncertain would attribute decision uncertainty — and
+value of information — to quantities that no study could resolve. Their
+influence is reported in the one-way sensitivity analysis and in the
+biosimilar pricing scenario instead.
 
 The two utilities are sampled jointly rather than independently. The PSA
 draws a non-negative decrement and sets the progressed utility to the
@@ -106,9 +107,9 @@ progressed utility above the progression-free utility.
 
 | Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
 |:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 21,467 |      1.416 |                     100.0% |
-| CRP-guided       | EUR 53,593 |      1.418 |                       0.0% |
-| TMB/BRAF-guided  | EUR 62,949 |      1.396 |                       0.0% |
+| Standard of Care | EUR 21,467 |      1.415 |                     100.0% |
+| CRP-guided       | EUR 53,494 |      1.417 |                       0.0% |
+| TMB/BRAF-guided  | EUR 62,072 |      1.392 |                       0.0% |
 
 PSA summary at WTP = EUR 51,000
 
@@ -131,12 +132,12 @@ test protocol.
 
 | Strategy | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
-| Standard of Care | Cost | EUR 21,523 | EUR 21,467 | EUR 36 | -EUR 56 | -1.6 |
-| Standard of Care | QALYs | 1.3714 | 1.4160 | 0.0041 | +0.0446 | +10.9 |
-| CRP-guided | Cost | EUR 53,928 | EUR 53,593 | EUR 82 | -EUR 335 | -4.1 |
-| CRP-guided | QALYs | 1.3918 | 1.4180 | 0.0037 | +0.0262 | +7.0 |
-| TMB/BRAF-guided | Cost | EUR 63,399 | EUR 62,949 | EUR 99 | -EUR 450 | -4.6 |
-| TMB/BRAF-guided | QALYs | 1.3609 | 1.3955 | 0.0038 | +0.0346 | +9.1 |
+| Standard of Care | Cost | EUR 21,523 | EUR 21,467 | EUR 36 | -EUR 57 | -1.6 |
+| Standard of Care | QALYs | 1.3714 | 1.4149 | 0.0041 | +0.0435 | +10.5 |
+| CRP-guided | Cost | EUR 53,948 | EUR 53,494 | EUR 88 | -EUR 454 | -5.2 |
+| CRP-guided | QALYs | 1.3920 | 1.4167 | 0.0037 | +0.0247 | +6.6 |
+| TMB/BRAF-guided | Cost | EUR 62,685 | EUR 62,072 | EUR 93 | -EUR 613 | -6.6 |
+| TMB/BRAF-guided | QALYs | 1.3599 | 1.3924 | 0.0039 | +0.0325 | +8.4 |
 
 PSA means versus base-case values (difference in Monte Carlo standard
 errors)
@@ -150,10 +151,10 @@ decision.
 
 | Comparison | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
-| CRP-guided vs Standard of Care | Cost | EUR 32,404 | EUR 32,126 | EUR 73 | -EUR 279 | -3.8 |
-| CRP-guided vs Standard of Care | QALYs | +0.0204 | +0.0020 | 0.0025 | -0.0184 | -7.2 |
-| TMB/BRAF-guided vs Standard of Care | Cost | EUR 41,876 | EUR 41,482 | EUR 93 | -EUR 394 | -4.2 |
-| TMB/BRAF-guided vs Standard of Care | QALYs | -0.0106 | -0.0205 | 0.0023 | -0.0099 | -4.4 |
+| CRP-guided vs Standard of Care | Cost | EUR 32,424 | EUR 32,027 | EUR 80 | -EUR 397 | -5.0 |
+| CRP-guided vs Standard of Care | QALYs | +0.0205 | +0.0018 | 0.0025 | -0.0188 | -7.4 |
+| TMB/BRAF-guided vs Standard of Care | Cost | EUR 41,161 | EUR 40,606 | EUR 86 | -EUR 556 | -6.5 |
+| TMB/BRAF-guided vs Standard of Care | QALYs | -0.0115 | -0.0226 | 0.0023 | -0.0110 | -4.9 |
 
 Incremental PSA means versus base-case increments relative to standard
 of care
@@ -167,6 +168,20 @@ The economic evaluation now uses one joint survival model and three
 economic strategies: standard of care, CRP-guided immunotherapy (week-4
 CRP, before the first nivolumab dose), and TMB/BRAF-guided immunotherapy
 (baseline NGS).
+
+# Common Target Population
+
+Control and both guided strategies are evaluated in the same
+complete-case trial population (n = 68). The base case uses its observed
+joint CRP and TMB/BRAF distribution. The PSA draws all four joint cell
+probabilities together using a Dirichlet distribution with the observed
+cell counts; marginal prevalences are derived from that draw. The age
+and sex distributions within each cell remain fixed. Every draw’s common
+population weights apply to control and both guided strategies. This
+represents uncertainty in the trial population, not transport to an
+external population. The prevalence DSA changes one marginal while
+retaining the other marginal and joint odds ratio, and reweights every
+strategy consistently (issue \#166).
 
 # Scope Limitations
 
@@ -205,6 +220,6 @@ as described in the project documentation.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.2
+**Report completed on:** 2026-09-18\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.3

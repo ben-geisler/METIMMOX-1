@@ -36,12 +36,14 @@ for (outcome in c("OS", "PFS")) {
   keys <- paste0(c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"), "_", outcome)
   l_params_base[[paste0("p_", tolower(outcome))]] <- setNames(rep(list(curve), length(keys)), keys)
 }
-data <- data_complete <- data.frame(ID = 1:2)
+data <- data_complete <- data.frame(ID = 1:2, crp = 0:1, tmb_braf = 0:1)
+l_params_base$prediction_population <- data_complete
+l_params_base$population_weights <- c(0.5, 0.5)
 sampling_models <- list(joint = list(samples = rep(list(list(failed = FALSE)), n_samples)))
 # Index validation is the unit under test; deterministic prediction fixture
 # exercises the remaining calculation without fitting or accessing any cache.
 generate_psa_population_averaged_predictions <- function(sampling_model_list,
-    biomarker_name = NULL, outcome, sample_idx, data_original, time_points) {
+    biomarker_name = NULL, outcome, sample_idx, data_original, time_points, weights = NULL) {
   stopifnot(sample_idx %in% seq_len(n_samples))
   if (is.null(biomarker_name)) curve else list(positive = curve, negative = curve)
 }

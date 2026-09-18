@@ -1,36 +1,43 @@
 "scenario_id","scenario_name","wtp","group","param_group","n_params","evppi","evppi_se","evppi_percent_of_evpi","evpi","evppi_population_millions","evppi_se_population_millions"
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"evpi","All parameters (EVPI)",NA,525.146859958397,NA,100,525.146859958397,6.55115875599766,NA
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"other_costs","Resource-use costs",4,0,0.218705790816412,0,525.146859958397,0,0.00272833461597359
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"utilities","Utilities",2,0,0,0,525.146859958397,0,0
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"prevalence","Biomarker prevalence",2,0,0,0,525.146859958397,0,0
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_crp","CRP-treatment interaction",2,213.050026434145,18.250103600674,40.5696087473557,525.146859958397,2.65777947572638,0.227668363114447
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,7.16841533384027,1.18200599120196,1.36503060008931,525.146859958397,0.0894253216797982,0.0147454159766239
-"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_all","Biomarker-treatment interaction",4,238.503288713987,16.5201372187093,45.41649334681,525.146859958397,2.97530658055664,0.206087191684253
-"s2_wtp100k","WTP €100,000",1e+05,"evpi","All parameters (EVPI)",NA,172.66087164967,NA,100,172.66087164967,2.1539284862439,NA
-"s2_wtp100k","WTP €100,000",1e+05,"other_costs","Resource-use costs",4,0,0.0677864122112247,0,172.66087164967,0,0.000845629254891503
-"s2_wtp100k","WTP €100,000",1e+05,"utilities","Utilities",2,0,0,0,172.66087164967,0,0
-"s2_wtp100k","WTP €100,000",1e+05,"prevalence","Biomarker prevalence",2,0,0,0,172.66087164967,0,0
-"s2_wtp100k","WTP €100,000",1e+05,"interaction_crp","CRP-treatment interaction",2,12.7905563300365,6.0072324430205,7.40790672943466,172.66087164967,0.159561013279672,0.074939671964381
-"s2_wtp100k","WTP €100,000",1e+05,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,0,0.00954302281989851,0,172.66087164967,0,0.000119048331566176
-"s2_wtp100k","WTP €100,000",1e+05,"interaction_all","Biomarker-treatment interaction",4,20.995070017245,5.73477099467131,12.1597150626252,172.66087164967,0.261911566579975,0.0715407404670737
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"evpi","All parameters (EVPI)",NA,3380.92928499648,NA,100,3380.92928499648,42.1767817302922,NA
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"other_costs","Resource-use costs",4,0,1.48693575916389,0,3380.92928499648,0,0.0185493867734909
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"utilities","Utilities",2,0,0,0,3380.92928499648,0,0
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"prevalence","Biomarker prevalence",2,0,0.313465902209581,0,3380.92928499648,0,0.00391045828614435
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_crp","CRP-treatment interaction",2,2062.98883333182,67.0832410850394,61.0183964061812,3380.92928499648,25.7355958675595,0.836857259795428
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,370.371473749269,29.3524532505222,10.9547240574615,3380.92928499648,4.62035005487132,0.366169153401021
-"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_all","Biomarker-treatment interaction",4,2356.10960856953,58.9225059028055,69.6882250399384,3380.92928499648,29.3922505668096,0.735052839316355
-"s4_wtp150k","WTP €150,000",150000,"evpi","All parameters (EVPI)",NA,1343.47136273075,NA,100,1343.47136273075,16.7596816290264,NA
-"s4_wtp150k","WTP €150,000",150000,"other_costs","Resource-use costs",4,0,0.505673628067943,0,1343.47136273075,0,0.00630823198001574
-"s4_wtp150k","WTP €150,000",150000,"utilities","Utilities",2,0,0,0,1343.47136273075,0,0
-"s4_wtp150k","WTP €150,000",150000,"prevalence","Biomarker prevalence",2,0,0,0,1343.47136273075,0,0
-"s4_wtp150k","WTP €150,000",150000,"interaction_crp","CRP-treatment interaction",2,455.202608809444,47.4963291643187,33.882568801779,1343.47136273075,5.67861065891399,0.592512335896332
-"s4_wtp150k","WTP €150,000",150000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,27.2406917752054,3.81394331978964,2.02763471785775,1343.47136273075,0.339825123312568,0.0475785919700598
-"s4_wtp150k","WTP €150,000",150000,"interaction_all","Biomarker-treatment interaction",4,542.757215281028,42.3828679248075,40.3996118069696,1343.47136273075,6.77084631821068,0.528722377454359
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"evpi","All parameters (EVPI)",NA,7284.38598754414,NA,100,7284.38598754414,90.8720449135829,NA
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"other_costs","Resource-use costs",4,0.269120046551222,4.49694831150775,0.00369447812089311,7284.38598754414,0.00335724781734048,0.0560990163942649
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"utilities","Utilities",2,0,0.0823978379712335,0,7284.38598754414,0,0.00102790544676071
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"prevalence","Biomarker prevalence",2,7.81538619885978,12.7375049955051,0.107289567195143,7284.38598754414,0.0974962236891593,0.158899202762972
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_crp","CRP-treatment interaction",2,4665.88056979129,117.086571074703,64.053175899378,7284.38598754414,58.206430771859,1.46064420030342
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,1367.76376304906,71.7591265376772,18.7766513936501,7284.38598754414,17.0627270877046,0.895188500560187
-"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_all","Biomarker-treatment interaction",4,5533.9639422472,106.821134528568,75.9702183781852,7284.38598754414,69.0356909655714,1.33258382397615
+"base","Base Case",51000,"evpi","All parameters (EVPI)",NA,0.218858124833787,NA,100,0.218858124833787,0.00273023496882315,NA
+"base","Base Case",51000,"other_costs","Resource-use costs",4,0,0,0,0.218858124833787,0,0
+"base","Base Case",51000,"utilities","Utilities",2,0,0,0,0.218858124833787,0,0
+"base","Base Case",51000,"prevalence","Biomarker prevalence",3,0,0,0,0.218858124833787,0,0
+"base","Base Case",51000,"interaction_crp","CRP-treatment interaction",2,0,0,0,0.218858124833787,0,0
+"base","Base Case",51000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,0,0,0,0.218858124833787,0,0
+"base","Base Case",51000,"interaction_all","Biomarker-treatment interaction",4,0,0.253437656857265,0,0.218858124833787,0,0.00316161144894122
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"evpi","All parameters (EVPI)",NA,513.747449425289,NA,100,513.747449425289,6.40895215852682,NA
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"other_costs","Resource-use costs",4,0,0.418306676785766,0,513.747449425289,0,0.0052183373019396
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"utilities","Utilities",2,0,0,0,513.747449425289,0,0
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"prevalence","Biomarker prevalence",3,0,0.0022464026552494,0,513.747449425289,0,2.80236664189506e-05
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_crp","CRP-treatment interaction",2,220.827333094612,19.3578773645485,42.9836358976853,513.747449425289,2.75480066067801,0.241487738885723
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,8.2053307690656,1.81037643632369,1.59715260450336,513.747449425289,0.102360746321286,0.0225842794592989
+"s1_decreased_nivo","Decreased Nivolumab Cost",51000,"interaction_all","Biomarker-treatment interaction",4,233.439038364218,18.229929304938,45.4384812275677,513.747449425289,2.912130523436,0.227416690631501
+"s2_wtp100k","WTP €100,000",1e+05,"evpi","All parameters (EVPI)",NA,172.30704449871,NA,100,172.30704449871,2.14951452509347,NA
+"s2_wtp100k","WTP €100,000",1e+05,"other_costs","Resource-use costs",4,0,0.242652464573842,0,172.30704449871,0,0.00302706716761721
+"s2_wtp100k","WTP €100,000",1e+05,"utilities","Utilities",2,0,0,0,172.30704449871,0,0
+"s2_wtp100k","WTP €100,000",1e+05,"prevalence","Biomarker prevalence",3,0,0,0,172.30704449871,0,0
+"s2_wtp100k","WTP €100,000",1e+05,"interaction_crp","CRP-treatment interaction",2,20.2902968758716,7.21714667046597,11.7756629944538,172.30704449871,0.253119586491841,0.0900332406201346
+"s2_wtp100k","WTP €100,000",1e+05,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,0,0.498254326905302,0,172.30704449871,0,0.0062156768807072
+"s2_wtp100k","WTP €100,000",1e+05,"interaction_all","Biomarker-treatment interaction",4,24.1209219196291,7.1357937493178,13.9988019583319,172.30704449871,0.300906281433412,0.0890183704145924
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"evpi","All parameters (EVPI)",NA,3295.29130281186,NA,100,3295.29130281186,41.108455782615,NA
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"other_costs","Resource-use costs",4,0.818188209567711,2.23232054633099,0.0248290100747558,3295.29130281186,0.010206822627842,0.0278479934059747
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"utilities","Utilities",2,0,0,0,3295.29130281186,0,0
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"prevalence","Biomarker prevalence",3,0,0.328010990110503,0,3295.29130281186,0,0.00409190691932562
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_crp","CRP-treatment interaction",2,2029.80888228532,68.4742514248981,61.5972518287924,3295.29130281186,25.3216790313451,0.854209985789774
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,361.059699395685,27.3389412332329,10.9568370810676,3295.29130281186,4.50418652664383,0.341050776260926
+"s3_wtp100k_decreased","WTP €100,000 + Decreased Nivolumab",1e+05,"interaction_all","Biomarker-treatment interaction",4,2324.60559406796,62.4600363393979,70.5432503671036,3295.29130281186,28.9992408847802,0.779183206002974
+"s4_wtp150k","WTP €150,000",150000,"evpi","All parameters (EVPI)",NA,1311.90520049975,NA,100,1311.90520049975,16.3658966597909,NA
+"s4_wtp150k","WTP €150,000",150000,"other_costs","Resource-use costs",4,0,1.03153339636673,0,1311.90520049975,0,0.0128682842019607
+"s4_wtp150k","WTP €150,000",150000,"utilities","Utilities",2,0,0,0,1311.90520049975,0,0
+"s4_wtp150k","WTP €150,000",150000,"prevalence","Biomarker prevalence",3,0,0,0,1311.90520049975,0,0
+"s4_wtp150k","WTP €150,000",150000,"interaction_crp","CRP-treatment interaction",2,483.6319086352,50.3067540235074,36.8648518544608,1311.90520049975,6.03326355828606,0.627572127410282
+"s4_wtp150k","WTP €150,000",150000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,37.5753841973362,12.5754133435019,2.86418440776227,1311.90520049975,0.468749460320217,0.156877124319279
+"s4_wtp150k","WTP €150,000",150000,"interaction_all","Biomarker-treatment interaction",4,531.239145548206,47.2015166904367,40.4937144349941,1311.90520049975,6.62715945814197,0.588834577412157
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"evpi","All parameters (EVPI)",NA,7070.691171238,NA,100,7070.691171238,88.2062217435343,NA
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"other_costs","Resource-use costs",4,2.71220204846335,6.6957913361584,0.0383583723681214,7070.691171238,0.0338344709882358,0.0835293807977495
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"utilities","Utilities",2,0,0.0886596676618415,0,7070.691171238,0,0.0011060211959617
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"prevalence","Biomarker prevalence",3,0,1.76162728004506,0,7070.691171238,0,0.021976138220432
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_crp","CRP-treatment interaction",2,4587.59276332855,117.997937524696,64.8818149771533,7070.691171238,57.2297975899775,1.47201341290667
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_tmb_braf","TMB/BRAF-treatment interaction",2,1325.15357185425,68.1265094207883,18.7414998019525,7070.691171238,16.5311688733743,0.849871936286378
+"s5_wtp150k_decreased","WTP €150,000 + Decreased Nivolumab",150000,"interaction_all","Biomarker-treatment interaction",4,5470.67036007462,111.457825323909,77.3710833578489,7070.691171238,68.246109351999,1.39042611499767

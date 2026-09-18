@@ -79,6 +79,7 @@ utility_source_label <- c("ipd", "correct")[UTILITY_SOURCE + 1]
 # This sources the central economic model configuration file which defines all
 # formulas and provides helper functions: get_strategies(), get_biomarkers(), etc.
 source(here::here("R/model_configs.R"))
+source(here::here("R/prediction_population.R"))
 
 # Source cache-path helpers (utility label + cached-object file locations).
 source(here::here("R/cache_paths.R"))

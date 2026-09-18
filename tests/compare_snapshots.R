@@ -10,7 +10,8 @@ source(here::here("R/snapshot_utils.R"))
 cat("\n=== Compare Analysis Snapshots ===\n\n")
 cat("This script compares two snapshots to assess the impact of bug fixes.\n\n")
 
-issue_number <- readline(prompt = "Enter GitHub issue number: ")
+args <- commandArgs(trailingOnly = TRUE)
+issue_number <- if (length(args)) args[1] else readline(prompt = "Enter GitHub issue number: ")
 
 if (issue_number == "" || is.na(as.numeric(issue_number))) {
   stop("Invalid issue number. Please provide a numeric issue number.")

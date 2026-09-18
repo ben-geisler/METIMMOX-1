@@ -12,7 +12,7 @@
 #     BETWEEN PSA iterations)
 #   - Patient heterogeneity: Integrated out via population averaging (averaged
 #     WITHIN each iteration)
-#   - Prevalence: Kept at true population values, NOT set to 0/1
+#   - Population: common joint biomarker weights for every strategy (issue #166)
 #
 # This separation ensures EVPI correctly measures the value of reducing
 # parameter uncertainty, not patient heterogeneity.
@@ -122,12 +122,12 @@ validate_model_params <- function(params) {
 }
 
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
-                      return_traces = FALSE, sim_idx = NULL) {
+                      return_traces = FALSE, sim_idx = NULL,
+                      prediction_population = params$prediction_population) {
   # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
   #   - n_samples: Number of sampled coefficient draws (from 02_setup_and_global_variables.R)
   #   - sampling_models: Sampled survival models (MVN coefficient draws) (from 06_sampling.R)
-  #   - data_complete: Full analysis cohort (from 04_parametric_survival_analysis.R)
-  #   - data: Full dataset for biomarker predictions (from 03_biomarker_strategies.R)
+  # Every prediction uses the explicit prediction_population stored in params.
   # These must exist in the global environment before calling model_fun in PSA mode.
 
   # Get economic strategies and biomarkers from central config.
@@ -141,13 +141,23 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
 
+  population_weights <- NULL
+  if (!is.null(prediction_population)) {
+    population_weights <- model_population_weights(params, prediction_population)
+    if (!isTRUE(all.equal(population_weights, params$population_weights, tolerance = 1e-12))) {
+      if (is.null(params$population_curves)) stop("Population changes require patient-level prediction curves.")
+      params <- set_population_predictions(params, standardize_population_curves(
+        params$population_curves, prediction_population, population_weights))
+    }
+  }
+
   # =========================================================================
   # PSA MODE: Subgroup Population Averaging
   # =========================================================================
   # Each PSA iteration:
   #   1. Uses sampled survival model i (coefficient draw i) (captures parameter uncertainty)
   #   2. Predicts for ALL patients in each subgroup, then averages
-  #   3. Keeps prevalence at true population value
+  #   3. Applies the same draw-specific population weights to every strategy
   #
   # This properly separates:
   #   - Parameter uncertainty (varies BETWEEN iterations via sampled models)
@@ -165,6 +175,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     if (sim_idx > n_samples) {
       stop("sim_idx (", sim_idx, ") exceeds n_samples (", n_samples, ")")
     }
+
+    if (is.null(prediction_population)) stop("PSA requires an explicit prediction_population.")
 
     if (sim_idx %% 100 == 0) {
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
@@ -188,7 +200,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # CONTROL STRATEGY: Population-averaged predictions over FULL population
     # -----------------------------------------------------------------------
     # Uses the shared population-averaging helper to predict for ALL patients in
-    # data_complete (both arms) with Rx forced to the control level, using the
+    # the explicit prediction population (both arms) with Rx forced to the control level, using the
     # sampled JOINT model. This mirrors the base case, which predicts the
     # control curve from the same joint fit with Rx = control
     # (generate_population_averaged_predictions). A separate age/sex-only
@@ -201,7 +213,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         sampling_model_list = joint_sampling_models,
         outcome = "os",
         sample_idx = sim_idx,
-        data_original = data_complete,
+        data_original = prediction_population,
+        weights = population_weights,
         time_points = seq(0, time_horizon)
       )
 
@@ -209,7 +222,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         sampling_model_list = joint_sampling_models,
         outcome = "pfs",
         sample_idx = sim_idx,
-        data_original = data_complete,
+        data_original = prediction_population,
+        weights = population_weights,
         time_points = seq(0, time_horizon)
       )
 
@@ -237,7 +251,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # For each biomarker:
     #   - Biomarker+ subgroup: ALL biomarker+ patients with experimental Rx
     #   - Biomarker- subgroup: ALL biomarker- patients with control Rx
-    # Weighted combination uses TRUE prevalence (not 0/1)
+    # Weighted combination uses the marginals of the common target population
 
     for(biomarker in biomarkers_to_run) {
       tryCatch({
@@ -247,7 +261,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           biomarker_name = biomarker,
           outcome = "os",
           sample_idx = sim_idx,
-          data_original = data,
+          data_original = prediction_population,
+          weights = population_weights,
           time_points = seq(0, time_horizon)
         )
 
@@ -256,7 +271,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           biomarker_name = biomarker,
           outcome = "pfs",
           sample_idx = sim_idx,
-          data_original = data,
+          data_original = prediction_population,
+          weights = population_weights,
           time_points = seq(0, time_horizon)
         )
 
@@ -274,7 +290,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- preds_pfs$positive
           params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- preds_pfs$negative
 
-          # DO NOT modify prevalence - keep true value from l_params_base
+          # Marginal prevalence comes from the common target population weights
           # Weighted combination happens downstream using:
           #   prevalence * biomarker+ + (1-prevalence) * biomarker-
         }

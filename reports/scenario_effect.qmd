@@ -50,6 +50,16 @@ if (!file.exists(scenario_cache_file)) {
 scenario_cache <- load_scenario_cache(path = scenario_cache_file)
 cache_source <- basename(scenario_cache_file)
 
+# Use ASCII currency labels in display copies: native Windows encodings can
+# otherwise turn the cached euro symbol into an invalid LaTeX/XML character.
+scenario_label <- function(x) sub("WTP [^0-9]*", "WTP EUR ", x)
+scenario_cache$scenarios$scenario_name <- scenario_label(scenario_cache$scenarios$scenario_name)
+scenario_cache$evppi_all_scenarios$scenario_name <- scenario_label(scenario_cache$evppi_all_scenarios$scenario_name)
+scenario_cache$all_scenario_results <- lapply(scenario_cache$all_scenario_results, function(result) {
+  result$scenario_info$scenario_name <- scenario_label(result$scenario_info$scenario_name)
+  result
+})
+
 # Compare against the accessor rather than a literal. The identifier is bumped
 # whenever the failed-draw policy changes (it is currently
 # "cyclic_other_models_drop_unreplaced_v2"), and a hard-coded copy here silently
@@ -212,4 +222,4 @@ if (!is.null(scenario_cache) &&
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.0
+**Report version:** 5.1

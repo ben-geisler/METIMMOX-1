@@ -25,6 +25,7 @@ calculation_identity <- function(stage = c("psa", "sampling", "evppi", "scenario
     sampling = c("analysis/06_sampling.R", "R/model_configs.R"),
     psa = c("R/model_fun.R", "R/calculate_outcomes.R", "R/prediction_functions.R",
             "R/psa_functions.R", "R/parameter_distributions.R", "R/model_configs.R",
+            "R/prediction_population.R",
             "analysis/06_sampling.R"),
     evppi = "R/evppi_functions.R",
     scenario = c("R/scenario_analysis.R", "R/evppi_functions.R"))
@@ -131,18 +132,18 @@ scenario_cache_fingerprint <- function(psa_fingerprint, scenarios, config, seed,
   list(fingerprint = cache_fingerprint(inputs), inputs = inputs)
 }
 
-# PSA currently predicts from both data and data_complete. Track both until the
-# prediction-cohort issue is resolved; unused clinical-only columns stay outside
-# the identity. Formula variables include endpoints and covariates.
+# One complete-case economic population (#166); params also fingerprints the
+# explicit prediction population, curve basis and target weights. Unused
+# clinical-only columns stay outside this identity.
 prediction_population_identity <- function() {
   variables <- unique(c("ID", unlist(lapply(c("os", "pfs"), function(outcome)
     all.vars(get_strategy_formula(get_biomarkers()[1], outcome))))))
-  setNames(lapply(c("data", "data_complete"), function(name) {
+  setNames(lapply(c("data_complete"), function(name) {
     population <- get0(name, envir = .GlobalEnv, inherits = FALSE)
     if (!is.data.frame(population)) return(NULL)
     columns <- sort(intersect(variables, names(population)))
     cache_fingerprint(canonical_sampling_data(population[, columns, drop = FALSE]))
-  }), c("data", "data_complete"))
+  }), c("data_complete"))
 }
 
 current_psa_fingerprint <- function() psa_cache_fingerprint(

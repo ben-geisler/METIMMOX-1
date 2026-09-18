@@ -89,6 +89,8 @@ knitr::kable(
   tbl_style(latex_options = c("HOLD_position"))
 ```
 
+Every economic strategy uses the same complete-case population (n = `r nrow(l_params_base$prediction_population)`). Its observed joint CRP and TMB/BRAF distribution defines the base case. In the PSA, the four joint cell probabilities are drawn together from a Dirichlet distribution with the observed cell counts, and the two marginal prevalences are derived. This represents uncertainty in the trial population's joint biomarker proportions, with age and sex distributions within each cell held fixed. The population weights change control and both guided strategies together. The one-way prevalence analysis rakes this same joint distribution to the changed marginal, retaining the other marginal and the joint odds ratio (issue #166).
+
 # Utilities
 
 The two health-state utilities are not sampled independently in the PSA. Independent beta draws placed the progressed utility above the progression-free utility in a substantial minority of draws (about 16% under the CORRECT utilities and about 49% under the IPD utilities), which widened the PSA with orderings that cannot occur. The PSA instead draws a non-negative decrement `u_decrement` (gamma, CV 0.15, mean equal to the base-case difference `u_np - u_p`) and sets `u_p = u_np - u_decrement`, so `u_p <= u_np` holds in every draw and the marginal mean of `u_p` is unchanged (issue #154). The realised reversal fraction is reported in the cost-effectiveness report.
@@ -220,4 +222,4 @@ knitr::kable(
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.2
+**Report version:** 4.3

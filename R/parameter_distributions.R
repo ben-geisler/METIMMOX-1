@@ -64,20 +64,20 @@ parameter_distribution_spec <- function() {
     stringsAsFactors = FALSE
   )
   prevalence <- data.frame(
-    parameter = prevalence_parameters,
-    distribution = "beta",
-    cv = 0.15,
+    parameter = c(paste0("p_joint_", c("00", "01", "10", "11")), prevalence_parameters),
+    distribution = c(rep("dirichlet", 3), rep("derived", 1 + length(prevalence_parameters))),
+    cv = NA_real_,
     group = "prevalence",
     psa = TRUE,
-    order = 50 + seq_along(prevalence_parameters),
+    order = 50 + seq_len(4 + length(prevalence_parameters)),
     stringsAsFactors = FALSE
   )
 
   spec <- rbind(fixed_costs, other_costs, utilities, prevalence)
   spec$derived <- spec$distribution %in% "derived"
-  # The sampled decrement is a PSA construct, not a model input, so it is the
-  # one parameter excluded from the one-way DSA.
-  spec$dsa <- spec$parameter != "u_decrement"
+  # DSA varies marginal prevalences, not individual joint masses. The sampled
+  # utility decrement is also excluded because DSA varies state utilities.
+  spec$dsa <- spec$parameter != "u_decrement" & !grepl("^p_joint_", spec$parameter)
   spec <- spec[order(spec$order), , drop = FALSE]
   spec$order <- NULL
   rownames(spec) <- NULL
@@ -137,6 +137,14 @@ create_parameter_distributions <- function(params,
   }
 
   distributions <- lapply(seq_len(nrow(spec)), function(i) {
+    if (spec$distribution[i] == "dirichlet") {
+      counts <- params$joint_counts
+      if (is.null(counts) || !identical(names(counts), c("00", "01", "10", "11")) ||
+          any(!is.finite(counts)) || any(counts < 0) || sum(counts) <= 0)
+        stop("Joint prevalence uncertainty requires complete-case joint cell counts.")
+      return(list(dist = "dirichlet", alpha = counts,
+                  component = sub("^p_joint_", "", spec$parameter[i])))
+    }
     distribution_parameters(
       params[[spec$parameter[i]]], spec$distribution[i], spec$cv[i]
     )
@@ -176,6 +184,12 @@ create_parameter_groups <- function(spec = parameter_distribution_spec()) {
 #' @param samples Data frame of sampled PSA parameters.
 #' @return The data frame with derived columns added.
 apply_derived_psa_parameters <- function(samples) {
+  joint_keys <- paste0("p_joint_", c("00", "01", "10"))
+  if (all(joint_keys %in% names(samples))) {
+    samples$p_joint_11 <- pmax(0, 1 - rowSums(samples[joint_keys]))
+    samples$p_crp <- samples$p_joint_10 + samples$p_joint_11
+    samples$p_tmb_braf <- samples$p_joint_01 + samples$p_joint_11
+  }
   if (all(c("u_np", "u_decrement") %in% names(samples))) {
     # Non-negative decrement, floored at zero: u_p <= u_np in every draw.
     samples$u_p <- pmax(samples$u_np - samples$u_decrement, 0)
@@ -323,7 +337,7 @@ build_horizon_params <- function(base_params, horizon_weeks, models,
     prevalences = setNames(strategies_df$prevalence, strategies_df$id)
   )
 
-  p <- base_params
+  p <- set_population_predictions(base_params, preds)
   ctrl <- get_control_strategy()
   p$p_os  <- setNames(list(preds[[ctrl]]$os),  paste0(ctrl, "_OS"))
   p$p_pfs <- setNames(list(preds[[ctrl]]$pfs), paste0(ctrl, "_PFS"))

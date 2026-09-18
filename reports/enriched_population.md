@@ -1,6 +1,6 @@
 # Enriched Population Analysis
 Ben Geisler
-2026-09-08
+2026-09-17
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -24,7 +24,7 @@ by the canonical full-cohort prevalence, in place of a single test
 (issue \#157). The control arm carries no test cost, because every
 patient receives FLOX under standard of care whether or not the
 biomarker is known. The screening cost is reported as its own column in
-the detailed table; it is EUR 47 for CRP and EUR 5,605 for TMB/BRAF per
+the detailed table; it is EUR 47 for CRP and EUR 5,707 for TMB/BRAF per
 identified positive.
 
 # Biomarker Prevalence
@@ -32,7 +32,7 @@ identified positive.
 | Biomarker | Prevalence | N Positive |
 |:----------|-----------:|-----------:|
 | CRP       |      33.8% |         24 |
-| TMB/BRAF  |      44.9% |         31 |
+| TMB/BRAF  |      44.1% |         31 |
 
 Economic biomarker-positive prevalences
 
@@ -40,8 +40,8 @@ Economic biomarker-positive prevalences
 
 | Biomarker | Prevalence | Base ICER (vs SoC) | Base frontier | Enriched ICER (vs SoC) | Change |
 |:---|---:|---:|:---|---:|---:|
-| CRP | 33.8% | EUR 1,587,067 | On frontier | EUR 1,578,523 | -0.5% |
-| TMB/BRAF | 44.9% | Dominated | Dominated | Dominated | – |
+| CRP | 33.8% | EUR 1,578,523 | On frontier | EUR 1,578,523 | -0.0% |
+| TMB/BRAF | 44.1% | Dominated | Dominated | Dominated | – |
 
 Base case and enriched-population ICERs (pairwise versus standard of
 care)
@@ -57,7 +57,7 @@ percentage change between such ICERs is not meaningful and is shown as
 | Biomarker | Experimental Cost | Experimental QALYs | Control Cost | Control QALYs | Screening cost per identified positive | Enriched ICER |
 |:---|---:|---:|---:|---:|---:|---:|
 | CRP | EUR 117,850 | 1.786 | EUR 21,986 | 1.725 | EUR 47 | EUR 1,578,523 |
-| TMB/BRAF | EUR 115,074 | 1.426 | EUR 21,878 | 1.453 | EUR 5,605 | Dominated |
+| TMB/BRAF | EUR 115,177 | 1.426 | EUR 21,878 | 1.453 | EUR 5,707 | Dominated |
 
 Detailed enriched-population results (pairwise versus standard of care)
 
@@ -83,6 +83,6 @@ patients, and that screening cost is charged to the experimental arm.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
+**Report completed on:** 2026-09-17\
+**Repository:** ben-geisler/METIMMOX-1\
 **Report version:** 4.2

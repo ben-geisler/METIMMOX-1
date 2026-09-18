@@ -236,7 +236,7 @@ for (cmp in comparisons) {
     caption = paste0("Base case impact -- ", cmp$label)
   ) %>%
     style_wide()
-  cat(as.character(base_tbl), "\n\n")
+  cat(as.character(base_tbl), "\n\n", sep = "\n")
 
   nmb_tbl <- knitr::kable(
     build_nmb_impact(cmp$before, cmp$after),
@@ -246,7 +246,7 @@ for (cmp in comparisons) {
     caption = paste0("Net monetary benefit impact -- ", cmp$label)
   ) %>%
     style_narrow()
-  cat(as.character(nmb_tbl), "\n\n")
+  cat(as.character(nmb_tbl), "\n\n", sep = "\n")
 
   # PSA provenance (issue #156): identical md5 means the PSA side of the
   # comparison is a copy of the same cache, not evidence of "no change".
@@ -267,7 +267,7 @@ for (cmp in comparisons) {
       caption = paste0("EVPPI impact -- ", cmp$label)
     ) %>%
       style_wide()
-    cat(as.character(evppi_tbl), "\n\n")
+    cat(as.character(evppi_tbl), "\n\n", sep = "\n")
   }
 }
 ```
@@ -276,8 +276,10 @@ for (cmp in comparisons) {
 
 This report compares baseline and fixed single-model snapshots for each bug-fix issue that has both, plus a cumulative comparison from the earliest baseline to the latest fixed snapshot. Snapshots are produced by the `13_save_snapshot.R` analysis script (in `analysis/`). If older snapshots contain obsolete multi-model components, `load_snapshot()` warns during render and the tables use the top-level single-model results.
 
+Issue #166 aligns every economic strategy to the same 68-patient complete-case target. Prevalence uncertainty now samples joint biomarker cell masses and reweights control and guided strategies together. Both snapshots precede the requested fix commit and therefore carry HEAD `96d0710`; their distinct PSA fingerprints and result hashes identify the original and repaired calculations. Sampling, PSA, EVPPI and scenario caches were regenerated for the fix. The identical-treatment population tests and all 296 report/cache contracts pass; the existing PSA-versus-base-case numerical alignment criterion remains a failure, documented in `AGENTS.md`.
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.2
+**Report version:** 4.3

@@ -106,13 +106,15 @@ psa_obj <- load_psa_cache(
 )
 
 # ---- Per-draw diagnostics (cached; ~10 minutes on first run) ---------------
+psa_params <- load_psa_params_cache(required = TRUE, seed = analysis_seed, n_sim = psa_obj$n_sim)
 diag <- run_pfs_os_violation_diagnostics(
   sampling_models = sampling_models,
   data_complete = data_complete,
-  data_original = data,
+  data_original = data_complete,
   params = l_params_base,
   time_horizon = time_horizon,
-  verbose = FALSE
+  verbose = FALSE,
+  psa_params = psa_params
 )
 
 # ---- Cache consistency: fingerprints first, file dates as a second guard ---
@@ -196,7 +198,7 @@ n_any <- sum(by_draw$any_violation)
 # each retained PSA row (issue #156); replaced draws point at the model that
 # finally succeeded.
 model_idx <- psa_obj$model_idx
-psa_rows_affected <- by_draw$any_violation[match(model_idx, by_draw$draw)]
+psa_rows_affected <- by_draw$any_violation[match(psa_obj$sim, by_draw$draw)]
 share_psa_rows <- mean(psa_rows_affected)
 n_psa_rows <- length(model_idx)
 n_replaced <- sum(model_idx != seq_along(model_idx))
@@ -272,7 +274,7 @@ qaly_curve <- pc %>%
   mutate(short = short_of(curve), rel = mean_diff / mean_clamped)
 
 # Strategy-level QALY effect of the clamp: the guided strategies weight the
-# positive and negative curves by the canonical prevalence, and the QALY
+# positive and negative curves by each draw's common-population prevalence, and the QALY
 # difference is linear in the curves.
 control_strategy <- get_control_strategy()
 prev <- setNames(
@@ -285,8 +287,9 @@ wide_diff <- pc %>%
 strategy_diff <- data.frame(draw = wide_diff$draw)
 strategy_diff[[control_strategy]] <- wide_diff[[control_strategy]]
 for (bm in get_biomarkers()) {
-  strategy_diff[[bm]] <- prev[[bm]] * wide_diff[[paste0(bm, "_pos")]] +
-    (1 - prev[[bm]]) * wide_diff[[paste0(bm, "_neg")]]
+  draw_prevalence <- psa_params[[paste0("p_", bm)]][match(wide_diff$draw, psa_params$sim)]
+  strategy_diff[[bm]] <- draw_prevalence * wide_diff[[paste0(bm, "_pos")]] +
+    (1 - draw_prevalence) * wide_diff[[paste0(bm, "_neg")]]
 }
 strategy_qaly <- do.call(rbind, lapply(strategies, function(s) {
   d <- strategy_diff[[s]]
@@ -362,7 +365,7 @@ The probabilistic sensitivity analysis (PSA) draws the coefficient vectors of th
 
 The model handles the problem with a clamp. In PSA mode `model_fun()` replaces the PFS curve by min(PFS, OS) for any curve that crosses and emits a `survival_ordering_warning`; the PSA script counts those warnings per subgroup but does not retain the curves. In the deterministic base case the ordering is guaranteed by the ordering-constrained distribution selection and any crossing stops the model.
 
-This report quantifies the crossings behind those warnings. For every one of the `r format(n_draws, big.mark = ",")` coefficient draws in the sampling cache it re-predicts the five population-averaged subgroup curves that the PSA uses and reports:
+This report quantifies the crossings behind those warnings. For every one of the `r format(n_draws, big.mark = ",")` retained PSA rows it re-predicts the five population-averaged subgroup curves that the PSA uses and reports:
 
 1. the number and share of draws, and of retained PSA rows, with at least one PFS > OS violation, overall and per curve;
 2. where in the horizon the curves cross and by how much;
@@ -373,7 +376,7 @@ This report quantifies the crossings behind those warnings. For every one of the
 
 ## Two sources of variation in a PSA draw
 
-Each PSA iteration draws one coefficient vector for the OS model (log shape, log baseline rate, and the covariate effects on the log rate) and one for the PFS model, each from the multivariate normal N(estimate, covariance) of its own fit. Within the iteration the OS vector is shared by every patient and every curve, and so is the PFS vector: a patient's rate is the baseline rate multiplied by the exponentiated covariate effects for their age, sex, arm and biomarker values, with a common shape. Patient heterogeneity is integrated out by averaging the 68 patient curves (or those of the subgroup), so only parameter uncertainty varies between draws. The OS and PFS vectors of one iteration are paired by index only: the two models are fitted separately and no covariance between them is estimated, so a slow-hazard PFS draw can be paired with a fast-hazard OS draw. That pairing, not patient heterogeneity, is what produces the crossings.
+Each PSA iteration draws one coefficient vector for the OS model (log shape, log baseline rate, and the covariate effects on the log rate) and one for the PFS model, each from the multivariate normal N(estimate, covariance) of its own fit. Within the iteration the OS vector is shared by every patient and every curve, and so is the PFS vector: a patient's rate is the baseline rate multiplied by the exponentiated covariate effects for their age, sex, arm and biomarker values, with a common shape. Patient heterogeneity is integrated out by averaging the 68 patient curves (or those of the subgroup) with the shared weights from that row's joint biomarker distribution (issue #166), so only parameter uncertainty varies between draws. The OS and PFS vectors of one iteration are paired by index only: the two models are fitted separately and no covariance between them is estimated, so a slow-hazard PFS draw can be paired with a fast-hazard OS draw. That pairing, not patient heterogeneity, is what produces the crossings.
 
 ## Curves examined
 
@@ -404,17 +407,17 @@ For each draw and curve, with $t$ running over the weekly grid (0 to `r time_hor
 - **Violation**: $\Delta_t > 0$ at one or more time points. The number of violating time points, the first and last violating week, and the largest excess are recorded.
 - **PFS-over-OS excess area (before the clamp)**: $\int \Delta_t \, dt$ by the trapezoidal rule on the weekly grid, in patient-years. It is the area between the PFS and OS curves on the stretch where PFS lies on top. After the clamp, PFS is replaced by min(PFS, OS) and the area is zero.
 - **State areas**: the progression-free area $\int \mathrm{PFS}_t\,dt$ and the progressed-state area $\int (\mathrm{OS}_t - \mathrm{PFS}_t)\,dt$ before the clamp (the latter negative on the violating stretch), and $\int \min(\mathrm{PFS}_t, \mathrm{OS}_t)\,dt$ and $\int \max(\mathrm{OS}_t - \mathrm{PFS}_t, 0)\,dt$ after it, in patient-years. The clamp moves exactly the excess area from the progression-free state to the progressed state; OS is untouched.
-- **QALY consequence**: discounted QALYs the raw curves would have produced minus the clamped QALYs. Because the model's cycle sum gives $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ with $u_{np} = `r l_params_base$u_np`$, $u_p = `r l_params_base$u_p`$, $cl = 1/52$ and effect discount weights $w_t$ at `r fmt_pct(l_params_base$dr_effects, 0)` per year. It is the amount by which the raw curves overstate QALYs by counting the excess as progression-free time at the higher utility.
+- **QALY consequence**: discounted QALYs the raw curves would have produced minus the clamped QALYs. Because the model's cycle sum gives $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ using each PSA row's sampled utilities, $cl = 1/52$ and effect discount weights $w_t$ at `r fmt_pct(l_params_base$dr_effects, 0)` per year. It is the amount by which the raw curves overstate QALYs by counting the excess as progression-free time at the higher utility.
 
 Areas use the trapezoidal rule (the convention of `restricted_mean_survival()`); the QALY consequence uses the model's own cycle sum so that it matches `model_fun()` exactly.
 
 ## Mapping draws to PSA rows
 
-The PSA object records, for every retained row, the sampling-cache draw that produced it (`model_idx`; issue #156). Rows whose original draw failed are re-paired with another cached model, so the share of PSA rows affected can differ from the share of draws affected. In the current cache `r n_replaced` of `r format(n_psa_rows, big.mark = ",")` rows were replaced.
+The PSA object records, for every retained row (`sim`), the sampling-cache draw that produced it (`model_idx`; issue #156). Diagnostics retain the row's sampled joint-population weights and utilities and use its `model_idx` for the survival coefficients. Rows whose original draw failed therefore keep their economic parameters while using the replacement model. In the current cache `r n_replaced` of `r format(n_psa_rows, big.mark = ",")` rows were replaced. Counts below refer to these retained PSA rows.
 
 ## Cache provenance
 
-The diagnostics are cached with a fingerprint that contains the sampling-cache fingerprint, the utilities, the discount rate, the horizon and the cycle length, so a regenerated sampling cache forces a regeneration. The PSA cache stores the same sampling fingerprint. Before rendering, this report stops unless all three caches carry the same sampling fingerprint and the diagnostics file is younger than the sampling-cache file.
+The diagnostics are cached with a fingerprint of the sampling-cache fingerprint, the explicit prediction population, the PSA parameter table (including joint weights, utilities and model indices), the base parameters, the discount rate, the horizon and the cycle length. Changes to these inputs force regeneration. The PSA cache stores the same sampling fingerprint. Before rendering, this report stops unless all three caches carry the same sampling fingerprint and the diagnostics file is younger than the sampling-cache file.
 
 ```{r provenance-table}
 knitr::kable(provenance_tbl, booktabs = TRUE, align = c("l", "l", "l"),
@@ -665,9 +668,8 @@ knitr::kable(strategy_level_tbl, booktabs = TRUE, align = c("l", "r", "r", "r"),
              caption = "QALY overstatement of the raw curves by strategy (per patient, discounted)") %>%
   tbl_style(latex_options = "HOLD_position") %>%
   tbl_footnote(general = paste0(
-    "Strategy values weight the positive and negative curves by the canonical ",
-    "prevalence (CRP ", sprintf("%.3f", prev[["crp"]]), ", TMB/BRAF ",
-    sprintf("%.3f", prev[["tmb_braf"]]), "). Mean PSA QALYs are the cached PSA ",
+    "Strategy values use each PSA draw's joint-population weights, marginal ",
+    "prevalences and utilities. Mean PSA QALYs are the cached PSA ",
     "means (clamped curves)."))
 ```
 
@@ -689,7 +691,7 @@ knitr::kable(strategy_inc_tbl, booktabs = TRUE, align = c("l", "r", "r", "r"),
     "look worse relative to standard of care than the raw curves would."))
 ```
 
-The clamp lowers the QALYs of every strategy, because the excess is progression-free time at utility `r l_params_base$u_np` that becomes progressed time at utility `r l_params_base$u_p`. The mean overstatement the raw curves would have produced is `r fmt_num(sq_ctl$mean_diff, 4)` QALYs for standard of care, `r fmt_num(sq_crp$mean_diff, 4)` for the CRP-guided strategy and `r fmt_num(sq_tmb$mean_diff, 4)` for the TMB/BRAF-guided strategy. What matters for the decision is the effect on the increment: the clamp shifts the mean incremental QALYs of the CRP-guided strategy versus standard of care by `r fmt_num(-sq_crp$mean_inc, 4)` and of the TMB/BRAF-guided strategy by `r fmt_num(-sq_tmb$mean_inc, 4)`, with a per-draw range from `r fmt_num(-sq_crp$max_inc, 4)` to `r fmt_num(-sq_crp$min_inc, 4)` for CRP.
+The clamp lowers the QALYs of every strategy, because the excess is progression-free time that becomes progressed time at the lower sampled utility. The mean overstatement the raw curves would have produced is `r fmt_num(sq_ctl$mean_diff, 4)` QALYs for standard of care, `r fmt_num(sq_crp$mean_diff, 4)` for the CRP-guided strategy and `r fmt_num(sq_tmb$mean_diff, 4)` for the TMB/BRAF-guided strategy. What matters for the decision is the effect on the increment: the clamp shifts the mean incremental QALYs of the CRP-guided strategy versus standard of care by `r fmt_num(-sq_crp$mean_inc, 4)` and of the TMB/BRAF-guided strategy by `r fmt_num(-sq_tmb$mean_inc, 4)`, with a per-draw range from `r fmt_num(-sq_crp$max_inc, 4)` to `r fmt_num(-sq_crp$min_inc, 4)` for CRP.
 
 ## Is the clamp why the PSA increments differ from the base case?
 
@@ -742,4 +744,4 @@ The test protocol records that the PSA incremental QALYs of the CRP-guided strat
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 1.2

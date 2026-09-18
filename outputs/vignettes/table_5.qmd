@@ -51,7 +51,7 @@ if (nrow(display_df) > 0) {
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                   full_width = FALSE, font_size = 12) %>%
     footnote(
-      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY."),
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
       general_title = "Notes: "
     )
 } else {

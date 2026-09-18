@@ -188,7 +188,7 @@ plot(
 
 ## Parameters sampled
 
-The PSA samples the health-state utilities, the biomarker prevalences, and the resource-use costs (visit, baseline work-up, quarterly follow-up, end-of-life care), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
+The PSA samples the health-state utilities, the joint biomarker cell probabilities, and the resource-use costs (visit, baseline work-up, quarterly follow-up, end-of-life care), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
 
 The two utilities are sampled jointly rather than independently. The PSA draws a non-negative decrement and sets the progressed utility to the progression-free utility minus that decrement, so no draw can place the progressed utility above the progression-free utility.
 
@@ -289,6 +289,10 @@ create_ceac_plot(psa_obj, wtp_line = WTP)
 
 The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy (week-4 CRP, before the first nivolumab dose), and TMB/BRAF-guided immunotherapy (baseline NGS).
 
+# Common Target Population
+
+Control and both guided strategies are evaluated in the same complete-case trial population (n = `r nrow(l_params_base$prediction_population)`). The base case uses its observed joint CRP and TMB/BRAF distribution. The PSA draws all four joint cell probabilities together using a Dirichlet distribution with the observed cell counts; marginal prevalences are derived from that draw. The age and sex distributions within each cell remain fixed. Every draw's common population weights apply to control and both guided strategies. This represents uncertainty in the trial population, not transport to an external population. The prevalence DSA changes one marginal while retaining the other marginal and joint odds ratio, and reweights every strategy consistently (issue #166).
+
 # Scope Limitations
 
 Three scope decisions bound the interpretation of these results (issue #154).
@@ -305,4 +309,4 @@ Adverse-event costs and disutilities remain outside the modeled scope, as descri
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.2
+**Report version:** 4.3

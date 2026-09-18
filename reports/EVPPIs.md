@@ -1,6 +1,6 @@
 # Value of Information Analysis
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Overview](#overview)
 - [PSA Decision Uncertainty](#psa-decision-uncertainty)
@@ -28,15 +28,15 @@ obtained by adding single-parameter rows, because EVPPI is not additive.
 
 | Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
 |:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 21,467 |      1.416 |                     100.0% |
-| CRP-guided       | EUR 53,593 |      1.418 |                       0.0% |
-| TMB/BRAF-guided  | EUR 62,949 |      1.396 |                       0.0% |
+| Standard of Care | EUR 21,467 |      1.415 |                     100.0% |
+| CRP-guided       | EUR 53,494 |      1.417 |                       0.0% |
+| TMB/BRAF-guided  | EUR 62,072 |      1.392 |                       0.0% |
 
 PSA summary at WTP = EUR 51,000
 
 | Metric           |     Value |
 |:-----------------|----------:|
-| Per-patient EVPI |  EUR 0.00 |
+| Per-patient EVPI |  EUR 0.22 |
 | Population EVPI  | EUR 0.00M |
 
 Expected value of perfect information
@@ -45,9 +45,40 @@ Expected value of perfect information
 
 ## Individual Parameters
 
-    EVPI is EUR 0.00 per patient: standard of care has the highest net monetary benefit in every PSA draw, so the EVPPI of every parameter and group is zero and no rows are stored (analysis script short-circuit).
+| Parameter         |    EVPPI |       SE | Percent of EVPI | Population EVPPI |
+|:------------------|---------:|---------:|----------------:|-----------------:|
+| c_other_visit     | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| c_other_baseline  | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| c_other_follow    | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| c_other_last      | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| u_np              | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| u_decrement       | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| u_p               | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_joint_00        | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_joint_01        | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_joint_10        | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_joint_11        | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_crp             | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| p_tmb_braf        | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| b_crp_rx_os       | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| b_crp_rx_pfs      | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| b_tmb_braf_rx_os  | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+| b_tmb_braf_rx_pfs | EUR 0.00 | EUR 0.00 |            0.0% |        EUR 0.00M |
+
+Single-parameter EVPPI with Monte Carlo standard errors
 
 ## Parameter Groups
+
+| Group | Parameters | EVPPI | SE | Percent of EVPI | Population EVPPI |
+|:---|---:|---:|---:|---:|---:|
+| Resource-use costs | 4 | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| Utilities | 2 | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| Biomarker prevalence | 3 | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| CRP-treatment interaction | 2 | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| TMB/BRAF-treatment interaction | 2 | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| Biomarker-treatment interaction | 4 | EUR 0.00 | EUR 0.25 | 0.0% | EUR 0.00M |
+
+Joint EVPPI of parameter groups with Monte Carlo standard errors
 
 Each group row is one joint estimate for all parameters in the group.
 The resource-use cost group covers the sampled visit, baseline,
@@ -65,7 +96,16 @@ compared with its largest member, allowing for two combined Monte Carlo
 standard errors with a floor of 1% of EVPI. The analysis script stops if
 a group falls short of this bound.
 
-    The group-consistency table is not stored in this EVPPI cache; rerun analysis/11_EVPPIs.R.
+| Group | Group EVPPI | Largest member | Member EVPPI | Shortfall | Tolerance | Result |
+|:---|---:|:---|---:|---:|---:|:---|
+| Resource-use costs | EUR 0.00 | c_other_visit | EUR 0.00 | EUR 0.00 | EUR 0.00 | Pass |
+| Utilities | EUR 0.00 | u_np | EUR 0.00 | EUR 0.00 | EUR 0.00 | Pass |
+| Biomarker prevalence | EUR 0.00 | p_joint_00 | EUR 0.00 | EUR 0.00 | EUR 0.00 | Pass |
+| CRP-treatment interaction | EUR 0.00 | b_crp_rx_os | EUR 0.00 | EUR 0.00 | EUR 0.00 | Pass |
+| TMB/BRAF-treatment interaction | EUR 0.00 | b_tmb_braf_rx_os | EUR 0.00 | EUR 0.00 | EUR 0.00 | Pass |
+| Biomarker-treatment interaction | EUR 0.00 | b_crp_rx_os | EUR 0.00 | EUR 0.00 | EUR 0.51 | Pass |
+
+Group EVPPI versus largest single-parameter member
 
 <img src="EVPPIs_files/figure-commonmark/evppi-plot-1.png"
 style="width:100.0%" data-fig-align="center"
@@ -126,6 +166,6 @@ per-patient standard errors multiplied by the same factor.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
+**Report completed on:** 2026-09-18\
+**Repository:** ben-geisler/METIMMOX-1\
 **Report version:** 5.1

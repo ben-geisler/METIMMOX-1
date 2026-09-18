@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -28,9 +28,20 @@ Single economic model configuration
 | Biomarker         | Prevalence | Source                |
 |:------------------|-----------:|:----------------------|
 | CRP-positive      |      33.8% | METIMMOX-1 trial data |
-| TMB/BRAF-positive |      44.9% | METIMMOX-1 trial data |
+| TMB/BRAF-positive |      44.1% | METIMMOX-1 trial data |
 
 Economic biomarker prevalences
+
+Every economic strategy uses the same complete-case population (n = 68).
+Its observed joint CRP and TMB/BRAF distribution defines the base case.
+In the PSA, the four joint cell probabilities are drawn together from a
+Dirichlet distribution with the observed cell counts, and the two
+marginal prevalences are derived. This represents uncertainty in the
+trial population’s joint biomarker proportions, with age and sex
+distributions within each cell held fixed. The population weights change
+control and both guided strategies together. The one-way prevalence
+analysis rakes this same joint distribution to the changed marginal,
+retaining the other marginal and the joint odds ratio (issue \#166).
 
 # Utilities
 
@@ -142,6 +153,6 @@ Structural model parameters
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.2
+**Report completed on:** 2026-09-18\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.3

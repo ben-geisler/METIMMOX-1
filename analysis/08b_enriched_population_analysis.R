@@ -76,14 +76,16 @@ generate_enriched_control_curves <- function(biomarker_name) {
     stop("Biomarker '", biomarker_name, "' is not an economic biomarker.")
   }
 
-  ctrl_rx <- levels(data_complete$Rx)[1]
+  prediction_population <- l_params_base$prediction_population
+  population_weights <- model_population_weights(l_params_base, prediction_population)
+  ctrl_rx <- levels(prediction_population$Rx)[1]
 
-  pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker_name]])) == 1, ]
+  pos_data <- prediction_population[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1, ]
   if (nrow(pos_data) == 0) {
     stop("No biomarker-positive patients available for ", biomarker_name)
   }
 
-  pos_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+  pos_data$Rx <- factor(ctrl_rx, levels = levels(prediction_population$Rx))
 
   model_os <- models$best_fit$os
   model_pfs <- models$best_fit$pfs
@@ -101,8 +103,8 @@ generate_enriched_control_curves <- function(biomarker_name) {
   pfs_matrix <- extract_all_survival_probabilities(pfs_pred)
 
   list(
-    os = rowMeans(os_matrix, na.rm = TRUE),
-    pfs = rowMeans(pfs_matrix, na.rm = TRUE)
+    os = weighted_survival_average(os_matrix, population_weights[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1]),
+    pfs = weighted_survival_average(pfs_matrix, population_weights[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1])
   )
 }
 
@@ -176,7 +178,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
     # enriched comparison the treated strategy must first find its positives:
     # 1 / prevalence patients are tested per positive identified, so the
     # expected screening cost per identified positive is c_test / prevalence
-    # (canonical full-cohort prevalence from strategies_df). That amount
+    # (prevalence in the shared complete-case target population). That amount
     # replaces the single test in the experimental arm; the control arm
     # (positives on FLOX, which every patient receives under standard of care)
     # carries no test cost. Both quantities are kept as explicit columns.

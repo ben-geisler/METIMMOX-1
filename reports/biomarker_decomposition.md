@@ -1,6 +1,6 @@
 # Biomarker Effect Decomposition
 Ben Geisler
-2026-09-08
+2026-09-17
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -20,7 +20,7 @@ standard-of-care survival curves.
 | Biomarker | Prevalence |
 |:----------|-----------:|
 | CRP       |      33.8% |
-| TMB/BRAF  |      44.9% |
+| TMB/BRAF  |      44.1% |
 
 Economic biomarker prevalences
 
@@ -47,7 +47,7 @@ years and is not an estimate of unrestricted mean survival.
 | TMB/BRAF  | Overall survival          | Control  |  2.19 |
 | TMB/BRAF  | Progression-free survival | Positive |  1.44 |
 | TMB/BRAF  | Progression-free survival | Negative |  1.02 |
-| TMB/BRAF  | Progression-free survival | Weighted |  1.21 |
+| TMB/BRAF  | Progression-free survival | Weighted |  1.20 |
 | TMB/BRAF  | Progression-free survival | Control  |  1.12 |
 
 Restricted mean survival (years) over the 520-week (10-year) horizon,
@@ -70,6 +70,6 @@ economic strategy effect.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
+**Report completed on:** 2026-09-17\
+**Repository:** ben-geisler/METIMMOX-1\
 **Report version:** 4.0

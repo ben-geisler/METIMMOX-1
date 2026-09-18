@@ -1,6 +1,6 @@
 # One-Way Sensitivity Analysis
 Ben Geisler
-2026-09-08
+2026-09-17
 
 - [Overview](#overview)
 - [Parameter Ranges](#parameter-ranges)
@@ -35,8 +35,8 @@ model and the economic strategies returned by `get_strategies()`.
 | c_other_last     | EUR 11,042 | EUR 16,564 |
 | u_np             |      0.584 |      0.876 |
 | u_p              |      0.472 |      0.708 |
-| p_crp            |      0.270 |      0.406 |
-| p_tmb_braf       |      0.359 |      0.539 |
+| p_crp            |      0.271 |      0.406 |
+| p_tmb_braf       |      0.353 |      0.529 |
 
 One-way sensitivity-analysis parameter ranges
 
@@ -45,8 +45,8 @@ One-way sensitivity-analysis parameter ranges
 | Strategy         |       Cost | QALYs |        NMB |
 |:-----------------|-----------:|------:|-----------:|
 | Standard of Care | EUR 21,523 | 1.371 | EUR 48,419 |
-| CRP-guided       | EUR 53,928 | 1.392 | EUR 17,056 |
-| TMB/BRAF-guided  | EUR 63,399 | 1.361 |  EUR 6,005 |
+| CRP-guided       | EUR 53,948 | 1.392 | EUR 17,042 |
+| TMB/BRAF-guided  | EUR 62,685 | 1.360 |  EUR 6,670 |
 
 Base case at WTP = EUR 51,000
 
@@ -62,23 +62,23 @@ decision-relevant quantity and the measure used in Figure 2 (issue
 \#156).
 
     Creating tornado plot for strategy: control ( NMB_diff )
-    Omitting 5 parameter(s) with no effect on NMB_diff for control : c_drug_nivo, c_test_CRP, c_test_NGS, p_crp, p_tmb_braf 
+    Omitting 3 parameter(s) with no effect on NMB_diff for control : c_drug_nivo, c_test_CRP, c_test_NGS
 
     Creating tornado plot for strategy: crp ( NMB_diff )
-    Omitting 2 parameter(s) with no effect on NMB_diff for crp : c_test_NGS, p_tmb_braf 
+    Omitting 1 parameter(s) with no effect on NMB_diff for crp : c_test_NGS
 
     Creating tornado plot for strategy: tmb_braf ( NMB_diff )
-    Omitting 2 parameter(s) with no effect on NMB_diff for tmb_braf : c_test_CRP, p_crp 
+    Omitting 1 parameter(s) with no effect on NMB_diff for tmb_braf : c_test_CRP
 
 <img src="OWSA_files/figure-commonmark/tornado-plots-1.png"
 style="width:100.0%" data-fig-align="center"
 alt="Tornado plots by economic strategy (change in the strategy’s own NMB)" />
 
     Creating tornado plot for strategy: crp ( INMB_diff )
-    Omitting 2 parameter(s) with no effect on INMB_diff for crp : c_test_NGS, p_tmb_braf 
+    Omitting 2 parameter(s) with no effect on INMB_diff for crp : c_other_baseline, c_test_NGS
 
     Creating tornado plot for strategy: tmb_braf ( INMB_diff )
-    Omitting 2 parameter(s) with no effect on INMB_diff for tmb_braf : c_test_CRP, p_crp 
+    Omitting 2 parameter(s) with no effect on INMB_diff for tmb_braf : c_other_baseline, c_test_CRP
 
 <img src="OWSA_files/figure-commonmark/tornado-plots-incremental-1.png"
 style="width:100.0%" data-fig-align="center"
@@ -91,23 +91,23 @@ alt="Incremental tornado plots for the guided strategies (change in NMB versus s
 | Standard of Care |    1 | Post_progression_cost | EUR 19,439 |
 | Standard of Care |    2 | u_np                  | EUR 16,281 |
 | Standard of Care |    3 | u_p                   | EUR 11,696 |
-| CRP-guided       |    1 | u_np                  | EUR 18,463 |
-| CRP-guided       |    2 | Second_sequence       | EUR 16,959 |
+| CRP-guided       |    1 | u_np                  | EUR 18,465 |
+| CRP-guided       |    2 | Second_sequence       | EUR 16,968 |
 | CRP-guided       |    3 | Post_progression_cost | EUR 16,504 |
-| TMB/BRAF-guided  |    1 | Second_sequence       | EUR 18,858 |
-| TMB/BRAF-guided  |    2 | u_np                  | EUR 17,388 |
-| TMB/BRAF-guided  |    3 | Post_progression_cost | EUR 17,240 |
+| TMB/BRAF-guided  |    1 | Second_sequence       | EUR 18,560 |
+| TMB/BRAF-guided  |    2 | u_np                  | EUR 17,342 |
+| TMB/BRAF-guided  |    3 | Post_progression_cost | EUR 17,285 |
 
 Top one-way sensitivity drivers by strategy (strategy’s own NMB)
 
 | Strategy        | Rank | Parameter       | Incremental NMB Range |
 |:----------------|-----:|:----------------|----------------------:|
-| CRP-guided      |    1 | Survival_Model  |            EUR 14,531 |
-| CRP-guided      |    2 | Second_sequence |            EUR 14,507 |
-| CRP-guided      |    3 | c_drug_nivo     |            EUR 13,221 |
-| TMB/BRAF-guided |    1 | Second_sequence |            EUR 16,406 |
-| TMB/BRAF-guided |    2 | c_drug_nivo     |            EUR 16,191 |
-| TMB/BRAF-guided |    3 | p_tmb_braf      |            EUR 14,764 |
+| CRP-guided      |    1 | Survival_Model  |            EUR 14,534 |
+| CRP-guided      |    2 | Second_sequence |            EUR 14,516 |
+| CRP-guided      |    3 | c_drug_nivo     |            EUR 13,229 |
+| TMB/BRAF-guided |    1 | Second_sequence |            EUR 16,108 |
+| TMB/BRAF-guided |    2 | c_drug_nivo     |            EUR 15,899 |
+| TMB/BRAF-guided |    3 | p_tmb_braf      |            EUR 15,675 |
 
 Top drivers of incremental NMB versus standard of care (decision
 sensitivity)
@@ -117,8 +117,8 @@ sensitivity)
 |  | Strategy | Base NMB (selected pair) | Lowest NMB | Highest NMB | Range |
 |:---|:---|---:|---:|---:|---:|
 | control.Survival_Model | Standard of Care | EUR 48,419 (gamma) | EUR 43,082 (lognormal) | EUR 54,228 (exponential) | EUR 11,146 |
-| crp.Survival_Model | CRP-guided | EUR 17,056 (gamma) | EUR 15,233 (gompertz) | EUR 23,638 (exponential) | EUR 8,406 |
-| tmb_braf.Survival_Model | TMB/BRAF-guided | EUR 6,005 (gamma) | EUR 4,922 (gompertz) | EUR 13,855 (exponential) | EUR 8,933 |
+| crp.Survival_Model | CRP-guided | EUR 17,042 (gamma) | EUR 15,218 (gompertz) | EUR 23,627 (exponential) | EUR 8,409 |
+| tmb_braf.Survival_Model | TMB/BRAF-guided | EUR 6,670 (gamma) | EUR 5,648 (gompertz) | EUR 14,448 (exponential) | EUR 8,800 |
 
 Structural sensitivity to the parametric survival family (7 of 9
 candidate families evaluated; same family for OS and PFS)
@@ -176,13 +176,13 @@ analysis above, not in the value-of-information results.
 
 | Scenario | NMB SoC | NMB CRP-guided | NMB TMB/BRAF-guided | Optimal |
 |:---|---:|---:|---:|:---|
-| Base case | EUR 48,419 | EUR 17,056 | EUR 6,005 | SoC |
-| Discount rate 0% | EUR 51,372 | EUR 19,632 | EUR 8,411 | SoC |
-| Discount rate 8% | EUR 45,851 | EUR 14,857 | EUR 3,962 | SoC |
-| Time horizon 5 years | EUR 47,243 | EUR 15,755 | EUR 4,670 | SoC |
-| Time horizon 20 years | EUR 48,448 | EUR 17,093 | EUR 6,044 | SoC |
-| Post-progression cost EUR 5,000 per quarter | EUR 28,980 | EUR 552 | -EUR 11,235 | SoC |
-| No second treatment sequence | EUR 50,871 | EUR 34,015 | EUR 24,862 | SoC |
+| Base case | EUR 48,419 | EUR 17,042 | EUR 6,670 | SoC |
+| Discount rate 0% | EUR 51,372 | EUR 19,618 | EUR 9,080 | SoC |
+| Discount rate 8% | EUR 45,851 | EUR 14,843 | EUR 4,624 | SoC |
+| Time horizon 5 years | EUR 47,243 | EUR 15,740 | EUR 5,344 | SoC |
+| Time horizon 20 years | EUR 48,448 | EUR 17,079 | EUR 6,709 | SoC |
+| Post-progression cost EUR 5,000 per quarter | EUR 28,980 | EUR 538 | -EUR 10,615 | SoC |
+| No second treatment sequence | EUR 50,871 | EUR 34,010 | EUR 25,230 | SoC |
 
 Net monetary benefit under structural scenarios at WTP = EUR 51,000
 (discount rate applies to costs and QALYs)
@@ -201,6 +201,6 @@ drug and test costs.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
-**Repository:** ben-geisler/METIMMOX-1  
+**Report completed on:** 2026-09-17\
+**Repository:** ben-geisler/METIMMOX-1\
 **Report version:** 4.3

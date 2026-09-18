@@ -60,7 +60,7 @@ required_model_vars <- c(
   "Age", "sex", "Rx", get_biomarkers(),
   "OSwk", "Death", "PFSwk", "Progression"
 )
-data_complete <- data[complete.cases(data[, required_model_vars]), ]
+data_complete <- economic_prediction_population(data)
 rm(required_model_vars)
 
 # ===============================================================================

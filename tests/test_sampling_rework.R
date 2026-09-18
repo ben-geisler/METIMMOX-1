@@ -11,7 +11,9 @@ base_values <- list(
   c_other_visit = 700, c_other_baseline = 800,
   c_other_follow = 900, c_other_last = 1000,
   u_np = 0.73, u_p = 0.59, u_decrement = 0.14,
-  p_crp = 0.40, p_tmb_braf = 0.30
+  p_crp = 0.40, p_tmb_braf = 0.30,
+  p_joint_00 = 0.42, p_joint_01 = 0.18, p_joint_10 = 0.28, p_joint_11 = 0.12,
+  joint_counts = c("00" = 42, "01" = 18, "10" = 28, "11" = 12)
 )
 config <- configure_parameter_distributions(base_values)
 
@@ -20,7 +22,7 @@ config <- configure_parameter_distributions(base_values)
 # prevalences. u_p is a derived column, not a draw.
 expected_psa <- c(
   "c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last",
-  "u_np", "u_decrement", "u_p", "p_crp", "p_tmb_braf"
+  "u_np", "u_decrement", "u_p", "p_joint_00", "p_joint_01", "p_joint_10", "p_joint_11", "p_crp", "p_tmb_braf"
 )
 fixed_prices <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
                   "c_test_CRP", "c_test_NGS")
@@ -31,7 +33,7 @@ stopifnot(
   # Groups describe what is sampled: derived columns are excluded because they
   # are collinear with the parameters they come from.
   setequal(unlist(config$groups, use.names = FALSE),
-           setdiff(expected_psa, "u_p")),
+           setdiff(expected_psa, c("u_p", "p_joint_11", "p_crp", "p_tmb_braf"))),
   identical(config$groups$utilities, c("u_np", "u_decrement")),
   # Only one cost group is still sampled, so "all_costs" would duplicate it.
   is.null(config$groups$all_costs),
@@ -99,6 +101,7 @@ stopifnot(
   )
 )
 
+test_env$weighted_survival_average <- function(curves, weights) as.vector(curves %*% (weights / sum(weights)))
 test_env$extract_all_survival_probabilities <- function(prediction) {
   do.call(cbind, lapply(prediction$.pred, function(x) x$.pred_survival))
 }

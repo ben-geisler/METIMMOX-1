@@ -57,15 +57,14 @@ flexsurv_design_matrix <- function(model, newdata) {
 #' @param newdata Patients to predict for (their `Rx` already set).
 #' @param times Time points (weeks).
 #' @return Numeric vector of length `length(times)`: mean survival over patients.
-direct_gamma_pop_avg <- function(model, draw, newdata, times) {
+direct_gamma_pop_avg <- function(model, draw, newdata, times, weights = rep(1, nrow(newdata))) {
   if (model$dlist$name != "gamma") {
     stop("direct_gamma_pop_avg() supports the gamma distribution only; got ",
          model$dlist$name)
   }
   X <- flexsurv_design_matrix(model, newdata)
   keep <- stats::complete.cases(X)
-  X <- X[keep, , drop = FALSE]
-  if (nrow(X) == 0) stop("No complete patients to predict for")
+  if (!all(keep)) stop("The explicit prediction population contains incomplete predictors.")
   shape <- exp(draw[["shape"]])
   eta <- as.vector(draw[["rate"]] + X %*% draw[colnames(X)])
   rate <- exp(eta)
@@ -73,7 +72,7 @@ direct_gamma_pop_avg <- function(model, draw, newdata, times) {
   surv <- outer(rate, times, function(r, t) {
     stats::pgamma(t, shape = shape, rate = r, lower.tail = FALSE)
   })
-  colMeans(surv)
+  weighted_survival_average(t(surv), weights)
 }
 
 #' Subgroup definitions mirroring model_fun() / script 06
@@ -81,12 +80,13 @@ direct_gamma_pop_avg <- function(model, draw, newdata, times) {
 #' @param data_complete Complete-case cohort.
 #' @param biomarkers Economic biomarker names.
 #' @return Named list of `list(data, rx, label, strategy, subgroup)`.
-psa_violation_subgroups <- function(data_complete, biomarkers = get_biomarkers()) {
+psa_violation_subgroups <- function(data_complete, biomarkers = get_biomarkers(),
+                                    weights = rep(1 / nrow(data_complete), nrow(data_complete))) {
   rx_levels <- levels(data_complete$Rx)
   control_strategy <- get_control_strategy()
   out <- list()
   out[[control_strategy]] <- list(
-    data = data_complete, rx = rx_levels[1],
+    data = data_complete, weights = weights, rx = rx_levels[1],
     label = "Standard of care (control)", strategy = control_strategy,
     subgroup = "control"
   )
@@ -94,12 +94,12 @@ psa_violation_subgroups <- function(data_complete, biomarkers = get_biomarkers()
     status <- as.numeric(as.character(data_complete[[bm]]))
     disp <- unname(strategy_display_name(bm))
     out[[paste0(bm, "_pos")]] <- list(
-      data = data_complete[status == 1, , drop = FALSE], rx = rx_levels[2],
+      data = data_complete[status == 1, , drop = FALSE], weights = weights[status == 1], rx = rx_levels[2],
       label = paste0(disp, " positive (experimental)"), strategy = bm,
       subgroup = "positive"
     )
     out[[paste0(bm, "_neg")]] <- list(
-      data = data_complete[status == 0, , drop = FALSE], rx = rx_levels[1],
+      data = data_complete[status == 0, , drop = FALSE], weights = weights[status == 0], rx = rx_levels[1],
       label = paste0(disp, " negative (control)"), strategy = bm,
       subgroup = "negative"
     )
@@ -121,8 +121,8 @@ psa_draw_subgroup_curves <- function(component, idx, subgroups, times) {
     nd <- sg$data
     nd$Rx <- factor(sg$rx, levels = levels(sg$data$Rx))
     list(
-      os = direct_gamma_pop_avg(component$original_os, os_draw, nd, times),
-      pfs = direct_gamma_pop_avg(component$original_pfs, pfs_draw, nd, times)
+      os = direct_gamma_pop_avg(component$original_os, os_draw, nd, times, sg$weights),
+      pfs = direct_gamma_pop_avg(component$original_pfs, pfs_draw, nd, times, sg$weights)
     )
   })
 }
@@ -140,7 +140,7 @@ psa_draw_subgroup_curves <- function(component, idx, subgroups, times) {
 #' @return Data frame of max absolute differences per draw, curve and outcome.
 validate_direct_curves <- function(component, subgroups, data_original,
                                    data_complete, times, draws = 1:3,
-                                   tol = 1e-8) {
+                                   tol = 1e-8, psa_params = NULL, params = NULL) {
   control_strategy <- get_control_strategy()
   rows <- list()
   add_row <- function(idx, curve, outcome, ref, direct) {
@@ -150,18 +150,27 @@ validate_direct_curves <- function(component, subgroups, data_original,
     )
   }
   for (idx in draws) {
-    direct <- psa_draw_subgroup_curves(component, idx, subgroups, times)
+    weights <- rep(1 / nrow(data_complete), nrow(data_complete))
+    model_idx <- idx
+    if (!is.null(psa_params)) {
+      p <- params
+      for (nm in intersect(names(psa_params), names(p))) p[[nm]] <- psa_params[[nm]][idx]
+      weights <- model_population_weights(p, data_complete)
+      model_idx <- psa_params$model_idx[idx]
+    }
+    draw_subgroups <- psa_violation_subgroups(data_complete, weights = weights)
+    direct <- psa_draw_subgroup_curves(component, model_idx, draw_subgroups, times)
     for (outcome in c("os", "pfs")) {
       ref_control <- generate_psa_population_averaged_predictions(
         component, biomarker_name = NULL, outcome = outcome,
-        sample_idx = idx, data_original = data_complete, time_points = times
+        sample_idx = model_idx, data_original = data_complete, time_points = times, weights = weights
       )
       add_row(idx, control_strategy, outcome, ref_control,
               direct[[control_strategy]][[outcome]])
       for (bm in get_biomarkers()) {
         ref <- generate_psa_population_averaged_predictions(
           component, biomarker_name = bm, outcome = outcome,
-          sample_idx = idx, data_original = data_original, time_points = times
+          sample_idx = model_idx, data_original = data_complete, time_points = times, weights = weights
         )
         add_row(idx, paste0(bm, "_pos"), outcome, ref$positive,
                 direct[[paste0(bm, "_pos")]][[outcome]])
@@ -247,12 +256,13 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
                                              data_original, params,
                                              time_horizon,
                                              cache_path = pfs_os_violation_cache_path(),
-                                             n_draws = NULL, verbose = TRUE) {
+                                             n_draws = NULL, verbose = TRUE,
+                                             psa_params = NULL) {
   component <- get_joint_sampling_models(sampling_models)
   if (is.null(component$draws)) {
     stop("The sampling cache is not a multivariate-normal draw cache (issue #156)")
   }
-  n_total <- nrow(component$draws$os)
+  n_total <- if (is.null(psa_params)) nrow(component$draws$os) else nrow(psa_params)
   if (is.null(n_draws)) n_draws <- n_total
   n_draws <- as.integer(n_draws)
   if (n_draws < 1 || n_draws > n_total) stop("n_draws must be in 1..", n_total)
@@ -264,7 +274,9 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
     sampling_fingerprint = sampling_models$fingerprint,
     n_draws = n_draws, time_horizon = time_horizon, cl = cl,
     u_np = params$u_np, u_p = params$u_p, dr_effects = params$dr_effects,
-    version = "pfs_os_violations_v1"
+    prediction_population = cache_fingerprint(data_complete),
+    psa_parameters = cache_fingerprint(psa_params),
+    version = "pfs_os_violations_v2"
   )
   fingerprint <- cache_fingerprint(fp_inputs)
 
@@ -278,8 +290,8 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
   }
 
   subgroups <- psa_violation_subgroups(data_complete)
-  validation <- validate_direct_curves(component, subgroups, data_original,
-                                       data_complete, times)
+  validation <- validate_direct_curves(component, subgroups, data_complete,
+    data_complete, times, draws = seq_len(min(3L, n_draws)), psa_params = psa_params, params = params)
   curve_names <- names(subgroups)
   n_t <- length(times)
   viol_count <- matrix(0, nrow = length(curve_names), ncol = n_t,
@@ -291,14 +303,24 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
   k <- 0L
   t0 <- Sys.time()
   for (idx in seq_len(n_draws)) {
-    curves <- psa_draw_subgroup_curves(component, idx, subgroups, times)
+    draw_params <- params
+    model_idx <- draw_id <- idx
+    draw_subgroups <- subgroups
+    if (!is.null(psa_params)) {
+      for (nm in intersect(names(psa_params), names(draw_params))) draw_params[[nm]] <- psa_params[[nm]][idx]
+      draw_subgroups <- psa_violation_subgroups(data_complete,
+        weights = model_population_weights(draw_params, data_complete))
+      model_idx <- psa_params$model_idx[idx]
+      draw_id <- psa_params$sim[idx]
+    }
+    curves <- psa_draw_subgroup_curves(component, model_idx, draw_subgroups, times)
     for (cn in curve_names) {
       os <- curves[[cn]]$os
       pfs <- curves[[cn]]$pfs
       m <- pfs_os_violation_metrics(os, pfs, times, cl, v_dw_e,
-                                    params$u_np, params$u_p)
+                                    draw_params$u_np, draw_params$u_p)
       k <- k + 1L
-      rows[[k]] <- cbind(data.frame(draw = idx, curve = cn,
+      rows[[k]] <- cbind(data.frame(draw = draw_id, model_idx = model_idx, curve = cn,
                                     stringsAsFactors = FALSE), m)
       if (m$violated) {
         excess <- pmax(pfs - os, 0)
@@ -306,7 +328,7 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
         excess_sum[cn, ] <- excess_sum[cn, ] + excess
         if (m$excess_area_years > worst_area[[cn]]) {
           worst_area[[cn]] <- m$excess_area_years
-          worst[[cn]] <- data.frame(draw = idx, curve = cn, week = times,
+          worst[[cn]] <- data.frame(draw = draw_id, curve = cn, week = times,
                                     os = os, pfs = pfs,
                                     stringsAsFactors = FALSE)
         }

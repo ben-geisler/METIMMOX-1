@@ -9,6 +9,7 @@
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(survival, flexsurv, dplyr, tidyr)
+source(here::here("R/prediction_population.R"))
 
 # ===============================================================================
 # POPULATION AVERAGING FUNCTIONS
@@ -150,172 +151,35 @@ sampled_survival_models <- function(component, idx) {
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,
                                                      data_complete, time_points,
-                                                     prevalences,
-                                                     quiet = FALSE) {
-
-  # Extract treatment level references
-  exp_rx <- levels(data_complete$Rx)[2]  # Experimental treatment
-  ctrl_rx <- levels(data_complete$Rx)[1]  # Control treatment
-
-  # Initialize predictions list
-  predictions <- list()
-  control_strategy <- get_control_strategy()
-
-  # -------------------------------------------------------------------------
-  # CONTROL STRATEGY: All patients receive standard of care
-  # -------------------------------------------------------------------------
-
-  if (!quiet) cat("Generating population-averaged predictions for control strategy...\n")
-
-  # Create dataset with all patients assigned to control treatment
-  control_data <- data_complete
-  control_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
-
-  # Predict for all patients
-  os_pred_control <- predict(models$os, newdata = control_data,
-                              type = "survival", times = time_points)
-  pfs_pred_control <- predict(models$pfs, newdata = control_data,
-                               type = "survival", times = time_points)
-
-  # Extract and average across population
-  os_matrix <- extract_all_survival_probabilities(os_pred_control)
-  pfs_matrix <- extract_all_survival_probabilities(pfs_pred_control)
-
-  control_os <- rowMeans(os_matrix, na.rm = TRUE)
-  control_pfs <- rowMeans(pfs_matrix, na.rm = TRUE)
-
-  predictions[[control_strategy]] <- list(
-    strategy = control_strategy,
-    os = control_os,
-    pfs = control_pfs
-  )
-
-  # -------------------------------------------------------------------------
-  # BIOMARKER-GUIDED STRATEGIES: Treatment assigned by biomarker status
-  # -------------------------------------------------------------------------
-
-  # Determine which economic biomarkers to process
-  biomarkers_to_predict <- get_biomarkers()
-
-  # Prevalence is an economic-model input and must use the same canonical
-  # cohort definition as l_params_base. Do not infer it from data_complete,
-  # which is restricted to complete cases for survival-model prediction.
-  if (is.null(names(prevalences)) ||
-      !all(biomarkers_to_predict %in% names(prevalences))) {
-    stop("prevalences must be a named vector containing: ",
-         paste(biomarkers_to_predict, collapse = ", "))
+                                                     prevalences = NULL,
+                                                     quiet = FALSE,
+                                                     weights = NULL) {
+  # The explicit population is shared by every counterfactual treatment path.
+  population <- data_complete
+  if (is.null(weights)) weights <- target_population_weights(population, prevalences)
+  if (length(weights) != nrow(population)) stop("Population weights have the wrong length.")
+  control <- get_control_strategy()
+  levels_rx <- levels(population$Rx)
+  predict_part <- function(rows, rx) {
+    if (!length(rows)) stop("Both biomarker subgroups are required for prediction.")
+    newdata <- population[rows, , drop = FALSE]
+    newdata$Rx <- factor(rx, levels = levels_rx)
+    list(rows = rows,
+      os = extract_all_survival_probabilities(predict(models$os, newdata = newdata,
+        type = "survival", times = time_points)),
+      pfs = extract_all_survival_probabilities(predict(models$pfs, newdata = newdata,
+        type = "survival", times = time_points)))
   }
-  canonical_prevalences <- as.numeric(prevalences[biomarkers_to_predict])
-  names(canonical_prevalences) <- biomarkers_to_predict
-  if (any(!is.finite(canonical_prevalences)) ||
-      any(canonical_prevalences < 0 | canonical_prevalences > 1)) {
-    stop("All canonical prevalences must be finite probabilities between 0 and 1.")
+  curves <- setNames(list(predict_part(seq_len(nrow(population)), levels_rx[1])), control)
+  for (biomarker in get_biomarkers()) {
+    status <- as.numeric(as.character(population[[biomarker]]))
+    curves[[biomarker]] <- list(positive = predict_part(which(status == 1), levels_rx[2]),
+                                negative = predict_part(which(status == 0), levels_rx[1]))
   }
-
-  # Loop through each biomarker strategy
-  for (biomarker_name in biomarkers_to_predict) {
-
-    if (!quiet) {
-      cat("Generating population-averaged predictions for", biomarker_name, "strategy...\n")
-    }
-
-    # Get strategy info
-    strategy_info <- strategies_df[strategies_df$id == biomarker_name, ]
-
-    # -----------------------------------------------------------------------
-    # BIOMARKER-POSITIVE SUBGROUP: Receive experimental treatment
-    # -----------------------------------------------------------------------
-
-    # Subset to biomarker-positive patients
-    # Use explicit type conversion for robustness (works with factor, character, or numeric)
-    biomarker_pos_data <- data_complete[as.numeric(as.character(data_complete[[biomarker_name]])) == 1, ]
-
-    if (nrow(biomarker_pos_data) > 0) {
-      # Assign experimental treatment
-      biomarker_pos_data$Rx <- factor(exp_rx, levels = levels(data_complete$Rx))
-
-      # Predict for all biomarker-positive patients
-      os_pred_pos <- predict(models$os, newdata = biomarker_pos_data,
-                             type = "survival", times = time_points)
-      pfs_pred_pos <- predict(models$pfs, newdata = biomarker_pos_data,
-                              type = "survival", times = time_points)
-
-      # Extract and average
-      os_matrix_pos <- extract_all_survival_probabilities(os_pred_pos)
-      pfs_matrix_pos <- extract_all_survival_probabilities(pfs_pred_pos)
-
-      biomarker_pos_os <- rowMeans(os_matrix_pos, na.rm = TRUE)
-      biomarker_pos_pfs <- rowMeans(pfs_matrix_pos, na.rm = TRUE)
-
-    } else {
-      warning(paste("No biomarker-positive patients for", biomarker_name))
-      biomarker_pos_os <- rep(NA, length(time_points))
-      biomarker_pos_pfs <- rep(NA, length(time_points))
-    }
-
-    # -----------------------------------------------------------------------
-    # BIOMARKER-NEGATIVE SUBGROUP: Receive control treatment
-    # -----------------------------------------------------------------------
-
-    # Subset to biomarker-negative patients
-    # Use explicit type conversion for robustness (works with factor, character, or numeric)
-    biomarker_neg_data <- data_complete[as.numeric(as.character(data_complete[[biomarker_name]])) == 0, ]
-
-    if (nrow(biomarker_neg_data) > 0) {
-      # Assign control treatment
-      biomarker_neg_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
-
-      # Predict for all biomarker-negative patients
-      os_pred_neg <- predict(models$os, newdata = biomarker_neg_data,
-                             type = "survival", times = time_points)
-      pfs_pred_neg <- predict(models$pfs, newdata = biomarker_neg_data,
-                              type = "survival", times = time_points)
-
-      # Extract and average
-      os_matrix_neg <- extract_all_survival_probabilities(os_pred_neg)
-      pfs_matrix_neg <- extract_all_survival_probabilities(pfs_pred_neg)
-
-      biomarker_neg_os <- rowMeans(os_matrix_neg, na.rm = TRUE)
-      biomarker_neg_pfs <- rowMeans(pfs_matrix_neg, na.rm = TRUE)
-
-    } else {
-      warning(paste("No biomarker-negative patients for", biomarker_name))
-      biomarker_neg_os <- rep(NA, length(time_points))
-      biomarker_neg_pfs <- rep(NA, length(time_points))
-    }
-
-    # -----------------------------------------------------------------------
-    # POPULATION-WEIGHTED AVERAGE: Combine using prevalence
-    # -----------------------------------------------------------------------
-
-    # Use the canonical full-cohort prevalence supplied by the caller.
-    prevalence <- canonical_prevalences[[biomarker_name]]
-
-    # Weighted average
-    weighted_os <- prevalence * biomarker_pos_os + (1 - prevalence) * biomarker_neg_os
-    weighted_pfs <- prevalence * biomarker_pos_pfs + (1 - prevalence) * biomarker_neg_pfs
-
-    # Store results in same format as current predict_strategy() output
-    predictions[[biomarker_name]] <- list(
-      strategy = biomarker_name,
-      os = weighted_os,
-      pfs = weighted_pfs,
-      biomarker_positive = list(
-        os = biomarker_pos_os,
-        pfs = biomarker_pos_pfs
-      ),
-      biomarker_negative = list(
-        os = biomarker_neg_os,
-        pfs = biomarker_neg_pfs
-      ),
-      prevalence = prevalence
-    )
-  }
-
-  if (!quiet) cat("Population-averaged predictions complete for all strategies.\n")
-
-  return(predictions)
+  if (!quiet) cat("Predicted every strategy in one target population (n =", nrow(population), ").\n")
+  standardize_population_curves(curves, population, weights)
 }
+
 
 # Generate the five endpoint-specific curves needed during joint distribution
 # selection. Keeping OS and PFS prediction separate lets the selection loop

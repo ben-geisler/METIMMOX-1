@@ -45,6 +45,7 @@ mock_env <- new.env(parent = baseenv())
 # Since issue #156 the prediction helper resolves the draw through the cache
 # accessor; a legacy-shaped sample list is returned as-is here.
 mock_env$sampled_survival_models <- function(component, idx) component$samples[[idx]]
+mock_env$weighted_survival_average <- function(curves, weights) as.vector(curves %*% (weights / sum(weights)))
 mock_env$extract_all_survival_probabilities <- function(prediction) {
   do.call(cbind, lapply(prediction$.pred, function(x) x$.pred_survival))
 }

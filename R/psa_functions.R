@@ -11,6 +11,7 @@ generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
 
   # Make draws independent of RNG use in earlier analysis or cache branches.
   set.seed(seed)
+  joint_draws <- NULL
 
   # Sample from each parameter distribution
   for (param_name in names(param_distributions)) {
@@ -19,6 +20,15 @@ generate_psa_samples <- function(param_distributions, n_sim, seed = 123L) {
     if (dist_info$dist == "derived") {
       # Filled in below from the parameters it is derived from (issue #154).
       next
+    } else if (dist_info$dist == "dirichlet") {
+      if (is.null(joint_draws)) {
+        # Bayesian-bootstrap masses of the observed joint biomarker cells:
+        # Dirichlet(n_00, n_01, n_10, n_11). Marginals are derived together.
+        joint_draws <- vapply(dist_info$alpha, function(shape)
+          rgamma(n_sim, shape = shape, rate = 1), numeric(n_sim))
+        joint_draws <- joint_draws / rowSums(joint_draws)
+      }
+      samples[[param_name]] <- joint_draws[, dist_info$component]
     } else if (dist_info$dist == "lnorm") {
       samples[[param_name]] <- rlnorm(n_sim, 
                                       meanlog = dist_info$meanlog, 
