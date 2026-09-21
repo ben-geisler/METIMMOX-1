@@ -1,7 +1,7 @@
 # ===============================================================================
 # PFS > OS ordering violations in the PSA: per-draw diagnostics
 #
-# The PSA draws the OS and PFS coefficient vectors independently (issue #156),
+# The PSA draws the OS and PFS coefficient vectors jointly (issue #159),
 # so a sampled pair can put PFS above OS on part of the weekly grid. model_fun()
 # then clamps PFS to OS (pmin) for that curve and emits a
 # `survival_ordering_warning`; 10_PSA.R only counts those warnings, it does not

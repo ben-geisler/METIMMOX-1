@@ -3,6 +3,7 @@
 
 source("R/parameter_distributions.R")  # apply_derived_psa_parameters()
 source("R/psa_functions.R")
+source("R/joint_survival_sampling.R")
 
 param_distributions <- list(
   lognormal = list(dist = "lnorm", meanlog = 0, sdlog = 0.2),
@@ -65,6 +66,11 @@ mock_fit <- function(...) {
   )
 }
 sampling_env$flexsurvreg <- mock_fit
+# Isolate the normal draw RNG from covariance estimation in this unit test;
+# the paired-refit estimator is exercised in test_joint_survival_sampling.R.
+sampling_env$estimate_joint_survival_covariance <- function(...) {
+  list(covariance = diag(rep(c(0.01, 0.04, 0.02), 2)))
+}
 
 sampling_args <- list(
   formula_os = response ~ predictor,
@@ -92,7 +98,7 @@ stopifnot(
   !identical(sampling_reference$draws, sampling_other_seed$draws),
   identical(dim(sampling_reference$draws$os), c(5L, 3L)),
   identical(sampling_reference$seed, 123L),
-  identical(sampling_reference$method, "mvn_v1"),
+  identical(sampling_reference$method, "mvn_joint_v2"),
   identical(sampling_reference$n_failed, 0L)
 )
 

@@ -153,6 +153,6 @@ Structural model parameters
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-18\
-**Repository:** ben-geisler/METIMMOX-1\
+**Report completed on:** 2026-09-18  
+**Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.3

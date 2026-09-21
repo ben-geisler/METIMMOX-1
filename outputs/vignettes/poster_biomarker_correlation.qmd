@@ -300,7 +300,7 @@ kable(cea_display,
 #
 # Survival uncertainty follows the pipeline (issue #156, reused here per issue
 # #157): multivariate-normal coefficient draws around each fitted model, OS and
-# PFS drawn independently. The joint-model draws ARE the repository sampling
+# PFS drawn jointly with paired-bootstrap dependence (issue #159). The joint-model draws ARE the repository sampling
 # cache, aligned to the cached economic-parameter draws through model_idx, so
 # panel B is the repository PSA at biosimilar pricing. The single-biomarker
 # models are drawn with the same sampler (sample_survival_coefficients() from
@@ -309,8 +309,7 @@ kable(cea_display,
 # curves. Patient curves are predicted and averaged with shared weights on the
 # materialised sampled models and each draw goes through model_fun() in PSA
 # mode, which caps a PFS > OS crossing instead of aborting (the deterministic
-# path stops on any crossing; with independent OS and PFS draws about half of
-# the draws cross somewhere on the grid, as in the repository PSA).
+# path stops on any crossing; joint coefficient draws can still cross).
 #
 # Shown at biosimilar nivolumab pricing, where the decision is a close call and
 # the modelling choice is economically visible. The poster-only TLR override
@@ -424,7 +423,7 @@ ceac_caption <- sprintf(paste(
   "Right: both from the joint, correlation-adjusted economic model.",
   "The standard-of-care curve is the joint model with treatment set to control in both panels, so the panels differ only in the guided-strategy curves.",
   "At EUR %s per QALY (dotted line) the probability of being optimal is: standard of care %s (single) vs %s (joint); CRP-guided %s vs %s; TMB/BRAF-guided %s vs %s.",
-  "Survival uncertainty: multivariate-normal coefficient draws (n = %d; joint model from the repository sampling cache, single-biomarker models with the same sampler), OS and PFS drawn independently as in the repository PSA; PFS > OS crossings are capped in PSA mode."),
+  "Survival uncertainty: joint multivariate-normal OS/PFS coefficient draws with paired-bootstrap dependence (n = %d; joint model from the repository sampling cache, single-biomarker models with the same sampler); PFS > OS crossings are capped in PSA mode."),
   format(WTP, big.mark = ","), pct(panel_single, soc_lab), pct(panel_joint, soc_lab),
   pct(panel_single, crp_lab), pct(panel_joint, crp_lab), pct(panel_single, tmb_lab), pct(panel_joint, tmb_lab), N)
 ```

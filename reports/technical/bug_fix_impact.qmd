@@ -98,8 +98,16 @@ for (iss in paired_issues) {
 }
 # Cumulative: earliest baseline -> latest fixed (only when >1 paired issue).
 if (length(paired_issues) > 1) {
-  first_iss <- paired_issues[1]
-  last_iss  <- paired_issues[length(paired_issues)]
+  # Issue numbers do not encode implementation order (#159 follows #166).
+  # Use saved timestamps, which also survive checkout/copying of the files.
+  snapshot_time <- function(issue, status) {
+    snap <- load_snapshot(snapshot_file_for(issue, status), snapshots_dir)
+    as.numeric(as.POSIXct(snap$metadata$timestamp))
+  }
+  first_iss <- paired_issues[which.min(vapply(paired_issues, snapshot_time,
+                                            numeric(1), status = "baseline"))]
+  last_iss <- paired_issues[which.max(vapply(paired_issues, snapshot_time,
+                                           numeric(1), status = "fixed"))]
   comparisons[[length(comparisons) + 1]] <- make_comparison(
     paste0("Cumulative: issue ", first_iss, " baseline vs issue ",
            last_iss, " fixed"),
@@ -278,8 +286,12 @@ This report compares baseline and fixed single-model snapshots for each bug-fix 
 
 Issue #166 aligns every economic strategy to the same 68-patient complete-case target. Prevalence uncertainty now samples joint biomarker cell masses and reweights control and guided strategies together. Both snapshots precede the requested fix commit and therefore carry HEAD `96d0710`; their distinct PSA fingerprints and result hashes identify the original and repaired calculations. Sampling, PSA, EVPPI and scenario caches were regenerated for the fix. The identical-treatment population tests and all 296 report/cache contracts pass; the existing PSA-versus-base-case numerical alignment criterion remains a failure, documented in `AGENTS.md`.
 
+Issue #159 implements the first proposed fix: paired patient bootstrap fits estimate OS/PFS coefficient dependence for joint normal draws, retaining both fitted marginal covariance matrices. The deterministic results are unchanged. Crossings fell from 2,422/5,000 draws (48.44%) to 1,198/5,000 (23.96%), and EVPI at EUR 51,000 fell from EUR 0.22 to zero. The CRP incremental PSA mean changed from 0.00175 to 0.00628 QALYs, versus a deterministic increment of 0.02054. Removing all uncertainty reproduces every deterministic result, but the original five-SE numerical alignment criterion still fails for four of six level comparisons. No draws were recentered and no threshold was relaxed; nonlinear outcome averaging remains distinct from evaluation at fitted coefficients. See [the joint sampling specification](joint_survival_sampling.md).
+
+The #159 baseline and fixed snapshots both precede the requested commit and carry HEAD `6ca19ab`, with distinct PSA fingerprints and result hashes. All active generated caches were cleared and rebuilt, and reports and publication outputs were rendered before the fixed snapshot. The cumulative comparison uses saved snapshot timestamps, because #159 was implemented after #166.
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.3
+**Report version:** 4.4

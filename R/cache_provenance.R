@@ -22,11 +22,11 @@ cache_runtime_info <- function() {
 calculation_identity <- function(stage = c("psa", "sampling", "evppi", "scenario")) {
   stage <- match.arg(stage)
   files <- switch(stage,
-    sampling = c("analysis/06_sampling.R", "R/model_configs.R"),
+    sampling = c("analysis/06_sampling.R", "R/model_configs.R", "R/joint_survival_sampling.R"),
     psa = c("R/model_fun.R", "R/calculate_outcomes.R", "R/prediction_functions.R",
             "R/psa_functions.R", "R/parameter_distributions.R", "R/model_configs.R",
             "R/prediction_population.R",
-            "analysis/06_sampling.R"),
+            "analysis/06_sampling.R", "R/joint_survival_sampling.R"),
     evppi = "R/evppi_functions.R",
     scenario = c("R/scenario_analysis.R", "R/evppi_functions.R"))
   code <- lapply(files, function(file) {

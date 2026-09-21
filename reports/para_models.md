@@ -1,6 +1,6 @@
 # Parametric Survival Models
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Overview](#overview)
 - [Distribution Selection](#distribution-selection)
@@ -159,6 +159,6 @@ reference fit.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
+**Report completed on:** 2026-09-18  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.1

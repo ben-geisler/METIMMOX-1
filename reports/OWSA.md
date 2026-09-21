@@ -1,6 +1,6 @@
 # One-Way Sensitivity Analysis
 Ben Geisler
-2026-09-17
+2026-09-18
 
 - [Overview](#overview)
 - [Parameter Ranges](#parameter-ranges)
@@ -62,23 +62,23 @@ decision-relevant quantity and the measure used in Figure 2 (issue
 \#156).
 
     Creating tornado plot for strategy: control ( NMB_diff )
-    Omitting 3 parameter(s) with no effect on NMB_diff for control : c_drug_nivo, c_test_CRP, c_test_NGS
+    Omitting 3 parameter(s) with no effect on NMB_diff for control : c_drug_nivo, c_test_CRP, c_test_NGS 
 
     Creating tornado plot for strategy: crp ( NMB_diff )
-    Omitting 1 parameter(s) with no effect on NMB_diff for crp : c_test_NGS
+    Omitting 1 parameter(s) with no effect on NMB_diff for crp : c_test_NGS 
 
     Creating tornado plot for strategy: tmb_braf ( NMB_diff )
-    Omitting 1 parameter(s) with no effect on NMB_diff for tmb_braf : c_test_CRP
+    Omitting 1 parameter(s) with no effect on NMB_diff for tmb_braf : c_test_CRP 
 
 <img src="OWSA_files/figure-commonmark/tornado-plots-1.png"
 style="width:100.0%" data-fig-align="center"
 alt="Tornado plots by economic strategy (change in the strategy’s own NMB)" />
 
     Creating tornado plot for strategy: crp ( INMB_diff )
-    Omitting 2 parameter(s) with no effect on INMB_diff for crp : c_other_baseline, c_test_NGS
+    Omitting 2 parameter(s) with no effect on INMB_diff for crp : c_other_baseline, c_test_NGS 
 
     Creating tornado plot for strategy: tmb_braf ( INMB_diff )
-    Omitting 2 parameter(s) with no effect on INMB_diff for tmb_braf : c_other_baseline, c_test_CRP
+    Omitting 2 parameter(s) with no effect on INMB_diff for tmb_braf : c_other_baseline, c_test_CRP 
 
 <img src="OWSA_files/figure-commonmark/tornado-plots-incremental-1.png"
 style="width:100.0%" data-fig-align="center"
@@ -201,6 +201,6 @@ drug and test costs.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-17\
-**Repository:** ben-geisler/METIMMOX-1\
+**Report completed on:** 2026-09-18  
+**Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.3

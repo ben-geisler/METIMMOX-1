@@ -12,6 +12,10 @@
 # where SE is the Monte Carlo standard error of the PSA mean. Five standard
 # errors leaves room for the mild nonlinearity bias of a correctly centred
 # partitioned survival model while catching a mis-specified control arm.
+# Issue #159 retains this historical numerical criterion unchanged. It is not
+# guaranteed by centred coefficient draws: nonlinear outcome means can differ
+# systematically from the fitted-parameter result. The separate regression
+# test_psa_zero_uncertainty.R checks equality with all uncertainty removed.
 #
 # Also checks, without any cache, that the PSA control-curve helper forces
 # Rx = control for every patient.

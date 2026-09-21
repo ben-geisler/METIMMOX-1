@@ -2,6 +2,7 @@
 if (!require("pacman")) install.packages("pacman")
 library(pacman)
 p_load(here, survival, flexsurv, dplyr, tidyr, mvtnorm)
+source(here::here("R/joint_survival_sampling.R"))
 
 # Ensure time_points is the same as used in section 3
 time_points <- seq(0, time_horizon, by = 1)
@@ -25,11 +26,10 @@ sampling_seed <- analysis_seed
 # This ensures PSA uses the same single joint model as base case.
 #
 # Economic biomarker strategies are CRP and TMB/BRAF. Both share one joint
-# formula, so one bootstrap of the joint model serves every strategy. The
+# formula, so one joint coefficient draw serves every strategy. The
 # control arm is NOT a separate age/sex model: it is the same joint fit
 # predicted with Rx forced to the control level, exactly as in the base case
-# (issue #151). The cache therefore holds one component per biomarker, all
-# pointing at the same joint bootstrap; a legacy "control" component, if
+# (issue #151). The cache therefore holds one joint component; a legacy "control" component, if
 # present in an older cache, is ignored.
 # ===============================================================================
 
@@ -64,11 +64,10 @@ create_biomarker_formula <- function(outcome, biomarker) {
 # resamples could contain 0-2 of the 6 control-arm CRP-positive patients and
 # produced interaction coefficients between -3.7 and +4.0 and singular fits.
 #
-# OS and PFS coefficients are drawn independently: the two models are fitted
-# separately and no joint covariance between them is estimated. The bootstrap
-# preserved the OS-PFS correlation by refitting both to the same resample; that
-# property is given up here in exchange for draws that cannot degenerate
-# (user decision, issue #156). Within a draw, the same coefficient vector serves
+# OS and PFS coefficients are drawn together (issue #159). Paired patient
+# bootstraps estimate cross-endpoint dependence; block whitening and recolouring
+# retain each original fit's covariance. Bootstrap fits are never PSA draws.
+# Within a draw, the same coefficient vector serves
 # the control arm (Rx = control) and every biomarker subgroup, so the
 # control/biomarker correlation of issue #151 is unchanged.
 #
@@ -77,11 +76,12 @@ create_biomarker_formula <- function(outcome, biomarker) {
 # flexsurvreg object with the drawn estimates on request.
 # ===============================================================================
 
-SAMPLING_METHOD <- "mvn_v1"
+SAMPLING_METHOD <- "mvn_joint_v2"
 
 sample_survival_coefficients <- function(formula_os, formula_pfs, data,
                                          dist_os = "weibull", dist_pfs = "weibull",
-                                         n_samples = n_samples, seed = 123L) {
+                                         n_samples = n_samples, seed = 123L,
+                                         n_bootstrap = 1000L) {
 
   n_patients <- nrow(data)
   cat("Generating", n_samples, "multivariate-normal coefficient draws for the",
@@ -91,29 +91,13 @@ sample_survival_coefficients <- function(formula_os, formula_pfs, data,
   original_os <- flexsurvreg(formula_os, data = data, dist = dist_os)
   original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist_pfs)
 
-  draw_coefficients <- function(model, label) {
-    if (is.null(model$cov) || anyNA(model$cov)) {
-      stop("Covariance matrix unavailable for the ", label,
-           " model (non-converged fit); cannot draw coefficients")
-    }
-    par_names <- rownames(model$res)
-    draws <- matrix(NA_real_, nrow = n_samples, ncol = length(par_names),
-                    dimnames = list(NULL, par_names))
-    draws[, model$optpars] <- mvtnorm::rmvnorm(n_samples, model$opt$par, model$cov)
-    if (length(model$fixedpars) > 0) {
-      draws[, model$fixedpars] <- rep(model$res.t[model$fixedpars, "est"],
-                                      each = n_samples)
-    }
-    draws
-  }
-
-  # Make the draws independent of prior RNG use and cache branches.
-  set.seed(seed)
   start_time <- Sys.time()
-  draws <- list(
-    os = draw_coefficients(original_os, "OS"),
-    pfs = draw_coefficients(original_pfs, "PFS")
+  joint_covariance <- estimate_joint_survival_covariance(
+    formula_os, formula_pfs, data, original_os, original_pfs,
+    dist_os, dist_pfs, n_bootstrap = n_bootstrap, seed = seed
   )
+  draws <- draw_joint_survival_coefficients(original_os, original_pfs,
+    joint_covariance$covariance, n_samples, seed)
   total_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
 
   # Draw diagnostics: no draw can fail (the normal approximation is always
@@ -157,6 +141,7 @@ sample_survival_coefficients <- function(formula_os, formula_pfs, data,
 
   list(
     method = SAMPLING_METHOD,
+    joint_covariance = joint_covariance,
     draws = draws,
     original_os = original_os,
     original_pfs = original_pfs,
@@ -341,7 +326,7 @@ cat("- Formulas defined in: R/model_configs.R\n")
 cat("- Number of coefficient draws:",
     get_joint_sampling_models(sampling_models)$n_samples, "\n")
 cat("- Draws: multivariate normal around the fitted joint models; OS and PFS",
-    "drawn independently (issue #156)\n")
+    "drawn jointly using paired-bootstrap dependence (issue #159)\n")
 cat("- Control arm: joint model predicted with Rx = control (issue #151)\n")
 
 # ===============================================================================

@@ -236,6 +236,8 @@ if (!is.null(group_consistency) && nrow(group_consistency) > 0) {
     caption = "Group EVPPI versus largest single-parameter member"
   ) %>%
     tbl_style(latex_options = c("HOLD_position", "scale_down"))
+} else if (!has_evppi && evpi_is_zero) {
+  cat("No group-consistency check applies: the EVPI threshold short-circuits EVPPI regression, so no parameter or group rows are stored.")
 } else {
   cat("The group-consistency table is not stored in this EVPPI cache; rerun analysis/11_EVPPIs.R.")
 }
@@ -292,4 +294,4 @@ Population-level values assume `r annual_incidence_norway` annual eligible patie
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.1
+**Report version:** 5.2

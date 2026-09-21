@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-08
+2026-09-18
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -244,13 +244,13 @@ is female.
 
 ## Biomarker Correlations
 
-| Biomarker Pair  | Cramér’s V | Interpretation |
-|:----------------|-----------:|:---------------|
-| CRP vs TLR      |      0.278 | Weak           |
-| CRP vs TMB/BRAF |      0.053 | Negligible     |
-| TLR vs TMB/BRAF |      0.019 | Negligible     |
+| Biomarker Pair  | Cram\<U+00E9\>r’s V | Interpretation |
+|:----------------|--------------------:|:---------------|
+| CRP vs TLR      |               0.278 | Weak           |
+| CRP vs TMB/BRAF |               0.053 | Negligible     |
+| TLR vs TMB/BRAF |               0.019 | Negligible     |
 
-Biomarker Correlations (Cramér’s V)
+Biomarker Correlations (Cram\<U+00E9\>r’s V)
 
 **Note:** Cramér’s V interpretation: \<0.1 = Negligible, 0.1–0.3 = Weak,
 \>0.3 = Moderate/Strong. The observed correlations are weak to
@@ -268,16 +268,16 @@ The proportional hazards assumption was tested using scaled Schoenfeld
 residuals. A significant p-value indicates potential violation of the PH
 assumption for that covariate.
 
-| Covariate       | χ² (OS) | p-value | χ² (PFS) | p-value |
-|:----------------|--------:|:--------|---------:|:--------|
-| Age             |    0.68 | 0.411   |     0.07 | 0.796   |
-| sex             |    0.12 | 0.729   |     0.16 | 0.689   |
-| Rx              |    4.83 | 0.028   |     0.01 | 0.926   |
-| crp_num         |    0.38 | 0.536   |     2.29 | 0.130   |
-| tmb_braf_num    |    0.94 | 0.332   |     2.98 | 0.084   |
-| Rx:crp_num      |    3.08 | 0.079   |     1.20 | 0.272   |
-| Rx:tmb_braf_num |    0.97 | 0.324   |     1.62 | 0.203   |
-| GLOBAL          |    8.98 | 0.254   |    11.48 | 0.119   |
+| Covariate | \<U+03C7\>\<U+00B2\> (OS) | p-value | \<U+03C7\>\<U+00B2\> (PFS) | p-value |
+|:---|---:|:---|---:|:---|
+| Age | 0.68 | 0.411 | 0.07 | 0.796 |
+| sex | 0.12 | 0.729 | 0.16 | 0.689 |
+| Rx | 4.83 | 0.028 | 0.01 | 0.926 |
+| crp_num | 0.38 | 0.536 | 2.29 | 0.130 |
+| tmb_braf_num | 0.94 | 0.332 | 2.98 | 0.084 |
+| Rx:crp_num | 3.08 | 0.079 | 1.20 | 0.272 |
+| Rx:tmb_braf_num | 0.97 | 0.324 | 1.62 | 0.203 |
+| GLOBAL | 8.98 | 0.254 | 11.48 | 0.119 |
 
 Schoenfeld Residual Test for Proportional Hazards Assumption
 
@@ -1110,6 +1110,6 @@ Neither supports baseline treatment selection on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-08  
+**Report completed on:** 2026-09-18  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.7

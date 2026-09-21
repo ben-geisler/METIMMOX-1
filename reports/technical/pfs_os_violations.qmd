@@ -35,7 +35,7 @@ execute:
 # PFS > OS ordering violations in the PSA
 #
 # The PSA draws the OS and PFS coefficient vectors of the joint gamma models
-# independently (issue #156). A sampled pair can therefore put the predicted
+# jointly (issue #159). A sampled pair can still put the predicted
 # PFS curve above the predicted OS curve on part of the weekly grid, which a
 # partitioned survival model cannot represent (progressed-state occupancy would
 # be negative). model_fun() clamps PFS to OS (pmin) in PSA mode and emits a
@@ -361,7 +361,7 @@ example_cap <- paste0(
 
 # Overview
 
-The probabilistic sensitivity analysis (PSA) draws the coefficient vectors of the joint overall survival (OS) and progression-free survival (PFS) gamma models independently from their multivariate-normal sampling distributions (issue #156). Nothing in that scheme ties a PFS draw to its OS draw, so a sampled pair can predict PFS above OS on part of the 10-year weekly grid. A partitioned survival model cannot represent that: the progressed-state occupancy OS - PFS would be negative and the three states would no longer sum to one.
+The probabilistic sensitivity analysis (PSA) draws the coefficient vectors of the overall survival (OS) and progression-free survival (PFS) gamma models jointly (issue #159). Their cross-endpoint dependence is estimated by fitting both endpoints to the same patient bootstrap resamples, while preserving the fitted marginal covariance matrices. This replaces the independent draws of issue #156. Correlation does not enforce survival ordering: a sampled pair can still predict PFS above OS on part of the 10-year weekly grid. A partitioned survival model cannot represent a negative progressed-state occupancy OS - PFS.
 
 The model handles the problem with a clamp. In PSA mode `model_fun()` replaces the PFS curve by min(PFS, OS) for any curve that crosses and emits a `survival_ordering_warning`; the PSA script counts those warnings per subgroup but does not retain the curves. In the deterministic base case the ordering is guaranteed by the ordering-constrained distribution selection and any crossing stops the model.
 
@@ -376,7 +376,7 @@ This report quantifies the crossings behind those warnings. For every one of the
 
 ## Two sources of variation in a PSA draw
 
-Each PSA iteration draws one coefficient vector for the OS model (log shape, log baseline rate, and the covariate effects on the log rate) and one for the PFS model, each from the multivariate normal N(estimate, covariance) of its own fit. Within the iteration the OS vector is shared by every patient and every curve, and so is the PFS vector: a patient's rate is the baseline rate multiplied by the exponentiated covariate effects for their age, sex, arm and biomarker values, with a common shape. Patient heterogeneity is integrated out by averaging the 68 patient curves (or those of the subgroup) with the shared weights from that row's joint biomarker distribution (issue #166), so only parameter uncertainty varies between draws. The OS and PFS vectors of one iteration are paired by index only: the two models are fitted separately and no covariance between them is estimated, so a slow-hazard PFS draw can be paired with a fast-hazard OS draw. That pairing, not patient heterogeneity, is what produces the crossings.
+Each PSA iteration draws one combined OS/PFS coefficient vector (log shapes, log baseline rates, and covariate effects on log rate) from a joint multivariate normal. Each endpoint retains the mean and marginal covariance of its own fit. Within the iteration the OS vector is shared by every patient and every curve, and so is the PFS vector. Patient heterogeneity is integrated out by averaging the patient curves with the shared weights from that row's joint biomarker distribution (issue #166). The paired-bootstrap cross-covariance links the two endpoints but does not impose OS >= PFS. The [joint sampling specification](joint_survival_sampling.md) reports bootstrap convergence and coefficient dependence.
 
 ## Curves examined
 
@@ -723,15 +723,15 @@ knitr::kable(decomp_inc_tbl, booktabs = TRUE, align = c("l", "r", "r", "r"),
   tbl_style(latex_options = "HOLD_position")
 ```
 
-The test protocol records that the PSA incremental QALYs of the CRP-guided strategy (`r fmt_num(decomp_crp$inc_clamped, 4)`) fall well short of the base case (`r fmt_num(decomp_crp$inc_base, 4)`). Removing the clamp would move the PSA increment only to `r fmt_num(decomp_crp$inc_raw, 4)`: the clamp accounts for `r fmt_pct(clamp_share_of_gap, 1)` of the gap. The rest is the nonlinearity of the extrapolated gamma curves in their coefficients under independent OS and PFS draws, which lifts every strategy's mean QALYs above its base case by a different amount, not the ordering correction.
+The PSA incremental QALYs of the CRP-guided strategy are `r fmt_num(decomp_crp$inc_clamped, 4)`, compared with a deterministic increment of `r fmt_num(decomp_crp$inc_base, 4)`. Removing the clamp would give `r fmt_num(decomp_crp$inc_raw, 4)`: the clamp `r if (clamp_share_of_gap < 0) "narrows" else "widens"` the gap by an amount equal to `r fmt_pct(abs(clamp_share_of_gap), 1)` of the reported gap. The remaining difference reflects nonlinear averaging of survival curves over coefficient uncertainty and Monte Carlo error. Cross-endpoint dependence cannot change the expected raw-curve QALYs when the endpoint marginal distributions and independent utility/population distributions are held fixed. Earlier wording attributed the whole gap to endpoint independence; that causal attribution was too strong.
 
 # Interpretation
 
 - **The crossings are frequent but shallow.** About `r fmt_pct(share_any, 0)` of draws cross on at least one curve, yet the median violating draw crosses by at most `r sprintf("%.4f", median(pc$max_excess[pc$violated]))` in survival probability and carries an excess area of `r sprintf("%.4f", median(pc$excess_area_years[pc$violated]))` patient-years. The crossings sit in the extrapolated tail where both curves are close to their floor, so the area involved is small relative to the restricted OS area of about `r fmt_num(mean(area_all$mean_os), 2)` patient-years.
-- **The clamp is a one-sided correction.** min(PFS, OS) accepts the OS draw as given and truncates PFS; it never raises OS. Because OS and PFS are drawn independently, the direction of the error in any one draw is unknown, and the clamp therefore shifts every strategy's QALYs downward rather than towards the base case.
-- **The consequence is differential but small.** The five curves cross at different rates (`r paste(sprintf("%s %s", per_curve_summary$short, fmt_pct(per_curve_summary$share, 0)), collapse = "; ")`), so the clamp moves the increments of the guided strategies versus standard of care, not only their levels. The mean shift on the CRP increment is `r fmt_num(-sq_crp$mean_inc, 4)` QALYs against a base-case incremental gain of `r fmt_num(decomp_crp$inc_base, 4)`. Individual draws can move by up to `r fmt_num(max(abs(c(strategy_qaly$min_inc, strategy_qaly$max_inc))), 3)` QALYs, so the clamp widens the spread of the increments more than it moves their mean.
-- **The clamp does not explain the PSA-versus-base-case gap.** The known failure of `test_psa_basecase_alignment.R` on the incremental QALYs (PSA `r fmt_num(decomp_crp$inc_clamped, 4)` versus base case `r fmt_num(decomp_crp$inc_base, 4)` for CRP) would remain almost unchanged without the clamp (`r fmt_num(decomp_crp$inc_raw, 4)`). The test protocol's attribution of that gap to the clamp should be read as an attribution to the independent OS and PFS draws themselves.
-- **What would remove the violations.** A joint OS/PFS covariance (drawing the two coefficient vectors together) would restore the correlation that the earlier bootstrap preserved by refitting both models on the same resample, though it would only make crossings rarer, not impossible; drawing on a latent shared frailty or sampling PFS conditionally on OS would guarantee ordering by construction. Both are changes to the sampling scheme of script 06 and are out of scope for this report, which documents the size of the problem under the current scheme (user decision, issue #156: OS and PFS are drawn independently).
+- **The clamp is a one-sided correction.** min(PFS, OS) accepts the OS draw as given and truncates PFS; it never raises OS. It lowers QALYs when the progression-free utility exceeds the progressed utility, without targeting the deterministic base case.
+- **The consequence is differential but small.** The five curves cross at different rates (`r paste(sprintf("%s %s", per_curve_summary$short, fmt_pct(per_curve_summary$share, 0)), collapse = "; ")`), so the clamp moves the increments of the guided strategies versus standard of care, not only their levels. The mean shift on the CRP increment is `r fmt_num(-sq_crp$mean_inc, 4)` QALYs against a base-case incremental gain of `r fmt_num(decomp_crp$inc_base, 4)`. Individual draws can move by up to `r fmt_num(max(abs(c(strategy_qaly$min_inc, strategy_qaly$max_inc))), 3)` QALYs, substantially more than the mean shift.
+- **Report both estimands.** The deterministic CRP increment is `r fmt_num(decomp_crp$inc_base, 4)` QALYs; the PSA mean is `r fmt_num(decomp_crp$inc_clamped, 4)` with the clamp and `r fmt_num(decomp_crp$inc_raw, 4)` without it. A nonlinear model can produce this difference under correctly centred coefficient uncertainty. The original five-SE diagnostic is retained; the separate zero-uncertainty regression verifies equality when all uncertainty is removed.
+- **Joint covariance is implemented.** Issue #159 uses the first proposed fix: a paired patient bootstrap estimates dependence for joint normal coefficient draws. It does not guarantee ordered curves. A survival model parameterised to enforce ordering would be a separate structural change; correlation or conditioning alone is insufficient without that constraint.
 
 # Notes
 
@@ -744,4 +744,4 @@ The test protocol records that the PSA incremental QALYs of the CRP-guided strat
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.2
+**Report version:** 2.0

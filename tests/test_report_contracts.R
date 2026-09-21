@@ -178,8 +178,27 @@ if (!file.exists(sampling_file)) {
         "Sampling cache should hold one joint component, not per-biomarker copies (issue #156)")
   check(is.character(sm$fingerprint) && nchar(sm$fingerprint) > 0,
         "Sampling cache lacks an input fingerprint (issue #156)")
-  check(identical(sm$joint$method, "mvn_v1") && !is.null(sm$joint$draws$os),
-        "Sampling cache is not a multivariate-normal coefficient-draw cache (issue #156)")
+  check(identical(sm$joint$method, "mvn_joint_v2") && !is.null(sm$joint$draws$os) &&
+          !is.null(sm$joint$joint_covariance$covariance),
+        "Sampling cache lacks joint OS/PFS coefficient covariance (issue #159)")
+  if (!is.null(sm$joint$joint_covariance$covariance)) {
+    joint <- sm$joint
+    covariance <- joint$joint_covariance$covariance
+    os_idx <- seq_along(joint$original_os$opt$par)
+    pfs_idx <- length(os_idx) + seq_along(joint$original_pfs$opt$par)
+    check(max(abs(covariance[os_idx, os_idx] - joint$original_os$cov)) < 1e-10 &&
+            max(abs(covariance[pfs_idx, pfs_idx] - joint$original_pfs$cov)) < 1e-10,
+          "Joint sampling changed the fitted endpoint marginal covariances (#159)")
+    realised <- cov(cbind(joint$draws$os[, joint$original_os$optpars],
+                          joint$draws$pfs[, joint$original_pfs$optpars]))
+    mcse <- sqrt((outer(diag(covariance), diag(covariance)) + covariance^2) /
+                   (joint$n_samples - 1))
+    check(all(abs(realised - covariance) <= 5 * mcse),
+          "Realised coefficient covariance differs from joint target by >5 MCSE (#159)")
+    check(joint$joint_covariance$n_successful + joint$joint_covariance$n_failed ==
+            joint$joint_covariance$n_attempted,
+          "Covariance bootstrap convergence counts do not reconcile (#159)")
+  }
   if (exists("po") && !is.null(po$fingerprint_inputs)) {
     check(identical(po$fingerprint_inputs$sampling_fingerprint, sm$fingerprint),
           "PSA cache was built from a different sampling cache (issue #156)")
