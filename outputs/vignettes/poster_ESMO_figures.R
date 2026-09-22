@@ -238,7 +238,7 @@ forest <- data.frame(
 )
 forest$label <- sprintf("%.2f (%.2f–%.2f)", forest$HR, forest$lo, forest$hi)
 write.csv(forest, file.path(out_dir, "forest.csv"), row.names = FALSE)
-est_levels <- c("Firth-corrected Cox, 95% profile-likelihood CI", "Ridge-penalized Cox (point estimate)")
+est_levels <- c("Firth Cox (95% profile-likelihood CI)", "Ridge Cox (point estimate)")
 pts <- rbind(
   data.frame(forest[, c("Biomarker", "Outcome")], x = forest$HR, est = est_levels[1]),
   data.frame(forest[, c("Biomarker", "Outcome")], x = forest$ridge, est = est_levels[2])
@@ -248,7 +248,7 @@ fig2 <- ggplot(forest, aes(y = Biomarker)) +
   geom_vline(xintercept = 1, linetype = "dashed", colour = "grey45", linewidth = 1) +
   geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.22, colour = "#0072B2", linewidth = 1.4) +
   geom_point(data = pts, aes(x = x, shape = est, fill = est), size = 7, colour = "#0072B2", stroke = 1.6) +
-  geom_label(aes(x = HR, label = label), vjust = -0.9, size = 7, fill = "white",
+  geom_label(aes(x = HR, label = label), vjust = -0.9, size = 6.3, fill = "white",
              label.size = 0, label.padding = unit(0.18, "lines")) +
   scale_shape_manual(values = c(21, 23), name = NULL) +
   scale_fill_manual(values = c("#0072B2", "white"), name = NULL) +
@@ -258,17 +258,17 @@ fig2 <- ggplot(forest, aes(y = Biomarker)) +
   scale_y_discrete(expand = expansion(add = c(0.6, 0.9))) +
   facet_wrap(~ Outcome) +
   labs(x = "Hazard ratio for the treatment × biomarker interaction (log scale)", y = NULL,
-       title = "Figure 3. Treatment × biomarker interactions (unified model)",
-       subtitle = "HR < 1: biomarker-positive patients benefit more from adding nivolumab; all intervals include 1") +
-  theme_minimal(base_size = 22) +
+       title = "Figure 3. Treatment × biomarker interactions",
+       subtitle = "Unified model; HR < 1: biomarker-positive patients benefit more from nivolumab") +
+  theme_minimal(base_size = 20) +
   theme(panel.grid.minor = element_blank(),
-        strip.text = element_text(size = 24, face = "bold"),
-        plot.title = element_text(size = 30, face = "bold"),
-        plot.subtitle = element_text(size = 21),
-        axis.text = element_text(size = 21), axis.title.x = element_text(size = 22),
-        legend.position = "bottom", legend.text = element_text(size = 20),
+        strip.text = element_text(size = 22, face = "bold"),
+        plot.title = element_text(size = 26, face = "bold"),
+        plot.subtitle = element_text(size = 19),
+        axis.text = element_text(size = 20), axis.title.x = element_text(size = 21),
+        legend.position = "bottom", legend.text = element_text(size = 19),
         legend.key.size = unit(1.8, "lines"), plot.margin = margin(8, 16, 4, 8))
-ggsave(file.path(out_dir, "poster_esmo_forest.png"), fig2, width = 16, height = 8.5,
+ggsave(file.path(out_dir, "poster_esmo_forest.png"), fig2, width = 13.1, height = 7.0,
        dpi = 150, bg = "white")
 
 # ---- Figure 1: simplified DAG at poster sizes --------------------------------
@@ -315,7 +315,7 @@ fig3 <- ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   ggdag::geom_dag_node(data = node_data, aes(x = x, y = y, colour = status, fill = status),
                        size = 32, inherit.aes = FALSE) +
   ggtext::geom_richtext(data = node_data, aes(x = x, y = y, label = label), colour = "white",
-                        size = 7.5, fill = NA, label.color = NA,
+                        size = 6.5, fill = NA, label.color = NA,
                         label.padding = grid::unit(c(0, 0, 0, 0), "pt"), inherit.aes = FALSE) +
   coord_equal(xlim = c(x_range[1] - diff(x_range) * 0.12, x_range[2] + diff(x_range) * 0.12),
               ylim = c(y_range[1] - diff(y_range) * 0.16, y_range[2] + diff(y_range) * 0.16),
@@ -328,8 +328,8 @@ fig3 <- ggplot(tidy_dag_obj$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   guides(colour = guide_legend(override.aes = list(size = 9)),
          fill = guide_legend(override.aes = list(size = 9))) +
   # The "Figure 1." title sits in the poster caption box under the image.
-  theme(legend.position = "bottom", legend.text = element_text(size = 20),
-        legend.key.size = unit(1.4, "lines"), plot.margin = margin(2, 2, 2, 2))
+  theme(legend.position = "bottom", legend.text = element_text(size = 18),
+        legend.key.size = unit(1.3, "lines"), plot.margin = margin(2, 2, 2, 2))
 ggsave(file.path(out_dir, "poster_esmo_dag.png"), fig3, width = 7.0, height = 4.8,
        dpi = 200, bg = "white")
 

@@ -10,6 +10,11 @@ Requires Python 3 with only the standard library.
 
     Rscript outputs/vignettes/poster_ESMO_figures.R
     python outputs/vignettes/poster_ESMO_build.py
+
+Layout (inches on a 55.9 x 34.3 slide): left column Background + Methods with
+the DAG (Figure 1); results area with the Kaplan-Meier grid (Figure 2) beside
+the key-findings box, and the wide Table 1 beside the interaction forest plot
+(Figure 3); full-width conclusion; footer with disclosure, funding and logos.
 """
 import os
 import re
@@ -33,11 +38,12 @@ def emu(inches):
 
 
 TITLE_SZ = int(os.environ.get("TITLE_SZ", "60"))
-BODY_SZ = int(os.environ.get("BODY_SZ", "32"))
+BODY_SZ = int(os.environ.get("BODY_SZ", "32"))      # Background and Methods bullets
+KEY_SZ = int(os.environ.get("KEY_SZ", "40"))        # key-findings bullets
 AUTHOR_SZ = 44
 AFFIL_SZ = 32
 TABLE_SZ = 28
-FOOT_SZ = 24
+FOOT_SZ = 22
 CAPTION_SZ = 24
 
 ARIAL = ('<a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>'
@@ -232,10 +238,10 @@ def table(name, x, y, col_widths, rows, row_h):
 # ----------------------------------------------------------------------------
 # Content
 # ----------------------------------------------------------------------------
-X = "\u00d7"      # multiplication sign
-GE = "\u2265"     # >=
-ARR = "\u2192"    # ->
-EN = "\u2013"     # en dash
+X = "×"      # multiplication sign
+GE = "≥"     # >=
+ARR = "→"    # ->
+EN = "–"     # en dash
 
 shapes = []
 
@@ -257,7 +263,7 @@ for k, (nm, aff) in enumerate(authors):
 author_p = para(author_runs, algn="ctr", spc_after=4)
 
 affils = [("1", "Department of Health Management and Health Economics, University of Oslo, Oslo, Norway; "),
-          ("2", "Department of Oncology, Akershus University Hospital, L\u00f8renskog, Norway; "),
+          ("2", "Department of Oncology, Akershus University Hospital, Lørenskog, Norway; "),
           ("3", "Fred Hutchinson Cancer Center, Seattle WA, United States; "),
           ("4", "Center for Health Decision Science, Harvard T. H. Chan School of Public Health, Boston MA, United States; "),
           ("5", "Division for Health Services, Norwegian Institute of Public Health, Oslo, Norway; "),
@@ -275,106 +281,113 @@ shapes.append(round_box("Title box", 0.35, 0.31, 55.29, 4.22,
 shapes.append(text_box("Poster number", 0.86, 3.22, 2.9, 1.31,
                        [para([run("4355P", 72, b=True, color="B41672")])], autofit=True))
 
+# --- Grid -----------------------------------------------------------------------
+COL_A_X, COL_A_W = 0.31, 13.33          # left column (Background, Methods, Figure 1)
+RES_X, RES_R = 14.14, 55.63             # results area
+BOTTOM = 28.85                          # bottom of the content area
+KM_W = 26.8                             # Figure 2 width; the key-findings box takes the rest
+KM_H = KM_W * (13.5 / 24.0)
+KEY_X = RES_X + KM_W + 0.4
+KEY_W = RES_R - KEY_X
+ROW2_Y = 6.29 + KM_H + 0.38             # second results row: Table 1 and Figure 3
+FOR_W = 13.1
+FOR_H = FOR_W * (7.0 / 13.1)
+TAB_W = RES_R - FOR_W - 0.4 - RES_X
+
 # --- Section headers ------------------------------------------------------------
-COL_A_X, COL_A_W = 0.31, 15.30      # left column (Background, Methods)
-COL_B_X, COL_B_W = 16.11, 16.26     # middle column (Results text, forest plot)
-COL_C_X, COL_C_W = 32.87, 22.72     # right column (Table 1, Kaplan-Meier)
 shapes.append(header_box("Background header", COL_A_X, 4.89, COL_A_W, 1.08, "Background"))
-shapes.append(header_box("Results header", COL_B_X, 4.88, 55.59 - COL_B_X, 1.10, "Results"))
+shapes.append(header_box("Results header", RES_X, 4.88, RES_R - RES_X, 1.10, "Results"))
 
 # --- Background -----------------------------------------------------------------
 BS = BODY_SZ
 SA = 12  # paragraph spacing after (pt)
 
 
-def bullet(runs):
-    return para(runs, bullet=True, spc_after=SA, end_sz=BS)
+def bullet(runs, sz=None):
+    return para(runs, bullet=True, spc_after=SA, end_sz=sz or BS)
 
 
 bg = [
     bullet([run("Immune checkpoint blockade is ineffective in unselected MSS/pMMR mCRC.", BS)]),
-    bullet([run("The randomized phase-2 METIMMOX trial (NCT03388190; EudraCT 2017-001845-29) compared alternating "
-                "oxaliplatin-based chemotherapy (FLOX) and nivolumab with FLOX alone; progression-free survival "
-                "(PFS) was identical.", BS)]),
-    bullet([run("Post hoc analyses suggested benefit in three biomarker subgroups but conflated prognostic and "
-                "predictive effects.", BS)]),
-    bullet([run("We evaluated treatment-effect heterogeneity in a causally motivated regression framework.", BS)]),
+    bullet([run("METIMMOX (randomized phase 2; NCT03388190, EudraCT 2017-001845-29): alternating FLOX + "
+                "nivolumab vs FLOX alone; identical progression-free survival (PFS).", BS)]),
+    bullet([run("Post hoc subgroup signals (TMB/", BS), run("BRAF", BS, i=True),
+            run(", CRP, TLR) conflated prognostic and predictive effects; we separated them in one "
+                "pre-specified interaction model per endpoint.", BS)]),
 ]
-shapes.append(round_box("Background box", 0.40, 6.29, COL_A_W - 0.09, 5.50, bg, anchor="ctr"))
+BG_H = 5.0
+shapes.append(round_box("Background box", 0.40, 6.29, COL_A_W - 0.09, BG_H, bg, anchor="ctr"))
 
 # --- Methods --------------------------------------------------------------------
-shapes.append(header_box("Methods header", COL_A_X, 12.05, COL_A_W, 1.07, "Methods"))
-me = [
-    bullet([run("Complete-case cohort: 68 patients with both biomarkers, covariates and both endpoints "
-                "(59 deaths; 63 progression-or-death events).", BS)]),
-    bullet([run("Pre-immunotherapy biomarkers: TMB " + GE + "9 mut/Mb or ", BS), run("BRAF", BS, i=True),
-            run(" V600E (baseline NGS), and suppressed systemic inflammation (CRP <5 mg/L) after the initial "
-                "2 FLOX cycles common to both arms (week 4, before the first nivolumab dose).", BS)]),
-    bullet([run("Tumor lesion reduction (TLR) " + GE + "10% at the first on-treatment CT was adjudicated an "
-                "intermediate endpoint (T " + ARR + " TLR " + ARR + " PFS) and analyzed separately with a "
-                "week-9 landmark.", BS)]),
-    bullet([run("One unified Firth-corrected Cox model per endpoint (PFS and overall survival [OS]; ", BS),
-            run("Figure 1", BS, b=True),
-            run("): age, sex, treatment, biomarker main effects and treatment " + X + " biomarker interactions; "
-                "profile-likelihood 95% CIs and penalized likelihood-ratio tests (PLRT).", BS)]),
-    bullet([run("Ridge-penalized Cox regression (cross-validated penalty) as co-primary stability estimator.", BS)]),
-]
+METH_HDR_Y = 6.29 + BG_H + 0.30
+shapes.append(header_box("Methods header", COL_A_X, METH_HDR_Y, COL_A_W, 1.07, "Methods"))
+METH_Y = METH_HDR_Y + 1.07 + 0.28
 METH_W = COL_A_W - 0.05
-shapes.append(round_box("Methods box", 0.36, 13.40, METH_W, 15.45, me, anchor="t", tIns=0.12))
-DAG_W, DAG_H = 6.8, 6.8 * (4.8 / 7.0)
-dag_x = 0.36 + (METH_W - DAG_W) / 2
-DAG_CAP_H = 0.85
-dag_y = 28.85 - 0.05 - DAG_CAP_H - DAG_H
-shapes.append(pic("Simplified DAG", "rId7", dag_x, dag_y, DAG_W, DAG_H,
-                  descr="Simplified causal diagram: treatment, CRP, TMB/BRAF, age/sex and survival"))
-shapes.append(text_box("DAG caption", 1.24, dag_y + DAG_H, 13.5, DAG_CAP_H, [
-    para([run("Figure 1. Simplified causal diagram. ", CAPTION_SZ, b=True),
-          run("Solid arrows: assumed causal effects; dashed arrow: treatment effect hypothesized to be "
-              "modified by CRP and TMB/", CAPTION_SZ), run("BRAF", CAPTION_SZ, i=True),
-          run(" (interaction terms).", CAPTION_SZ)], algn="ctr")], anchor="t"))
-
-# --- Results text ---------------------------------------------------------------
-re_ = [
-    bullet([run("68 patients had complete biomarker and covariate data (mean age 64 years; 47% female; "
-                "59 deaths; 63 progression-or-death events).", BS)]),
-    bullet([run("No detectable marginal treatment effect: OS HR 0.96 (95% CI 0.58" + EN + "1.61); "
-                "PFS HR 0.80 (0.49" + EN + "1.33).", BS)]),
-    bullet([run("CRP <5 mg/L and TMB/", BS), run("BRAF", BS, i=True),
-            run(" positivity were prognostic: both were associated with longer PFS (HR 0.41 and 0.49), "
-                "and low CRP also with longer OS (HR 0.49) (", BS), run("Table 1", BS, b=True), run(", ", BS),
-            run("Figure 2", BS, b=True), run(").", BS)]),
-    bullet([run("No treatment " + X + " biomarker interaction reached statistical significance (", BS),
-            run("Figure 3", BS, b=True),
-            run("). The CRP " + X + " treatment interaction for PFS was the most directionally consistent "
-                "finding (Firth HR 0.42, 95% CI 0.11" + EN + "1.68; PLRT p = 0.21; ridge HR 0.33) but was "
-                "attenuated for OS (Firth HR 0.65; ridge HR 0.40).", BS)]),
-    bullet([run("Week-4 CRP positivity was imbalanced by chance (47% with FLOX/nivolumab vs 19% with FLOX "
-                "alone; p = 0.02); the CRP " + X + " treatment interaction is estimated against this contrast.", BS)]),
-    bullet([run("TLR " + GE + "10% was strongly associated with both endpoints (landmark HR 0.35 for OS and "
-                "PFS) but was more frequent with FLOX alone (75.9% vs 52.8% with FLOX/nivolumab; p = 0.07), "
-                "and the TLR " + X + " treatment interaction pointed towards less, not more, benefit from "
-                "nivolumab (HR >1): TLR marks chemotherapy-responsive disease rather than immunotherapy benefit.", BS)]),
-    bullet([run("Proportional hazards held globally (Schoenfeld p = 0.25 for OS, 0.12 for PFS).", BS)]),
+me = [
+    bullet([run("68 complete cases (59 deaths; 63 progression-or-death events).", BS)]),
+    bullet([run("Biomarkers before nivolumab: TMB " + GE + "9 mut/Mb or ", BS), run("BRAF", BS, i=True),
+            run(" V600E (baseline); CRP <5 mg/L at week 4, after 2 FLOX cycles common to both arms "
+                "(by chance 47% vs 19% positive).", BS)]),
+    bullet([run("TLR " + GE + "10% at the first on-treatment CT: intermediate endpoint (T " + ARR +
+                " TLR " + ARR + " PFS), analyzed with a week-9 landmark.", BS)]),
+    bullet([run("Per endpoint (PFS, overall survival [OS]): one Firth-corrected Cox model with age, sex, "
+                "treatment, biomarker main effects and treatment " + X + " biomarker interactions (", BS),
+            run("Figure 1", BS, b=True),
+            run("); profile-likelihood 95% CIs, penalized likelihood-ratio tests (PLRT).", BS)]),
+    bullet([run("Ridge-penalized Cox as co-primary stability estimator.", BS)]),
 ]
-shapes.append(round_box("Results text box", COL_B_X, 6.29, COL_B_W, 13.62, re_, anchor="ctr"))
+shapes.append(round_box("Methods box", 0.36, METH_Y, METH_W, BOTTOM - METH_Y, me, anchor="t", tIns=0.12))
+DAG_W = 8.6
+DAG_H = DAG_W * (4.8 / 7.0)
+DAG_CAP_H = 0.85
+dag_y = BOTTOM - 0.05 - DAG_CAP_H - DAG_H
+dag_x = 0.36 + (METH_W - DAG_W) / 2
+shapes.append(pic("Figure 1 DAG", "rId7", dag_x, dag_y, DAG_W, DAG_H,
+                  descr="Directed acyclic graph of the assumed relationships between treatment, CRP, TMB/BRAF, age/sex and survival"))
+CAP_W = 12.2
+shapes.append(text_box("Figure 1 caption", 0.36 + (METH_W - CAP_W) / 2, dag_y + DAG_H, CAP_W, DAG_CAP_H, [
+    para([run("Figure 1. Assumed relationships (DAG) behind the model. ", CAPTION_SZ, b=True),
+          run("Dashed arrow: treatment effect possibly modified by CRP and TMB/", CAPTION_SZ),
+          run("BRAF", CAPTION_SZ, i=True), run(".", CAPTION_SZ)], algn="ctr")], anchor="t"))
 
-# --- Figure 2 (forest) ----------------------------------------------------------
-FOR_W = COL_B_W
-FOR_H = FOR_W * (8.5 / 16.0)
-shapes.append(pic("Figure 3 forest plot", "rId6", COL_B_X, 28.85 - FOR_H, FOR_W, FOR_H,
-                  descr="Forest plot of treatment by biomarker interaction hazard ratios"))
+# --- Figure 2 (Kaplan-Meier) ----------------------------------------------------
+shapes.append(pic("Figure 2 Kaplan-Meier", "rId5", RES_X, 6.29, KM_W, KM_H,
+                  descr="Kaplan-Meier curves by biomarker status and treatment arm"))
 
-# --- Table 1 --------------------------------------------------------------------
-TX, TY, TW = COL_C_X, 6.29, COL_C_W
-shapes.append(text_box("Table 1 caption", TX, TY, TW, 0.66, [
+# --- Key findings ---------------------------------------------------------------
+KS = KEY_SZ
+key = [
+    para([run("No marginal treatment effect: ", KS, b=True),
+          run("OS HR 0.96 (95% CI 0.58" + EN + "1.61); PFS HR 0.80 (0.49" + EN + "1.33).", KS)],
+         bullet=True, spc_after=16, end_sz=KS),
+    para([run("Prognostic: ", KS, b=True),
+          run("CRP <5 mg/L and TMB/", KS), run("BRAF", KS, i=True),
+          run(" positivity were associated with longer PFS (HR 0.41 and 0.49) and, for CRP, longer OS "
+              "(HR 0.49), regardless of treatment (", KS), run("Table 1", KS, b=True), run(", ", KS),
+          run("Figure 2", KS, b=True), run(").", KS)], bullet=True, spc_after=16, end_sz=KS),
+    para([run("Not predictive: ", KS, b=True),
+          run("no treatment " + X + " biomarker interaction reached significance (", KS),
+          run("Figure 3", KS, b=True),
+          run("). Most consistent signal: CRP " + X + " treatment for PFS, HR 0.42 (0.11" + EN + "1.68), "
+              "p = 0.21, ridge HR 0.33; attenuated for OS (HR 0.65).", KS)],
+         bullet=True, spc_after=16, end_sz=KS),
+    para([run("TLR: ", KS, b=True),
+          run("strongly prognostic for both endpoints (landmark HR 0.35), but more frequent with FLOX alone "
+              "(76% vs 53%) and with an interaction HR >1: a marker of chemotherapy-responsive disease, "
+              "not of nivolumab benefit.", KS)], bullet=True, spc_after=0, end_sz=KS),
+]
+shapes.append(round_box("Key findings box", KEY_X, 6.29, KEY_W, KM_H, key, anchor="ctr", lIns=0.15, rIns=0.15))
+
+# --- Table 1 (wide, second results row) -----------------------------------------
+TX, TY, TW = RES_X, ROW2_Y, TAB_W
+shapes.append(text_box("Table 1 caption", TX, TY, TW, 0.62, [
     para([run("Table 1. ", TABLE_SZ, b=True),
           run("Hazard ratios (95% profile-likelihood CI) from Firth-corrected Cox regression", TABLE_SZ)])],
     anchor="t"))
 
-col_w = [7.42, 4.00, 1.60, 2.00, 4.00, 1.60, 2.10]
-assert abs(sum(col_w) - TW) < 1e-6
+col_w = [7.00, 5.50, 3.80, 1.70, 2.20, 3.80, 1.70, 2.29]
+col_w[-1] = round(TW - sum(col_w[:-1]), 3)
 HDR = "D9D9D9"
-GRP = "EFEFEF"
 THICK, THIN = 19050, 12700
 
 
@@ -383,94 +396,81 @@ def hdr(text, span=1, b=True, algn="ctr", fill=HDR, top=None, bottom=None, hmerg
               ncols_span=span, hmerge=hmerge, rowspan=rowspan, vmerge=vmerge)
 
 
-def group_row(text):
-    return [tc({"text": text, "b": True, "algn": "l", "fill": GRP}, ncols_span=7)] + \
-           [tc({"fill": GRP}, hmerge=True) for _ in range(6)]
-
-
-def data_row(term, os_hr, os_p, os_r, pfs_hr, pfs_p, pfs_r, bottom=None, term_runs=None):
-    cells = [tc({"text": term, "runs": term_runs, "algn": "l", "bottom": bottom})]
+def data_row(term, model, os_hr, os_p, os_r, pfs_hr, pfs_p, pfs_r, bottom=None, term_runs=None):
+    cells = [tc({"text": term, "runs": term_runs, "algn": "l", "bottom": bottom}),
+             tc({"text": model, "algn": "l", "bottom": bottom})]
     for v in (os_hr, os_p, os_r, pfs_hr, pfs_p, pfs_r):
         cells.append(tc({"text": v, "algn": "ctr", "bottom": bottom}))
     return cells
 
 
+UNI = "Univariable"
+UNI_P = "Univariable (prognostic)"
+INT = "Unified interaction model"
+LMK = "Landmark responder model†"
 rows = [
-    [hdr("Term", rowspan=2, algn="l", top=THICK), hdr("Overall survival", span=3, top=THICK),
-     hdr("", hmerge=True, top=THICK), hdr("", hmerge=True, top=THICK),
-     hdr("Progression-free survival", span=3, top=THICK),
-     hdr("", hmerge=True, top=THICK), hdr("", hmerge=True, top=THICK)],
-    [hdr("", vmerge=True, bottom=THIN), hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN),
-     hdr("Ridge HR", bottom=THIN), hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN),
-     hdr("Ridge HR", bottom=THIN)],
-    group_row("Marginal associations (one term per model, n = 68)"),
-    data_row("Treatment (FLOX/nivolumab vs FLOX)", "0.96 (0.58" + EN + "1.61)", "0.87", EN,
+    [hdr("Term", rowspan=2, algn="l", top=THICK), hdr("Model", rowspan=2, algn="l", top=THICK),
+     hdr("Overall survival", span=3, top=THICK), hdr("", hmerge=True, top=THICK), hdr("", hmerge=True, top=THICK),
+     hdr("Progression-free survival", span=3, top=THICK), hdr("", hmerge=True, top=THICK),
+     hdr("", hmerge=True, top=THICK)],
+    [hdr("", vmerge=True, bottom=THIN), hdr("", vmerge=True, bottom=THIN),
+     hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN), hdr("Ridge HR", bottom=THIN),
+     hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN), hdr("Ridge HR", bottom=THIN)],
+    data_row("Treatment (FLOX/nivolumab vs FLOX)", UNI, "0.96 (0.58" + EN + "1.61)", "0.87", EN,
              "0.80 (0.49" + EN + "1.33)", "0.39", EN),
-    data_row("CRP <5 mg/L at week 4", "0.49 (0.27" + EN + "0.84)", "0.009", EN,
+    data_row("CRP <5 mg/L at week 4", UNI_P, "0.49 (0.27" + EN + "0.84)", "0.009", EN,
              "0.41 (0.23" + EN + "0.71)", "0.001", EN),
-    data_row("TMB " + GE + "9 mut/Mb or BRAF V600E", "0.68 (0.40" + EN + "1.13)", "0.14", EN,
+    data_row("TMB " + GE + "9 mut/Mb or BRAF V600E", UNI_P, "0.68 (0.40" + EN + "1.13)", "0.14", EN,
              "0.49 (0.28" + EN + "0.84)", "0.009", EN,
              term_runs=[run("TMB " + GE + "9 mut/Mb or ", TABLE_SZ), run("BRAF", TABLE_SZ, i=True),
                         run(" V600E", TABLE_SZ)]),
-    data_row("TLR " + GE + "10% (week-9 landmark)\u2020", "0.35 (0.21" + EN + "0.61)", "<0.001", EN,
+    data_row("TLR " + GE + "10% (week-9 landmark)†", UNI_P, "0.35 (0.21" + EN + "0.61)", "<0.001", EN,
              "0.35 (0.20" + EN + "0.63)", "<0.001", EN),
-    group_row("Unified model: treatment " + X + " biomarker interactions (PLRT p)"),
-    data_row("CRP " + X + " treatment", "0.65 (0.19" + EN + "2.60)", "0.52", "0.40",
+    data_row("CRP " + X + " treatment", INT, "0.65 (0.19" + EN + "2.60)", "0.52", "0.40",
              "0.42 (0.11" + EN + "1.68)", "0.21", "0.33"),
-    data_row("TMB/BRAF " + X + " treatment", "0.95 (0.32" + EN + "2.82)", "0.92", "0.86",
+    data_row("TMB/BRAF " + X + " treatment", INT, "0.95 (0.32" + EN + "2.82)", "0.92", "0.86",
              "0.66 (0.21" + EN + "2.05)", "0.47", "0.51",
              term_runs=[run("TMB/", TABLE_SZ), run("BRAF", TABLE_SZ, i=True), run(" " + X + " treatment", TABLE_SZ)]),
-    group_row("Exploratory TLR responder model (week-9 landmark, adjusted)\u2020"),
-    data_row("TLR " + X + " treatment", "2.47 (0.75" + EN + "7.75)", "0.14", EN,
+    data_row("TLR " + X + " treatment", LMK, "2.47 (0.75" + EN + "7.75)", "0.14", EN,
              "1.88 (0.52" + EN + "6.38)", "0.33", EN, bottom=THICK),
 ]
-ROW_H = 0.60
-shapes.append(table("Table 1", TX, TY + 0.72, col_w, rows, ROW_H))
-table_bottom = TY + 0.72 + ROW_H * len(rows)
+ROW_H = 0.58
+TABLE_Y = TY + 0.66
+shapes.append(table("Table 1", TX, TABLE_Y, col_w, rows, ROW_H))
+table_bottom = TABLE_Y + ROW_H * len(rows)
 
 foot_runs = [
+    run("n = 68; p = penalized likelihood-ratio test. ", FOOT_SZ),
     run("Unified model: ", FOOT_SZ, b=True),
     run("age + sex + treatment + CRP + TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
-    run(" + CRP " + X + " treatment + TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
-    run(" " + X + " treatment; p = penalized likelihood-ratio test. ", FOOT_SZ),
-    run("Ridge: ", FOOT_SZ, b=True),
-    run("L2-penalized Cox regression (biomarker main effects penalized, 10-fold cross-validated lambda), point "
-        "estimates only. ", FOOT_SZ),
-    run("\u2020", FOOT_SZ, b=True),
-    run("TLR-classified patients (n = 65); time measured from the week-9 landmark (OS cohort n = 65, PFS cohort "
-        "n = 60). The responder model is adjusted for age, sex, CRP and TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
-    run("; because TLR is measured after randomization, its interaction is a responder-stratified contrast, not a "
-        "treatment-selection estimate. ", FOOT_SZ),
+    run(" + both treatment " + X + " biomarker interactions. ", FOOT_SZ),
+    run("Ridge: ", FOOT_SZ, b=True), run("L2-penalized Cox, point estimates. ", FOOT_SZ),
+    run("†", FOOT_SZ, b=True),
+    run("Week-9 landmark, TLR-classified patients (n = 65 OS, 60 PFS); the responder model adjusts for age, "
+        "sex, CRP and TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
+    run("; TLR is measured on treatment, so this is not a treatment-selection estimate. ", FOOT_SZ),
     run("CI", FOOT_SZ, b=True), run(", confidence interval; ", FOOT_SZ),
-    run("CRP", FOOT_SZ, b=True), run(", C-reactive protein; ", FOOT_SZ),
     run("HR", FOOT_SZ, b=True), run(", hazard ratio; ", FOOT_SZ),
     run("TLR", FOOT_SZ, b=True), run(", tumor lesion reduction; ", FOOT_SZ),
     run("TMB", FOOT_SZ, b=True), run(", tumor mutational burden.", FOOT_SZ),
 ]
-FOOT_H = 2.05
-shapes.append(round_box("Table 1 footnote", TX, table_bottom + 0.12, TW, FOOT_H,
-                        [para(foot_runs, end_sz=FOOT_SZ)], anchor="ctr", lIns=0.12, rIns=0.12))
-foot_bottom = table_bottom + 0.12 + FOOT_H
+FOOT_Y = table_bottom + 0.08
+FOOT_H = BOTTOM - FOOT_Y
+shapes.append(round_box("Table 1 footnote", TX, FOOT_Y, TW, FOOT_H,
+                        [para(foot_runs, end_sz=FOOT_SZ)], anchor="ctr", lIns=0.12, rIns=0.12,
+                        tIns=0.04, bIns=0.04))
 
-# --- Figure 1 (KM) --------------------------------------------------------------
-KM_TOP = foot_bottom + 0.25
-KM_BOTTOM = 28.85
-KM_H = KM_BOTTOM - KM_TOP
-KM_W = KM_H * (24.0 / 13.5)
-if KM_W > TW:
-    KM_W = TW
-    KM_H = KM_W * (13.5 / 24.0)
-km_x = TX + (TW - KM_W) / 2
-shapes.append(pic("Figure 2 Kaplan-Meier", "rId5", km_x, KM_TOP, KM_W, KM_H,
-                  descr="Kaplan-Meier curves by biomarker status and treatment arm"))
+# --- Figure 3 (forest) ----------------------------------------------------------
+FOR_X = RES_R - FOR_W
+shapes.append(pic("Figure 3 forest plot", "rId6", FOR_X, ROW2_Y, FOR_W, FOR_H,
+                  descr="Forest plot of treatment by biomarker interaction hazard ratios"))
 
 # --- Conclusion -----------------------------------------------------------------
 shapes.append(header_box("Conclusion header", 0.40, 29.15, 55.23, 0.95, "Conclusion", sz=54))
 concl = [
-    para([run("In this causally structured exploratory analysis, biomarker signals in MSS/pMMR mCRC were "
-              "predominantly prognostic rather than predictive. The CRP " + X + " treatment interaction for PFS "
-              "warrants evaluation in adequately powered prospective studies. The causal framework offers a "
-              "template for transparent post hoc biomarker analysis of phase-2 trials.", 44, b=True)],
+    para([run("In this exploratory analysis, biomarker signals in MSS/pMMR mCRC were predominantly prognostic "
+              "rather than predictive. The CRP " + X + " treatment interaction for PFS is hypothesis-generating "
+              "and warrants evaluation in adequately powered prospective studies.", 44, b=True)],
          algn="ctr"),
 ]
 shapes.append(round_box("Conclusion box", 0.40, 30.30, 55.23, 2.20, concl, anchor="ctr"))
@@ -587,4 +587,5 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as zf:
                 continue
             zf.write(full, arc)
 print("wrote", OUT, os.path.getsize(OUT), "bytes;", len(shapes), "shapes")
-print("table bottom %.2f, footnote bottom %.2f, KM %.2f-%.2f (w %.2f)" % (table_bottom, foot_bottom, KM_TOP, KM_BOTTOM, KM_W))
+print("KM %.2f x %.2f; key box w %.2f; row2 y %.2f; table w %.2f (bottom %.2f, footnote h %.2f); forest %.2f x %.2f; DAG %.2f x %.2f at y %.2f"
+      % (KM_W, KM_H, KEY_W, ROW2_Y, TW, table_bottom, FOOT_H, FOR_W, FOR_H, DAG_W, DAG_H, dag_y))
