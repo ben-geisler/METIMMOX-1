@@ -17,8 +17,10 @@ Ben Geisler
   - [Issue 157: baseline vs fixed](#issue-157-baseline-vs-fixed)
   - [Issue 159: baseline vs fixed](#issue-159-baseline-vs-fixed)
   - [Issue 166: baseline vs fixed](#issue-166-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 159
-    fixed](#cumulative-issue-145-baseline-vs-issue-159-fixed)
+  - [Batch \#173 / \#171 / \#163: baseline vs
+    fixed](#batch-173--171--163-baseline-vs-fixed)
+  - [Cumulative: issue 145 baseline vs issue 173
+    fixed](#cumulative-issue-145-baseline-vs-issue-173-fixed)
 - [Interpretation](#interpretation)
 
 # Snapshot Inventory
@@ -51,10 +53,23 @@ Ben Geisler
 | snapshot_159_fixed_6ca19ab.rds    | 159   | fixed    | 6ca19ab | 2026-09-21 09:46:55 |
 | snapshot_166_baseline_96d0710.rds | 166   | baseline | 96d0710 | 2026-09-18 09:55:46 |
 | snapshot_166_fixed_96d0710.rds    | 166   | fixed    | 96d0710 | 2026-09-18 09:57:44 |
+| snapshot_173_baseline_1b50e8d.rds | 173   | baseline | 1b50e8d | 2026-09-21 15:09:17 |
+| snapshot_173_fixed_1b50e8d.rds    | 173   | fixed    | 1b50e8d | 2026-09-21 16:04:39 |
 
 Available single-model snapshots
 
 # Impact Comparisons
+
+The issue \#173 snapshot pair covers the combined fixes for **\#173,
+\#171 and \#163**. Diagnostic prices now use the scalar inputs on every
+call; invalid PSA outcomes enter the failure threshold and replacement
+process, and supplied curves have an explicit evaluation mode. QALYs and
+ongoing progressed-state costs now use trapezoidal interval integration,
+while scheduled and event costs retain their full time-point charges.
+These changes require new economic results but leave the survival
+coefficient draws unchanged. The baseline was saved before editing the
+calculation sources; both snapshots precede the batch commit, so their
+filenames carry the same pre-fix HEAD identifier.
 
 | Comparison | Before | After |
 |:---|:---|:---|
@@ -71,7 +86,8 @@ Available single-model snapshots
 | Issue 157: baseline vs fixed | snapshot_157_baseline_efcd775.rds | snapshot_157_fixed_cdf852f.rds |
 | Issue 159: baseline vs fixed | snapshot_159_baseline_6ca19ab.rds | snapshot_159_fixed_6ca19ab.rds |
 | Issue 166: baseline vs fixed | snapshot_166_baseline_96d0710.rds | snapshot_166_fixed_96d0710.rds |
-| Cumulative: issue 145 baseline vs issue 159 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_159_fixed_6ca19ab.rds |
+| Batch \#173 / \#171 / \#163: baseline vs fixed | snapshot_173_baseline_1b50e8d.rds | snapshot_173_fixed_1b50e8d.rds |
+| Cumulative: issue 145 baseline vs issue 173 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_173_fixed_1b50e8d.rds |
 
 Impact comparisons included in this report
 
@@ -521,28 +537,53 @@ PSA cache md5 before 8f061b8959fee3e221a34f65ce0d9dc1 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.22 after.
 
-## Cumulative: issue 145 baseline vs issue 159 fixed
+## Batch \#173 / \#171 / \#163: baseline vs fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
 |:---|---:|---:|---:|---:|---:|---:|
-| Standard of Care | EUR 20,867 | 1.4141 | EUR 21,523 | 1.3714 | EUR 656 | -0.0427 |
-| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,948 | 1.3920 | -EUR 1,078 | 0.0077 |
-| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,685 | 1.3599 | EUR 1,887 | 0.0069 |
+| Standard of Care | EUR 21,523 | 1.3714 | EUR 21,523 | 1.3644 | EUR 0 | -0.0070 |
+| CRP-guided | EUR 53,948 | 1.3920 | EUR 53,948 | 1.3849 | EUR 0 | -0.0070 |
+| TMB/BRAF-guided | EUR 62,685 | 1.3599 | EUR 62,685 | 1.3529 | EUR 0 | -0.0070 |
 
-Base case impact – Cumulative: issue 145 baseline vs issue 159 fixed
+Base case impact – Batch \#173 / \#171 / \#163: baseline vs fixed
 
 | Strategy         | NMB Before |  NMB After | NMB Change |
 |:-----------------|-----------:|-----------:|-----------:|
-| Standard of Care | EUR 51,254 | EUR 48,419 | -EUR 2,835 |
-| CRP-guided       | EUR 15,570 | EUR 17,042 |  EUR 1,472 |
-| TMB/BRAF-guided  |  EUR 8,207 |  EUR 6,670 | -EUR 1,537 |
+| Standard of Care | EUR 48,419 | EUR 48,061 |   -EUR 358 |
+| CRP-guided       | EUR 17,042 | EUR 16,684 |   -EUR 358 |
+| TMB/BRAF-guided  |  EUR 6,670 |  EUR 6,312 |   -EUR 358 |
+
+Net monetary benefit impact – Batch \#173 / \#171 / \#163: baseline vs
+fixed
+
+PSA cache md5 before 90645792c191da22ce9a8c81ed323ff9 (modified
+2026-09-18 17:20), after 943be17d86d24aa1a30a17ec1d4238fa (modified
+2026-09-21 15:41).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
+
+## Cumulative: issue 145 baseline vs issue 173 fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,867 | 1.4141 | EUR 21,523 | 1.3644 | EUR 656 | -0.0497 |
+| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,948 | 1.3849 | -EUR 1,078 | 0.0007 |
+| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,685 | 1.3529 | EUR 1,887 | -0.0002 |
+
+Base case impact – Cumulative: issue 145 baseline vs issue 173 fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 51,254 | EUR 48,061 | -EUR 3,193 |
+| CRP-guided       | EUR 15,570 | EUR 16,684 |  EUR 1,113 |
+| TMB/BRAF-guided  |  EUR 8,207 |  EUR 6,312 | -EUR 1,896 |
 
 Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
-159 fixed
+173 fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 90645792c191da22ce9a8c81ed323ff9
-(modified 2026-09-18 17:20). Identity of the two PSA files cannot be
+the PSA cache md5; after PSA cache md5 943be17d86d24aa1a30a17ec1d4238fa
+(modified 2026-09-21 15:41). Identity of the two PSA files cannot be
 established from metadata.
 
 # Interpretation
@@ -591,4 +632,4 @@ was implemented after \#166.
 
 **Report completed on:** 2026-09-21  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.4
+**Report version:** 4.5

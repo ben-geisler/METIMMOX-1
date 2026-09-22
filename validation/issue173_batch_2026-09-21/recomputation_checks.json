@@ -1,0 +1,12 @@
+{
+  "method": "validated_direct_gamma_supplied_curves",
+  "issues": [173, 171, 163],
+  "baseline_commit": "1b50e8d",
+  "sampling_md5": "8e239624b62c552d04e3ec4bcae5b660",
+  "checked_standard_draws": [1, 455, 910, 1364, 1819, 2273, 2728, 3182, 3637, 4091, 4546, 5000],
+  "max_curve_error": 5.5511151231257827e-16,
+  "max_old_cost_error": 2.9103830456733704e-11,
+  "max_old_effect_error": 4.4408920985006262e-16,
+  "max_standard_cost_error": 1.4551915228366852e-11,
+  "max_standard_effect_error": 2.2204460492503131e-16
+}

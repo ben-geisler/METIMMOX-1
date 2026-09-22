@@ -1,98 +1,59 @@
-# White-box regression tests for WB-004 / BB-SW / BB-EQ2.
-
+# Scalar diagnostic prices must affect every public calculation path (#173).
 source("R/model_configs.R")
 source("R/calculate_outcomes.R")
+source("R/model_fun.R")
+source("R/cea_helpers.R")
 
-make_params <- function() {
-  list(
-    u_np = 1,
-    u_p = 1,
-    c_drug_nivo = 0,
-    c_drug_FLOX = 0,
-    c_test_CT = 0,
-    c_test_blood = 0,
-    c_test_CRP = 17,
-    c_test_NGS = 2500,
-    c_test_biomarker = list(crp = 17, tmb_braf = 2500),
-    c_other_visit = 0,
-    c_other_baseline = 0,
-    c_other_follow = 0,
-    c_other_last = 0,
-    l_nivo = 0,
-    l_FLOX_exp = 0,
-    l_FLOX_control = 0,
-    l_CT = 0,
-    l_blood = 0,
-    l_visit = 0
-  )
+params <- list(
+  dr_costs = 0.04, dr_effects = 0.04, u_np = 1, u_p = 1,
+  c_drug_nivo = 0, c_drug_FLOX = 0, c_test_CT = 0, c_test_blood = 16,
+  c_test_CRP = 17, c_test_NGS = 2500,
+  # Deliberately stale legacy lookup must have no effect.
+  c_test_biomarker = list(crp = 999, tmb_braf = 999),
+  c_other_visit = 0, c_other_baseline = 0, c_other_follow = 0, c_other_last = 0,
+  p_crp = 0.3, p_tmb_braf = 0.6)
+for (nm in c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_visit"))
+  params[[nm]] <- rep(0, 521)
+params$l_blood <- c(1, rep(0, 520))
+for (endpoint in c("OS", "PFS")) {
+  keys <- paste0(c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"), "_", endpoint)
+  params[[paste0("p_", tolower(endpoint))]] <- setNames(rep(list(rep(1, 521)), 5), keys)
 }
-
-run_outcomes <- function(params, biomarker) {
-  n_cycles <- 14
-  calculate_outcomes(
-    params = params,
-    p_pf = rep(1, n_cycles),
-    p_p = rep(0, n_cycles),
-    p_d = rep(0, n_cycles),
-    treatment_type = "control",
-    biomarker = biomarker,
-    v_dw_c = rep(1, n_cycles),
-    v_dw_e = rep(1, n_cycles),
-    cl = 1
-  )
+base <- model_fun(params)
+stopifnot(identical(base$Cost, c(16, 33, 2516)))
+for (biomarker in get_biomarkers()) {
+  changed <- params
+  changed[[biomarker_cost_key(biomarker)[[1L]]]] <-
+    changed[[biomarker_cost_key(biomarker)[[1L]]]] + 1000
+  expected <- 1000 * as.numeric(base$Strategy == biomarker)
+  # One-time diagnostic charge at t=0: discount factor is exactly 1.
+  stopifnot(max(abs(model_fun(changed)$Cost - base$Cost - expected)) < 1e-10)
+  stopifnot(max(abs(run_basecase(changed, verbose = FALSE)$base_results$Cost - base$Cost - expected)) < 1e-10)
 }
+without_lookup <- params
+without_lookup$c_test_biomarker <- NULL
+stopifnot(identical(model_fun(without_lookup), base))
 
-params <- make_params()
+# Direct calculate_outcomes() callers (including enriched analysis) use scalars.
+outcomes <- function(p, biomarker, dw = 1) calculate_outcomes(
+  p, rep(1, 14), rep(0, 14), rep(0, 14), "standard", biomarker,
+  rep(dw, 14), rep(1, 14), 1 / 52)
+params$c_test_CRP <- 0
+stopifnot(outcomes(params, "crp")$costs_total == 16,
+          outcomes(params, NULL)$costs_total == 16)
+changed <- params
+changed$c_test_NGS <- changed$c_test_NGS + 1000
+stopifnot(abs(outcomes(changed, "tmb_braf", 0.9)$costs_total -
+                outcomes(params, "tmb_braf", 0.9)$costs_total - 900) < 1e-10)
+stopifnot(inherits(tryCatch(outcomes(params, "unknown"), error = identity), "error"))
 
-# The diagnostic charge comes from the mapping, not legacy scalar fields.
-params$c_test_CRP <- 999
-params$c_test_NGS <- 999
-stopifnot(run_outcomes(params, "crp")$costs_total == 17)
-stopifnot(run_outcomes(params, "tmb_braf")$costs_total == 2500)
-
-# Swapping the data mapping swaps costs without changing calculation logic.
-params$c_test_biomarker <- rev(params$c_test_biomarker)
-names(params$c_test_biomarker) <- c("crp", "tmb_braf")
-stopifnot(run_outcomes(params, "crp")$costs_total == 2500)
-stopifnot(run_outcomes(params, "tmb_braf")$costs_total == 17)
-
-# CRP diagnostic cost can be zeroed independently of routine blood monitoring.
-params <- make_params()
-params$c_test_biomarker$crp <- 0
-params$c_test_blood <- 16
-params$l_blood <- c(1, rep(0, 13))
-stopifnot(run_outcomes(params, "crp")$costs_total == 16)
-stopifnot(run_outcomes(params, NULL)$costs_total == 16)
-
-# Unknown biomarkers fail explicitly rather than silently omitting the charge.
-unknown_error <- tryCatch(
-  {
-    run_outcomes(params, "unknown")
-    NULL
-  },
-  error = identity
-)
-stopifnot(inherits(unknown_error, "error"))
-stopifnot(grepl("No diagnostic-test cost configured", conditionMessage(unknown_error)))
-
-# PSA draws update both sampled scalars and the lookup consumed by the model.
+# PSA economic rows reach the real model without a caller-side sync.
 source("R/psa_functions.R")
-captured_psa_params <- NULL
-model_fun <- function(params, ...) {
-  captured_psa_params <<- params
-  data.frame(Strategy = "control", Cost = 0, Effect = 0)
-}
-psa_draws <- data.frame(sim = 1, c_test_CRP = 31, c_test_NGS = 4100)
-invisible(capture.output(run_psa_analysis(
-  psa_params = psa_draws,
-  l_params_base = make_params(),
-  param_distributions = list(c_test_CRP = list(), c_test_NGS = list()),
-  strategies = "control",
-  time_horizon = 1,
-  cl = 1,
-  n_sim = 1
-)))
-stopifnot(captured_psa_params$c_test_biomarker$crp == 31)
-stopifnot(captured_psa_params$c_test_biomarker$tmb_braf == 4100)
-
-cat("Biomarker diagnostic-test cost mapping tests passed.\n")
+actual_model <- model_fun
+model_fun <- function(params, ...) actual_model(params)
+draws <- data.frame(sim = 1, c_test_CRP = 31, c_test_NGS = 4100)
+invisible(capture.output(result <- run_psa_analysis(
+  draws, params, list(c_test_CRP = list(), c_test_NGS = list()),
+  get_strategies(), 520, 1 / 52, 1)))
+stopifnot(identical(as.numeric(result$cost[1, ]), c(16, 47, 4116)))
+cat("Diagnostic-price regression tests passed.\n")

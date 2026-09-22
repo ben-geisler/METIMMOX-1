@@ -55,10 +55,6 @@ for (biomarker in get_biomarkers()) {
 # Biomarker diagnostic costs are distinct from routine monitoring costs.
 c_test_CRP <- 16
 c_test_NGS <- 2518
-biomarker_test_costs <- lapply(
-  biomarker_cost_key(),
-  function(cost_key) get(cost_key)
-)
 
 # Compile all parameters into a list for the model function
 l_params_base <- list(
@@ -95,7 +91,6 @@ l_params_base <- list(
   # assuming that this covers 40% of the actual lab costs; 193 Norwegian Krone equals 16,41 Euro
   c_test_CRP = c_test_CRP, # one-time CRP biomarker test (independent of routine blood monitoring)
   c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
-  c_test_biomarker = biomarker_test_costs,
   
   # Other costs
   c_other_visit = 33,     # cost of standard outpatient visit

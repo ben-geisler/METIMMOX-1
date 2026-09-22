@@ -125,17 +125,16 @@ excess of PFS over OS:
   patient-years. The clamp moves exactly the excess area from the
   progression-free state to the progressed state; OS is untouched.
 - **QALY consequence**: discounted QALYs the raw curves would have
-  produced minus the clamped QALYs. Because the model’s cycle sum gives
-  $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the
-  difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ using each
-  PSA row’s sampled utilities, $cl = 1/52$ and effect discount weights
-  $w_t$ at 4% per year. It is the amount by which the raw curves
-  overstate QALYs by counting the excess as progression-free time at the
-  higher utility.
+  produced minus the clamped QALYs. With $p_{PF} = \mathrm{PFS}$ and
+  $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is
+  $\sum_t h_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$, where $h_t$ is 0.5
+  at the two horizon endpoints and 1 elsewhere. This uses each PSA row’s
+  sampled utilities, $cl = 1/52$ and effect discount weights $w_t$ at 4%
+  per year. It is the amount by which the raw curves overstate QALYs by
+  counting the excess as progression-free time at the higher utility.
 
-Areas use the trapezoidal rule (the convention of
-`restricted_mean_survival()`); the QALY consequence uses the model’s own
-cycle sum so that it matches `model_fun()` exactly.
+Areas and discounted QALYs both use the trapezoidal rule, matching
+`restricted_mean_survival()` and `model_fun()` (issue \#163).
 
 ## Mapping draws to PSA rows
 
@@ -161,8 +160,8 @@ file is younger than the sampling-cache file.
 | Cache | Modified | Sampling fingerprint |
 |:---|:---|:---|
 | Sampling draws | 2026-09-18 16:49 | db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3 |
-| PSA results | 2026-09-18 17:20 | db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3 |
-| Violation diagnostics | 2026-09-18 17:35 | db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3 |
+| PSA results | 2026-09-21 15:41 | db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3 |
+| Violation diagnostics | 2026-09-21 16:23 | db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3 |
 
 Caches read by this report
 
@@ -312,26 +311,27 @@ alt="The draw with the largest PFS-over-OS excess area for each curve (draws 136
 
 | Curve     | All draws | Violating draws | Maximum | Clamped QALYs | Relative |
 |:----------|----------:|----------------:|--------:|--------------:|---------:|
-| SoC       |    0.0003 |          0.0031 |  0.0484 |         1.408 |    0.02% |
-| CRP+      |    0.0001 |          0.0013 |  0.0576 |         1.812 |    0.01% |
-| CRP-      |    0.0000 |          0.0001 |  0.0028 |         1.212 |    0.00% |
-| TMB/BRAF+ |    0.0001 |          0.0009 |  0.0324 |         1.455 |    0.01% |
-| TMB/BRAF- |    0.0001 |          0.0018 |  0.0284 |         1.339 |    0.01% |
+| SoC       |    0.0003 |          0.0031 |  0.0483 |         1.401 |    0.02% |
+| CRP+      |    0.0001 |          0.0013 |  0.0575 |         1.805 |    0.01% |
+| CRP-      |    0.0000 |          0.0001 |  0.0028 |         1.205 |    0.00% |
+| TMB/BRAF+ |    0.0001 |          0.0009 |  0.0324 |         1.448 |    0.01% |
+| TMB/BRAF- |    0.0001 |          0.0018 |  0.0284 |         1.332 |    0.01% |
 
 Discounted QALYs the raw curves would add relative to the clamped
 curves, by curve
 
 *Note:* Raw minus clamped discounted QALYs per patient = sum over cycles
-of max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight;
-mean over all draws and over violating draws, and the maximum. Clamped
-QALYs: mean over all draws. Relative: all-draw mean difference as a
-share of the mean clamped QALYs of the curve.
+of max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight x
+trapezoidal endpoint weight; mean over all draws and over violating
+draws, and the maximum. Clamped QALYs: mean over all draws. Relative:
+all-draw mean difference as a share of the mean clamped QALYs of the
+curve.
 
 | Strategy | Mean overstatement | Maximum | Mean PSA QALYs |
 |:---------|-------------------:|--------:|---------------:|
-| Control  |             0.0003 |  0.0484 |          1.408 |
-| CRP      |             0.0001 |  0.0148 |          1.415 |
-| TMB/BRAF |             0.0001 |  0.0196 |          1.390 |
+| Control  |             0.0003 |  0.0483 |          1.401 |
+| CRP      |             0.0001 |  0.0148 |          1.407 |
+| TMB/BRAF |             0.0001 |  0.0196 |          1.383 |
 
 QALY overstatement of the raw curves by strategy (per patient,
 discounted)
@@ -367,9 +367,9 @@ range from -0.0148 to 0.0479 for CRP.
 
 | Strategy | Base case | PSA, clamped | PSA, raw |
 |:---------|----------:|-------------:|---------:|
-| Control  |    1.3714 |       1.4082 |   1.4085 |
-| CRP      |    1.3920 |       1.4145 |   1.4146 |
-| TMB/BRAF |    1.3599 |       1.3902 |   1.3904 |
+| Control  |    1.3644 |       1.4012 |   1.4015 |
+| CRP      |    1.3849 |       1.4075 |   1.4075 |
+| TMB/BRAF |    1.3529 |       1.3832 |   1.3833 |
 
 Discounted QALYs per patient: deterministic base case, PSA mean with the
 clamp (the cached PSA), and PSA mean the raw curves would have given
@@ -379,7 +379,7 @@ curves for the strategy.
 
 | Strategy | Base case | PSA, clamped | PSA, raw |
 |:---------|----------:|-------------:|---------:|
-| CRP      |    0.0205 |       0.0063 |   0.0060 |
+| CRP      |    0.0205 |       0.0063 |   0.0061 |
 | TMB/BRAF |   -0.0115 |      -0.0180 |  -0.0182 |
 
 Incremental discounted QALYs versus standard of care: base case, PSA
@@ -387,7 +387,7 @@ mean with the clamp, and PSA mean without it
 
 The PSA incremental QALYs of the CRP-guided strategy are 0.0063,
 compared with a deterministic increment of 0.0205. Removing the clamp
-would give 0.0060: the clamp narrows the gap by an amount equal to 1.7%
+would give 0.0061: the clamp narrows the gap by an amount equal to 1.7%
 of the reported gap. The remaining difference reflects nonlinear
 averaging of survival curves over coefficient uncertainty and Monte
 Carlo error. Cross-endpoint dependence cannot change the expected
@@ -416,7 +416,7 @@ attribution was too strong.
   incremental gain of 0.0205. Individual draws can move by up to 0.048
   QALYs, substantially more than the mean shift.
 - **Report both estimands.** The deterministic CRP increment is 0.0205
-  QALYs; the PSA mean is 0.0063 with the clamp and 0.0060 without it. A
+  QALYs; the PSA mean is 0.0063 with the clamp and 0.0061 without it. A
   nonlinear model can produce this difference under correctly centred
   coefficient uncertainty. The original five-SE diagnostic is retained;
   the separate zero-uncertainty regression verifies equality when all
@@ -435,14 +435,13 @@ attribution was too strong.
   `run_pfs_os_violation_diagnostics()` regenerates the cache on any
   fingerprint mismatch. The current cache was built from sampling cache
   db1cd41a15cbd9f064598912384522425418fa691712839b69a2615079f6c0c3
-  (method mvn_joint_v2) in 778 seconds on 2026-09-18 17:35.
+  (method mvn_joint_v2) in 1231 seconds on 2026-09-21 16:23.
 - Curves are computed in closed form from the gamma parameters of each
   draw; `validate_direct_curves()` checks them against the pipeline’s
   `predict()`-based helper before every regeneration and stops if they
   differ by more than 1e-8.
-- All values are per patient over the 10-year horizon; areas are
-  restricted means by the trapezoidal rule, QALY differences use the
-  model’s cycle sum.
+- All values are per patient over the 10-year horizon; areas and QALY
+  differences use the trapezoidal rule.
 - “PFS-over-OS excess area” is this report’s term for the area between
   the two curves on the stretch where they are inverted; it is not a
   standard quantity. The figures call the same region the trough.
@@ -451,4 +450,4 @@ attribution was too strong.
 
 **Report completed on:** 2026-09-21  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 2.0
+**Report version:** 2.1

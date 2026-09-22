@@ -52,7 +52,6 @@ for (i in seq_len(nrow(dsa_ranges))) {
   for (value_type in c("min", "max")) {
     params_varied <- l_params_base
     params_varied[[param_name]] <- dsa_ranges[[value_type]][i]
-    params_varied <- sync_biomarker_test_costs(params_varied)
 
     result <- model_fun(params_varied)
     result$NMB <- result$Effect * WTP - result$Cost

@@ -29,7 +29,6 @@ run_test <- function() {
   p$l_nivo[] <- 0
   p$l_FLOX_exp <- p$l_FLOX_control
   p$c_test_CRP <- p$c_test_NGS <- 0
-  p <- sync_biomarker_test_costs(p)
   for (bm in get_biomarkers()) for (mult in c(0.8, 1, 1.2)) {
     changed <- p; key <- paste0("p_", bm); changed[[key]] <- p[[key]] * mult
     result <- model_fun(changed)

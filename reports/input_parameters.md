@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-09-18
+2026-09-21
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -12,6 +12,22 @@ Ben Geisler
 - [Structural Parameters](#structural-parameters)
 
 # Model Configuration
+
+State utilities and ongoing progressed-state costs are integrated over
+the intervals between weekly grid points using the trapezoidal rule
+(half weight at weeks 0 and 520). Thus 521 points span exactly 520
+weeks: with no mortality, unit utilities and no discounting, the model
+returns 10 QALYs. Quarterly follow-up and post-progression cost rates
+accrue as four times the quarterly rate per year of progressed-state
+occupancy. Discount weights are applied at each grid point before
+integration. Drug administrations, scheduled tests and visits, baseline
+screening and end-of-life events retain their full costs at their
+modeled time points; they are not half-cycle corrected (issue \#163).
+
+Diagnostic prices are read directly from `c_test_CRP` and `c_test_NGS`
+on every calculation, including direct model and enriched-population
+calls. A legacy `c_test_biomarker` lookup is ignored; editing a scalar
+price needs no separate synchronization step (issue \#173).
 
 | Item | Value |
 |:---|:---|
@@ -153,6 +169,6 @@ Structural model parameters
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-18  
+**Report completed on:** 2026-09-21  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.3
+**Report version:** 4.4

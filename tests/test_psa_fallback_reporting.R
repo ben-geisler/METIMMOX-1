@@ -181,4 +181,42 @@ stopifnot(!anyNA(result$cost), !anyNA(result$effect))
 stopifnot(any(grepl("Dropping 1 PSA iteration", drop_warnings)))
 stopifnot(!any(grepl("column mean", c(output, drop_warnings), ignore.case = TRUE)))
 
+# Non-finite values, duplicate/missing rows and missing columns all use the
+# same threshold and replacement path on initial and replacement calls (#171).
+valid <- data.frame(Strategy = c("control", "crp"), Cost = c(1, 2), Effect = c(1, 1.5))
+invalid_results <- list()
+for (column in c("Cost", "Effect")) for (value in c(NA_real_, NaN, Inf, -Inf)) {
+  bad <- valid
+  bad[[column]][2] <- value
+  invalid_results[[length(invalid_results) + 1L]] <- bad
+}
+invalid_results <- c(invalid_results, list(valid[1, ], valid[c(1, 1), ],
+  valid[c(1, 2, 2), ], valid[, c("Strategy", "Effect")]))
+for (bad in invalid_results) {
+  calls <- 0L
+  model_fun <- function(params, sim_idx, ...) {
+    calls <<- calls + 1L
+    if (sim_idx <= 3) bad else valid
+  }
+  invisible(capture.output(err <- tryCatch(run_psa_analysis(
+    data.frame(sim = 1:100), make_params(), list(), c("control", "crp"), 1, 1, 100),
+    error = identity)))
+  stopifnot(inherits(err, "error"), grepl("3.00% \\(3/100\\) exceeds", conditionMessage(err)),
+            calls == 100L)
+
+  # Exactly 2% is allowed, but both failures must be replaced; model 2 is
+  # still invalid as a replacement and model 3 is used for both economic rows.
+  calls <- 0L
+  model_fun <- function(params, sim_idx, ...) {
+    calls <<- calls + 1L
+    if (sim_idx <= 2) bad else valid[2:1, ]
+  }
+  invisible(capture.output(result <- run_psa_analysis(
+    data.frame(sim = 1:100), make_params(), list(), c("control", "crp"), 1, 1, 100)))
+  stopifnot(result$fallback_count == 2, result$fallback_rate == 0.02,
+            result$dropped_count == 0, result$n_sim == 100, calls == 103L,
+            identical(result$model_idx[1:3], c(3L, 3L, 3L)),
+            all(result$cost[, "control"] == 1), all(result$cost[, "crp"] == 2))
+}
+
 cat("PSA fallback reporting and threshold tests passed.\n")

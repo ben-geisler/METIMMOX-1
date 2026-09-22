@@ -182,7 +182,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
     # replaces the single test in the experimental arm; the control arm
     # (positives on FLOX, which every patient receives under standard of care)
     # carries no test cost. Both quantities are kept as explicit columns.
-    test_cost <- l_params_base$c_test_biomarker[[biomarker]]
+    test_cost <- l_params_base[[biomarker_cost_key(biomarker)[[1L]]]]
     prevalence <- strategies_df$prevalence[strategies_df$id == biomarker]
     if (!is.numeric(test_cost) || length(test_cost) != 1 || !is.finite(test_cost)) {
       stop("No diagnostic-test cost configured for biomarker '", biomarker, "'")

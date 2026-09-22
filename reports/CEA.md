@@ -44,6 +44,13 @@ surviving to the week-4 measurement.
 
 # Economic Survival Model
 
+QALYs and ongoing progressed-state cost rates use trapezoidal
+integration over the weekly grid: 521 points cover exactly 520 weeks.
+Scheduled treatment, diagnostic tests and visits, baseline costs and
+end-of-life events retain full charges at their modeled time points
+(issue \#163). See the [input-parameter report](input_parameters.md) for
+the integration convention.
+
 | Component | Formula |
 |:---|:---|
 | OS | Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx |
@@ -64,17 +71,17 @@ Economic strategies
 
 | Strategy         |       Cost | QALYs |        NMB |
 |:-----------------|-----------:|------:|-----------:|
-| Standard of Care | EUR 21,523 | 1.371 | EUR 48,419 |
-| CRP-guided       | EUR 53,948 | 1.392 | EUR 17,042 |
-| TMB/BRAF-guided  | EUR 62,685 | 1.360 |  EUR 6,670 |
+| Standard of Care | EUR 21,523 | 1.364 | EUR 48,061 |
+| CRP-guided       | EUR 53,948 | 1.385 | EUR 16,684 |
+| TMB/BRAF-guided  | EUR 62,685 | 1.353 |  EUR 6,312 |
 
 Base case results at WTP = EUR 51,000
 
 | Strategy | Cost | QALYs | Incremental Cost | Incremental QALYs | ICER | Status |
 |:---|---:|---:|---:|---:|---:|:---|
-| Standard of Care | EUR 21,523 | 1.371 | – | – | – | ND |
-| CRP-guided | EUR 53,948 | 1.392 | EUR 32,424 | 0.021 | EUR 1,578,523 | ND |
-| TMB/BRAF-guided | EUR 62,685 | 1.360 | – | – | Dominated | D |
+| Standard of Care | EUR 21,523 | 1.364 | – | – | – | ND |
+| CRP-guided | EUR 53,948 | 1.385 | EUR 32,424 | 0.021 | EUR 1,578,614 | ND |
+| TMB/BRAF-guided | EUR 62,685 | 1.353 | – | – | Dominated | D |
 
 Incremental cost-effectiveness results
 
@@ -107,9 +114,9 @@ progressed utility above the progression-free utility.
 
 | Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
 |:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 21,497 |      1.408 |                     100.0% |
-| CRP-guided       | EUR 53,531 |      1.415 |                       0.0% |
-| TMB/BRAF-guided  | EUR 62,113 |      1.390 |                       0.0% |
+| Standard of Care | EUR 21,497 |      1.401 |                     100.0% |
+| CRP-guided       | EUR 53,531 |      1.407 |                       0.0% |
+| TMB/BRAF-guided  | EUR 62,113 |      1.383 |                       0.0% |
 
 PSA summary at WTP = EUR 51,000
 
@@ -140,11 +147,11 @@ reported explicitly.
 | Strategy | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
 | Standard of Care | Cost | EUR 21,523 | EUR 21,497 | EUR 36 | -EUR 27 | -0.7 |
-| Standard of Care | QALYs | 1.3714 | 1.4082 | 0.0042 | +0.0368 | +8.8 |
+| Standard of Care | QALYs | 1.3644 | 1.4012 | 0.0042 | +0.0368 | +8.8 |
 | CRP-guided | Cost | EUR 53,948 | EUR 53,531 | EUR 88 | -EUR 417 | -4.7 |
-| CRP-guided | QALYs | 1.3920 | 1.4145 | 0.0038 | +0.0226 | +5.9 |
+| CRP-guided | QALYs | 1.3849 | 1.4075 | 0.0038 | +0.0225 | +5.9 |
 | TMB/BRAF-guided | Cost | EUR 62,685 | EUR 62,113 | EUR 94 | -EUR 572 | -6.1 |
-| TMB/BRAF-guided | QALYs | 1.3599 | 1.3902 | 0.0039 | +0.0303 | +7.8 |
+| TMB/BRAF-guided | QALYs | 1.3529 | 1.3832 | 0.0039 | +0.0303 | +7.8 |
 
 PSA means versus base-case values (difference in Monte Carlo standard
 errors)
@@ -229,4 +236,4 @@ as described in the project documentation.
 
 **Report completed on:** 2026-09-21  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.4
+**Report version:** 4.5

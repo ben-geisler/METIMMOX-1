@@ -28,9 +28,9 @@ obtained by adding single-parameter rows, because EVPPI is not additive.
 
 | Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
 |:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 21,497 |      1.408 |                     100.0% |
-| CRP-guided       | EUR 53,531 |      1.415 |                       0.0% |
-| TMB/BRAF-guided  | EUR 62,113 |      1.390 |                       0.0% |
+| Standard of Care | EUR 21,497 |      1.401 |                     100.0% |
+| CRP-guided       | EUR 53,531 |      1.407 |                       0.0% |
+| TMB/BRAF-guided  | EUR 62,113 |      1.383 |                       0.0% |
 
 PSA summary at WTP = EUR 51,000
 

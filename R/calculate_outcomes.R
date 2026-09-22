@@ -45,6 +45,15 @@ discount_weights <- function(params, n_cycles, cl = params$cl) {
        effect = 1 / (1 + params$dr_effects)^years)
 }
 
+# Trapezoidal integration over intervals between the supplied grid points.
+# A single point spans no time. Scheduled/event costs do not use these weights.
+interval_weights <- function(n_points) {
+  if (n_points < 2L) return(rep(0, n_points))
+  weights <- rep(1, n_points)
+  weights[c(1L, n_points)] <- 0.5
+  weights
+}
+
 # Helper function to calculate costs and QALYs based on state occupancy
 calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker, v_dw_c, v_dw_e, cl) {
   # Number of cycles
@@ -67,12 +76,11 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   l_blood <- extend_schedule(params$l_blood, n_cycles)
   l_visit <- extend_schedule(params$l_visit, n_cycles)
   
-  # Define quarterly cycles for follow-up costs
-  quarterly_cycles <- seq(13, n_cycles, by = 13)
+  occupancy_weights <- interval_weights(n_cycles)
   
   # Calculate QALYs
-  qalys_pf <- p_pf * params$u_np * cl
-  qalys_p <- p_p * params$u_p * cl
+  qalys_pf <- p_pf * params$u_np * cl * occupancy_weights
+  qalys_p <- p_p * params$u_p * cl * occupancy_weights
   qalys_undiscounted <- qalys_pf + qalys_p
   qalys_discounted <- qalys_undiscounted * v_dw_e
   qalys_total <- sum(qalys_discounted)
@@ -91,8 +99,11 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   
   # Add biomarker test cost if applicable
   if(!is.null(biomarker)) {
-    biomarker_test_cost <- params$c_test_biomarker[[biomarker]]
-    if (is.null(biomarker_test_cost)) {
+    # Scalar prices are canonical, including for direct/enriched callers.
+    # A legacy c_test_biomarker lookup is never used (issue #173).
+    biomarker_test_cost <- params[[biomarker_cost_key(biomarker)[[1L]]]]
+    if (!is.numeric(biomarker_test_cost) || length(biomarker_test_cost) != 1L ||
+        !is.finite(biomarker_test_cost) || biomarker_test_cost < 0) {
       stop("No diagnostic-test cost configured for biomarker '", biomarker, "'")
     }
     test_costs[1] <- test_costs[1] + biomarker_test_cost
@@ -102,24 +113,19 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   visit_costs <- l_visit * params$c_other_visit * p_pf
   visit_costs[1] <- visit_costs[1] + params$c_other_baseline
   
-  # Follow-up costs
-  follow_up_costs <- rep(0, n_cycles)
-  if(length(quarterly_cycles) > 0) {
-    follow_up_costs[quarterly_cycles] <- params$c_other_follow * p_p[quarterly_cycles]
-  }
+  # Ongoing progressed-state costs are rates per quarter (four per year).
+  # Integrate occupancy and discounting over intervals, just as for utilities.
+  progressed_quarters <- p_p * (4 * cl) * occupancy_weights
+  follow_up_costs <- params$c_other_follow * progressed_quarters
 
   # Post-progression treatment costs (issue #154). Second-line systemic therapy,
   # imaging and visits after progression are NOT costed in the base case, where
   # c_other_pp = 0 and the progressed state accrues only the quarterly follow-up
   # contact and the end-of-life cost. The omission is differential because the
   # strategies differ in time spent progressed, so the parameter is explicit and
-  # is varied in a deterministic structural scenario. Charged on the same
-  # quarterly cycles as the follow-up contact.
+  # is varied in a deterministic structural scenario, as a quarterly rate.
   c_other_pp <- if (is.null(params$c_other_pp)) 0 else params$c_other_pp
-  post_progression_costs <- rep(0, n_cycles)
-  if (c_other_pp != 0 && length(quarterly_cycles) > 0) {
-    post_progression_costs[quarterly_cycles] <- c_other_pp * p_p[quarterly_cycles]
-  }
+  post_progression_costs <- c_other_pp * progressed_quarters
 
   # End-of-life costs: one-time cost applied when patients transition to death
   # At t=0: no deaths yet (everyone starts alive)

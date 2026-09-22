@@ -17,8 +17,8 @@
 #   * progressed-state area = integral of (OS - PFS) raw (can be negative) and
 #     of max(OS - PFS, 0) clamped, in patient-years;
 #   * QALY impact = discounted QALYs the raw curves would have produced minus
-#     the clamped QALYs. Within the model's cycle sum this is exactly
-#     sum_t (PFS_t - OS_t)^+ (u_np - u_p) cl w_t, because the raw curves give
+#     the clamped QALYs. With trapezoidal endpoint weights h_t this is exactly
+#     sum_t h_t (PFS_t - OS_t)^+ (u_np - u_p) cl w_t, because the raw curves give
 #     p_pf = PFS and p_p = OS - PFS < 0 on the violating cycles.
 #
 # The curves are the same population-averaged predictions as
@@ -223,8 +223,8 @@ pfs_os_violation_metrics <- function(os, pfs, times, cl, v_dw_e, u_np, u_p) {
     pf_area_raw_years = trapezoid_area_years(pfs, cl),
     pf_area_clamped_years = trapezoid_area_years(pmin(pfs, os), cl),
     os_area_years = trapezoid_area_years(os, cl),
-    qaly_raw_minus_clamped = sum(excess * (u_np - u_p) * cl * v_dw_e),
-    qaly_clamped = sum((pmin(pfs, os) * u_np + gap_clamped * u_p) * cl * v_dw_e)
+    qaly_raw_minus_clamped = trapezoid_area_years(excess * (u_np - u_p) * v_dw_e, cl),
+    qaly_clamped = trapezoid_area_years((pmin(pfs, os) * u_np + gap_clamped * u_p) * v_dw_e, cl)
   )
 }
 
@@ -276,7 +276,7 @@ run_pfs_os_violation_diagnostics <- function(sampling_models, data_complete,
     u_np = params$u_np, u_p = params$u_p, dr_effects = params$dr_effects,
     prediction_population = cache_fingerprint(data_complete),
     psa_parameters = cache_fingerprint(psa_params),
-    version = "pfs_os_violations_v2"
+    version = "pfs_os_violations_v3_trapezoid"
   )
   fingerprint <- cache_fingerprint(fp_inputs)
 

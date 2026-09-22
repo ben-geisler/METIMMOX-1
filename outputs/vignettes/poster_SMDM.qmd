@@ -234,7 +234,6 @@ l_params_base3$p_tmb_braf <- prev[["tmb_braf"]]
 # known at treatment selection, at no separate test cost, because it is read
 # from the first on-treatment CT that is already in the monitoring schedule.
 l_params_base3$c_test_TLR <- 0
-l_params_base3 <- sync_biomarker_test_costs(l_params_base3)
 
 res3  <- suppressWarnings(model_fun(l_params_base3, determpsa = "det"))
 icer3 <- dampack::calculate_icers(cost = res3$Cost, effect = res3$Effect, strategies = res3$Strategy)
@@ -307,8 +306,8 @@ kable(cea_display,
 # 06_sampling.R). The control curve is the joint model with Rx = control in
 # BOTH panels (issue #151), so the panels differ only in the guided-strategy
 # curves. Patient curves are predicted and averaged with shared weights on the
-# materialised sampled models and each draw goes through model_fun() in PSA
-# mode, which caps a PFS > OS crossing instead of aborting (the deterministic
+# materialised sampled models and each draw goes through model_fun() in explicit
+# supplied-curve mode, which caps a PFS > OS crossing (the deterministic
 # path stops on any crossing; joint coefficient draws can still cross).
 #
 # Shown at biosimilar nivolumab pricing, where the decision is a close call and
@@ -372,16 +371,14 @@ run_panel <- function(d_row, ctrl, guided) {
   # PSA since issue #154 and keep their base-case values; a hardcoded name list
   # would silently drop them from the parameter set.
   for (nm in intersect(names(d_row), names(l_params_base))) p[[nm]] <- d_row[[nm]]
-  p <- sync_biomarker_test_costs(p)
   p$c_drug_nivo <- p$c_drug_nivo * NIVO_FACTOR
   p$p_os  <- c(list(control_OS = ctrl$os), guided$os)
   p$p_pfs <- c(list(control_PFS = ctrl$pfs), guided$pfs)
   # These supplied curves already use this draw's common population weights.
   p$population_weights <- population_weights
   p$population_curves <- NULL
-  # PSA mode without sim_idx uses the supplied curves and caps a PFS > OS
-  # crossing instead of aborting.
-  suppressWarnings(model_fun(p, determpsa = "psa"))
+  # Explicit supplied-curve mode caps a PFS > OS crossing with a warning.
+  suppressWarnings(model_fun(p, determpsa = "curves"))
 }
 
 cj <- ej <- cs <- es <- matrix(NA, N, 3, dimnames = list(NULL, c("control","crp","tmb_braf")))

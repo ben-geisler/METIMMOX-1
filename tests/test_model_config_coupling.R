@@ -85,7 +85,7 @@ invisible(withCallingHandlers(
     make_model_params(),
     time_horizon = 13,
     cl = 1,
-    determpsa = "psa",
+    determpsa = "curves",
     sim_idx = NULL
   ),
   survival_ordering_warning = function(w) {

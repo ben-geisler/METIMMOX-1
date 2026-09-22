@@ -86,7 +86,6 @@ for (i in seq_len(nrow(dsa_ranges))) {
     param_value <- dsa_ranges[[side]][i]
     params_side <- dsa_basecase
     params_side[[param_name]] <- param_value
-    params_side <- sync_biomarker_test_costs(params_side)
     result_side <- model_fun(params_side)
     all_results[[result_counter]] <- format_results(
       result_side, param_name, side, param_value

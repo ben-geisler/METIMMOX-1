@@ -100,37 +100,19 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
   }
 }
 
-# Special test for NULL sim_idx (PSA block should be skipped)
-test_null_sim_idx <- function() {
-  cat(sprintf("%-35s", "Test: NULL sim_idx..."))
-
-  result <- tryCatch({
-    suppressWarnings({
-      model_fun(
-        params = l_params_base,
-        time_horizon = time_horizon,
-        cl = cl,
-        determpsa = "psa",
-        return_traces = FALSE,
-        sim_idx = NULL  # NULL should cause PSA block to be skipped
-      )
-    })
-    list(status = "success", error = NULL)
-  }, error = function(e) {
-    list(status = "error", error = conditionMessage(e))
-  })
-
-  # With NULL sim_idx and determpsa="psa", the PSA block is skipped
-  # This is documented behavior (line 53 checks: && !is.null(sim_idx))
-  if (result$status == "success") {
-    cat("PASS - PSA block skipped (documented)\n")
-    return(TRUE)
-  } else {
-    cat("FAIL - Expected the documented NULL behaviour\n")
-    cat(sprintf("         Error: %s\n", result$error))
-    return(FALSE)  # The documented NULL behaviour is an asserted contract.
-  }
+# Supplied curves are an explicit mode, while PSA always requires an index.
+test_null_sim_idx <- function() test_model_fun("sim_idx = NULL", NULL)
+for (bad in list(NA_real_, NaN, Inf, numeric(0), c(1, 2), 1.5)) {
+  stopifnot(test_model_fun("invalid scalar index", bad))
 }
+for (mode in c("typo", "PSA")) {
+  err <- tryCatch(model_fun(l_params_base, time_horizon = time_horizon,
+                           determpsa = mode), error = identity)
+  stopifnot(inherits(err, "error"))
+}
+det <- model_fun(l_params_base, time_horizon = time_horizon)
+curves <- model_fun(l_params_base, time_horizon = time_horizon, determpsa = "curves")
+stopifnot(identical(det, curves), !isTRUE(attr(curves, "fallback_used")))
 
 # =============================================================================
 # RUN TEST CASES
@@ -157,7 +139,7 @@ results["out_of_bounds"] <- test_model_fun(
 # Test 4: Non-numeric (should error)
 results["non_numeric"] <- test_model_fun("sim_idx = 'abc'", sim_idx_value = "abc", expect_error = TRUE)
 
-# Test 5: NULL with PSA mode (documented behavior)
+# Test 5: NULL with PSA mode must fail
 results["null"] <- test_null_sim_idx()
 
 # Test 6: Valid index (should succeed)

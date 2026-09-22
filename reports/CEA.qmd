@@ -87,6 +87,12 @@ The economic survival model is a single joint model with CRP and TMB/BRAF treatm
 
 # Economic Survival Model
 
+QALYs and ongoing progressed-state cost rates use trapezoidal integration over
+the weekly grid: 521 points cover exactly 520 weeks. Scheduled treatment,
+diagnostic tests and visits, baseline costs and end-of-life events retain full
+charges at their modeled time points (issue #163). See the
+[input-parameter report](input_parameters.md) for the integration convention.
+
 ```{r model-table}
 model_df <- data.frame(
   Component = c("OS", "PFS", "Control arm"),
@@ -311,4 +317,4 @@ Adverse-event costs and disutilities remain outside the modeled scope, as descri
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.4
+**Report version:** 4.5

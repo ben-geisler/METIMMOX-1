@@ -1,6 +1,6 @@
 # Biosimilar Nivolumab Pricing Scenario
 Ben Geisler
-2026-09-18
+2026-09-21
 
 - [Overview](#overview)
 - [Pricing Scenarios](#pricing-scenarios)
@@ -27,12 +27,12 @@ Nivolumab pricing scenarios
 
 | Scenario   | Strategy         |       Cost | QALYs |
 |:-----------|:-----------------|-----------:|------:|
-| Base case  | Standard of Care | EUR 21,523 | 1.371 |
-| Base case  | CRP-guided       | EUR 53,948 | 1.392 |
-| Base case  | TMB/BRAF-guided  | EUR 62,685 | 1.360 |
-| Biosimilar | Standard of Care | EUR 21,523 | 1.371 |
-| Biosimilar | CRP-guided       | EUR 31,900 | 1.392 |
-| Biosimilar | TMB/BRAF-guided  | EUR 36,186 | 1.360 |
+| Base case  | Standard of Care | EUR 21,523 | 1.364 |
+| Base case  | CRP-guided       | EUR 53,948 | 1.385 |
+| Base case  | TMB/BRAF-guided  | EUR 62,685 | 1.353 |
+| Biosimilar | Standard of Care | EUR 21,523 | 1.364 |
+| Biosimilar | CRP-guided       | EUR 31,900 | 1.385 |
+| Biosimilar | TMB/BRAF-guided  | EUR 36,186 | 1.353 |
 
 Base case and biosimilar deterministic results: discounted cost and
 QALYs per patient
@@ -40,10 +40,10 @@ QALYs per patient
 | Scenario | Strategy | Incr. cost | Incr. QALYs | ICER | Pairwise status | Frontier |
 |:---|:---|---:|---:|---:|:---|:---|
 | Base case | Standard of Care | – | – | – | Reference | On frontier |
-| Base case | CRP-guided | EUR 32,424 | 0.021 | EUR 1,578,523 | Pairwise ICER vs SoC | On frontier |
+| Base case | CRP-guided | EUR 32,424 | 0.021 | EUR 1,578,614 | Pairwise ICER vs SoC | On frontier |
 | Base case | TMB/BRAF-guided | EUR 41,161 | -0.012 | Dominated | Dominated by SoC | Dominated |
 | Biosimilar | Standard of Care | – | – | – | Reference | On frontier |
-| Biosimilar | CRP-guided | EUR 10,376 | 0.021 | EUR 505,145 | Pairwise ICER vs SoC | On frontier |
+| Biosimilar | CRP-guided | EUR 10,376 | 0.021 | EUR 505,174 | Pairwise ICER vs SoC | On frontier |
 | Biosimilar | TMB/BRAF-guided | EUR 14,663 | -0.012 | Dominated | Dominated by SoC | Dominated |
 
 Incremental results versus standard of care (pairwise convention) with
@@ -70,6 +70,6 @@ survival curves are unchanged.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-18  
+**Report completed on:** 2026-09-21  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.1

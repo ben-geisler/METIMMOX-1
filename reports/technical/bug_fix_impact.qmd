@@ -93,7 +93,8 @@ comparisons <- list()
 # Per-issue baseline -> fixed, one comparison per bug-fix issue.
 for (iss in paired_issues) {
   comparisons[[length(comparisons) + 1]] <- make_comparison(
-    paste0("Issue ", iss, ": baseline vs fixed"),
+    paste0(if (iss == "173") "Batch #173 / #171 / #163" else paste0("Issue ", iss),
+           ": baseline vs fixed"),
     iss, "baseline", iss, "fixed")
 }
 # Cumulative: earliest baseline -> latest fixed (only when >1 paired issue).
@@ -208,6 +209,16 @@ if (nrow(snapshot_info) == 0) {
 
 # Impact Comparisons
 
+The issue #173 snapshot pair covers the combined fixes for **#173, #171 and
+#163**. Diagnostic prices now use the scalar inputs on every call; invalid PSA
+outcomes enter the failure threshold and replacement process, and supplied
+curves have an explicit evaluation mode. QALYs and ongoing progressed-state
+costs now use trapezoidal interval integration, while scheduled and event costs
+retain their full time-point charges. These changes require new economic
+results but leave the survival coefficient draws unchanged. The baseline was
+saved before editing the calculation sources; both snapshots precede the
+batch commit, so their filenames carry the same pre-fix HEAD identifier.
+
 ```{r overview}
 if (length(comparisons) == 0) {
   cat("No baseline/fixed snapshot pairs were available for comparison.")
@@ -294,4 +305,4 @@ The #159 baseline and fixed snapshots both precede the requested commit and carr
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.4
+**Report version:** 4.5

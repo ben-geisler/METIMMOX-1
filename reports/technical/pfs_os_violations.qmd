@@ -51,6 +51,7 @@ execute:
 #   4. the discounted-QALY consequence of the clamp per curve and strategy.
 #
 # Version history
+#   2.1  2026-09-21  trapezoidal QALY integration aligned with issue #163
 #   1.0  2026-09-08  first version
 #   1.1  2026-09-09  short curve labels and narrower tables (no scaled-down
 #                    tables in the PDF); "area under the trough" renamed
@@ -107,10 +108,13 @@ psa_obj <- load_psa_cache(
 
 # ---- Per-draw diagnostics (cached; ~10 minutes on first run) ---------------
 psa_params <- load_psa_params_cache(required = TRUE, seed = analysis_seed, n_sim = psa_obj$n_sim)
+prediction_population <- l_params_base$prediction_population
+stopifnot(identical(prediction_population,
+                    data_complete[, names(prediction_population), drop = FALSE]))
 diag <- run_pfs_os_violation_diagnostics(
   sampling_models = sampling_models,
-  data_complete = data_complete,
-  data_original = data_complete,
+  data_complete = prediction_population,
+  data_original = prediction_population,
   params = l_params_base,
   time_horizon = time_horizon,
   verbose = FALSE,
@@ -407,9 +411,9 @@ For each draw and curve, with $t$ running over the weekly grid (0 to `r time_hor
 - **Violation**: $\Delta_t > 0$ at one or more time points. The number of violating time points, the first and last violating week, and the largest excess are recorded.
 - **PFS-over-OS excess area (before the clamp)**: $\int \Delta_t \, dt$ by the trapezoidal rule on the weekly grid, in patient-years. It is the area between the PFS and OS curves on the stretch where PFS lies on top. After the clamp, PFS is replaced by min(PFS, OS) and the area is zero.
 - **State areas**: the progression-free area $\int \mathrm{PFS}_t\,dt$ and the progressed-state area $\int (\mathrm{OS}_t - \mathrm{PFS}_t)\,dt$ before the clamp (the latter negative on the violating stretch), and $\int \min(\mathrm{PFS}_t, \mathrm{OS}_t)\,dt$ and $\int \max(\mathrm{OS}_t - \mathrm{PFS}_t, 0)\,dt$ after it, in patient-years. The clamp moves exactly the excess area from the progression-free state to the progressed state; OS is untouched.
-- **QALY consequence**: discounted QALYs the raw curves would have produced minus the clamped QALYs. Because the model's cycle sum gives $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is $\sum_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$ using each PSA row's sampled utilities, $cl = 1/52$ and effect discount weights $w_t$ at `r fmt_pct(l_params_base$dr_effects, 0)` per year. It is the amount by which the raw curves overstate QALYs by counting the excess as progression-free time at the higher utility.
+- **QALY consequence**: discounted QALYs the raw curves would have produced minus the clamped QALYs. With $p_{PF} = \mathrm{PFS}$ and $p_P = \mathrm{OS} - \mathrm{PFS}$, the difference is $\sum_t h_t \Delta_t \,(u_{np} - u_p)\, cl\, w_t$, where $h_t$ is 0.5 at the two horizon endpoints and 1 elsewhere. This uses each PSA row's sampled utilities, $cl = 1/52$ and effect discount weights $w_t$ at `r fmt_pct(l_params_base$dr_effects, 0)` per year. It is the amount by which the raw curves overstate QALYs by counting the excess as progression-free time at the higher utility.
 
-Areas use the trapezoidal rule (the convention of `restricted_mean_survival()`); the QALY consequence uses the model's own cycle sum so that it matches `model_fun()` exactly.
+Areas and discounted QALYs both use the trapezoidal rule, matching `restricted_mean_survival()` and `model_fun()` (issue #163).
 
 ## Mapping draws to PSA rows
 
@@ -650,7 +654,8 @@ knitr::kable(qaly_curve_tbl, booktabs = TRUE,
   tbl_style(latex_options = "HOLD_position") %>%
   tbl_footnote(general = paste0(
     "Raw minus clamped discounted QALYs per patient = sum over cycles of ",
-    "max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight; mean over ",
+    "max(PFS - OS, 0) x (u_np - u_p) x cycle length x discount weight x ",
+    "trapezoidal endpoint weight; mean over ",
     "all draws and over violating draws, and the maximum. Clamped QALYs: mean ",
     "over all draws. Relative: all-draw mean difference as a share of the mean ",
     "clamped QALYs of the curve."))
@@ -737,11 +742,11 @@ The PSA incremental QALYs of the CRP-guided strategy are `r fmt_num(decomp_crp$i
 
 - The diagnostics are cached in `data/tidy/pfs_os_violations_n{n_samples}.rds`; `run_pfs_os_violation_diagnostics()` regenerates the cache on any fingerprint mismatch. The current cache was built from sampling cache `r sampling_models$fingerprint` (method `r get_joint_sampling_models(sampling_models)$method`) in `r sprintf("%.0f", diag$elapsed)` seconds on `r format(diag$creation_time, "%Y-%m-%d %H:%M")`.
 - Curves are computed in closed form from the gamma parameters of each draw; `validate_direct_curves()` checks them against the pipeline's `predict()`-based helper before every regeneration and stops if they differ by more than 1e-8.
-- All values are per patient over the 10-year horizon; areas are restricted means by the trapezoidal rule, QALY differences use the model's cycle sum.
+- All values are per patient over the 10-year horizon; areas and QALY differences use the trapezoidal rule.
 - "PFS-over-OS excess area" is this report's term for the area between the two curves on the stretch where they are inverted; it is not a standard quantity. The figures call the same region the trough.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 2.0
+**Report version:** 2.1

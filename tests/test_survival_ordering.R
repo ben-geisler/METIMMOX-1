@@ -29,7 +29,7 @@ run_survival_ordering_test <- function() {
     all(is.finite(basecase_result$Effect))
   )
 
-  # The clamp is forbidden in deterministic mode and retained in PSA mode only.
+  # The clamp is forbidden in deterministic mode; supplied curves opt in explicitly.
   crossed_params <- l_params_base
   crossed_params$p_pfs$control_PFS[2] <-
     crossed_params$p_os$control_OS[2] + 0.01
@@ -49,7 +49,7 @@ run_survival_ordering_test <- function() {
 
   psa_warning <- NULL
   psa_result <- withCallingHandlers(
-    model_fun(crossed_params, determpsa = "psa"),
+    model_fun(crossed_params, determpsa = "curves"),
     warning = function(w) {
       if (grepl("PFS > OS constraint enforced", conditionMessage(w),
                 fixed = TRUE)) {
@@ -69,7 +69,7 @@ run_survival_ordering_test <- function() {
   )
 
   cat("PASS: OS >= PFS at all 521 points for control and four subgroups; ",
-      "the clamp is PSA-only.\n", sep = "")
+      "the clamp requires PSA or explicit supplied-curve mode.\n", sep = "")
 }
 
 run_survival_ordering_test()

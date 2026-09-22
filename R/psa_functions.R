@@ -98,7 +98,7 @@ psa_samples_seed_matches <- function(psa_params, seed = 123L) {
 #'
 #' @return Character policy identifier
 psa_failed_draw_policy <- function() {
-  "cyclic_other_models_drop_unreplaced_v2"
+  "finite_outcomes_cyclic_other_models_drop_unreplaced_v3"
 }
 
 #' Get keys used to aggregate survival-ordering warnings
@@ -162,6 +162,18 @@ psa_replacement_candidates <- function(failed_i, n_sim, max_attempts = 10L) {
   as.integer(((failed_i + seq_len(candidate_count) - 1L) %% n_sim) + 1L)
 }
 
+# Both initial draws and replacements must return exactly one finite cost and
+# effect per strategy. Duplicates, missing columns and extra rows are failures.
+psa_outcomes_complete <- function(results, strategies) {
+  is.data.frame(results) &&
+    all(c("Strategy", "Cost", "Effect") %in% names(results)) &&
+    nrow(results) == length(strategies) &&
+    !anyNA(results$Strategy) && !anyDuplicated(results$Strategy) &&
+    setequal(as.character(results$Strategy), strategies) &&
+    is.numeric(results$Cost) && is.numeric(results$Effect) &&
+    all(is.finite(results$Cost)) && all(is.finite(results$Effect))
+}
+
 #' Run PSA analysis across all simulations
 #'
 #' @param psa_params Data frame with PSA parameter samples
@@ -210,8 +222,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     for (param_name in names(param_distributions)) {
       sim_params[[param_name]] <- psa_params[[param_name]][i]
     }
-    # Keep the data-driven diagnostic-cost lookup aligned with sampled scalars.
-    sim_params <- sync_biomarker_test_costs(sim_params)
     
     # Use withCallingHandlers to capture warnings, tryCatch for errors
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
@@ -239,27 +249,14 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         # Let other warnings through
       })
 
-      # Check if fallback was used (Issue #79)
-      if (isTRUE(attr(sim_results, "fallback_used"))) {
+      # Validate immediately, before the threshold and replacement phase (#171).
+      if (isTRUE(attr(sim_results, "fallback_used")) ||
+          !psa_outcomes_complete(sim_results, strategies)) {
         fallback_iterations <- c(fallback_iterations, i)
-      }
-
-      # Store results
-      for (strat in strategies) {
-        strat_row <- which(sim_results$Strategy == strat)
-        if (length(strat_row) > 0) {
-          cost_matrix[i, strat] <- sim_results$Cost[strat_row]
-          effect_matrix[i, strat] <- sim_results$Effect[strat_row]
-        } else {
-          # If strategy not found, flag for replacement rather than silently
-          # using running mean which would introduce bias
-          warning("Strategy '", strat, "' not found in sim ", i, " results - flagging for replacement")
-          cost_matrix[i, strat] <- NA
-          effect_matrix[i, strat] <- NA
-          if (!(i %in% fallback_iterations)) {
-            fallback_iterations <- c(fallback_iterations, i)
-          }
-        }
+      } else {
+        strategy_rows <- match(strategies, sim_results$Strategy)
+        cost_matrix[i, ] <- sim_results$Cost[strategy_rows]
+        effect_matrix[i, ] <- sim_results$Effect[strategy_rows]
       }
     }, error = function(e) {
       cat("Error in simulation", i, ":", conditionMessage(e), "\n")
@@ -300,7 +297,7 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     stop(sprintf(
       paste0(
         "PSA initial-pass fallback rate %.2f%% (%d/%d) exceeds the ",
-        "permitted %.2f%% threshold; investigate survival-prediction failures."
+        "permitted %.2f%% threshold; investigate prediction failures and invalid outcomes."
       ),
       100 * fallback_rate, fallback_count, n_sim, 100 * fallback_threshold
     ))
@@ -350,7 +347,6 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         for (param_name in names(param_distributions)) {
           sim_params[[param_name]] <- psa_params[[param_name]][failed_i]
         }
-        sim_params <- sync_biomarker_test_costs(sim_params)
 
         # Try to run with a different resampled model
         tryCatch({
@@ -367,14 +363,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 
           # A replacement is valid only when it did not use fallback and
           # returned exactly one complete result for every strategy.
-          strategy_rows <- match(strategies, sim_results$Strategy)
-          replacement_complete <-
-            all(!is.na(strategy_rows)) &&
-            all(is.finite(sim_results$Cost[strategy_rows])) &&
-            all(is.finite(sim_results$Effect[strategy_rows]))
-
           if (!isTRUE(attr(sim_results, "fallback_used")) &&
-              replacement_complete) {
+              psa_outcomes_complete(sim_results, strategies)) {
+            strategy_rows <- match(strategies, sim_results$Strategy)
             # Replace the failed iteration's results
             cost_matrix[failed_i, ] <- sim_results$Cost[strategy_rows]
             effect_matrix[failed_i, ] <- sim_results$Effect[strategy_rows]

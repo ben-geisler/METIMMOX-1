@@ -6,6 +6,7 @@
 # Supports both deterministic and probabilistic sensitivity analysis (PSA):
 #   - Deterministic: Uses base case survival curves and parameters
 #   - PSA: Uses sampled survival models (multivariate-normal coefficient draws, issue #156) with subgroup population averaging
+#   - Curves: Explicitly evaluates supplied curves, warning and capping PFS > OS.
 #
 # PSA Methodology (Issues #73, #74, #87):
 #   - Parameter uncertainty: Captured by sampled survival models (varies
@@ -19,7 +20,7 @@
 #
 # Biological Constraint (Issue #76):
 #   - Base-case ordering is guaranteed during joint distribution selection.
-#   - PFS is capped at OS only for sampled PSA models. Without this safety
+#   - PFS is capped at OS for PSA and explicit supplied-curve evaluation. Without this safety
 #     net, states can sum to >1 when a sampled pair crosses.
 #
 # Fallback Tracking (Issue #79):
@@ -55,7 +56,7 @@ validate_model_params <- function(params) {
                         prevalence_params)
 
   # Required list parameters
-  required_lists <- c("p_os", "p_pfs", "c_test_biomarker")
+  required_lists <- c("p_os", "p_pfs")
 
   # Required schedule vectors
   required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
@@ -73,26 +74,12 @@ validate_model_params <- function(params) {
                    biomarker_cost_params, "c_other_visit", "c_other_baseline",
                    "c_other_follow", "c_other_last")
   for (p in cost_params) {
+    if (!is.numeric(params[[p]]) || length(params[[p]]) != 1L || !is.finite(params[[p]])) {
+      stop("Cost parameter '", p, "' must be a finite numeric scalar.")
+    }
     if (params[[p]] < 0) {
       stop("Cost parameter '", p, "' cannot be negative. Got: ", params[[p]])
     }
-  }
-
-  # Validate the data-driven diagnostic-cost mapping used by each biomarker strategy.
-  missing_biomarker_costs <- setdiff(biomarkers,
-                                     names(params$c_test_biomarker))
-  if (length(missing_biomarker_costs) > 0) {
-    stop("Missing diagnostic-test costs for biomarkers: ",
-         paste(missing_biomarker_costs, collapse = ", "))
-  }
-  invalid_biomarker_costs <- vapply(
-    params$c_test_biomarker[biomarkers],
-    function(x) !is.numeric(x) || length(x) != 1 || is.na(x) || x < 0,
-    logical(1)
-  )
-  if (any(invalid_biomarker_costs)) {
-    stop("Diagnostic-test costs must be non-negative numeric scalars for: ",
-         paste(biomarkers[invalid_biomarker_costs], collapse = ", "))
   }
 
   # Validate utilities are in [0, 1]
@@ -124,6 +111,13 @@ validate_model_params <- function(params) {
 model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL,
                       prediction_population = params$prediction_population) {
+  determpsa <- match.arg(determpsa, c("det", "psa", "curves"))
+  if (determpsa == "psa" && is.null(sim_idx)) {
+    stop("PSA mode requires sim_idx; use determpsa = 'curves' to evaluate supplied curves.")
+  }
+  if (determpsa != "psa" && !is.null(sim_idx)) {
+    stop("sim_idx is only used with determpsa = 'psa'.")
+  }
   # NOTE: In PSA mode (determpsa = "psa"), this function depends on global variables:
   #   - n_samples: Number of sampled coefficient draws (from 02_setup_and_global_variables.R)
   #   - sampling_models: Sampled survival models (MVN coefficient draws) (from 06_sampling.R)
@@ -165,10 +159,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   #
   # See GitHub Issues #73, #74, #87 for methodology discussion.
   # =========================================================================
-  if(determpsa == "psa" && !is.null(sim_idx)) {
+  if(determpsa == "psa") {
 
     # Validate sim_idx (Issue #46)
-    if (!is.numeric(sim_idx) || length(sim_idx) != 1 || sim_idx < 1 ||
+    if (!is.numeric(sim_idx) || length(sim_idx) != 1 || !is.finite(sim_idx) || sim_idx < 1 ||
         sim_idx != floor(sim_idx)) {
       stop("sim_idx must be a positive integer. Got: ", sim_idx)
     }
@@ -338,7 +332,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
 
   # Ordered base-case curves are guaranteed during distribution selection.
   # Resampled PSA fits are selected upstream and may still cross, so retain the
-  # clamp only there as a last-resort safety net and emit a structured warning
+  # clamp for PSA and explicitly supplied curves, and emit a structured warning
   # that psa_functions.R can aggregate.
   enforce_survival_ordering <- function(pfs, os, strategy, subgroup) {
     violation_idx <- which(pfs > os)
@@ -353,7 +347,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
       paste0(strategy, if (subgroup == "positive") "+" else "-")
     }
 
-    if (determpsa != "psa") {
+    if (determpsa == "det") {
       stop(
         "Base-case survival ordering invariant failed for ", curve_label,
         ": PFS exceeded OS at ", length(violation_idx), " time points. ",

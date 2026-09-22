@@ -131,11 +131,11 @@ recentering uncertain draws or relaxing the existing diagnostic.
 | Strategy | Outcome | Base   | PSA mean | MC SE  | Difference (SE) |
 |:---------|:--------|:-------|:---------|:-------|:----------------|
 | control  | Cost    | 21523  | 21497    | 36     | -0.73           |
-| control  | QALYs   | 1.3714 | 1.4082   | 0.0042 | +8.75           |
+| control  | QALYs   | 1.3644 | 1.4012   | 0.0042 | +8.77           |
 | crp      | Cost    | 53948  | 53531    | 88     | -4.75           |
-| crp      | QALYs   | 1.3920 | 1.4145   | 0.0038 | +5.92           |
+| crp      | QALYs   | 1.3849 | 1.4075   | 0.0038 | +5.94           |
 | tmb_braf | Cost    | 62685  | 62113    | 94     | -6.11           |
-| tmb_braf | QALYs   | 1.3599 | 1.3902   | 0.0039 | +7.78           |
+| tmb_braf | QALYs   | 1.3529 | 1.3832   | 0.0039 | +7.80           |
 
 PSA means versus fitted-parameter results
 
