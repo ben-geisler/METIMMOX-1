@@ -1,6 +1,6 @@
 # All Parametric Survival Models
 Ben Geisler
-2026-09-18
+2026-09-22
 
 - [Overview](#overview)
 - [Information Criteria](#information-criteria)
@@ -242,6 +242,6 @@ and `models$best_fit$ordering_aic_penalty`, respectively.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-18  
+**Report completed on:** 2026-09-22  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.0
