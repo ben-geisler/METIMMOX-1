@@ -296,6 +296,7 @@ The `reports/technical/` directory contains methodological documentation:
 - **bug_fix_impact.qmd** - Template for documenting bug fix impacts on model results
 - **age_effect_analysis.qmd** - Analysis of age as prognostic factor in survival models
 - **all_parametric_survival_models.qmd** - Comparison of all candidate parametric model fits
+- **[psa_extrapolation_plausibility.md](reports/technical/psa_extrapolation_plausibility.md)** - All-draw survival ribbons, Norwegian population reference, RMST tails and their relationship to ordering violations (reads existing caches only)
 
 These reports support model validation and document methodological decisions. For comprehensive guidance on using this codebase, see [CLAUDE.md](CLAUDE.md).
 
