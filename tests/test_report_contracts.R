@@ -340,14 +340,32 @@ if (exists("po") && file.exists(table5_path)) {
   # Independent calculation, including dampack's equal sharing of ties.
   winners <- nmb == apply(nmb, 1, max)
   probabilities <- colMeans(winners / rowSums(winners))
-  check(identical(table5$Strategy, unname(strategy_labels[po$strategies])),
+  check(identical(table5$Strategy, as.character(po$strategies)),
         "Table 5 strategy rows differ from the PSA cache")
-  check(identical(table5$Mean_Cost, unname(format_eur(colMeans(po$cost)))),
-        "Table 5 mean costs differ from the PSA cache at published precision")
-  check(identical(table5$Mean_QALY, unname(sprintf("%.2f", colMeans(po$effect)))),
-        "Table 5 mean QALYs differ from the PSA cache at published precision")
-  check(identical(table5$Prob_CE, unname(scales::percent(probabilities, accuracy = 0.1))),
-        "Table 5 cost-effectiveness probabilities differ from the PSA cache")
+  control <- match(get_control_strategy(), po$strategies)
+  cost <- as.matrix(po$cost)
+  effect <- as.matrix(po$effect)
+  dc <- sweep(cost, 1, cost[, control])
+  de <- sweep(effect, 1, effect[, control])
+  expected <- list(Mean_Cost = colMeans(cost), Mean_QALY = colMeans(effect),
+    Mean_Inc_Cost = colMeans(dc), Mean_Inc_QALY = colMeans(de), Prob_CE = probabilities)
+  for (entry in list(list("Cost", cost), list("QALY", effect),
+                     list("Inc_Cost", dc), list("Inc_QALY", de))) {
+    expected[[paste0(entry[[1]], "_Lower")]] <- apply(entry[[2]], 2, quantile, 0.025)
+    expected[[paste0(entry[[1]], "_Upper")]] <- apply(entry[[2]], 2, quantile, 0.975)
+  }
+  expected$ICER <- colMeans(dc) / colMeans(de)
+  expected$ICER[control] <- NA_real_
+  for (column in names(expected)) {
+    check(isTRUE(all.equal(as.numeric(table5[[column]]), unname(expected[[column]]),
+                           tolerance = 1e-10)),
+          paste("Table 5 differs from independent PSA calculation:", column))
+  }
+  expected_status <- ifelse(colMeans(dc) > 0 & colMeans(de) <= 0,
+    "Dominated by SoC", "Pairwise ICER vs SoC")
+  expected_status[control] <- "Reference"
+  check(identical(table5$Status, unname(expected_status)),
+        "Table 5 pairwise status differs from PSA means")
 } else skip("Table 5 versus PSA comparison requires the table and PSA cache")
 
 manifest_path <- here::here("outputs/manifest.csv")

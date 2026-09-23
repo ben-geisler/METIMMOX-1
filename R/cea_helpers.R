@@ -397,7 +397,10 @@ create_ceac_plot <- function(psa_obj,
 #'
 #' @param psa_obj dampack PSA object.
 #' @param wtp WTP threshold for probability of cost-effectiveness.
-#' @return Data frame with mean costs/effects and probability cost-effective.
+#' Intervals are the 2.5th/97.5th percentiles (type 7) of retained draws,
+#' with increments calculated within each draw versus standard of care.
+#' ICER is the ratio of mean increments, never the mean of draw-level ratios.
+#' @return Numeric means, percentile limits, pairwise ICER/status and Prob_CE.
 create_psa_summary_table <- function(psa_obj, wtp = NULL) {
 
   if (is.null(wtp)) {
@@ -409,28 +412,63 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
       Strategy = character(),
       Mean_Cost = numeric(),
       Mean_QALY = numeric(),
+      Cost_Lower = numeric(), Cost_Upper = numeric(),
+      QALY_Lower = numeric(), QALY_Upper = numeric(),
+      Mean_Inc_Cost = numeric(), Mean_Inc_QALY = numeric(),
+      Inc_Cost_Lower = numeric(), Inc_Cost_Upper = numeric(),
+      Inc_QALY_Lower = numeric(), Inc_QALY_Upper = numeric(),
+      ICER = numeric(), Status = character(),
       Prob_CE = numeric(),
       stringsAsFactors = FALSE
     ))
   }
 
-  ceac_obj <- dampack::ceac(wtp = c(wtp - 1, wtp, wtp + 1), psa = psa_obj)
   cost_matrix <- as.matrix(psa_obj$cost)
   effect_matrix <- if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
   } else {
     as.matrix(psa_obj$effectiveness)
   }
+  control <- which(psa_obj$strategies == get_control_strategy())
+  if (length(control) != 1L) stop("Control strategy must appear exactly once.")
+  if (!identical(dim(cost_matrix), dim(effect_matrix)) ||
+      ncol(cost_matrix) != length(psa_obj$strategies) || nrow(cost_matrix) < 1L ||
+      anyDuplicated(psa_obj$strategies) ||
+      any(!is.finite(cost_matrix)) || any(!is.finite(effect_matrix))) {
+    stop("PSA summary requires aligned, finite cost/effect draws for every strategy.")
+  }
+  ceac_obj <- dampack::ceac(wtp = c(wtp - 1, wtp, wtp + 1), psa = psa_obj)
 
   summary_list <- lapply(seq_along(psa_obj$strategies), function(i) {
     strategy <- psa_obj$strategies[i]
     ceac_row <- ceac_obj[ceac_obj$WTP == wtp & ceac_obj$Strategy == strategy, ]
     prob_ce <- if (nrow(ceac_row) > 0) ceac_row$Proportion[1] else NA_real_
+    inc_cost <- cost_matrix[, i] - cost_matrix[, control]
+    inc_qaly <- effect_matrix[, i] - effect_matrix[, control]
+    dc <- mean(inc_cost)
+    de <- mean(inc_qaly)
+    interval <- function(x) unname(quantile(x, c(0.025, 0.975), type = 7))
+    cost_ci <- interval(cost_matrix[, i])
+    qaly_ci <- interval(effect_matrix[, i])
+    dc_ci <- interval(inc_cost)
+    de_ci <- interval(inc_qaly)
+    status <- if (i == control) "Reference" else if (dc >= 0 && de <= 0 && (dc > 0 || de < 0)) {
+      "Dominated by SoC"
+    } else if (dc <= 0 && de >= 0 && (dc < 0 || de > 0)) {
+      "Cost-saving vs SoC"
+    } else if (dc == 0 && de == 0) "Equivalent to SoC" else "Pairwise ICER vs SoC"
 
     data.frame(
       Strategy = strategy,
-      Mean_Cost = mean(cost_matrix[, i], na.rm = TRUE),
-      Mean_QALY = mean(effect_matrix[, i], na.rm = TRUE),
+      Mean_Cost = mean(cost_matrix[, i]),
+      Mean_QALY = mean(effect_matrix[, i]),
+      Cost_Lower = cost_ci[1], Cost_Upper = cost_ci[2],
+      QALY_Lower = qaly_ci[1], QALY_Upper = qaly_ci[2],
+      Mean_Inc_Cost = dc, Mean_Inc_QALY = de,
+      Inc_Cost_Lower = dc_ci[1], Inc_Cost_Upper = dc_ci[2],
+      Inc_QALY_Lower = de_ci[1], Inc_QALY_Upper = de_ci[2],
+      ICER = if (i == control || de == 0) NA_real_ else dc / de,
+      Status = status,
       Prob_CE = prob_ce,
       stringsAsFactors = FALSE
     )
@@ -460,8 +498,8 @@ load_scenario_evppi_results <- function(results_file = NULL) {
 #' Compare PSA strategy means with base-case values
 #'
 #' The PSA and the base case use the same joint survival model (issue #151),
-#' so PSA means should sit close to the deterministic values, differing only
-#' by the mild nonlinearity of the partitioned survival model. This table
+#' but E[f(theta)] need not equal f(E[theta]) in a nonlinear model. This methods
+#' diagnostic has no mean-alignment pass/fail threshold (issue #180). It
 #' reports, per strategy and outcome, the base-case value, the PSA mean, its
 #' Monte Carlo standard error, and the difference expressed in standard errors.
 #'
@@ -527,8 +565,8 @@ create_psa_basecase_comparison <- function(psa_obj, base_results) {
 #' Compare PSA incremental means (versus control) with base-case increments
 #'
 #' Companion to \code{create_psa_basecase_comparison()}. Because every PSA
-#' draw predicts all strategies from one resampled joint model, a shift that is
-#' common to every strategy (bootstrap nonlinearity bias) cancels in the
+#' draw predicts all strategies from one joint coefficient draw, a shift that is
+#' common to every strategy cancels in the
 #' increments; a control-specific shift, such as the separate age/sex control
 #' model removed in issue #151, does not. The standard error is that of the
 #' paired incremental draws, so it reflects the within-draw correlation.

@@ -69,6 +69,25 @@ format_eur <- function(x, accuracy = 1) {
 # Backward-compatible short name used by input and poster reports.
 fmt_eur <- format_eur
 
+#' Compact display of probabilistic means and 95% percentile intervals (#180).
+#' The numeric summary remains the publication CSV; this is presentation only.
+format_psa_summary <- function(x) {
+  interval <- function(mean, lower, upper, money = FALSE) {
+    fmt <- if (money) format_eur else function(v) sprintf("%.4f", v)
+    paste0(fmt(mean), " (", fmt(lower), "; ", fmt(upper), ")")
+  }
+  data.frame(
+    Strategy = strategy_label(x$Strategy),
+    Cost = interval(x$Mean_Cost, x$Cost_Lower, x$Cost_Upper, TRUE),
+    QALYs = interval(x$Mean_QALY, x$QALY_Lower, x$QALY_Upper),
+    Inc_Cost = interval(x$Mean_Inc_Cost, x$Inc_Cost_Lower, x$Inc_Cost_Upper, TRUE),
+    Inc_QALYs = interval(x$Mean_Inc_QALY, x$Inc_QALY_Lower, x$Inc_QALY_Upper),
+    ICER = format_icer(x$ICER, x$Status),
+    Status = x$Status,
+    Prob_CE = scales::percent(x$Prob_CE, accuracy = 0.1)
+  )
+}
+
 #' Format an ICER using its frontier or pairwise status
 #'
 #' Accepts the dampack frontier codes ("ND", "D", "ED") and the pairwise

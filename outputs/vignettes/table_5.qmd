@@ -1,5 +1,5 @@
 ---
-title: "Table 5: Probabilistic Sensitivity Analysis Summary"
+title: "Table 5: Primary Probabilistic Cost-Effectiveness Results"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -27,31 +27,25 @@ setup_report(
 ```{r load-psa, include=FALSE}
 psa_obj <- load_current_psa_cache()
 
-display_df <- {
-  create_psa_summary_table(psa_obj, wtp = WTP) %>%
-    filter(Strategy %in% names(strategy_labels)) %>%
-    mutate(
-      Strategy = strategy_labels[Strategy],
-      Mean_Cost = format_eur(Mean_Cost),
-      Mean_QALY = sprintf("%.2f", Mean_QALY),
-      Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
-    )
-}
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP)
+display_df <- format_psa_summary(psa_summary)
+
 ```
 
 ```{r display-table}
 if (nrow(display_df) > 0) {
   kable(
     display_df,
-    caption = "Table 5: PSA summary at the base-case willingness-to-pay threshold",
+    caption = "Table 5: Primary probabilistic cost-effectiveness results, means (95% uncertainty intervals)",
     format = "html",
-    col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
-    align = c("l", "r", "r", "r")
+    col.names = c("Strategy", "Cost", "QALYs", "Incremental cost vs SoC",
+                  "Incremental QALYs vs SoC", "ICER vs SoC", "Pairwise status", "Probability CE"),
+    align = c("l", rep("r", 5), "l", "r")
   ) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                   full_width = FALSE, font_size = 12) %>%
     footnote(
-      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Intervals are the 2.5th and 97.5th percentiles of PSA draws, not confidence intervals for the mean. Increments are paired within draws versus standard of care. ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios; dominance is assessed from the means. Costs and QALYs are discounted at 4% annually. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
       general_title = "Notes: "
     )
 } else {
@@ -63,7 +57,7 @@ if (nrow(display_df) > 0) {
 {
   tables_dir <- here("outputs", "tables")
   if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
-  write_artifact_csv(display_df, file = here("outputs", "tables", "table_5.csv"), row.names = FALSE)
+  write_artifact_csv(psa_summary, file = here("outputs", "tables", "table_5.csv"), row.names = FALSE)
 }
 ```
 

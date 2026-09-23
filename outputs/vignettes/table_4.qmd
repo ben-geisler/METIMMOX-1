@@ -1,5 +1,5 @@
 ---
-title: "Tables 4 and S5: Cost-Effectiveness Results"
+title: "Tables 4 and S5: Deterministic Point Evaluations"
 subtitle: "METIMMOX-1 Economic Evaluation"
 author: "Ben Geisler"
 date: "`r Sys.Date()`"
@@ -72,7 +72,7 @@ display_df_s5 <- table_s5_df %>%
 ```{r display-table-4}
 kable(
   display_df,
-  caption = "Table 4: Base-case cost-effectiveness results, overall MSS population",
+  caption = "Table 4: Deterministic point evaluation at fitted parameters, anchoring the one-way sensitivity analysis",
   format = "html",
   col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
                 "Incremental QALYs", "ICER"),
@@ -96,7 +96,7 @@ kable(
 ```{r display-table-s5}
 kable(
   display_df_s5,
-  caption = "Table S5: Full cost-effectiveness results, overall MSS population (pairwise versus standard of care and efficiency frontier)",
+  caption = "Table S5: Deterministic point evaluation anchoring the one-way sensitivity analysis (pairwise versus standard of care and efficiency frontier)",
   format = "html",
   col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost vs SoC",
                 "Incremental QALYs vs SoC", "Pairwise ICER vs SoC",

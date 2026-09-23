@@ -81,6 +81,8 @@ This cost-effectiveness analysis evaluates standard of care against two pre-immu
 - CRP-guided treatment selection (CRP < 5 mg/L at week 4, before the first nivolumab dose)
 - TMB/BRAF-guided treatment selection (baseline next-generation sequencing)
 
+The headline analysis is probabilistic: decisions use expected net monetary benefit from the PSA. The deterministic point evaluation anchors the one-way sensitivity analysis (tornado), which varies one input at a time around fitted parameters to explain sensitivity. These analyses answer different questions and need not have identical means.
+
 The economic survival model is a single joint model with CRP and TMB/BRAF treatment interactions. Economic strategies are restricted to biomarkers that are available before the decision to add immunotherapy is made.
 
 **CRP timing.** CRP is not a baseline (pre-randomization) measurement. In the METIMMOX trial every patient received two cycles of FLOX before the first nivolumab dose, and the CRP used to define the CRP-guided strategy is the value measured at week 4 (cycle 3 day 1), i.e. at the point where the decision to add nivolumab is made. The model clock starts at randomization, but this has no economic consequence: up to week 4 both arms receive identical FLOX, monitoring and visits, and the week-4 blood test is already part of the monitoring schedule. Three patients without a week-4 CRP value died early (weeks 2.4, 15.7 and 20.9) and are excluded from the complete-case data on which the survival models are fitted, so the CRP subgroup curves are conditional on surviving to the week-4 measurement.
@@ -110,7 +112,7 @@ knitr::kable(
   align = c("l", "l"),
   caption = "Single economic survival model"
 ) %>%
-  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
   tbl_column_spec(2, width = "10cm")
 ```
 
@@ -131,66 +133,11 @@ knitr::kable(
   align = c("l", "l"),
   caption = "Economic strategies"
 ) %>%
-  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
   tbl_column_spec(2, width = "10cm")
 ```
 
-# Base Case Results
-
-```{r basecase-table}
-base_display <- base_results %>%
-  mutate(
-    NMB = Effect * WTP - Cost,
-    Strategy = strategy_label(Strategy),
-    Cost = format_eur(Cost),
-    Effect = sprintf("%.3f", Effect),
-    NMB = format_eur(NMB)
-  )
-
-knitr::kable(
-  base_display,
-  booktabs = TRUE,
-  align = c("l", "r", "r", "r"),
-  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
-  caption = paste0("Base case results at WTP = EUR ", format(WTP, big.mark = ","))
-) %>%
-  tbl_style(latex_options = c("HOLD_position"))
-```
-
-```{r icer-table}
-icer_display <- as.data.frame(icer_obj) %>%
-  mutate(
-    Strategy = strategy_label(Strategy),
-    Cost = format_eur(Cost),
-    Effect = sprintf("%.3f", Effect),
-    Inc_Cost = format_eur(Inc_Cost),
-    Inc_Effect = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
-    ICER = mapply(format_icer, ICER, Status)
-  )
-
-knitr::kable(
-  icer_display,
-  booktabs = TRUE,
-  align = c("l", "r", "r", "r", "r", "r", "l"),
-  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
-                "Incremental QALYs", "ICER", "Status"),
-  caption = "Incremental cost-effectiveness results"
-) %>%
-  tbl_style(latex_options = c("HOLD_position"))
-```
-
-```{r ce-plane, fig.cap="Cost-effectiveness plane for the single joint economic model"}
-plot(
-  icer_obj,
-  txtsize = 11,
-  currency = "EUR",
-  effect_units = "QALYs",
-  label = "all",
-  alpha = 0.8
-)
-```
-
-# Probabilistic Sensitivity Analysis
+# Primary Analysis: Probabilistic Cost-Effectiveness
 
 ## Parameters sampled
 
@@ -213,27 +160,92 @@ cat(sprintf(
 ## Results
 
 ```{r psa-summary}
-psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP)
+psa_display <- format_psa_summary(psa_summary)
+knitr::kable(
+  psa_display[, c("Strategy", "Cost", "QALYs", "Prob_CE")],
+  booktabs = TRUE,
+  col.names = c("Strategy", "Cost", "QALYs", "Probability CE"),
+  caption = paste0("Primary probabilistic results: means (95 percent uncertainty intervals), WTP EUR ", format(WTP, big.mark = ","))
+) %>% tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+```
+
+```{r psa-primary-increments}
+knitr::kable(
+  psa_display[, c("Strategy", "Inc_Cost", "Inc_QALYs", "ICER")],
+  booktabs = TRUE,
+  col.names = c("Strategy", "Incremental cost", "Incremental QALYs", "ICER"),
+  caption = "Primary pairwise results versus standard of care: means (95 percent uncertainty intervals)"
+) %>% tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+
+```
+
+Intervals are the 2.5th and 97.5th percentiles of the retained PSA draws, not confidence intervals for the mean. Incremental intervals use paired differences within each draw versus standard of care. The ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios. Dominance labels compare mean costs and QALYs. Table 5 is the primary publication table.
+
+```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
+create_ceac_plot(psa_obj, wtp_line = WTP)
+```
+
+# Deterministic Point Evaluation
+
+```{r basecase-table}
+base_display <- base_results %>%
   mutate(
+    NMB = Effect * WTP - Cost,
     Strategy = strategy_label(Strategy),
-    Mean_Cost = format_eur(Mean_Cost),
-    Mean_QALY = sprintf("%.3f", Mean_QALY),
-    Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    NMB = format_eur(NMB)
   )
 
 knitr::kable(
-  psa_summary,
+  base_display,
   booktabs = TRUE,
   align = c("l", "r", "r", "r"),
-  col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
-  caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
+  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
+  caption = paste0("Deterministic point evaluation anchoring the one-way sensitivity analysis; WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
-  tbl_style(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
 ```
+
+```{r icer-table}
+icer_display <- as.data.frame(icer_obj) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    Inc_Cost = format_eur(Inc_Cost),
+    Inc_Effect = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
+    ICER = mapply(format_icer, ICER, Status)
+  )
+
+knitr::kable(
+  icer_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r", "r", "r", "l"),
+  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
+                "Incremental QALYs", "ICER", "Status"),
+  caption = "Deterministic efficiency-frontier results"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r ce-plane, fig.cap="Deterministic cost-effectiveness plane"}
+plot(
+  icer_obj,
+  txtsize = 11,
+  currency = "EUR",
+  effect_units = "QALYs",
+  label = "all",
+  alpha = 0.8
+)
+```
+
+# Methods Diagnostic: Probabilistic and Deterministic Estimands
 
 The PSA and the base case use the same survival formulas and target population. Since issue #159, the OS and PFS coefficient vectors are drawn together from a multivariate normal centred at their maximum-likelihood estimates. Paired patient bootstrap fits estimate their cross-endpoint dependence; block whitening and recolouring preserve each original fit's marginal covariance. The bootstrap is used only to estimate dependence, never to supply PSA coefficient draws. See the [joint sampling specification](technical/joint_survival_sampling.md) for the covariance construction and diagnostics.
 
-The deterministic result evaluates survival at the fitted coefficients; the PSA averages nonlinear survival predictions over parameter uncertainty. Those are different quantities: even correctly centred coefficient draws need not give outcome means equal to the deterministic result. Joint sampling changes the dependence and the ordering correction, but, with fixed marginal coefficient distributions, cannot remove the raw-curve mean shift in expectation. No draws or outcomes are recentered. With all coefficient covariance set to zero and economic parameters and population weights fixed, `test_psa_zero_uncertainty.R` reproduces every deterministic cost and QALY result. The table below retains the original five-Monte-Carlo-standard-error diagnostic in `test_psa_basecase_alignment.R`; any continuing numerical failure is reported explicitly.
+The deterministic result evaluates survival at the fitted coefficients; the PSA averages nonlinear survival predictions over parameter uncertainty. Those are different quantities: even correctly centred coefficient draws need not give outcome means equal to the deterministic result. Joint sampling changes the dependence and the ordering correction, but, with fixed marginal coefficient distributions, cannot remove the raw-curve mean shift in expectation. No draws or outcomes are recentered. With all coefficient covariance set to zero and economic parameters and population weights fixed, `test_psa_zero_uncertainty.R` reproduces every deterministic cost and QALY result. Issue #180 retires the historical five-Monte-Carlo-standard-error alignment criterion because it tested equality of different estimands. The comparison below describes the difference and simulation precision without a pass/fail threshold; the structural joint-control check remains in `test_psa_basecase_alignment.R`, and zero-uncertainty equality is the correctness criterion.
 
 ```{r psa-basecase-table}
 psa_vs_base <- create_psa_basecase_comparison(psa_obj, base_results) %>%
@@ -256,9 +268,9 @@ knitr::kable(
   align = c("l", "l", "r", "r", "r", "r", "r"),
   col.names = c("Strategy", "Outcome", "Base Case", "PSA Mean",
                 "PSA SE", "Difference", "Difference (SE)"),
-  caption = "PSA means versus base-case values (difference in Monte Carlo standard errors)"
+  caption = "Methods diagnostic: PSA means versus deterministic point evaluations (Monte Carlo SE)"
 ) %>%
-  tbl_style(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
 ```
 
 The nonlinear mean shift can differ across strategies, so it need not cancel in increments even though every strategy shares the same coefficient draw. The incremental comparison below reports this remaining difference directly. Decisions under uncertainty use expected net monetary benefit from the PSA; the deterministic results describe the fitted-parameter scenario.
@@ -286,12 +298,12 @@ knitr::kable(
                 "PSA SE", "Difference", "Difference (SE)"),
   caption = "Incremental PSA means versus base-case increments relative to standard of care"
 ) %>%
-  tbl_style(latex_options = c("HOLD_position"))
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
 ```
 
-```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
-create_ceac_plot(psa_obj, wtp_line = WTP)
-```
+
+
+The joint covariance improvement is retained: in issue #159, crossings fell from 2,422/5,000 (48.44%) to 1,198/5,000 (23.96%), and mean CRP incremental QALYs increased from 0.00175 to 0.00629. The QALY level differences remained 5.94--8.77 Monte Carlo SEs. Joint dependence therefore improved ordering and the incremental decision quantities without eliminating the nonlinear mean shift; it does not make the two estimands equal.
 
 # Summary
 
@@ -317,4 +329,4 @@ Adverse-event costs and disutilities remain outside the modeled scope, as descri
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.5
+**Report version:** 4.6

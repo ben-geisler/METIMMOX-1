@@ -1,14 +1,16 @@
 # Cost-Effectiveness Analysis
 Ben Geisler
-2026-09-21
+2026-09-23
 
 - [Overview](#overview)
 - [Economic Survival Model](#economic-survival-model)
-- [Base Case Results](#base-case-results)
-- [Probabilistic Sensitivity
-  Analysis](#probabilistic-sensitivity-analysis)
+- [Primary Analysis: Probabilistic
+  Cost-Effectiveness](#primary-analysis-probabilistic-cost-effectiveness)
   - [Parameters sampled](#parameters-sampled)
   - [Results](#results)
+- [Deterministic Point Evaluation](#deterministic-point-evaluation)
+- [Methods Diagnostic: Probabilistic and Deterministic
+  Estimands](#methods-diagnostic-probabilistic-and-deterministic-estimands)
 - [Summary](#summary)
 - [Common Target Population](#common-target-population)
 - [Scope Limitations](#scope-limitations)
@@ -23,6 +25,12 @@ metastatic MSS/pMMR colorectal cancer:
   first nivolumab dose)
 - TMB/BRAF-guided treatment selection (baseline next-generation
   sequencing)
+
+The headline analysis is probabilistic: decisions use expected net
+monetary benefit from the PSA. The deterministic point evaluation
+anchors the one-way sensitivity analysis (tornado), which varies one
+input at a time around fitted parameters to explain sensitivity. These
+analyses answer different questions and need not have identical means.
 
 The economic survival model is a single joint model with CRP and
 TMB/BRAF treatment interactions. Economic strategies are restricted to
@@ -67,29 +75,7 @@ Single economic survival model
 
 Economic strategies
 
-# Base Case Results
-
-| Strategy         |       Cost | QALYs |        NMB |
-|:-----------------|-----------:|------:|-----------:|
-| Standard of Care | EUR 21,523 | 1.364 | EUR 48,061 |
-| CRP-guided       | EUR 53,948 | 1.385 | EUR 16,684 |
-| TMB/BRAF-guided  | EUR 62,685 | 1.353 |  EUR 6,312 |
-
-Base case results at WTP = EUR 51,000
-
-| Strategy | Cost | QALYs | Incremental Cost | Incremental QALYs | ICER | Status |
-|:---|---:|---:|---:|---:|---:|:---|
-| Standard of Care | EUR 21,523 | 1.364 | – | – | – | ND |
-| CRP-guided | EUR 53,948 | 1.385 | EUR 32,424 | 0.021 | EUR 1,578,614 | ND |
-| TMB/BRAF-guided | EUR 62,685 | 1.353 | – | – | Dominated | D |
-
-Incremental cost-effectiveness results
-
-<img src="CEA_files/figure-commonmark/ce-plane-1.png"
-style="width:100.0%" data-fig-align="center"
-alt="Cost-effectiveness plane for the single joint economic model" />
-
-# Probabilistic Sensitivity Analysis
+# Primary Analysis: Probabilistic Cost-Effectiveness
 
 ## Parameters sampled
 
@@ -112,13 +98,58 @@ progressed utility above the progression-free utility.
 
 ## Results
 
-| Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
-|:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 21,497 |      1.401 |                     100.0% |
-| CRP-guided       | EUR 53,531 |      1.407 |                       0.0% |
-| TMB/BRAF-guided  | EUR 62,113 |      1.383 |                       0.0% |
+| Strategy | Cost | QALYs | Probability CE |
+|:---|:---|:---|:---|
+| Standard of Care | EUR 21,497 (EUR 17,027; EUR 26,813) | 1.4012 (0.8576; 2.0146) | 100.0% |
+| CRP-guided | EUR 53,531 (EUR 41,640; EUR 66,068) | 1.4075 (0.8813; 1.9277) | 0.0% |
+| TMB/BRAF-guided | EUR 62,113 (EUR 49,768; EUR 75,706) | 1.3832 (0.8564; 1.9241) | 0.0% |
 
-PSA summary at WTP = EUR 51,000
+Primary probabilistic results: means (95 percent uncertainty intervals),
+WTP EUR 51,000
+
+| Strategy | Incremental cost | Incremental QALYs | ICER |
+|:---|:---|:---|:---|
+| Standard of Care | EUR 0 (EUR 0; EUR 0) | 0.0000 (0.0000; 0.0000) | – |
+| CRP-guided | EUR 32,034 (EUR 21,360; EUR 43,510) | 0.0063 (-0.3869; 0.3619) | EUR 5,093,844 |
+| TMB/BRAF-guided | EUR 40,616 (EUR 29,318; EUR 52,937) | -0.0180 (-0.3658; 0.3245) | Dominated |
+
+Primary pairwise results versus standard of care: means (95 percent
+uncertainty intervals)
+
+Intervals are the 2.5th and 97.5th percentiles of the retained PSA
+draws, not confidence intervals for the mean. Incremental intervals use
+paired differences within each draw versus standard of care. The ICER is
+mean incremental cost divided by mean incremental QALYs, never a mean of
+per-draw ratios. Dominance labels compare mean costs and QALYs. Table 5
+is the primary publication table.
+
+<img src="CEA_files/figure-commonmark/ceac-1.png" style="width:100.0%"
+data-fig-align="center" alt="Cost-effectiveness acceptability curves" />
+
+# Deterministic Point Evaluation
+
+| Strategy         |       Cost | QALYs |        NMB |
+|:-----------------|-----------:|------:|-----------:|
+| Standard of Care | EUR 21,523 | 1.364 | EUR 48,061 |
+| CRP-guided       | EUR 53,948 | 1.385 | EUR 16,684 |
+| TMB/BRAF-guided  | EUR 62,685 | 1.353 |  EUR 6,312 |
+
+Deterministic point evaluation anchoring the one-way sensitivity
+analysis; WTP = EUR 51,000
+
+| Strategy | Cost | QALYs | Incremental Cost | Incremental QALYs | ICER | Status |
+|:---|---:|---:|---:|---:|---:|:---|
+| Standard of Care | EUR 21,523 | 1.364 | – | – | – | ND |
+| CRP-guided | EUR 53,948 | 1.385 | EUR 32,424 | 0.021 | EUR 1,578,614 | ND |
+| TMB/BRAF-guided | EUR 62,685 | 1.353 | – | – | Dominated | D |
+
+Deterministic efficiency-frontier results
+
+<img src="CEA_files/figure-commonmark/ce-plane-1.png"
+style="width:100.0%" data-fig-align="center"
+alt="Deterministic cost-effectiveness plane" />
+
+# Methods Diagnostic: Probabilistic and Deterministic Estimands
 
 The PSA and the base case use the same survival formulas and target
 population. Since issue \#159, the OS and PFS coefficient vectors are
@@ -139,10 +170,13 @@ correction, but, with fixed marginal coefficient distributions, cannot
 remove the raw-curve mean shift in expectation. No draws or outcomes are
 recentered. With all coefficient covariance set to zero and economic
 parameters and population weights fixed, `test_psa_zero_uncertainty.R`
-reproduces every deterministic cost and QALY result. The table below
-retains the original five-Monte-Carlo-standard-error diagnostic in
-`test_psa_basecase_alignment.R`; any continuing numerical failure is
-reported explicitly.
+reproduces every deterministic cost and QALY result. Issue \#180 retires
+the historical five-Monte-Carlo-standard-error alignment criterion
+because it tested equality of different estimands. The comparison below
+describes the difference and simulation precision without a pass/fail
+threshold; the structural joint-control check remains in
+`test_psa_basecase_alignment.R`, and zero-uncertainty equality is the
+correctness criterion.
 
 | Strategy | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
@@ -153,8 +187,8 @@ reported explicitly.
 | TMB/BRAF-guided | Cost | EUR 62,685 | EUR 62,113 | EUR 94 | -EUR 572 | -6.1 |
 | TMB/BRAF-guided | QALYs | 1.3529 | 1.3832 | 0.0039 | +0.0303 | +7.8 |
 
-PSA means versus base-case values (difference in Monte Carlo standard
-errors)
+Methods diagnostic: PSA means versus deterministic point evaluations
+(Monte Carlo SE)
 
 The nonlinear mean shift can differ across strategies, so it need not
 cancel in increments even though every strategy shares the same
@@ -173,8 +207,13 @@ the fitted-parameter scenario.
 Incremental PSA means versus base-case increments relative to standard
 of care
 
-<img src="CEA_files/figure-commonmark/ceac-1.png" style="width:100.0%"
-data-fig-align="center" alt="Cost-effectiveness acceptability curves" />
+The joint covariance improvement is retained: in issue \#159, crossings
+fell from 2,422/5,000 (48.44%) to 1,198/5,000 (23.96%), and mean CRP
+incremental QALYs increased from 0.00175 to 0.00629. The QALY level
+differences remained 5.94–8.77 Monte Carlo SEs. Joint dependence
+therefore improved ordering and the incremental decision quantities
+without eliminating the nonlinear mean shift; it does not make the two
+estimands equal.
 
 # Summary
 
@@ -234,6 +273,6 @@ as described in the project documentation.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-23  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.5
+**Report version:** 4.6
