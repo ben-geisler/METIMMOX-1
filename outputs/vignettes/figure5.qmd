@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure5")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
@@ -63,9 +65,9 @@ to_population <- function(x) {
   )
 }
 
+evppi_all <- compile_evppi_results(evppi_cache$all_scenario_results)
 evppi_grouped <- data.frame()
-if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
-  evppi_all <- evppi_cache$evppi_all_scenarios
+if (nrow(evppi_all) > 0) {
   if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
 
   evppi_grouped <- evppi_all %>%
@@ -79,13 +81,7 @@ if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
       Scenario = factor(scenario_labels[scenario_id], levels = scenario_labels)
     )
 
-  present <- unique(evppi_all$parameter[evppi_all$scenario_id %in% names(scenario_labels)])
-  missing_groups <- setdiff(names(figure_groups), present)
-  if (length(missing_groups) > 0) {
-    warning("Figure 5: group rows absent from the scenario cache: ",
-            paste(missing_groups, collapse = ", "),
-            ". Rerun analysis/12_scenario_EVPPIs.R.")
-  }
+
 }
 ```
 
@@ -100,12 +96,17 @@ if (nrow(evppi_grouped) > 0) {
   evppi_grouped$param_group <- factor(evppi_grouped$param_group, levels = group_order)
 
   p_evppi <- ggplot(evppi_grouped, aes(x = param_group, y = evppi_pop, fill = Scenario)) +
-    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_col(na.rm = TRUE, position = position_dodge(width = 0.8), width = 0.7) +
     geom_errorbar(
-      aes(ymin = evppi_pop - 1.96 * se_pop, ymax = evppi_pop + 1.96 * se_pop),
+      aes(ymin = ifelse(se_pop > 0, evppi_pop - 1.96 * se_pop, NA_real_),
+          ymax = ifelse(se_pop > 0, evppi_pop + 1.96 * se_pop, NA_real_)),
       position = position_dodge(width = 0.8), width = 0.25,
       linewidth = 0.4, colour = "gray30", na.rm = TRUE
     ) +
+    geom_text(aes(label = ifelse(is.na(evppi_pop), "NA", ifelse(evppi_pop == 0, "0", "")),
+                  y = ifelse(is.na(evppi_pop), 0, evppi_pop), colour = Scenario),
+              position = position_dodge(width = 0.8), hjust = -0.2, size = 3,
+              show.legend = FALSE) +
     coord_flip() +
     scale_y_continuous(labels = function(x) paste0("EUR ", format(x, big.mark = ","), "M")) +
     labs(
@@ -114,8 +115,8 @@ if (nrow(evppi_grouped) > 0) {
       fill = "Scenario",
       caption = paste0(
         "Joint EVPPI per parameter group (regression estimator); ",
-        "error bars are 95% Monte Carlo intervals. Groups are not sums of ",
-        "single-parameter EVPPIs."
+        "error bars are 95% Monte Carlo intervals.\nGroups are not sums of ",
+        "single-parameter EVPPIs. Zero EVPI bounds every group at zero.\nNA denotes a missing or failed estimate."
       )
     ) +
     theme_minimal() +
@@ -123,7 +124,9 @@ if (nrow(evppi_grouped) > 0) {
 
   print(p_evppi)
 } else {
-  cat("Scenario EVPPI cache not available. Run analysis/12_scenario_EVPPIs.R first.")
+  p_evppi <- ggplot() + theme_void() +
+    annotate("text", x = 0, y = 0, label = "No scenario EVPPI estimates")
+  print(p_evppi)
 }
 ```
 
@@ -138,13 +141,24 @@ if (nrow(evppi_grouped) > 0) {
 }
 ```
 
+```{r failed-estimates}
+if (nrow(evppi_grouped) > 0 && any(nzchar(evppi_grouped$error))) {
+  evppi_grouped %>% filter(nzchar(error)) %>%
+    select(scenario_name, parameter, error) %>% knitr::kable()
+}
+```
+
 ```{r save-figure, include=FALSE}
 if (exists("p_evppi")) {
   figs_dir <- here("outputs", "figs")
   if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
-  ggsave(here("outputs", "figs", "figure5.png"), p_evppi, width = 9, height = 6,
+  save_artifact_plot(here("outputs", "figs", "figure5.png"), p_evppi, width = 9, height = 6,
          dpi = 300, bg = "white")
 }
 ```
 
 Figure 5 has been saved to `outputs/figs/figure5.png`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

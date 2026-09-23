@@ -298,6 +298,8 @@ for (qmd in qmd_files) {
   if (length(chunk) == 0) next
   rel <- sub(".*/(reports|outputs)/", "", gsub("\\\\", "/", qmd))
   available <- c(always, arg_values(chunk, "funs"))
+  if (any(grepl("R/publication_artifacts.R", chunk, fixed = TRUE)))
+    available <- c(available, "publication_artifacts")
   for (pfx in arg_values(chunk, "sources")) {
     available <- c(available, sourced_by_analysis(pfx))
   }
@@ -323,6 +325,94 @@ for (file in c("figure3", "figure4", "figure5", "table_5", "table_s7")) {
   src <- paste(readLines(here::here("outputs", "vignettes", paste0(file, ".qmd")), warn = FALSE), collapse = "\n")
   check(grepl("load_current_psa_cache|load_scenario_cache", src), paste(file, "bypasses validated cache loading"))
   check(!grepl("readRDS", src, fixed = TRUE), paste(file, "still reads a cache directly"))
+}
+
+# ---------------------------------------------------------------------------
+# Publication outputs (#168): cached PSA -> Table 5, and manifest -> artifacts.
+# ---------------------------------------------------------------------------
+source(here::here("R/publication_artifacts.R"))
+source(here::here("R/report_format.R"))
+table5_path <- here::here("outputs/tables/table_5.csv")
+if (exists("po") && file.exists(table5_path)) {
+  table5 <- read.csv(table5_path, colClasses = "character", check.names = FALSE)
+  wtp <- 51000
+  nmb <- as.matrix(po$effect) * wtp - as.matrix(po$cost)
+  # Independent calculation, including dampack's equal sharing of ties.
+  winners <- nmb == apply(nmb, 1, max)
+  probabilities <- colMeans(winners / rowSums(winners))
+  check(identical(table5$Strategy, unname(strategy_labels[po$strategies])),
+        "Table 5 strategy rows differ from the PSA cache")
+  check(identical(table5$Mean_Cost, unname(format_eur(colMeans(po$cost)))),
+        "Table 5 mean costs differ from the PSA cache at published precision")
+  check(identical(table5$Mean_QALY, unname(sprintf("%.2f", colMeans(po$effect)))),
+        "Table 5 mean QALYs differ from the PSA cache at published precision")
+  check(identical(table5$Prob_CE, unname(scales::percent(probabilities, accuracy = 0.1))),
+        "Table 5 cost-effectiveness probabilities differ from the PSA cache")
+} else skip("Table 5 versus PSA comparison requires the table and PSA cache")
+
+manifest_path <- here::here("outputs/manifest.csv")
+check(file.exists(manifest_path), "Publication artifact manifest is absent")
+if (file.exists(manifest_path)) {
+  manifest <- read.csv(manifest_path, stringsAsFactors = FALSE)
+  registry <- publication_outputs()
+  owners <- setNames(rep(paste0("outputs/vignettes/", names(registry), ".qmd"), lengths(registry)),
+                     unlist(registry, use.names = FALSE))
+  check(!anyDuplicated(manifest$file), "Manifest has duplicate artifact rows")
+  check(setequal(manifest$file, unlist(registry)), "Manifest does not cover every declared output")
+  tracked_csvs <- system2("git", c("ls-files", "outputs/tables/*.csv"), stdout = TRUE)
+  check(all(tracked_csvs %in% manifest$file), "A tracked publication CSV is missing from the manifest")
+  for (i in seq_len(nrow(manifest))) {
+    row <- manifest[i, ]
+    path <- here::here(row$file)
+    check(file.exists(here::here(row$generating_vignette)), paste("Missing generator:", row$file))
+    check(identical(row$generating_vignette, unname(owners[row$file])),
+          paste("Manifest names the wrong generator:", row$file))
+    check(nzchar(row$render_time), paste("Missing render time:", row$file))
+    if (row$status == "deleted_empty") {
+      check(!file.exists(path), paste("Obsolete empty-state predecessor survives:", row$file))
+    } else {
+      check(file.exists(path), paste("Missing publication artifact:", row$file))
+      check(file.exists(path) && identical(unname(tools::md5sum(path)), row$artifact_md5),
+            paste("Artifact differs from its manifest:", row$file))
+      if (grepl("\\.csv$", row$file))
+        check(row$status == "csv_verified", paste("CSV not checked against its generating object:", row$file))
+    }
+  }
+  for (vignette in names(registry)) {
+    src <- paste(readLines(here::here("outputs/vignettes", paste0(vignette, ".qmd")), warn = FALSE), collapse = "\n")
+    check(grepl(paste0('begin_artifact_render("', vignette, '")'), src, fixed = TRUE) &&
+            grepl("finish_artifact_render()", src, fixed = TRUE),
+          paste("Vignette lacks an artifact lifecycle:", vignette))
+  }
+  table5_manifest <- subset(manifest, file == "outputs/tables/table_5.csv")
+  if (exists("po")) check(nrow(table5_manifest) == 1L &&
+    grepl(paste0("psa_obj=", po$fingerprint), table5_manifest$source_cache_fingerprints, fixed = TRUE),
+    "Table 5 manifest refers to a different PSA input fingerprint")
+  if (exists("sc")) {
+    for (file in c("outputs/figs/figure4.png", "outputs/figs/figure_s4.png",
+                   "outputs/figs/figure5.png", "outputs/tables/table_s7.csv")) {
+      entry <- manifest[manifest$file == file, ]
+      check(nrow(entry) == 1L && grepl(sc$fingerprint, entry$source_cache_fingerprints, fixed = TRUE),
+            paste("Manifest refers to a different scenario input fingerprint:", file))
+    }
+  }
+}
+if (exists("sc") && file.exists(here::here("outputs/tables/table_s7.csv"))) {
+  s7 <- read.csv(here::here("outputs/tables/table_s7.csv"))
+  totals <- subset(s7, group == "evpi")
+  check(setequal(totals$scenario_id, sc$scenarios$scenario_id), "Table S7 drops a scenario EVPI row")
+  for (result in sc$all_scenario_results) {
+    id <- result$scenario_info$scenario_id
+    nmb <- as.matrix(result$psa_obj$effect) * result$scenario_info$wtp - as.matrix(result$psa_obj$cost)
+    evpi <- mean(apply(nmb, 1, max)) - max(colMeans(nmb))
+    check(isTRUE(all.equal(totals$evpi[totals$scenario_id == id], evpi, tolerance = 1e-10)),
+          paste("Table S7 total EVPI differs from scenario PSA:", id))
+    if (evpi == 0) {
+      rows <- subset(s7, scenario_id == id & group != "evpi")
+      check(nrow(rows) > 0 && all(rows$evppi == 0) && all(rows$evppi_se == 0) &&
+        all(is.na(rows$evppi_percent_of_evpi)), paste("Table S7 loses explicit zero groups:", id))
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------

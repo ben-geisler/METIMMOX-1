@@ -287,18 +287,49 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
 #'
 #' @param all_results List of scenario results from run_all_scenarios
 #' @return Combined data frame with all EVPPI results
-compile_evppi_results <- function(all_results) {
-
-  evppi_combined <- data.frame()
-
-  for (scenario_id in names(all_results)) {
-    scenario_evppi <- all_results[[scenario_id]]$evppi_results
-    if (nrow(scenario_evppi) > 0) {
-      evppi_combined <- rbind(evppi_combined, scenario_evppi)
-    }
+compile_evppi_results <- function(all_results, param_groups = NULL) {
+  # Scenario presence and EVPI come from the PSA, never from the number of
+  # successful regressions. An exactly zero EVPI bounds every group at zero.
+  # A small positive EVPI skipped by the estimator is NOT an exact zero.
+  if (is.null(param_groups)) {
+    param_groups <- add_interaction_param_groups(create_parameter_groups())
   }
-
-  return(evppi_combined)
+  rows <- lapply(all_results, function(result) {
+    info <- result$scenario_info
+    nmb <- as.matrix(result$psa_obj$effect) * info$wtp -
+      as.matrix(result$psa_obj$cost)
+    evpi <- calculate_evpi_from_nmb(nmb)
+    estimates <- result$evppi_results
+    expected <- if (length(param_groups)) paste0("[GROUP] ", names(param_groups)) else character()
+    missing <- setdiff(expected, estimates$parameter)
+    if (length(missing)) {
+      zero <- isTRUE(evpi == 0)
+      absent <- data.frame(
+        parameter = missing, evppi = if (zero) 0 else NA_real_,
+        evppi_se = if (zero) 0 else NA_real_, evpi = evpi,
+        evppi_percent_of_evpi = NA_real_,
+        method = if (zero) "zero_evpi_bound" else "not_estimated",
+        n_params = lengths(param_groups)[sub("^\\[GROUP\\] ", "", missing)],
+        n_sim = nrow(nmb),
+        error = if (zero) "" else "No group estimate returned (EVPI is not zero)",
+        stringsAsFactors = FALSE
+      )
+      estimates <- dplyr::bind_rows(estimates, absent)
+    }
+    # Include the total even if there are no configured groups or estimates.
+    total <- data.frame(parameter = "[EVPI]", evppi = evpi,
+      evppi_se = NA_real_, evpi = evpi,
+      evppi_percent_of_evpi = if (isTRUE(evpi > 0)) 100 else NA_real_,
+      method = "total_evpi", n_params = NA_integer_, n_sim = nrow(nmb),
+      error = if (is.finite(evpi)) "" else "Non-finite scenario EVPI")
+    estimates <- dplyr::bind_rows(total, estimates)
+    estimates$scenario_id <- info$scenario_id
+    estimates$scenario_name <- info$scenario_name
+    estimates$wtp <- info$wtp
+    estimates$evpi <- evpi
+    estimates
+  })
+  dplyr::bind_rows(rows)
 }
 
 #' Deterministic alternative-utility scenarios (Table S8)

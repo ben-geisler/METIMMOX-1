@@ -28,6 +28,8 @@ execute:
 # model's own curves are standardised to the full complete-case cohort with Rx
 # set by strategy and are not shown.
 # ===============================================================================
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure_pfs_os_curves")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04"),
@@ -204,7 +206,7 @@ outputs <- list(
   soc = p_soc, crp = p_crp, tmb_braf = p_tmb
 )
 for (nm in names(outputs)) {
-  ggsave(
+  save_artifact_plot(
     filename = here("outputs", "figs", paste0("figure_pfs_os_curves_", nm, ".png")),
     plot = outputs[[nm]], width = 8, height = 5.5, dpi = 300, bg = "white"
   )
@@ -247,3 +249,7 @@ p_tmb
   patients from the experimental arm, biomarker-negative patients from the
   control arm.
 - Figures are saved to `outputs/figs/figure_pfs_os_curves_{soc,crp,tmb_braf}.png`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

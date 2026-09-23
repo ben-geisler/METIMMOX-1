@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s2")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
@@ -145,8 +147,12 @@ save_df <- as.data.frame(v_matrix)
 save_df$Biomarker <- rownames(save_df)
 save_df <- save_df[, c("Biomarker", bm_names)]
 
-write.csv(save_df, file = here("outputs", "tables", "table_s2.csv"), row.names = FALSE)
+write_artifact_csv(save_df, file = here("outputs", "tables", "table_s2.csv"), row.names = FALSE)
 cat("Table saved to:", here("outputs", "tables", "table_s2.csv"), "\n")
 ```
 
 Table S2 has been saved to `outputs/tables/table_s2.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

@@ -301,8 +301,13 @@ Issue #159 implements the first proposed fix: paired patient bootstrap fits esti
 
 The #159 baseline and fixed snapshots both precede the requested commit and carry HEAD `6ca19ab`, with distinct PSA fingerprints and result hashes. All active generated caches were cleared and rebuilt, and reports and publication outputs were rendered before the fixed snapshot. The cumulative comparison uses saved snapshot timestamps, because #159 was implemented after #166.
 
+
+Issue #168 repairs publication artifacts and their provenance. Table S7 and Figure 5 now retain the base case with EVPI zero, distinguish failed estimates from zeros, and use scenario PSA objects to establish scenario totals. All 26 publication vignettes were rendered, all 17 tracked CSVs were checked against their generating objects, and the 37 vignette-owned artifacts are recorded in `outputs/manifest.csv`. Table 5 already agreed with the current PSA at published precision; its new regression checks guard against future drift.
+
+The #168 baseline and fixed snapshots were saved with the usual `baseline` and `fixed` arguments before the fix commit, so both carry HEAD `b8e1b02`. The fixed snapshot regenerated all 5,000 PSA draws and EVPPI because the previous cache predated HEAD. Deterministic costs and QALYs are identical; maximum absolute PSA differences are EUR 2.91e-11 and 8.88e-16 QALYs, and EVPI remains zero. Scenario compilation was rebuilt from validated existing scenario results after verifying that the estimation functions and inputs were unchanged. The existing five-SE diagnostic still fails for four of six level comparisons; its criterion is unchanged. See [the validation record](../../validation/issue168_2026-09-22/README.md).
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.5
+**Report version:** 4.6

@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure_s2")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04"),
@@ -165,7 +167,7 @@ if (nrow(pred_data) > 0) {
     dir.create(figs_dir, recursive = TRUE)
   }
 
-  ggsave(
+  save_artifact_plot(
     filename = here("outputs", "figs", "figure_s2.png"),
     plot = p_extrap,
     width = 12,
@@ -186,3 +188,7 @@ predicted for those same patients (own covariates, control treatment) and
 averaged. The economic model's standard-of-care curves are standardised to all
 `r nrow(data_complete)` complete-case patients with treatment set to control
 (the `predictions` object) and are not shown here.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

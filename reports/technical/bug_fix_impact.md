@@ -1,6 +1,6 @@
 # Bug Fix Impact Analysis
 Ben Geisler
-2026-09-21
+2026-09-23
 
 - [Snapshot Inventory](#snapshot-inventory)
 - [Impact Comparisons](#impact-comparisons)
@@ -17,10 +17,11 @@ Ben Geisler
   - [Issue 157: baseline vs fixed](#issue-157-baseline-vs-fixed)
   - [Issue 159: baseline vs fixed](#issue-159-baseline-vs-fixed)
   - [Issue 166: baseline vs fixed](#issue-166-baseline-vs-fixed)
+  - [Issue 168: baseline vs fixed](#issue-168-baseline-vs-fixed)
   - [Batch \#173 / \#171 / \#163: baseline vs
     fixed](#batch-173--171--163-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 173
-    fixed](#cumulative-issue-145-baseline-vs-issue-173-fixed)
+  - [Cumulative: issue 145 baseline vs issue 168
+    fixed](#cumulative-issue-145-baseline-vs-issue-168-fixed)
 - [Interpretation](#interpretation)
 
 # Snapshot Inventory
@@ -53,6 +54,8 @@ Ben Geisler
 | snapshot_159_fixed_6ca19ab.rds    | 159   | fixed    | 6ca19ab | 2026-09-21 09:46:55 |
 | snapshot_166_baseline_96d0710.rds | 166   | baseline | 96d0710 | 2026-09-18 09:55:46 |
 | snapshot_166_fixed_96d0710.rds    | 166   | fixed    | 96d0710 | 2026-09-18 09:57:44 |
+| snapshot_168_baseline_b8e1b02.rds | 168   | baseline | b8e1b02 | 2026-09-22 11:25:26 |
+| snapshot_168_fixed_b8e1b02.rds    | 168   | fixed    | b8e1b02 | 2026-09-22 12:04:46 |
 | snapshot_173_baseline_1b50e8d.rds | 173   | baseline | 1b50e8d | 2026-09-21 15:09:17 |
 | snapshot_173_fixed_1b50e8d.rds    | 173   | fixed    | 1b50e8d | 2026-09-21 16:04:39 |
 
@@ -86,8 +89,9 @@ filenames carry the same pre-fix HEAD identifier.
 | Issue 157: baseline vs fixed | snapshot_157_baseline_efcd775.rds | snapshot_157_fixed_cdf852f.rds |
 | Issue 159: baseline vs fixed | snapshot_159_baseline_6ca19ab.rds | snapshot_159_fixed_6ca19ab.rds |
 | Issue 166: baseline vs fixed | snapshot_166_baseline_96d0710.rds | snapshot_166_fixed_96d0710.rds |
+| Issue 168: baseline vs fixed | snapshot_168_baseline_b8e1b02.rds | snapshot_168_fixed_b8e1b02.rds |
 | Batch \#173 / \#171 / \#163: baseline vs fixed | snapshot_173_baseline_1b50e8d.rds | snapshot_173_fixed_1b50e8d.rds |
-| Cumulative: issue 145 baseline vs issue 173 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_173_fixed_1b50e8d.rds |
+| Cumulative: issue 145 baseline vs issue 168 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_168_fixed_b8e1b02.rds |
 
 Impact comparisons included in this report
 
@@ -537,6 +541,31 @@ PSA cache md5 before 8f061b8959fee3e221a34f65ce0d9dc1 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.22 after.
 
+## Issue 168: baseline vs fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 21,523 | 1.3644 | EUR 21,523 | 1.3644 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,948 | 1.3849 | EUR 53,948 | 1.3849 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 62,685 | 1.3529 | EUR 62,685 | 1.3529 | EUR 0 | 0.0000 |
+
+Base case impact – Issue 168: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 48,061 | EUR 48,061 |      EUR 0 |
+| CRP-guided       | EUR 16,684 | EUR 16,684 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 6,312 |  EUR 6,312 |      EUR 0 |
+
+Net monetary benefit impact – Issue 168: baseline vs fixed
+
+PSA cache md5 before 943be17d86d24aa1a30a17ec1d4238fa (modified
+2026-09-21 15:41), after ca7e7d9091880b1f5879fe9cd8a7f967 (modified
+2026-09-22 12:04). The after PSA was regenerated inside the snapshot run
+because the cache predated the fix commit.
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
+
 ## Batch \#173 / \#171 / \#163: baseline vs fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
@@ -562,7 +591,7 @@ PSA cache md5 before 90645792c191da22ce9a8c81ed323ff9 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
-## Cumulative: issue 145 baseline vs issue 173 fixed
+## Cumulative: issue 145 baseline vs issue 168 fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
 |:---|---:|---:|---:|---:|---:|---:|
@@ -570,7 +599,7 @@ Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 | CRP-guided | EUR 55,026 | 1.3842 | EUR 53,948 | 1.3849 | -EUR 1,078 | 0.0007 |
 | TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,685 | 1.3529 | EUR 1,887 | -0.0002 |
 
-Base case impact – Cumulative: issue 145 baseline vs issue 173 fixed
+Base case impact – Cumulative: issue 145 baseline vs issue 168 fixed
 
 | Strategy         | NMB Before |  NMB After | NMB Change |
 |:-----------------|-----------:|-----------:|-----------:|
@@ -579,12 +608,12 @@ Base case impact – Cumulative: issue 145 baseline vs issue 173 fixed
 | TMB/BRAF-guided  |  EUR 8,207 |  EUR 6,312 | -EUR 1,896 |
 
 Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
-173 fixed
+168 fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 943be17d86d24aa1a30a17ec1d4238fa
-(modified 2026-09-21 15:41). Identity of the two PSA files cannot be
-established from metadata.
+the PSA cache md5; after PSA cache md5 ca7e7d9091880b1f5879fe9cd8a7f967
+(modified 2026-09-22 12:04, regenerated inside the snapshot run).
+Identity of the two PSA files cannot be established from metadata.
 
 # Interpretation
 
@@ -628,8 +657,29 @@ reports and publication outputs were rendered before the fixed snapshot.
 The cumulative comparison uses saved snapshot timestamps, because \#159
 was implemented after \#166.
 
+Issue \#168 repairs publication artifacts and their provenance. Table S7
+and Figure 5 now retain the base case with EVPI zero, distinguish failed
+estimates from zeros, and use scenario PSA objects to establish scenario
+totals. All 26 publication vignettes were rendered, all 17 tracked CSVs
+were checked against their generating objects, and the 37 vignette-owned
+artifacts are recorded in `outputs/manifest.csv`. Table 5 already agreed
+with the current PSA at published precision; its new regression checks
+guard against future drift.
+
+The \#168 baseline and fixed snapshots were saved with the usual
+`baseline` and `fixed` arguments before the fix commit, so both carry
+HEAD `b8e1b02`. The fixed snapshot regenerated all 5,000 PSA draws and
+EVPPI because the previous cache predated HEAD. Deterministic costs and
+QALYs are identical; maximum absolute PSA differences are EUR 2.91e-11
+and 8.88e-16 QALYs, and EVPI remains zero. Scenario compilation was
+rebuilt from validated existing scenario results after verifying that
+the estimation functions and inputs were unchanged. The existing five-SE
+diagnostic still fails for four of six level comparisons; its criterion
+is unchanged. See [the validation
+record](../../validation/issue168_2026-09-22/README.md).
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-23  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.5
+**Report version:** 4.6

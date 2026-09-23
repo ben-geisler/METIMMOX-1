@@ -30,6 +30,8 @@ execute:
 # and sample_survival_coefficients(), which the CEAC section reuses for the
 # single-biomarker models (issue #157).
 # ==============================================================================
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("poster_SMDM")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
@@ -176,8 +178,8 @@ print(p_forest)
 figs_dir <- here("outputs", "figs"); if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
 tables_dir <- here("outputs", "tables"); if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
 
-ggsave(here("outputs", "figs", "poster_forest.png"), p_forest, width = 8, height = 6, dpi = 300, bg = "white")
-write.csv(forest_df, here("outputs", "tables", "poster_forest_data.csv"), row.names = FALSE)
+save_artifact_plot(here("outputs", "figs", "poster_forest.png"), p_forest, width = 8, height = 6, dpi = 300, bg = "white")
+write_artifact_csv(forest_df, here("outputs", "tables", "poster_forest_data.csv"), row.names = FALSE)
 ```
 
 # Three-strategy cost-effectiveness analysis
@@ -242,7 +244,7 @@ label_strategy <- c(strategy_labels, tlr = "TLR-guided")
 cea_tbl <- as.data.frame(icer3) %>%
   mutate(Strategy = label_strategy[as.character(Strategy)],
          NMB = Effect * WTP - Cost)
-write.csv(cea_tbl, here("outputs", "tables", "poster_cea.csv"), row.names = FALSE)
+write_artifact_csv(cea_tbl, here("outputs", "tables", "poster_cea.csv"), row.names = FALSE)
 
 # Conclusion computed from the dampack frontier status, not typed (issue #157)
 ctrl_label3 <- label_strategy[[get_control_strategy()]]
@@ -408,7 +410,7 @@ c2 <- dampack::ceac(wtp_range, mk_psa(cj, ej)); c2$Panel <- panel_joint
 ceac_df <- rbind(as.data.frame(c1), as.data.frame(c2))
 names(ceac_df)[names(ceac_df) == "Proportion"] <- "Probability"
 ceac_df$Strategy <- strategy_label(as.character(ceac_df$Strategy))
-write.csv(ceac_df, here("outputs", "tables", "poster_ceac_data.csv"), row.names = FALSE)
+write_artifact_csv(ceac_df, here("outputs", "tables", "poster_ceac_data.csv"), row.names = FALSE)
 
 # Caption computed from the curves at the base-case WTP (issue #157)
 soc_lab <- strategy_label("control"); crp_lab <- strategy_label("crp"); tmb_lab <- strategy_label("tmb_braf")
@@ -440,10 +442,14 @@ p_ceac <- ggplot(ceac_df, aes(WTP, Probability, colour = Strategy)) +
   theme(legend.position = "bottom", plot.title = element_text(face = "bold"),
         panel.grid.minor = element_blank(), strip.text = element_text(face = "bold"))
 print(p_ceac)
-ggsave(here("outputs", "figs", "poster_ceac.png"), p_ceac, width = 11, height = 5, dpi = 300, bg = "white")
+save_artifact_plot(here("outputs", "figs", "poster_ceac.png"), p_ceac, width = 11, height = 5, dpi = 300, bg = "white")
 ```
 
 ---
 
 Figure saved to `outputs/figs/poster_forest.png` and `outputs/figs/poster_ceac.png`.
 Tables saved to `outputs/tables/poster_cea.csv`, `outputs/tables/poster_forest_data.csv`, and `outputs/tables/poster_ceac_data.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

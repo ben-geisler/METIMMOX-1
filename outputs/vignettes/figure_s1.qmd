@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure_s1")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04"),
@@ -181,7 +183,7 @@ if (length(panel_list) > 0) {
     dir.create(figs_dir, recursive = TRUE)
   }
 
-  ggsave(
+  save_artifact_plot(
     filename = here("outputs", "figs", "figure_s1.png"),
     plot = combined_plot,
     width = 14,
@@ -195,3 +197,7 @@ if (length(panel_list) > 0) {
 ```
 
 Figure S1 has been saved to `outputs/figs/figure_s1.png`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

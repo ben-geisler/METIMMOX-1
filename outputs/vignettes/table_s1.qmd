@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s1")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04"),
@@ -145,8 +147,12 @@ if (!dir.exists(tables_dir)) {
   dir.create(tables_dir, recursive = TRUE)
 }
 
-write.csv(tab_df, file = here("outputs", "tables", "table_s1.csv"))
+write_artifact_csv(tab_df, file = here("outputs", "tables", "table_s1.csv"))
 cat("Table saved to:", here("outputs", "tables", "table_s1.csv"), "\n")
 ```
 
 Table S1 has been saved to `outputs/tables/table_s1.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

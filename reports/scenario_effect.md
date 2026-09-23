@@ -1,6 +1,6 @@
 # Scenario Analysis
 Ben Geisler
-2026-09-21
+2026-09-22
 
 - [Overview](#overview)
 - [Scenario Definitions](#scenario-definitions)
@@ -59,36 +59,46 @@ PSA summary by scenario
 
 # Scenario EVPPI
 
+The `[EVPI]` row is total scenario EVPI, calculated from the scenario
+PSA even when no regression estimates were returned. Exact zero EVPI
+bounds every group at zero; skipped or failed estimates at positive EVPI
+remain missing with a reason.
+
 | Scenario | WTP | Parameter | EVPPI | SE | Percent of EVPI | Population EVPPI |
 |:---|---:|:---|---:|---:|---:|---:|
+| Base Case | EUR 51,000 | \[EVPI\] | EUR 0.00 | – | – | EUR 0.00M |
+| Base Case | EUR 51,000 | \[GROUP\] other_costs | EUR 0.00 | EUR 0.00 | – | EUR 0.00M |
+| Base Case | EUR 51,000 | \[GROUP\] utilities | EUR 0.00 | EUR 0.00 | – | EUR 0.00M |
+| Base Case | EUR 51,000 | \[GROUP\] prevalence | EUR 0.00 | EUR 0.00 | – | EUR 0.00M |
+| Base Case | EUR 51,000 | \[GROUP\] interaction_crp | EUR 0.00 | EUR 0.00 | – | EUR 0.00M |
+| Decreased Nivolumab Cost | EUR 51,000 | \[EVPI\] | EUR 607.24 | – | 100.0% | EUR 7.58M |
 | Decreased Nivolumab Cost | EUR 51,000 | \[GROUP\] interaction_all | EUR 318.28 | EUR 19.11 | 52.4% | EUR 3.97M |
 | Decreased Nivolumab Cost | EUR 51,000 | \[GROUP\] interaction_crp | EUR 279.23 | EUR 20.64 | 46.0% | EUR 3.48M |
 | Decreased Nivolumab Cost | EUR 51,000 | b_crp_rx_os | EUR 275.40 | EUR 19.51 | 45.4% | EUR 3.44M |
 | Decreased Nivolumab Cost | EUR 51,000 | \[GROUP\] interaction_tmb_braf | EUR 17.51 | EUR 5.67 | 2.9% | EUR 0.22M |
-| Decreased Nivolumab Cost | EUR 51,000 | b_tmb_braf_rx_os | EUR 12.06 | EUR 1.49 | 2.0% | EUR 0.15M |
+| WTP EUR 100,000 | EUR 100,000 | \[EVPI\] | EUR 226.59 | – | 100.0% | EUR 2.83M |
 | WTP EUR 100,000 | EUR 100,000 | \[GROUP\] interaction_all | EUR 56.98 | EUR 11.68 | 25.1% | EUR 0.71M |
 | WTP EUR 100,000 | EUR 100,000 | b_crp_rx_os | EUR 41.62 | EUR 9.49 | 18.4% | EUR 0.52M |
 | WTP EUR 100,000 | EUR 100,000 | \[GROUP\] interaction_crp | EUR 41.10 | EUR 10.77 | 18.1% | EUR 0.51M |
 | WTP EUR 100,000 | EUR 100,000 | \[GROUP\] interaction_tmb_braf | EUR 1.49 | EUR 2.25 | 0.7% | EUR 0.02M |
-| WTP EUR 100,000 | EUR 100,000 | c_other_visit | EUR 0.00 | EUR 0.00 | 0.0% | EUR 0.00M |
+| WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | \[EVPI\] | EUR 3,825.77 | – | 100.0% | EUR 47.73M |
 | WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | \[GROUP\] interaction_all | EUR 2,826.01 | EUR 69.51 | 73.9% | EUR 35.25M |
 | WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | \[GROUP\] interaction_crp | EUR 2,309.53 | EUR 72.81 | 60.4% | EUR 28.81M |
 | WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | b_crp_rx_os | EUR 2,292.30 | EUR 71.48 | 59.9% | EUR 28.60M |
 | WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | \[GROUP\] interaction_tmb_braf | EUR 593.87 | EUR 40.29 | 15.5% | EUR 7.41M |
-| WTP EUR 100,000 + Decreased Nivolumab | EUR 100,000 | b_tmb_braf_rx_os | EUR 566.40 | EUR 31.20 | 14.8% | EUR 7.07M |
+| WTP EUR 150,000 | EUR 150,000 | \[EVPI\] | EUR 1,668.33 | – | 100.0% | EUR 20.81M |
 | WTP EUR 150,000 | EUR 150,000 | \[GROUP\] interaction_all | EUR 827.47 | EUR 53.25 | 49.6% | EUR 10.32M |
 | WTP EUR 150,000 | EUR 150,000 | \[GROUP\] interaction_crp | EUR 685.27 | EUR 56.01 | 41.1% | EUR 8.55M |
 | WTP EUR 150,000 | EUR 150,000 | b_crp_rx_os | EUR 674.65 | EUR 52.57 | 40.4% | EUR 8.42M |
 | WTP EUR 150,000 | EUR 150,000 | \[GROUP\] interaction_tmb_braf | EUR 80.48 | EUR 21.33 | 4.8% | EUR 1.00M |
-| WTP EUR 150,000 | EUR 150,000 | b_tmb_braf_rx_os | EUR 57.99 | EUR 6.99 | 3.5% | EUR 0.72M |
+| WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | \[EVPI\] | EUR 8,116.80 | – | 100.0% | EUR 101.26M |
 | WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | \[GROUP\] interaction_all | EUR 6,492.93 | EUR 122.01 | 80.0% | EUR 81.00M |
 | WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | \[GROUP\] interaction_crp | EUR 5,139.14 | EUR 126.38 | 63.3% | EUR 64.11M |
 | WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | b_crp_rx_os | EUR 5,108.11 | EUR 126.31 | 62.9% | EUR 63.72M |
 | WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | \[GROUP\] interaction_tmb_braf | EUR 1,928.06 | EUR 86.92 | 23.8% | EUR 24.05M |
-| WTP EUR 150,000 + Decreased Nivolumab | EUR 150,000 | b_tmb_braf_rx_os | EUR 1,859.90 | EUR 76.32 | 22.9% | EUR 23.20M |
 
-Top EVPPI parameters and groups by scenario (regression estimates with
-Monte Carlo SE)
+Total EVPI and leading EVPPI parameters and groups by scenario (Monte
+Carlo SE for regression estimates)
 
 <img
 src="scenario_effect_files/figure-commonmark/scenario-evppi-plot-1.png"
@@ -97,6 +107,6 @@ alt="Scenario EVPPI by parameter" />
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-22  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 5.1
+**Report version:** 5.2

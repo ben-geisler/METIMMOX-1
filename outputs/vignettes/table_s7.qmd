@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s7")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
@@ -55,9 +57,9 @@ to_population <- function(x) {
   )
 }
 
-evppi_table <- data.frame()
-if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
-  evppi_all <- evppi_cache$evppi_all_scenarios
+evppi_all <- compile_evppi_results(evppi_cache$all_scenario_results)
+evppi_table <- data.frame(Status = "No scenario results")
+if (nrow(evppi_all) > 0) {
   if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
   if (!"n_params" %in% names(evppi_all)) evppi_all$n_params <- NA_integer_
 
@@ -70,19 +72,19 @@ if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
       group = sub("^\\[GROUP\\] ", "", parameter),
       param_group = evppi_group_label(parameter),
       n_params,
-      evppi, evppi_se, evppi_percent_of_evpi, evpi,
+      evppi, evppi_se, evppi_percent_of_evpi, evpi, error, method,
       evppi_population_millions = to_population(evppi),
       evppi_se_population_millions = to_population(evppi_se)
     )
 
   evpi_rows <- evppi_all %>%
-    distinct(scenario_id, scenario_name, wtp, evpi) %>%
+    filter(parameter == "[EVPI]") %>%
     transmute(
       scenario_id, scenario_name, wtp,
       group = "evpi",
       param_group = "All parameters (EVPI)",
       n_params = NA_integer_,
-      evppi = evpi, evppi_se = NA_real_, evppi_percent_of_evpi = 100, evpi,
+      evppi = evpi, evppi_se = NA_real_, evppi_percent_of_evpi, evpi, error, method,
       evppi_population_millions = to_population(evpi),
       evppi_se_population_millions = NA_real_
     )
@@ -95,17 +97,12 @@ if (!is.null(evppi_cache) && nrow(evppi_cache$evppi_all_scenarios) > 0) {
     arrange(scenario_rank, group_rank) %>%
     select(-scenario_rank, -group_rank)
 
-  missing_groups <- setdiff(paste0("[GROUP] ", group_order), unique(evppi_all$parameter))
-  if (length(missing_groups) > 0) {
-    warning("Table S7: group rows absent from the scenario cache: ",
-            paste(missing_groups, collapse = ", "),
-            ". Rerun analysis/12_scenario_EVPPIs.R.")
-  }
+
 }
 ```
 
 ```{r display-table}
-if (nrow(evppi_table) > 0) {
+if (nrow(evppi_all) > 0) {
   display_df <- evppi_table %>%
     mutate(
       WTP = scales::dollar(wtp, prefix = "EUR ", accuracy = 1),
@@ -117,13 +114,13 @@ if (nrow(evppi_table) > 0) {
       `Population EVPPI` = paste0("EUR ", sprintf("%.2f", evppi_population_millions), "M")
     ) %>%
     select(Scenario = scenario_name, WTP, `Parameter Group` = param_group,
-           Parameters, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`)
+           Parameters, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`, Error = error)
 
   kable(
     display_df,
     caption = "Table S7: Joint EVPPI by parameter group and scenario",
     format = "html",
-    align = c("l", "r", "l", "r", "r", "r", "r", "r")
+    align = c("l", "r", "l", "r", "r", "r", "r", "r", "l")
   ) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                   full_width = FALSE, font_size = 11) %>%
@@ -133,7 +130,7 @@ if (nrow(evppi_table) > 0) {
         "with Monte Carlo standard errors (SE) from 1,000 regression-coefficient draws. ",
         "Each group row is one joint estimate for all parameters in the group; group ",
         "rows are not sums of single-parameter EVPPIs. 'All parameters (EVPI)' is the ",
-        "total expected value of perfect information for the scenario. Population ",
+        "total expected value of perfect information for the scenario. Exact zero EVPI bounds every group at zero; missing or failed estimates are NA with an error. Percentages at zero EVPI are undefined. Population ",
         "scaling: ", annual_incidence_norway, " patients/year over ",
         research_horizon_years, " years, discounted at ",
         scales::percent(discount_rate_research, accuracy = 0.1), "."
@@ -141,16 +138,20 @@ if (nrow(evppi_table) > 0) {
       general_title = "Notes: "
     )
 } else {
-  cat("Scenario EVPPI cache not available. Run analysis/12_scenario_EVPPIs.R first.")
+  knitr::kable(evppi_table)
 }
 ```
 
 ```{r save-table, include=FALSE}
-if (nrow(evppi_table) > 0) {
+{
   tables_dir <- here("outputs", "tables")
   if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
-  write.csv(evppi_table, file = here("outputs", "tables", "table_s7.csv"), row.names = FALSE)
+  write_artifact_csv(evppi_table, file = here("outputs", "tables", "table_s7.csv"), row.names = FALSE)
 }
 ```
 
 Table S7 has been saved to `outputs/tables/table_s7.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

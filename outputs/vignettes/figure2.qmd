@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure2")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
@@ -130,8 +132,12 @@ print(p_tornado)
 ```{r save-figure, include=FALSE}
 figs_dir <- here("outputs", "figs")
 if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
-ggsave(here("outputs", "figs", "figure2.png"), p_tornado, width = 9, height = 7,
+save_artifact_plot(here("outputs", "figs", "figure2.png"), p_tornado, width = 9, height = 7,
        dpi = 300, bg = "white")
 ```
 
 Figure 2 has been saved to `outputs/figs/figure2.png`. Bars show the change in incremental net monetary benefit (CRP-guided versus standard of care) when a parameter is set to its lower or upper one-way bound. Parameters omitted because neither bound changes the increment: `r if (length(omitted_params) == 0) "none" else paste(omitted_params, collapse = ", ")`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

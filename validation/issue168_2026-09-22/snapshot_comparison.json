@@ -1,0 +1,19 @@
+{
+  "baseline_file": "snapshot_168_baseline_b8e1b02.rds",
+  "fixed_file": "snapshot_168_fixed_b8e1b02.rds",
+  "baseline_time": "2026-09-22 11:25:26",
+  "fixed_time": "2026-09-22 12:04:45",
+  "baseline_commit": "b8e1b02",
+  "fixed_commit": "b8e1b02",
+  "n_sim": 5000,
+  "deterministic_max_cost_difference": 0,
+  "deterministic_max_qaly_difference": 0,
+  "psa_max_cost_difference": 2.9103830456733704e-11,
+  "psa_max_qaly_difference": 8.8817841970012523e-16,
+  "same_psa_input_fingerprint": true,
+  "same_model_indices": true,
+  "before_evpi": 0,
+  "after_evpi": 0,
+  "baseline_psa_regenerated": false,
+  "fixed_psa_regenerated": true
+}

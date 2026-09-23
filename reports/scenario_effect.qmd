@@ -153,6 +153,10 @@ if (!is.null(scenario_cache)) {
 
 # Scenario EVPPI
 
+The `[EVPI]` row is total scenario EVPI, calculated from the scenario PSA even
+when no regression estimates were returned. Exact zero EVPI bounds every group
+at zero; skipped or failed estimates at positive EVPI remain missing with a reason.
+
 ```{r scenario-evppi}
 if (!is.null(scenario_cache) &&
     !is.null(scenario_cache$evppi_all_scenarios) &&
@@ -187,11 +191,19 @@ if (!is.null(scenario_cache) &&
     evppi_display,
     booktabs = TRUE,
     align = c("l", "r", "l", "r", "r", "r", "r"),
-    caption = "Top EVPPI parameters and groups by scenario (regression estimates with Monte Carlo SE)"
+    caption = "Total EVPI and leading EVPPI parameters and groups by scenario (Monte Carlo SE for regression estimates)"
   ) %>%
     tbl_style(latex_options = c("HOLD_position", "scale_down"))
 } else if (!is.null(scenario_cache)) {
   cat("Scenario cache was found, but no EVPPI rows were available.")
+}
+```
+
+```{r scenario-failed-estimates}
+failed_estimates <- scenario_cache$evppi_all_scenarios %>%
+  filter(nzchar(error)) %>% select(scenario_name, parameter, error)
+if (nrow(failed_estimates)) {
+  knitr::kable(failed_estimates, caption = "Missing or failed EVPPI estimates") %>% tbl_style()
 }
 ```
 
@@ -200,7 +212,7 @@ if (!is.null(scenario_cache) &&
     !is.null(scenario_cache$evppi_all_scenarios) &&
     nrow(scenario_cache$evppi_all_scenarios) > 0) {
   plot_df <- scenario_cache$evppi_all_scenarios %>%
-    filter(is.finite(evppi)) %>%
+    filter(parameter != "[EVPI]", is.finite(evppi)) %>%
     group_by(scenario_name, parameter) %>%
     summarise(evppi = max(evppi, na.rm = TRUE), .groups = "drop")
 
@@ -222,4 +234,4 @@ if (!is.null(scenario_cache) &&
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.1
+**Report version:** 5.2

@@ -13,6 +13,8 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("clin_effect_table_s2")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
@@ -68,9 +70,13 @@ kable(consolidated_summary_table,
 ```{r save-csv, include=FALSE}
 tables_dir <- here("outputs", "tables")
 if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
-write.csv(consolidated_summary_table, file = here("outputs", "tables", "clin_effect_table_s2.csv"),
+write_artifact_csv(consolidated_summary_table, file = here("outputs", "tables", "clin_effect_table_s2.csv"),
           row.names = FALSE)
 cat("Saved to:", here("outputs", "tables", "clin_effect_table_s2.csv"), "\n")
 ```
 
 Table saved to `outputs/tables/clin_effect_table_s2.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```
