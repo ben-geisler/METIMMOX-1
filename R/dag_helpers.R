@@ -84,16 +84,22 @@ TLR -> PFS
 PFS -> OS
 }'
 
+# Simplified DAG for a clinical audience. Age and Sex are separate nodes so
+# that the graph matches the full DAG (issue #184): both point to TMB/BRAF,
+# only Age points to survival (Age -> OS in the full DAG; there is no
+# Sex -> outcome edge). Interaction and latent nodes are omitted.
 DAG_SIMPLE_SPEC <- 'dag {
 bb="0,0,1,1"
-Demo     [pos="0.280,0.100"]
-TMB_BRAF [pos="0.150,0.400"]
-CRP      [pos="0.150,0.750"]
-T        [exposure,pos="0.050,0.575"]
-Survival [outcome,pos="0.750,0.575"]
+Sex      [pos="0.050,0.100"]
+Age      [pos="0.400,0.100"]
+TMB_BRAF [pos="0.180,0.380"]
+CRP      [pos="0.180,0.780"]
+T        [exposure,pos="0.050,0.580"]
+Survival [outcome,pos="0.750,0.580"]
 
-Demo -> TMB_BRAF
-Demo -> Survival
+Age -> TMB_BRAF
+Age -> Survival
+Sex -> TMB_BRAF
 TMB_BRAF -> Survival
 CRP -> Survival
 T -> Survival
@@ -226,7 +232,6 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
     dplyr::mutate(
       status = dplyr::if_else(is.na(status), "covariate", status),
       label = dplyr::case_when(
-        name == "Demo" ~ "Age/<br>Sex",
         name == "Survival" ~ "PFS/<br>OS",
         name == "TMB_BRAF" ~ "TMB/<br><i>BRAF</i>",
         TRUE ~ name

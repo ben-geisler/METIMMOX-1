@@ -20,8 +20,9 @@ strategies are evaluated:
   dose (positive: CRP \< 5 mg/L). This is not the baseline value; the
   three patients without a week-4 CRP died early (weeks 2.4, 15.7 and
   20.9) and are excluded from the complete-case tables below.
-- **TLR**: Tumor lesion reduction at the first on-treatment CT
-  (positive: TLR $\geq$ 10%)
+- **TLR**: Target lesion reduction at the first on-treatment CT
+  (positive: a reduction of at least 10% in the sum of target-lesion
+  diameters)
 - **TMB/BRAF**: Combined biomarker from baseline NGS (positive: TMB
   $\geq$ 9 mut/MB OR BRAF mutation)
 
@@ -138,4 +139,4 @@ negligible.
 
 **Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.3
+**Report version:** 1.4

@@ -15,7 +15,7 @@ This repository contains the R code for a cost-effectiveness analysis comparing 
 
 Both biomarkers are available before the decision to add immunotherapy is made. CRP is not a baseline (pre-randomization) measurement: the trial gives two cycles of FLOX to every patient before the first nivolumab dose, and the CRP used here is the value at that decision point (issue #150). The baseline (cycle 1 day 1) CRP is retained in the data as `CRP0` but is not used.
 
-**Clinical-only TLR analysis**: Tumor lesion reduction (TLR) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator measured on treatment rather than a treatment-selection biomarker.
+**Clinical-only TLR analysis**: Target lesion reduction (TLR; a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator measured on treatment rather than a treatment-selection biomarker.
 
 Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
 

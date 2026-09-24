@@ -35,7 +35,8 @@ execute:
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("dag_helpers", "assoc_tests", "tlr_landmark", "dag_association_tests"),
+  funs = c("dag_helpers", "assoc_tests", "cox_extract", "tlr_landmark",
+           "dag_association_tests"),
   packages = c("here", "knitr", "kableExtra", "dplyr", "dagitty", "survival",
                "coxphf", "logistf", "coin"),
   set_theme = FALSE
@@ -50,42 +51,47 @@ dd <- prepare_dag_data(data, landmark = "week9")
 n_source <- nrow(dd$data)
 n_main <- nrow(dd$data_main)
 n_tlr <- nrow(dd$data_tlr)
+n_tlr_landmark <- nrow(dd$data_tlr_landmark)
 n_lm_pfs <- nrow(dd$data_lm_pfs)
+n_lm_os <- nrow(dd$landmark$os)
 lm_diag <- dd$landmark$diagnostics
 lm_label <- dd$landmark$spec$short_label
 
 event_summary <- data.frame(
   Dataset = c("Source dataset after scripts 02 and 03",
               "Main complete-case dataset for survival and interaction models",
-              "TLR subset with observed tlr",
+              "TLR subset with observed tlr (logistic tests into TLR)",
+              "TLR landmark base cohort (TLR-classified, complete-case)",
               paste0("TLR landmark PFS cohort (progression-free after ",
                      tolower(lm_label), ")")),
-  N = c(n_source, n_main, n_tlr, n_lm_pfs),
+  N = c(n_source, n_main, n_tlr, n_tlr_landmark, n_lm_pfs),
   Deaths = c(sum(dd$data$Death, na.rm = TRUE),
              sum(dd$data_main$Death, na.rm = TRUE),
              sum(dd$data_tlr$Death, na.rm = TRUE),
+             sum(dd$data_tlr_landmark$Death, na.rm = TRUE),
              sum(dd$data_lm_pfs$Death, na.rm = TRUE)),
   PFS_events = c(sum(dd$data$Progression, na.rm = TRUE),
                  sum(dd$data_main$Progression, na.rm = TRUE),
                  sum(dd$data_tlr$Progression, na.rm = TRUE),
+                 sum(dd$data_tlr_landmark$Progression, na.rm = TRUE),
                  sum(dd$data_lm_pfs$Progression, na.rm = TRUE))
 )
 ```
 
 ```{r helpers}
 #| include: false
-render_table <- function(df, caption, font_size = 9,
-                         landscape_pdf = FALSE, scale_down = TRUE) {
+# No scale_down: wide tables are set in landscape with wrapped columns.
+render_table <- function(df, caption, font_size = 9, landscape_pdf = FALSE,
+                         col_widths = NULL) {
   align_string <- paste(rep("l", ncol(df)), collapse = "")
   tbl <- kable(df, caption = caption, booktabs = knitr::is_latex_output(),
                align = align_string)
   if (knitr::is_latex_output()) {
-    latex_options <- c("hold_position")
-    if (scale_down) {
-      latex_options <- c(latex_options, "scale_down")
-    }
     tbl <- tbl |>
-      tbl_style(latex_options = latex_options, font_size = font_size)
+      tbl_style(latex_options = c("hold_position"), font_size = font_size)
+    for (j in seq_along(col_widths)) {
+      if (!is.na(col_widths[j])) tbl <- tbl |> tbl_column_spec(j, width = col_widths[j])
+    }
     if (landscape_pdf) {
       tbl <- tbl |>
         tbl_landscape()
@@ -94,8 +100,11 @@ render_table <- function(df, caption, font_size = 9,
   tbl
 }
 
+fmt_n <- function(n) ifelse(is.na(n), "--", as.character(n))
+
 edge_coverage <- dag_edge_coverage(dag)
 ci_coverage <- dag_ci_coverage(dag)
+em_coverage <- dag_effect_modification_coverage(dag)
 n_edges_all <- length(edge_coverage$all)
 n_edges_testable <- length(edge_coverage$testable)
 n_edges_latent <- length(edge_coverage$latent)
@@ -104,32 +113,52 @@ n_ci_all <- nrow(ci_coverage)
 n_ci_definitional <- sum(ci_coverage$definitional)
 n_ci_testable <- n_ci_all - n_ci_definitional
 n_ci_balance <- sum(ci_coverage$arm_balance)
+n_ci_stratum <- sum(ci_coverage$stratum_arm_balance)
+n_ci_structural <- n_ci_testable - n_ci_balance - n_ci_stratum
+n_em <- nrow(em_coverage)
+code_list <- function(x) paste0("`", x, "`", collapse = ", ")
+ci_definitional_list <- code_list(ci_coverage$statement[ci_coverage$definitional])
+ci_stratum_list <- code_list(ci_coverage$statement[ci_coverage$stratum_arm_balance])
+em_list <- code_list(em_coverage$item)
 ```
 
 ```{r run-tests}
 #| include: false
 edge_results <- run_dag_edge_tests(dag, dd)
 ci_results <- run_dag_ci_tests(dag, dd, seed = analysis_seed)
+em_results <- run_dag_effect_modification_tests(dag, dd)
+adj_results <- run_adjusted_interaction_models(dd)
 
 edge_summary_table <- edge_results |>
-  mutate(`p-value` = fmt_p(p_value)) |>
+  mutate(`p-value` = fmt_p(p_value), N = fmt_n(N)) |>
   select(Edge = Item, Test, N, Effect, `p-value`, Conclusion)
 
 ci_summary_table <- ci_results |>
   mutate(
     `p-value` = fmt_p(p_value),
-    `Arm balance check` = ifelse(Randomization_Check, "Yes", "No")
+    N = fmt_n(N),
+    `Arm balance check` = ifelse(
+      Randomization_Check, "Yes",
+      ifelse(Stratum_Balance,
+             paste0("Within ", DAG_NODE_LABELS[Balance_Stratum], "+"), "No"))
   ) |>
   select(`CI statement` = Item, Test, N, Effect, `p-value`,
          `Arm balance check`, Conclusion)
 
+em_summary_table <- em_results |>
+  mutate(`p-value` = fmt_p(p_value), N = fmt_n(N)) |>
+  select(`Omitted edge` = Item, Test, N, Effect, `p-value`, Conclusion)
+
 consolidated_summary_table <- bind_rows(
   edge_results |>
-    transmute(Domain = "Direct edge", Item, Effect,
+    transmute(Domain = "Direct edge (marginal)", Item, N = fmt_n(N), Effect,
               `p-value` = fmt_p(p_value), Conclusion),
   ci_results |>
-    transmute(Domain = "Conditional independence", Item, Effect,
-              `p-value` = fmt_p(p_value), Conclusion)
+    transmute(Domain = "Conditional independence", Item, N = fmt_n(N), Effect,
+              `p-value` = fmt_p(p_value), Conclusion),
+  em_results |>
+    transmute(Domain = "Omitted edge (effect modification)", Item, N = fmt_n(N),
+              Effect, `p-value` = fmt_p(p_value), Conclusion)
 )
 
 untested_edges <- data.frame(
@@ -145,17 +174,44 @@ supported_edges <- edge_results |>
   pull(Item)
 
 ci_tested <- ci_results |> filter(!Definitional)
-ci_violations <- ci_tested |>
+ci_structural <- ci_tested |> filter(!Randomization_Check, !Stratum_Balance)
+ci_violations <- ci_structural |>
   filter(p_value < 0.05) |>
+  pull(Item)
+balance_flags <- ci_tested |>
+  filter(Randomization_Check | Stratum_Balance, p_value < 0.05) |>
   pull(Item)
 
 randomization_checks <- ci_results |>
-  filter(Randomization_Check) |>
-  mutate(`p-value` = fmt_p(p_value)) |>
-  select(Item, `p-value`, Conclusion)
+  filter(Randomization_Check | Stratum_Balance) |>
+  mutate(
+    Patients = ifelse(Randomization_Check, "All",
+                      paste0(DAG_NODE_LABELS[Balance_Stratum], "-positive")),
+    `p-value` = fmt_p(p_value)
+  ) |>
+  select(Item, Patients, `p-value`, Conclusion)
+
+interaction_comparison <- edge_results |>
+  filter(Item %in% adj_results$Edge) |>
+  transmute(Edge = Item, `Marginal HR (95% CI)` = Effect,
+            `Marginal p` = fmt_p(p_value)) |>
+  inner_join(adj_results |>
+               transmute(Edge, `Adjusted HR (95% CI)` = Effect,
+                         `Adjusted PLRT p` = fmt_p(p_value)),
+             by = "Edge")
 
 p_of <- function(df, item) fmt_p(df$p_value[df$Item == item])
 effect_of <- function(df, item) df$Effect[df$Item == item]
+# "0.26 (95% CI 0.06 to 1.34)" -> "0.26 (95% CI 0.06 to 1.34; PLRT p = 0.102)"
+adj_text <- function(edge) {
+  r <- adj_results[adj_results$Edge == edge, ]
+  sub("\\)$", sprintf("; PLRT p = %s)", fmt_p(r$p_value)), r$Effect)
+}
+
+# Week-4 CRP positivity by arm (aggregate counts, computed).
+crp_by_arm <- with(dd$data[!is.na(dd$data$crp), ], table(T_num, crp))
+crp_exp <- sprintf("%d/%d", crp_by_arm["1", "1"], sum(crp_by_arm["1", ]))
+crp_ctl <- sprintf("%d/%d", crp_by_arm["0", "1"], sum(crp_by_arm["0", ]))
 ```
 
 # Introduction
@@ -170,7 +226,7 @@ The emphasis is deliberately modest. These tests do not prove causal direction, 
 
 Only scripts `02_setup_and_global_variables.R` and `03_biomarker_strategies.R` were sourced. No survival-model fitting scripts were run.
 
-The available repository extract contains `r n_source` patients after scripts 02 and 03. The main complete-case dataset used for survival and interaction models contains `r n_main` patients. TLR in the DAG corresponds to `tlr` in the data, and the TLR subset with observed `tlr` contains `r n_tlr` patients. The TLR landmark PFS cohort (patients progression-free after the `r tolower(lm_label)` landmark, see below) contains `r n_lm_pfs` patients.
+The available repository extract contains `r n_source` patients after scripts 02 and 03. The main complete-case dataset used for survival and interaction models contains `r n_main` patients. TLR in the DAG corresponds to `tlr` in the data: target lesion reduction (TLR), a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT. The TLR subset with observed `tlr` contains `r n_tlr` patients and is used for the logistic tests into TLR. The TLR landmark analyses start instead from the `r n_tlr_landmark` TLR-classified patients within the complete-case cohort (`tlr_landmark_base_cohort()` in `tlr_landmark.R`), the base cohort shared with `clinical_effectiveness.qmd` and Figure 1 of the clinical effectiveness paper; the `r n_tlr - n_tlr_landmark` other patients have a TLR value but are outside the complete-case cohort. The TLR landmark PFS cohort (patients progression-free after the `r tolower(lm_label)` landmark, see below) contains `r n_lm_pfs` of them.
 
 Patients without follow-up CT assessment have `tlr = NA` and were excluded from TLR analyses. Those analyses therefore rely on a missing-at-random assumption conditional on the observed covariates included in each model.
 
@@ -187,7 +243,11 @@ For the interaction nodes, `T` was coded as `T_num = 1` for the experimental arm
 
 The graph tested here is the canonical `dag` object from `dag_helpers.R`, the same object rendered in `dag.qmd`. Both the edge list and the list of implied conditional independencies are derived from that object at render time (`dagitty::edges()` and `dagitty::impliedConditionalIndependencies()`), and the report stops if the DAG implies a statement that has no prespecified test or a test targets a statement the DAG no longer implies. An earlier version typed both lists by hand from a graph without the `TxCRP` node and therefore tested 13 of the 19 implied independencies and neither `TxCRP` edge.
 
-The DAG has `r n_edges_all` edges. `r n_edges_latent` originate from the latent node `U` and are not testable. `r n_edges_definitional` point into the constructed interaction nodes (`T -> TxTMB`, `TMB_BRAF -> TxTMB`, `T -> TxCRP`, `CRP -> TxCRP`) and hold by definition. The remaining `r n_edges_testable` edges are tested. The DAG implies `r n_ci_all` conditional independencies; `r n_ci_definitional` of them relate the two interaction nodes given `T` and hold by construction (given `T = 0` both nodes are zero, and given `T = 1` and the conditioned biomarker one of them is constant), leaving `r n_ci_testable` testable statements, of which `r n_ci_balance` are marginal statements involving `T` that double as arm-balance checks.
+The DAG has `r n_edges_all` edges. `r n_edges_latent` originate from the latent node `U` and are not testable. `r n_edges_definitional` point into the constructed interaction nodes (`T -> TxTMB`, `TMB_BRAF -> TxTMB`, `T -> TxCRP`, `CRP -> TxCRP`) and hold by definition. The remaining `r n_edges_testable` edges are tested.
+
+The DAG implies `r n_ci_all` conditional independencies. `r n_ci_definitional` of them hold by construction: one of the two variables is an interaction node whose parents (`T` and the matching biomarker) are both in the conditioning set, so the node is constant within every stratum and the statement is true whatever the data (`r ci_definitional_list`). An earlier version tested the two TLR statements with the interaction coefficient of a Firth logistic model; that coefficient measures effect modification of the `T -> TLR` edge, not the stated independence, and the two statements are now classified as definitional (issue #170). This leaves `r n_ci_testable` testable statements. `r n_ci_balance` of them are marginal statements involving `T`, and `r n_ci_stratum` relate a variable to an interaction node given its biomarker but not `T` (`r ci_stratum_list`): within biomarker-positive patients the interaction node equals `T`, and it is zero otherwise, so these compare the arms within that stratum. Both groups are therefore arm-balance checks, leaving `r n_ci_structural` structural statements.
+
+The `r n_em` omitted edges from an interaction node into TLR (`r em_list`) encode the assumption that neither biomarker modifies the effect of treatment on TLR. They are tested separately under that hypothesis (see below) and are not counted among the conditional independencies.
 
 ## Statistical Tests
 
@@ -197,13 +257,16 @@ Each testable edge or independence was tested using a prespecified method:
 - Fisher's exact test for 2 x 2 tables
 - Mantel-Haenszel tests for binary associations conditional on one binary stratifier
 - Firth-corrected Cox regression (`coxphf`) for time-to-event endpoints
-- Firth-corrected logistic regression (`logistf`) for TLR models
+- Firth-corrected logistic regression (`logistf`) for TLR models, including the interaction tests of effect modification of `T -> TLR`
 - A conditional permutation test (`coin::independence_test`) for `Age _||_ TxTMB | {TMB_BRAF}`
+- A Firth Cox model with a time-dependent progression indicator for `PFS -> OS` (below)
+
+Every direct-edge test is marginal: the model contains the parent alone, and the interaction edges contain only `T`, the biomarker and their product. None adjusts for the other covariates of the primary clinical model, so the direct-edge estimates are associations along one arrow, not the adjusted effects reported in the main text (see "Interaction edges" below).
 
 Two edge tests need a time origin other than randomisation (issue #155):
 
 - **`PFS -> OS`**: progression is entered as a time-dependent indicator in a counting-process Firth Cox model for death (`survival::tmerge` on the progression-only trial event, `ProgressionExit` / `TTPwk`). Entering PFS time as a fixed covariate, as an earlier version did, is tautological because `PFSwk <= OSwk` by construction and PFS time is unknown at baseline (immortal-time bias).
-- **`TLR -> PFS`**: TLR is read at the first on-treatment CT, so a test from randomisation conditions on surviving progression-free to that scan (guarantee-time bias). The edge is therefore tested on the `r tolower(lm_label)` landmark PFS cohort from `tlr_landmark.R`, the same cohort and time origin used by `clinical_effectiveness.qmd` and Figure 1 of the clinical effectiveness paper: patients progression-free after the landmark, with time measured from the landmark. Of the `r lm_diag$n_first_scan_progressors` patients whose progression is recorded at the first scan itself (all TLR-negative because progression and TLR are read from the same scan), `r lm_diag$n_first_scan_progressors_kept` remain in the week-9 cohort because their scan fell after week 9, and `r lm_diag$n_scan_after_landmark_kept` retained patients had their TLR read after the landmark. A further `r lm_diag$n_pfs_excl_censored` patients are excluded because PFS was censored at a last assessment on or before week 9; `r lm_diag$n_pfs_excl_death_pf` were excluded with a death event within the window. The clinical effectiveness report repeats the landmark analysis at each patient's own scan date and at week 12 as sensitivity analyses.
+- **`TLR -> PFS`**: TLR is read at the first on-treatment CT, so a test from randomisation conditions on surviving progression-free to that scan (guarantee-time bias). The edge is therefore tested on the `r tolower(lm_label)` landmark PFS cohort from `tlr_landmark.R`, built from the `r n_tlr_landmark` TLR-classified patients in the complete-case cohort, the same cohort and time origin used by `clinical_effectiveness.qmd` and Figure 1 of the clinical effectiveness paper: patients progression-free after the landmark, with time measured from the landmark (`r n_lm_pfs` patients; `r n_lm_os` are alive after the landmark). Of the `r lm_diag$n_first_scan_progressors` patients whose progression is recorded at the first scan itself (all TLR-negative because progression and TLR are read from the same scan), `r lm_diag$n_first_scan_progressors_kept` remain in the week-9 cohort because their scan fell after week 9, and `r lm_diag$n_scan_after_landmark_kept` retained patients had their TLR read after the landmark. A further `r lm_diag$n_pfs_excl_censored` patients are excluded because PFS was censored at a last assessment on or before week 9; `r lm_diag$n_pfs_excl_death_pf` were excluded with a death event within the window. The clinical effectiveness report repeats the landmark analysis at each patient's own scan date and at week 12 as sensitivity analyses.
 
 ## Multiple Testing
 
@@ -226,7 +289,7 @@ render_table(
 
 ## Biomarker edges (TMB_BRAF, CRP -> PFS, OS, TLR)
 
-Direct biomarker effects on `PFS` and `OS` were tested with univariable Firth Cox models in the main dataset. Direct effects on `TLR` were tested in the `tlr` subset using Firth logistic regression.
+Direct biomarker effects on `PFS` and `OS` were tested with univariable (marginal) Firth Cox models in the main dataset. Direct effects on `TLR` were tested in the `tlr` subset using univariable Firth logistic regression.
 
 ## Treatment edges (T -> PFS, OS, TLR)
 
@@ -234,11 +297,18 @@ Treatment effects were evaluated with `T_num` as a binary predictor, preserving 
 
 ## Interaction edges (TxTMB, TxCRP -> PFS, OS)
 
-Each interaction node was tested using the interaction coefficient from `Surv(...) ~ T_num + biomarker + T_num:biomarker` for both `PFS` and `OS`. These are the same interaction-scale questions emphasised in `clinical_effectiveness.qmd`, but used here as DAG edge checks rather than biomarker-model comparisons. The `TxCRP` edges are the ones that drive the CRP-guided strategy in the economic model.
+Each interaction node was tested using the interaction coefficient from the marginal model `Surv(...) ~ T_num + biomarker + T_num:biomarker` for both `PFS` and `OS`. These are the same treatment-by-biomarker contrasts as the interaction terms of the primary clinical model, but without its other covariates. The primary model of `clinical_effectiveness.qmd` (Firth Cox, `Age + sex + Rx + CRP + TMB/BRAF + CRP x Rx + TMB/BRAF x Rx`, `r n_main` patients) is refitted here with `fit_firth_cox()`; the table sets the marginal edge estimates against its adjusted estimates and penalized likelihood ratio test (PLRT) p-values, which are the ones the main text reports. The `TxCRP` edges are the ones that drive the CRP-guided strategy in the economic model.
+
+```{r interaction-comparison}
+render_table(
+  interaction_comparison,
+  caption = "Interaction edges: marginal DAG edge tests versus the adjusted primary model"
+)
+```
 
 ## Mediator edge (TLR -> PFS)
 
-The `TLR -> PFS` edge was estimated in the `r tolower(lm_label)` landmark PFS cohort (n = `r n_lm_pfs`) with time measured from the landmark, as described in Methods.
+The `TLR -> PFS` edge was estimated in the `r tolower(lm_label)` landmark PFS cohort (n = `r n_lm_pfs`, from `r n_tlr_landmark` TLR-classified patients in the complete-case cohort) with time measured from the landmark, as described in Methods.
 
 ## Outcome chain (PFS -> OS)
 
@@ -249,18 +319,18 @@ The `PFS -> OS` edge was represented by a Firth Cox model for death with a time-
 ```{r edge-summary}
 render_table(
   edge_summary_table,
-  caption = "Direct edge tests",
+  caption = "Direct edge tests (all marginal)",
   font_size = 8,
   landscape_pdf = TRUE,
-  scale_down = FALSE
+  col_widths = c("2.6cm", "5.6cm", "0.8cm", "4.6cm", "1.3cm", "5cm")
 )
 ```
 
 # Conditional Independence Tests
 
-## Arm balance (marginal CIs involving T)
+## Arm balance (marginal CIs involving T and within-stratum statements)
 
-The `r n_ci_balance` CI statements involving `T` without a conditioning set double as arm-balance checks. If any of them were significant, that would suggest imbalance between arms in this realised sample rather than a structural failure of the DAG. Age, Sex and TMB/BRAF are baseline characteristics, so their checks are randomisation checks in the strict sense. CRP is the week-4 value (before the first nivolumab dose, after two FLOX cycles common to both arms), so its check asks whether the arms were balanced on CRP at the point where the immunotherapy decision is made.
+The `r n_ci_balance` CI statements involving `T` without a conditioning set double as arm-balance checks. The `r n_ci_stratum` statements that relate a variable to an interaction node given its biomarker (and not `T`) are the same checks within biomarker-positive patients, because the interaction node equals `T` there. If any of them were significant, that would suggest imbalance between arms in this realised sample rather than a structural failure of the DAG. Age, Sex and TMB/BRAF are baseline characteristics, so their checks are randomisation checks in the strict sense. CRP is the week-4 value (before the first nivolumab dose, after two FLOX cycles common to both arms), so its checks ask whether the arms were balanced on CRP at the point where the immunotherapy decision is made.
 
 ```{r randomization-checks}
 render_table(
@@ -269,11 +339,11 @@ render_table(
 )
 ```
 
-One arm-balance check, `CRP _||_ T`, was significant on the raw scale (p = `r p_of(ci_results, "CRP _||_ T")`): week-4 CRP-positivity was 17/36 in the experimental arm and 7/35 in the control arm. The baseline (cycle 1 day 1) CRP, which is not used in the analysis, was balanced (8/38 vs 7/35; Fisher p = 1), so randomisation itself was not at fault. Because both arms receive identical FLOX up to week 4 and nivolumab has not yet been given, the week-4 difference cannot be a treatment effect either; it is read as chance imbalance on a week-4 measurement in a small trial. The other checks, all on baseline characteristics, remained non-significant.
+The arm-balance checks with p < 0.05 were `r if (length(balance_flags) == 0) "none" else code_list(balance_flags)`. `CRP _||_ T` had p = `r p_of(ci_results, "CRP _||_ T")`: week-4 CRP-positivity was `r crp_exp` in the experimental arm and `r crp_ctl` in the control arm. The baseline (cycle 1 day 1) CRP, which is not used in the analysis, was balanced (8/38 vs 7/35; Fisher p = 1), so randomisation itself was not at fault. Because both arms receive identical FLOX up to week 4 and nivolumab has not yet been given, the week-4 difference cannot be a treatment effect either; it is read as chance imbalance on a week-4 measurement in a small trial. `CRP _||_ TxTMB | {TMB_BRAF}` (p = `r p_of(ci_results, "CRP _||_ TxTMB | {TMB_BRAF}")`) is the same comparison restricted to TMB/BRAF-positive patients, and therefore reflects the same week-4 CRP arm imbalance rather than a separate structural violation.
 
 ## Structural CIs (conditional)
 
-The DAG implies `r n_ci_all` observable conditional independencies after excluding the latent node `U`. `r n_ci_definitional` hold by construction (see Methods) and are listed without a test; the remaining `r n_ci_testable` were tested using the prespecified conditional models or stratified tests. Statements that condition on `T` and a biomarker and involve the matching interaction node (for example `TLR _||_ TxTMB | {T, TMB_BRAF}`) are tested parametrically as the interaction coefficient of a Firth logistic model, because within strata of `T` and the biomarker the interaction node is constant.
+The DAG implies `r n_ci_all` observable conditional independencies after excluding the latent node `U`. `r n_ci_definitional` hold by construction (see Methods) and are listed without a test; the remaining `r n_ci_testable` were tested using the prespecified conditional models or stratified tests. Of these, `r n_ci_balance + n_ci_stratum` are the arm-balance checks above and `r n_ci_structural` are structural statements about the covariates, biomarkers and TLR.
 
 ## CI summary table
 
@@ -283,7 +353,20 @@ render_table(
   caption = "Conditional-independence tests",
   font_size = 8,
   landscape_pdf = TRUE,
-  scale_down = FALSE
+  col_widths = c("4cm", "4.2cm", "0.8cm", "4.2cm", "1.2cm", "2cm", "4.6cm")
+)
+```
+
+# Omitted Edges: Effect Modification of T -> TLR
+
+The DAG draws `TxCRP` and `TxTMB` into PFS and OS but not into TLR. The omission asserts that neither biomarker modifies the effect of treatment on TLR. This is not a conditional independence (the corresponding statements hold by construction, see Methods), so it is tested directly as the product term of a Firth logistic model `tlr ~ T + biomarker + T x biomarker` in every patient with an observed TLR, and reported outside the conditional-independence counts.
+
+```{r effect-modification}
+render_table(
+  em_summary_table,
+  caption = "Omitted interaction edges into TLR: effect modification of T -> TLR",
+  font_size = 8,
+  col_widths = c("2cm", "3.2cm", "0.6cm", "2.8cm", "1cm", "3cm")
 )
 ```
 
@@ -292,10 +375,10 @@ render_table(
 ```{r consolidated-summary}
 render_table(
   consolidated_summary_table,
-  caption = "Consolidated summary of direct edge and conditional-independence tests",
+  caption = "Consolidated summary of direct edge, conditional-independence and effect-modification tests",
   font_size = 8,
   landscape_pdf = TRUE,
-  scale_down = FALSE
+  col_widths = c("3.2cm", "4.4cm", "0.8cm", "4.4cm", "1.2cm", "6.2cm")
 )
 ```
 
@@ -303,8 +386,9 @@ render_table(
 
 ```{r discussion-text, results='asis'}
 edge_n_sig <- sum(edge_results$p_value < 0.05, na.rm = TRUE)
-ci_n_fail <- sum(ci_tested$p_value < 0.05, na.rm = TRUE)
-ci_n_ok <- sum(ci_tested$p_value >= 0.05, na.rm = TRUE)
+ci_n_fail <- sum(ci_structural$p_value < 0.05, na.rm = TRUE)
+ci_n_ok <- sum(ci_structural$p_value >= 0.05, na.rm = TRUE)
+em_sig <- em_results$Item[em_results$p_value < 0.05]
 
 sig_items <- function(items) {
   items[items %in% supported_edges]
@@ -314,6 +398,7 @@ tlr_in_sig <- sig_items(c("CRP -> TLR", "TMB_BRAF -> TLR", "T -> TLR"))
 treatment_sig <- sig_items(c("T -> PFS", "T -> OS"))
 interaction_sig <- sig_items(c("TxTMB -> PFS", "TxTMB -> OS", "TxCRP -> PFS", "TxCRP -> OS"))
 covariate_sig <- sig_items(c("Age -> TMB_BRAF", "Sex -> TMB_BRAF", "Age -> OS"))
+adj_sig <- adj_results$Edge[adj_results$p_value < 0.05]
 
 list_or_none <- function(x) if (length(x) == 0) "none" else paste(x, collapse = "; ")
 
@@ -324,16 +409,27 @@ interaction_sig_text <- if (length(interaction_sig) == 0) {
 } else {
   paste0(paste0("`", interaction_sig, "`", collapse = " and "),
          if (length(interaction_sig) == 1) " is the only one" else " are the ones",
-         " below p = 0.05 in this small sample, and ",
-         if (length(interaction_sig) == 1) "it" else "they",
-         " should be read together with the adjusted interaction estimates in the clinical effectiveness report")
+         " below p = 0.05 in the marginal tests, and ",
+         if (length(adj_sig) == 0) {
+           "no interaction term reaches p < 0.05 in the adjusted primary model"
+         } else {
+           paste0("the adjusted primary model gives p < 0.05 for ",
+                  paste0("`", adj_sig, "`", collapse = " and "))
+         })
 }
 ci_violation_summary <- if (length(ci_violations) == 0) {
-  "no conditional-independence violation"
+  "no structural conditional-independence violation"
 } else {
-  paste0(length(ci_violations), " conditional-independence violation",
+  paste0(length(ci_violations), " structural conditional-independence violation",
          if (length(ci_violations) > 1) "s" else "",
-         " (", paste(ci_violations, collapse = "; "), ")")
+         " (", code_list(ci_violations), ")")
+}
+balance_summary <- if (length(balance_flags) == 0) {
+  "no arm-balance check below p = 0.05"
+} else {
+  paste0(length(balance_flags), " arm-balance check",
+         if (length(balance_flags) > 1) "s" else "", " below p = 0.05 (",
+         code_list(balance_flags), ")")
 }
 
 if (length(supported_edges) == 0) {
@@ -347,13 +443,39 @@ if (length(supported_edges) == 0) {
 }
 
 if (length(ci_violations) == 0) {
-  ci_violation_text <- "No DAG-implied conditional independence was contradicted at p < 0.05."
+  ci_violation_text <- "No structural DAG-implied conditional independence was contradicted at p < 0.05."
 } else {
   ci_violation_text <- paste0(
-    "Conditional independencies contradicted by the data at p < 0.05: ",
-    paste(ci_violations, collapse = "; "),
+    "Structural conditional independencies contradicted by the data at p < 0.05: ",
+    code_list(ci_violations),
     "."
   )
+}
+
+txcrp_structural <- ci_structural$Item[grepl("TxCRP", ci_structural$Item, fixed = TRUE)]
+crp_balance <- intersect(c("CRP _||_ T", "CRP _||_ TxTMB | {TMB_BRAF}"), balance_flags)
+crp_balance_text <- if (length(crp_balance) == 0) {
+  ". "
+} else {
+  paste0(
+    "; ",
+    if (setequal(crp_balance, balance_flags)) {
+      if (length(crp_balance) == 1) "it reflects" else "both reflect"
+    } else {
+      paste0("the CRP result", if (length(crp_balance) > 1) "s", " (",
+             code_list(crp_balance), ") ",
+             if (length(crp_balance) == 1) "reflects" else "reflect")
+    },
+    " the chance arm imbalance in week-4 CRP (baseline CRP was balanced, and no nivolumab has been given by week 4, so this is neither a randomisation failure nor a treatment effect)",
+    if ("CRP _||_ TxTMB | {TMB_BRAF}" %in% crp_balance)
+      ", `CRP _||_ TxTMB | {TMB_BRAF}` being the same comparison within TMB/BRAF-positive patients",
+    ". "
+  )
+}
+conclusion_balance_text <- if (length(crp_balance) > 0) {
+  paste0(balance_summary, ", traceable to the chance arm imbalance in week-4 CRP")
+} else {
+  balance_summary
 }
 
 cat(paste0(
@@ -362,7 +484,7 @@ cat(paste0(
   " Among the prognostic biomarker edges, those with p < 0.05 were: ",
   list_or_none(prognostic_sig), ". Among the edges into TLR: ",
   list_or_none(tlr_in_sig), ". Among the covariate edges: ",
-  list_or_none(covariate_sig), ".", "\n\n",
+  list_or_none(covariate_sig), ". All of these are marginal associations.", "\n\n",
   "The two disease-course edges are no longer tautological. PFS -> OS, now estimated with a time-dependent progression indicator, gives HR ",
   effect_of(edge_results, "PFS -> OS"), " (p = ", p_of(edge_results, "PFS -> OS"),
   ") for death after versus before a recorded progression; this is an estimate of how much a progression raises the subsequent death hazard, not a restatement of PFS <= OS. TLR -> PFS on the ",
@@ -375,23 +497,30 @@ cat(paste0(
   ", so the estimate should be read alongside the scan-date and week-12 landmark sensitivity analyses in the clinical effectiveness report.", "\n\n",
   "Treatment-related edges: those with p < 0.05 were ", list_or_none(treatment_sig),
   " for the direct treatment edges and ", list_or_none(interaction_sig),
-  " for the interaction edges. TxCRP -> PFS gives HR ", effect_of(edge_results, "TxCRP -> PFS"),
+  " for the marginal interaction edges. TxCRP -> PFS gives HR ", effect_of(edge_results, "TxCRP -> PFS"),
   " (p = ", p_of(edge_results, "TxCRP -> PFS"), ") and TxCRP -> OS HR ",
   effect_of(edge_results, "TxCRP -> OS"), " (p = ", p_of(edge_results, "TxCRP -> OS"),
   "); TxTMB -> PFS gives HR ", effect_of(edge_results, "TxTMB -> PFS"), " (p = ",
   p_of(edge_results, "TxTMB -> PFS"), ") and TxTMB -> OS HR ",
   effect_of(edge_results, "TxTMB -> OS"), " (p = ", p_of(edge_results, "TxTMB -> OS"),
-  "). These are the same treatment-by-biomarker contrasts as the interaction terms of the economic survival model, estimated here without covariate adjustment, and the intervals are wide.", "\n\n",
-  "Among the ", n_ci_testable, " tested conditional-independence statements, ", ci_n_ok,
+  "). These marginal models contain only T, the biomarker and their product. In the adjusted primary model, the CRP x treatment term is HR ",
+  adj_text("TxCRP -> PFS"), " for PFS and ", adj_text("TxCRP -> OS"),
+  " for OS, and the TMB/BRAF x treatment term is HR ", adj_text("TxTMB -> PFS"),
+  " for PFS and ", adj_text("TxTMB -> OS"), " for OS. The adjusted estimates are the ones the main text reports; the marginal edge tests check only that the DAG's arrows point where associations are, and all intervals are wide.", "\n\n",
+  "Among the ", n_ci_structural, " structural conditional-independence statements, ", ci_n_ok,
   " were compatible with the DAG at p >= 0.05 and ", ci_n_fail,
   " were contradicted by the data. ", ci_violation_text,
-  " CRP _||_ T had p = ", p_of(ci_results, "CRP _||_ T"),
-  ", reflecting a chance arm imbalance in week-4 CRP (baseline CRP was balanced, and no nivolumab has been given by week 4, so this is neither a randomisation failure nor a treatment effect), and CRP _||_ TxTMB | {TMB_BRAF} had p = ",
-  p_of(ci_results, "CRP _||_ TxTMB | {TMB_BRAF}"),
-  ", which follows from the same arm imbalance because TxTMB is a function of T. The new statements involving TxCRP (Age _||_ TxCRP, Sex _||_ TxCRP, TMB_BRAF _||_ TxCRP | {CRP}, TLR _||_ TxCRP | {CRP, T}) had p = ",
-  p_of(ci_results, "Age _||_ TxCRP"), ", ", p_of(ci_results, "Sex _||_ TxCRP"), ", ",
-  p_of(ci_results, "TMB_BRAF _||_ TxCRP | {CRP}"), " and ",
-  p_of(ci_results, "TLR _||_ TxCRP | {CRP, T}"),
+  " Of the ", n_ci_balance + n_ci_stratum, " arm-balance checks, ",
+  length(balance_flags), " had p < 0.05",
+  if (length(balance_flags) > 0) paste0(" (", code_list(balance_flags), ")"),
+  crp_balance_text,
+  "The structural statements involving TxCRP (",
+  code_list(txcrp_structural), ") had p = ",
+  paste(vapply(txcrp_structural, function(i) p_of(ci_results, i), character(1)),
+        collapse = ", "),
+  ". The two TLR statements involving an interaction node hold by construction; the corresponding effect-modification tests of T -> TLR gave p = ",
+  p_of(em_results, "TxCRP -> TLR"), " (CRP) and ", p_of(em_results, "TxTMB -> TLR"),
+  " (TMB/BRAF), with effect modification detected for ", list_or_none(em_sig),
   ". The week-4 CRP arm imbalance therefore remains the main place where the current DAG looks least secure in this dataset.", "\n\n",
   "Interpretation should remain cautious. The latent node U is unobserved, TLR analyses depend on non-missing follow-up imaging and on the landmark definition, the available repository extract is modest in size, and several tests are necessarily low-power. These checks therefore speak to empirical compatibility, not causal proof."
 ))
@@ -399,12 +528,12 @@ cat(paste0(
 
 # Conclusion
 
-This report adds a data-facing complement to the causal DAG by testing, from the same `dag` object that `dag.qmd` renders, every observable edge and every implied conditional independence of the graph. The prognostic biomarker edges and the two disease-course edges, now estimated with a time-dependent progression indicator and a landmark cohort rather than tautological baseline covariates, are where the empirical signal is clearest. The direct treatment edges are uncertain; of the interaction edges, `r interaction_sig_text`.
+This report adds a data-facing complement to the causal DAG by testing, from the same `dag` object that `dag.qmd` renders, every observable edge and every implied conditional independence of the graph that does not hold by construction. The prognostic biomarker edges and the two disease-course edges, now estimated with a time-dependent progression indicator and a landmark cohort rather than tautological baseline covariates, are where the empirical signal is clearest. The direct treatment edges are uncertain; of the marginal interaction edges, `r interaction_sig_text`.
 
-The data also surface `r ci_violation_summary` against the assumed graph, traceable to the chance arm imbalance in week-4 CRP. The most defensible takeaway is therefore that the DAG captures much of the prognostic structure in the data, while the CRP-related balance and interaction structure may need refinement or stronger justification in future versions.
+The data surface `r ci_violation_summary` against the assumed graph and `r conclusion_balance_text`. The most defensible takeaway is therefore that the DAG captures much of the prognostic structure in the data, while the CRP-related balance and interaction structure may need refinement or stronger justification in future versions.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.3
+**Report version:** 1.4

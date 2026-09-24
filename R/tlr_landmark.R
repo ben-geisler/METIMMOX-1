@@ -1,7 +1,7 @@
 # ===============================================================================
 # TLR LANDMARK COHORTS - SINGLE SOURCE OF TRUTH (issue #155)
 # ===============================================================================
-# Tumour lesion reduction (TLR) is read at the first on-treatment CT, so any
+# Target lesion reduction (TLR) is read at the first on-treatment CT, so any
 # analysis that stratifies survival by TLR from randomisation conditions on
 # having survived, progression-free, to that scan (guarantee-time bias). The
 # landmark analyses in clinical_effectiveness.qmd, clin_effect_figure1.qmd and
@@ -169,6 +169,42 @@ build_tlr_landmark_cohorts <- function(df, landmark = "week9") {
 #' @return Named list (week9, scan, week12) of `build_tlr_landmark_cohorts()` results.
 build_all_tlr_landmark_cohorts <- function(df) {
   lapply(TLR_LANDMARK_SPECS, function(spec) build_tlr_landmark_cohorts(df, spec$id))
+}
+
+# ===============================================================================
+# SHARED BASE COHORT FOR EVERY TLR LANDMARK ANALYSIS (issue #184)
+# ===============================================================================
+# TLR (target lesion reduction) is positive when the sum of target-lesion
+# diameters at the first on-treatment CT is at least 10% below baseline
+# (TLRcat: ratio <= 0.9 in 01_data_prep.R). The landmark analyses of
+# clinical_effectiveness.qmd, clin_effect_figure1.qmd and the DAG association
+# reports all start from the TLR-classified patients WITHIN the complete-case
+# cohort of the clinical and economic survival models, so the cohort (not only
+# the landmark rule) is shared. Patients with a TLR value but a missing
+# TMB/BRAF result are therefore not in any landmark cohort. Non-landmark TLR
+# analyses (for example the logistic models into TLR in the DAG tests) may use
+# every patient with an observed TLR; they do not call this helper.
+
+#' Complete-case variables of the clinical and economic survival models
+TLR_BASE_COHORT_VARS <- c("Age", "sex", "Rx", "crp", "tmb_braf",
+                          "OSwk", "Death", "PFSwk", "Progression")
+
+#' TLR-classified patients within the complete-case cohort
+#'
+#' @param data Data frame produced by scripts 02 and 03 (or a subset of it).
+#' @param tlr_col Name of the TLR indicator column (default `tlr`).
+#' @return The rows of `data` that are complete on `TLR_BASE_COHORT_VARS` and
+#'   have an observed TLR, in their original order; pass the result to
+#'   `build_tlr_landmark_cohorts()` or `build_all_tlr_landmark_cohorts()`.
+tlr_landmark_base_cohort <- function(data, tlr_col = "tlr") {
+  needed <- c(TLR_BASE_COHORT_VARS, tlr_col)
+  missing <- setdiff(needed, names(data))
+  if (length(missing) > 0) {
+    stop("tlr_landmark_base_cohort(): missing column(s): ",
+         paste(missing, collapse = ", "))
+  }
+  complete <- stats::complete.cases(data[, TLR_BASE_COHORT_VARS, drop = FALSE])
+  data[complete & !is.na(data[[tlr_col]]), , drop = FALSE]
 }
 
 message("TLR landmark helpers loaded from tlr_landmark.R")

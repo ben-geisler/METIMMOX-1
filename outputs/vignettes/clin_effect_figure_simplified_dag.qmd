@@ -24,7 +24,7 @@ setup_report(
 ```
 
 ```{r dag-simple-plot, fig.width=9, fig.height=6}
-#| fig-cap: "Simplified causal DAG for METIMMOX-1 (unpublished). Solid arrows denote assumed causal effects. The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction and latent-variable nodes are shown in the full DAG (Figure S1). Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
+#| fig-cap: "Simplified causal DAG for METIMMOX-1 (unpublished). Solid arrows denote assumed causal effects. Age and sex both point to TMB/BRAF; only age points to survival, as in the full DAG, which has an Age -> OS edge and no edge from sex to either outcome (PFS and OS are merged into one survival node, so the age arrow stands for Age -> OS). The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction, latent-variable and target lesion reduction (TLR) nodes are shown in the full DAG (Figure S1). Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
 
 p <- plot_simple_dag()
 print(p)

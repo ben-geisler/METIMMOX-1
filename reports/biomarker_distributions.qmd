@@ -71,7 +71,7 @@ data_full <- derive_pfs_endpoint(data_full, pfs_death_window_weeks, pfs_last_ass
 This report presents the distribution of patient characteristics stratified by treatment arm and biomarker status. Three biomarker strategies are evaluated:
 
 - **CRP**: C-reactive protein at week 4 (cycle 3 day 1), measured after two FLOX cycles common to both arms and before the first nivolumab dose (positive: CRP < 5 mg/L). This is not the baseline value; the three patients without a week-4 CRP died early (weeks 2.4, 15.7 and 20.9) and are excluded from the complete-case tables below.
-- **TLR**: Tumor lesion reduction at the first on-treatment CT (positive: TLR $\geq$ 10%)
+- **TLR**: Target lesion reduction at the first on-treatment CT (positive: a reduction of at least 10% in the sum of target-lesion diameters)
 - **TMB/BRAF**: Combined biomarker from baseline NGS (positive: TMB $\geq$ 9 mut/MB OR BRAF mutation)
 
 Each table shows the distribution of age, sex, and the other two biomarkers (both categorical and continuous) within subgroups defined by treatment arm and biomarker status.
@@ -339,4 +339,4 @@ correlation_df %>%
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.3
+**Report version:** 1.4

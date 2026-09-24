@@ -14,7 +14,7 @@ data$PFSwk <- data$`Days until progression`/7
 data$OSwk <- data$`Days until death/last follow up`/7
 
 # First on-treatment CT (issue #155): weeks from inclusion (the OS/PFS clock
-# origin) to the scan at which tumour lesion reduction (TLR) is read. The trial
+# origin) to the scan at which target lesion reduction (TLR) is read. The trial
 # export holds the scan date in the positional column `Date...122`, the date
 # column that follows the baseline target-lesion block (`TL LD...121`), just as
 # 01_data_prep.R reads the first on-treatment target-lesion sum from

@@ -135,7 +135,7 @@ kable(tab_df,
               n_total, n_tlr_missing),
       "Baseline characteristics: mean (SD) or n (%); p-values from the chi-squared test (categorical variables; the TLR test compares all three levels including Not assessed) or the t-test (age). Follow-up and outcome rows are descriptive only: follow-up is the reverse Kaplan-Meier median with interquartile range, survival medians are Kaplan-Meier estimates with 95% CI, NR = not reached; no p-values are reported for censored outcomes.",
       "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
-      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L at week 4, before the first nivolumab dose); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E); TLR-positive (>=10% reduction at the first on-treatment CT; an on-treatment measure, described here only and excluded from the economic model)."
+      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L at week 4, before the first nivolumab dose); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E); TLR-positive (target lesion reduction: a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT; an on-treatment measure, described here only and excluded from the economic model)."
     ),
     general_title = "Notes: "
   )

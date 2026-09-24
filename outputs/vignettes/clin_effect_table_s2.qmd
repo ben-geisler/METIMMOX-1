@@ -18,7 +18,8 @@ begin_artifact_render("clin_effect_table_s2")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03"),
-  funs = c("dag_helpers", "assoc_tests", "tlr_landmark", "dag_association_tests"),
+  funs = c("dag_helpers", "assoc_tests", "cox_extract", "tlr_landmark",
+           "dag_association_tests"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "dagitty", "survival",
                "coxphf", "logistf", "coin"),
   set_theme = FALSE
@@ -26,8 +27,10 @@ setup_report(
 
 # Edge and conditional-independence lists are derived from the canonical `dag`
 # object (dag_helpers.R) by dag_association_tests.R, so this table always tests
-# the graph shown in Figure S1 (issue #155). The week-9 landmark PFS cohort is
-# used for TLR -> PFS and a time-dependent progression indicator for PFS -> OS.
+# the graph shown in Figure S1 (issue #155). The week-9 landmark PFS cohort,
+# built from the TLR-classified patients of the complete-case cohort (issue
+# #184), is used for TLR -> PFS and a time-dependent progression indicator for
+# PFS -> OS.
 dd <- prepare_dag_data(data, landmark = "week9")
 lm_label <- tolower(dd$landmark$spec$short_label)
 ```
@@ -35,36 +38,105 @@ lm_label <- tolower(dd$landmark$spec$short_label)
 ```{r run-tests, include=FALSE}
 edge_results <- run_dag_edge_tests(dag, dd)
 ci_results <- run_dag_ci_tests(dag, dd, seed = analysis_seed)
+em_results <- run_dag_effect_modification_tests(dag, dd)
+# Adjusted primary model of the main text, refitted for the reconciliation
+# footnote (Firth Cox via fit_firth_cox(); issue #184).
+adj_results <- run_adjusted_interaction_models(dd)
+
+fmt_n <- function(n) ifelse(is.na(n), "--", as.character(n))
 
 consolidated_summary_table <- bind_rows(
   edge_results |>
-    transmute(Domain = "Direct edge", Item, Test, Effect,
+    transmute(Domain = "Direct edge (marginal)", Item, Test, N = fmt_n(N), Effect,
               `p-value` = fmt_p(p_value), Conclusion),
   ci_results |>
-    transmute(Domain = "Conditional independence", Item, Test, Effect,
-              `p-value` = fmt_p(p_value), Conclusion)
+    transmute(Domain = "Conditional independence", Item, Test, N = fmt_n(N), Effect,
+              `p-value` = fmt_p(p_value), Conclusion),
+  em_results |>
+    transmute(Domain = "Omitted edge (effect modification of T -> TLR)", Item, Test,
+              N = fmt_n(N), Effect, `p-value` = fmt_p(p_value), Conclusion)
+)
+
+# Every test family used must be named in the footnote; stop if a new one
+# appears so the note cannot go stale.
+test_families <- c(
+  "Firth Cox" = "Firth Cox regression",
+  "Firth logistic" = "Firth logistic regression",
+  "Fisher's exact" = "Fisher's exact test",
+  "Wilcoxon rank-sum" = "Wilcoxon rank-sum test",
+  "Mantel-Haenszel" = "Mantel-Haenszel test",
+  "Conditional permutation" = "conditional permutation test (coin, 9,999 resamples)",
+  "time-dependent progression" = "Firth Cox model with a time-dependent progression indicator (PFS -> OS)"
+)
+tested <- consolidated_summary_table$Test[consolidated_summary_table$`p-value` != "--"]
+unlisted <- tested[!vapply(tested, function(t) any(startsWith(t, names(test_families)[1:6])),
+                          logical(1))]
+if (length(unlisted) > 0) stop("Test type missing from the Table S2 footnote: ",
+                               paste(unique(unlisted), collapse = "; "))
+used <- vapply(names(test_families), function(f) any(grepl(f, tested, fixed = TRUE)),
+               logical(1))
+if (!all(used)) stop("Footnote lists a test type the table does not use: ",
+                     paste(names(test_families)[!used], collapse = "; "))
+
+cov <- attr(ci_results, "coverage")
+n_ci <- nrow(cov)
+n_def <- sum(cov$definitional)
+n_bal <- sum(cov$arm_balance)
+n_str <- sum(cov$stratum_arm_balance)
+balance_items <- cov$statement[cov$arm_balance]
+stratum_items <- cov$statement[cov$stratum_arm_balance]
+n_main <- nrow(dd$data_main)
+n_tlr <- nrow(dd$data_tlr)
+n_tlr_lm <- nrow(dd$data_tlr_landmark)
+
+# "0.26 (95% CI 0.06 to 1.34)" -> "0.26 (95% CI 0.06 to 1.34; PLRT p = 0.102)"
+with_p <- function(effect, p, label) {
+  sub("\\)$", sprintf("; %s = %s)", label, fmt_p(p)), effect)
+}
+adj_text <- function(edge) {
+  r <- adj_results[adj_results$Edge == edge, ]
+  with_p(r$Effect, r$p_value, "PLRT p")
+}
+marg_text <- function(edge) {
+  r <- edge_results[edge_results$Item == edge, ]
+  with_p(r$Effect, r$p_value, "p")
+}
+
+footnotes <- c(
+  "Data from METIMMOX trial (NCT03388190). Scripts 02 and 03 sourced.",
+  "CRP = C-reactive protein (week 4, before the first nivolumab dose); TLR = target lesion reduction, a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT; TMB = tumor mutational burden; T = treatment; TxTMB = T x TMB/BRAF; TxCRP = T x CRP; PLRT = penalized likelihood ratio test.",
+  sprintf("Tests: %s. Firth-corrected models use profile-likelihood 95%% confidence intervals and p-values. N is the number of patients in each test.",
+          paste(test_families, collapse = "; ")),
+  sprintf("Direct-edge tests are marginal: each model contains only the parent (for the interaction edges, T, the biomarker and T x biomarker), without the other covariates. They check that the DAG's arrows point where associations are and are not the adjusted estimates of the main text. The adjusted primary model (Firth Cox: age, sex, treatment, CRP, TMB/BRAF, CRP x treatment and TMB/BRAF x treatment; n = %d) gives CRP x treatment HR %s for PFS and %s for OS, and TMB/BRAF x treatment HR %s for PFS and %s for OS; the corresponding marginal edge tests give HR %s (TxCRP -> PFS), %s (TxCRP -> OS), %s (TxTMB -> PFS) and %s (TxTMB -> OS).",
+          n_main,
+          adj_text("TxCRP -> PFS"), adj_text("TxCRP -> OS"),
+          adj_text("TxTMB -> PFS"), adj_text("TxTMB -> OS"),
+          marg_text("TxCRP -> PFS"), marg_text("TxCRP -> OS"),
+          marg_text("TxTMB -> PFS"), marg_text("TxTMB -> OS")),
+  sprintf("Edge and conditional-independence lists are derived from the canonical DAG (dag_helpers.R). Edges from the latent node U and into the interaction nodes are not tested. %d of the %d implied independencies hold by construction, because one variable is an interaction node whose parents (T and the biomarker) are both in the conditioning set, so the node is constant within every stratum.",
+          n_def, n_ci),
+  sprintf("The omitted edges TxCRP -> TLR and TxTMB -> TLR are tested as effect modification of T -> TLR (Firth logistic interaction) and are not counted among the conditional independencies. Tests into TLR use every patient with an observed TLR (n = %d, or fewer when the biomarker is missing).",
+          n_tlr),
+  sprintf("PFS -> OS: Firth Cox for death with a time-dependent progression indicator (counting-process time), not PFS time as a baseline covariate. TLR -> PFS: Firth Cox on the %s landmark PFS cohort (n = %d of the %d TLR-classified patients in the %d-patient complete-case cohort, progression-free after the landmark, time from the landmark), the cohort used in Figure 1.",
+          lm_label, nrow(dd$data_lm_pfs), n_tlr_lm, n_main),
+  sprintf("Arm balance checks: %s (marginal) and %s (within biomarker-positive patients, where the interaction node equals T and is 0 otherwise). CRP is the week-4 value (before the first nivolumab dose), so CRP _||_ T tests arm balance at the immunotherapy decision point, not randomization balance; CRP _||_ TxTMB | {TMB_BRAF} is the same week-4 CRP comparison within TMB/BRAF-positive patients. No multiplicity correction applied.",
+          paste(balance_items, collapse = ", "), paste(stratum_items, collapse = ", "))
 )
 ```
 
 ```{r display-table}
-kable(consolidated_summary_table,
-      caption = "Consolidated summary of direct edge and conditional-independence tests",
+n_edge <- nrow(edge_results)
+n_ci_rows <- nrow(ci_results)
+kable(consolidated_summary_table |> select(-Domain),
+      caption = "Consolidated summary of direct edge, conditional-independence and effect-modification tests",
       format = "html") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = TRUE, font_size = 12) |>
-  pack_rows("Direct edges", 1, nrow(edge_results)) |>
-  pack_rows("Conditional independence", nrow(edge_results) + 1, nrow(consolidated_summary_table)) |>
-  footnote(
-    general = c(
-      "Data from METIMMOX trial (NCT03388190). Scripts 02 and 03 sourced.",
-      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden; TxTMB = T x TMB/BRAF; TxCRP = T x CRP.",
-      "Edge and conditional-independence lists are derived from the canonical DAG (dag_helpers.R). Edges from the latent node U and into the interaction nodes are not tested; two statements relating TxCRP and TxTMB given T hold by construction.",
-      "Firth-corrected Cox and logistic regression used throughout. Fisher's exact for 2x2 tables.",
-      sprintf("PFS -> OS: Firth Cox for death with a time-dependent progression indicator (counting-process time), not PFS time as a baseline covariate. TLR -> PFS: Firth Cox on the %s landmark PFS cohort (n = %d, progression-free after the landmark, time from the landmark), the cohort used in Figure 1.", lm_label, nrow(dd$data_lm_pfs)),
-      "Arm balance checks: Age||T, CRP||T, Sex||T, T||TMB_BRAF. CRP is the week-4 value (before the first nivolumab dose), so CRP||T tests arm balance at the immunotherapy decision point, not randomization balance. No multiplicity correction applied."
-    ),
-    general_title = "Notes: "
-  )
+  pack_rows("Direct edges (marginal)", 1, n_edge) |>
+  pack_rows("Conditional independence", n_edge + 1, n_edge + n_ci_rows) |>
+  pack_rows("Omitted edges: effect modification of T -> TLR",
+            n_edge + n_ci_rows + 1, nrow(consolidated_summary_table)) |>
+  footnote(general = footnotes, general_title = "Notes: ")
 ```
 
 ```{r save-csv, include=FALSE}
