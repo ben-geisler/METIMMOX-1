@@ -188,6 +188,8 @@ style_narrow <- function(k) tbl_style(k, latex_options = "HOLD_position")
 
 ```
 
+Issue #181 changes PFS ascertainment for deaths without recorded progression: deaths more than 16 weeks after the last assessment are censored at that assessment (primary proxy: `TTPwk`). Recorded progression times and OS are unchanged. The clinical report compares the former all-deaths rule and the alternative `LastEvalwk` anchor. The baseline/fixed snapshots below capture the resulting economic changes after refitting and regenerating every downstream cache.
+
 # Snapshot Inventory
 
 ```{r inventory}
@@ -310,4 +312,4 @@ The #168 baseline and fixed snapshots were saved with the usual `baseline` and `
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.6
+**Report version:** 4.7

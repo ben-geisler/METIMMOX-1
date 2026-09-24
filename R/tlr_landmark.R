@@ -84,7 +84,7 @@ tlr_landmark_time <- function(df, spec) {
 #'   `PFSwk_lm`), an `attrition` table and a `diagnostics` list.
 build_tlr_landmark_cohorts <- function(df, landmark = "week9") {
   spec <- tlr_landmark_spec(landmark)
-  required <- c("OSwk", "Death", "PFSwk", "Progression")
+  required <- c("OSwk", "Death", "PFSwk", "Progression", "ProgressionExit")
   missing <- setdiff(required, names(df))
   if (length(missing) > 0) {
     stop("build_tlr_landmark_cohorts(): missing column(s): ",
@@ -135,9 +135,11 @@ build_tlr_landmark_cohorts <- function(df, landmark = "week9") {
     n_os_excluded = nrow(os_excl),
     n_pfs_excluded = nrow(pfs_excl),
     n_os_excl_deaths = sum(os_excl$Death == 1),
-    n_pfs_excl_progressed = sum(pfs_excl$Progression == 1),
-    n_pfs_excl_progressed_tlr_neg = sum(pfs_excl$Progression == 1 &
+    n_pfs_excl_progression_exit = sum(pfs_excl$ProgressionExit == 1),
+    n_pfs_excl_progression_exit_tlr_neg = sum(pfs_excl$ProgressionExit == 1 &
                                           pfs_excl[[tlr_col]] == 0),
+    n_pfs_excl_death_pf = sum(pfs_excl$Progression == 1 & pfs_excl$ProgressionExit == 0),
+    n_pfs_excl_censored = sum(pfs_excl$Progression == 0),
     n_first_scan_progressors = if (has_scan) sum(first_scan_prog) else NA_integer_,
     n_first_scan_progressors_kept = if (has_scan) {
       sum(first_scan_prog & at_risk_pfs)

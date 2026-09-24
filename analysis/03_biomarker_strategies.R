@@ -21,10 +21,11 @@ data$sex <- as.factor(data$sex)
 # CT1wk (first on-treatment CT week, issue #155) are carried for the clinical
 # and DAG reports: the time-dependent PFS -> OS test needs the progression-only
 # event, and the TLR landmark analyses need the scan date. No economic script
-# reads them, and every complete-case subset names its columns explicitly.
+# reads them. LastEvalwk and PFS_rule also support clinical sensitivity and
+# landmark diagnostics; every complete-case subset names its columns explicitly.
 data <- data %>%
   select(ID, PFSwk, Progression, OSwk, Death, Rx, crp, tlr, tmb_braf, Age, sex,
-         ProgressionExit, TTPwk, CT1wk)
+         ProgressionExit, TTPwk, CT1wk, LastEvalwk, PFS_rule)
 
 # Extract control and experimental groups
 data_control <- subset(data, Rx == levels(data$Rx)[1])

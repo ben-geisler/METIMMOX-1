@@ -6,6 +6,9 @@ if (file.exists(rds_path)) {
   stop("File not found: ", rds_path)
 }
 rm(rds_path)
+if (!"LastEvalwk" %in% names(data)) {
+  stop("Missing LastEvalwk: re-run analysis/01_data_prep.R.")
+}
 
 data$PFSwk <- data$`Days until progression`/7
 data$OSwk <- data$`Days until death/last follow up`/7
@@ -25,13 +28,13 @@ data$CT1wk <- as.numeric(as.Date(data$`Date...122`) -
 names(data)[names(data) == "Progression exit"] <- "Progression"
 names(data)[names(data) == "Sex 0female"] <- "sex"
 
-# PFS endpoint (issue #149): the trial export flags exit-for-progression only and
-# censors deaths without progression. Recode PFS as progression OR death, with
-# time to death for patients who died progression-free, matching the trial
-# definition (Ree et al. 2024) and the partitioned-survival-model state
-# definition. Raw values are kept as ProgressionExit / TTPwk.
+# PFS endpoint (issue #181): two scheduled 8-week assessment intervals.
+# Inf recovers the pre-181 death rule; LastEvalwk is the alternative anchor.
+pfs_death_window_weeks <- 16
+pfs_last_assessment <- "TTPwk"
 source(here::here("R/pfs_endpoint.R"))
-data <- derive_pfs_endpoint(data)
+data <- derive_pfs_endpoint(data, death_window_weeks = pfs_death_window_weeks,
+                            last_assessment = pfs_last_assessment)
 
 # global variables
 ## time parameters

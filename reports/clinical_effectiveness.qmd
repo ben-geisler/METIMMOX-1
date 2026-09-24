@@ -268,7 +268,11 @@ prev_tmb_braf <- mean(data_complete$tmb_braf_num)
 # Event counts
 n_deaths <- sum(data_complete$Death)
 n_progressions <- sum(data_complete$Progression)
+n_deaths_censored_pfs <- sum(data_complete$PFS_rule == "death_censored_at_assessment")
+n_deaths_pfs_events <- sum(data_complete$PFS_rule == "death_within_window")
 ```
+
+PFS counts recorded progression and deaths within `r pfs_death_window_weeks` weeks (inclusive) of the last assessment, using `r pfs_last_assessment` as the assessment-time proxy. In the primary cohort, `r n_deaths_censored_pfs` deaths without recorded progression are censored at that assessment and `r n_deaths_pfs_events` count as PFS death events.
 
 ```{r biomarker-correlation, include=FALSE}
 # =============================================================================
@@ -911,6 +915,62 @@ data.frame(
 
 \newpage
 
+## PFS Endpoint Sensitivity: Death-Censoring Rule
+
+```{r pfs-endpoint-sensitivity, include=FALSE}
+pfs_specs <- list(
+  primary = list(window = pfs_death_window_weeks, anchor = pfs_last_assessment),
+  all_deaths = list(window = Inf, anchor = "TTPwk"),
+  anchor_alt = list(window = 16, anchor = "LastEvalwk"),
+  window8 = list(window = 8, anchor = "TTPwk"),
+  window24 = list(window = 24, anchor = "TTPwk")
+)
+pfs_sens_rows <- lapply(names(pfs_specs), function(id) {
+  spec <- pfs_specs[[id]]
+  df <- derive_pfs_endpoint(data, spec$window, spec$anchor, verbose = FALSE)
+  df <- df[complete.cases(df[, c("Age", "sex", "Rx", "crp", "tmb_braf",
+                                "OSwk", "Death", "PFSwk", "Progression")]), ]
+  stopifnot(setequal(df$ID, data_complete$ID))
+  df$crp_num <- as.numeric(as.character(df$crp))
+  df$tmb_braf_num <- as.numeric(as.character(df$tmb_braf))
+  m <- fit_firth_cox(formula_pfs, df, paste("PFS endpoint", id))
+  if (id == "primary") {
+    stopifnot(isTRUE(all.equal(m$coefficients, model_pfs$coefficients, tolerance = 1e-10)),
+              isTRUE(all.equal(m$ci.lower, model_pfs$ci.lower, tolerance = 1e-10)),
+              isTRUE(all.equal(m$ci.upper, model_pfs$ci.upper, tolerance = 1e-10)),
+              isTRUE(all.equal(m$prob, model_pfs$prob, tolerance = 1e-10)))
+  }
+  res <- extract_coxphf_results(m)
+  crp <- get_interaction_hr(res, "crp_num.*Rx|Rx.*crp_num")
+  tmb <- get_interaction_hr(res, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
+  km <- summary(survfit(Surv(PFSwk, Progression) ~ Rx, data = df))$table
+  data.frame(Rule = id, Window = spec$window, Anchor = spec$anchor,
+    Events = sum(df$Progression),
+    Deaths_censored = sum(df$PFS_rule == "death_censored_at_assessment"),
+    CRP_HR = format_hr_ci(crp$HR, crp$CI_Lower, crp$CI_Upper),
+    CRP_p = format_pvalue(get_pvalue_by_term(res, "crp_num.*Rx|Rx.*crp_num")),
+    TMB_HR = format_hr_ci(tmb$HR, tmb$CI_Lower, tmb$CI_Upper),
+    TMB_p = format_pvalue(get_pvalue_by_term(res, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")),
+    KM_control = unname(km[1, "median"]), KM_experimental = unname(km[2, "median"]))
+})
+pfs_sensitivity <- do.call(rbind, pfs_sens_rows)
+pfs_sens_crp <- setNames(pfs_sensitivity$CRP_HR, pfs_sensitivity$Rule)
+pfs_sens_events <- setNames(pfs_sensitivity$Events, pfs_sensitivity$Rule)
+```
+
+```{r table-pfs-endpoint-sensitivity}
+pfs_sensitivity %>%
+  kable(col.names = c("Rule", "Window (wk)", "Anchor", "PFS events", "Deaths censored",
+                      "CRP x Rx HR (95% CI)", "PLRT p", "TMB/BRAF x Rx HR (95% CI)",
+                      "PLRT p", "KM control (wk)", "KM experimental (wk)"),
+        digits = 1, booktabs = TRUE, format = report_table_format(),
+        caption = "PFS sensitivity to the death window and last-assessment proxy, on the same complete-case cohort") %>%
+  tbl_style(latex_options = c("hold_position", "scale_down"), font_size = 8) %>%
+  tbl_footnote(general = "A death without recorded progression is an event if the gap from the assessment is at most the window; otherwise censor at that assessment. Inf reproduces the pre-181 rule, an upper bound on observed PFS follow-up. Recorded progression times are unchanged. KM values are median PFS by randomized arm. TTPwk is Days until progression; LastEvalwk is Days until last evaluation. Assessment-date provenance remains subject to data-provider reconciliation.", threeparttable = TRUE)
+```
+
+The primary rule gives `r pfs_sens_events["primary"]` PFS events and CRP x Rx HR `r pfs_sens_crp["primary"]`; counting all deaths gives `r pfs_sens_events["all_deaths"]` events and HR `r pfs_sens_crp["all_deaths"]`. Using the alternative assessment date gives HR `r pfs_sens_crp["anchor_alt"]`. These analyses change endpoint ascertainment while holding the patient cohort and model formula fixed.
+
 # Exploratory: TLR as a Predictive Biomarker (Responder Analysis)
 
 This section presents an **exploratory responder analysis** that includes TLR (Tumor Lesion Reduction) as an effect modifier in a Cox model with the same structural form as the primary analysis. Because TLR is measured post-randomization (at the first on-treatment CT scan), this is not a treatment-selection analysis: TLR status is itself influenced by treatment, and the resulting TLR x Rx interaction is informative only as a hypothesis-generating, responder-stratified contrast. It cannot be used to guide the decision to add immunotherapy, which is made before TLR is observed. The primary causal-DAG-informed analysis remains the inferential anchor for predictive biomarker claims.
@@ -1297,8 +1357,8 @@ lm_attrition <- lm_main$attrition
 # one week, and it keeps patients whose TLR was read after week 9.
 lm_diag             <- lm_main$diagnostics
 n_pfs_excl          <- lm_diag$n_pfs_excluded
-n_pfs_excl_prog     <- lm_diag$n_pfs_excl_progressed
-n_pfs_excl_prog_tn  <- lm_diag$n_pfs_excl_progressed_tlr_neg
+n_pfs_excl_prog     <- lm_diag$n_pfs_excl_progression_exit
+n_pfs_excl_prog_tn  <- lm_diag$n_pfs_excl_progression_exit_tlr_neg
 n_os_excl_death     <- lm_diag$n_os_excl_deaths
 n_first_scan_prog   <- lm_diag$n_first_scan_progressors
 n_first_scan_kept   <- lm_diag$n_first_scan_progressors_kept
@@ -1324,7 +1384,7 @@ lm_attrition %>%
 
 ### Characteristics of the Week-9 Landmark Cohorts by TLR Status
 
-The two tables below describe the patients who enter the landmark analysis, overall and split by the TLR status that becomes defined at the week-9 scan. The at-risk set is endpoint-specific: the **overall-survival** cohort keeps everyone alive at week 9, whereas the **progression-free-survival** cohort additionally drops patients who had already progressed by week 9. The PFS cohort is therefore smaller. Reporting both fixes the denominators for the OS and PFS models that follow and makes the composition of the two TLR groups directly comparable.
+The two tables below describe the patients who enter the landmark analysis, overall and split by the TLR status that becomes defined at the week-9 scan. The at-risk set is endpoint-specific: the **overall-survival** cohort keeps everyone alive at week 9, whereas the **progression-free-survival** cohort additionally drops patients who had progressed, died within the death window, or been censored by week 9. The PFS cohort is therefore smaller. Reporting both fixes the denominators for the OS and PFS models that follow and makes the composition of the two TLR groups directly comparable.
 
 ```{r lm-characteristics, include=FALSE}
 # =============================================================================
@@ -1634,7 +1694,7 @@ if (!is.null(lm_tlr_comparison_pfs)) {
 
 *Overall survival* is clean: `r lm_attrition$N_excluded[1]` patient(s) are excluded (no deaths occur before week 9), so the landmark OS cohort is the full TLR-complete population and the landmark Firth TLR x Rx HR (`r format_hr_ci(lm_tlr_firth_os$HR, lm_tlr_firth_os$CI_Lower, lm_tlr_firth_os$CI_Upper)`) is **identical** to the responder estimate (`r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)`) — a Cox model is invariant to a common shift of the time origin when no one leaves the risk set. The OS responder signal is therefore not an early-death guarantee-time artefact.
 
-*Progression-free survival* exposes a deeper problem. `r lm_attrition$N_excluded[2]` patients are excluded, of whom `r n_pfs_excl_prog` progressed, `r n_pfs_excl_prog_tn` of them **TLR-negative**. This is not a coincidence: progression and TLR are read from the *same* first on-treatment scan, so a patient whose tumour grows at that scan is simultaneously classified as a progression and as TLR-negative. In total `r n_first_scan_prog` patients progressed at their first scan, all TLR-negative. The fixed week-9 cut removes only the `r n_first_scan_prog - n_first_scan_kept` whose scan fell before week 9 and **keeps `r n_first_scan_kept`** whose scan fell after it, with landmark times of `r sprintf("%.1f", lm_diag$min_pfs_lm)` to `r sprintf("%.1f", max(data_lm_pfs$PFSwk_lm[data_lm_pfs$PFSwk == data_lm_pfs$CT1wk]))` weeks; it also keeps `r n_scan_after_kept` patients whose TLR was read after week 9, so for them the landmark covariate is measured after the landmark. Even so, the landmark shifts the Firth TLR x Rx HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` (responder) to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)` (week-9 landmark). The responder PFS association is thus **partly tautological** — TLR-negativity and early progression are the same measurement — which the landmark makes explicit by excluding the coupled events. The sensitivity landmarks below remove all `r n_first_scan_prog` first-scan progressors.
+*Progression-free survival* exposes a deeper problem. `r lm_attrition$N_excluded[2]` patients are excluded, of whom `r n_pfs_excl_prog` progressed, `r n_pfs_excl_prog_tn` of them **TLR-negative**; `r lm_diag$n_pfs_excl_death_pf` died progression-free within the death window and `r lm_diag$n_pfs_excl_censored` were censored at a last assessment on or before week 9. This is not a coincidence: progression and TLR are read from the *same* first on-treatment scan, so a patient whose tumour grows at that scan is simultaneously classified as a progression and as TLR-negative. In total `r n_first_scan_prog` patients progressed at their first scan, all TLR-negative. The fixed week-9 cut removes only the `r n_first_scan_prog - n_first_scan_kept` whose scan fell before week 9 and **keeps `r n_first_scan_kept`** whose scan fell after it, with landmark times of `r sprintf("%.1f", lm_diag$min_pfs_lm)` to `r sprintf("%.1f", max(data_lm_pfs$PFSwk_lm[data_lm_pfs$PFSwk == data_lm_pfs$CT1wk]))` weeks; it also keeps `r n_scan_after_kept` patients whose TLR was read after week 9, so for them the landmark covariate is measured after the landmark. Even so, the landmark shifts the Firth TLR x Rx HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` (responder) to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)` (week-9 landmark). The responder PFS association is thus **partly tautological** — TLR-negativity and early progression are the same measurement — which the landmark makes explicit by excluding the coupled events. The sensitivity landmarks below remove all `r n_first_scan_prog` first-scan progressors.
 
 ### Landmark Sensitivity: Scan-Date and Week-12 Landmarks
 
@@ -1657,6 +1717,7 @@ lm_sens_rows <- lapply(lm_all, function(lm_obj) {
     N_os = dg$n_os,
     N_pfs = dg$n_pfs,
     PFS_events = sum(lm_obj$pfs$Progression),
+    Censored_before = dg$n_pfs_excl_censored,
     First_scan_kept = dg$n_first_scan_progressors_kept,
     Scan_after = dg$n_scan_after_landmark_kept,
     OS_HR = format_hr_ci(os_fit$hr$HR, os_fit$hr$CI_Lower, os_fit$hr$CI_Upper),
@@ -1676,7 +1737,7 @@ lm_sens_n_pfs  <- setNames(lm_sensitivity$N_pfs,  names(lm_all))
 
 ```{r table-lm-sensitivity}
 lm_sensitivity %>%
-  kable(col.names = c("Landmark", "N (OS)", "N (PFS)", "PFS events",
+  kable(col.names = c("Landmark", "N (OS)", "N (PFS)", "PFS events", "Censored before landmark",
                       "First-scan progressors retained", "TLR read after landmark",
                       "OS TLR x Rx HR (95% CI)", "PLRT p",
                       "PFS TLR x Rx HR (95% CI)", "PLRT p"),
@@ -1687,7 +1748,7 @@ lm_sensitivity %>%
            threeparttable = TRUE)
 ```
 
-The per-patient scan-date landmark and the week-12 landmark both exclude all `r n_first_scan_prog` first-scan progressors (PFS cohort n = `r lm_sens_n_pfs["scan"]` and `r lm_sens_n_pfs["week12"]` versus `r lm_sens_n_pfs["week9"]` at week 9) and give a PFS TLR x Rx HR of `r lm_sens_pfs_hr["scan"]` (PLRT p `r lm_sens_pfs_p["scan"]`) and `r lm_sens_pfs_hr["week12"]` (p `r lm_sens_pfs_p["week12"]`), against `r lm_sens_pfs_hr["week9"]` (p `r lm_sens_pfs_p["week9"]`) at week 9. No patient dies before week 12, so the OS estimate is unchanged under every landmark. The direction of the PFS estimate is therefore not an artefact of the three first-scan progressors that the week-9 cut retains, but the confidence intervals are wide under every definition.
+The per-patient scan-date landmark and the week-12 landmark both exclude all `r n_first_scan_prog` first-scan progressors (PFS cohort n = `r lm_sens_n_pfs["scan"]` and `r lm_sens_n_pfs["week12"]` versus `r lm_sens_n_pfs["week9"]` at week 9) and give a PFS TLR x Rx HR of `r lm_sens_pfs_hr["scan"]` (PLRT p `r lm_sens_pfs_p["scan"]`) and `r lm_sens_pfs_hr["week12"]` (p `r lm_sens_pfs_p["week12"]`), against `r lm_sens_pfs_hr["week9"]` (p `r lm_sens_pfs_p["week9"]`) at week 9. No patient dies before week 12, so the OS estimate is unchanged under every landmark. The direction of the PFS estimate is therefore not an artefact of the `r n_first_scan_kept` first-scan progressors that the week-9 cut retains, but the confidence intervals are wide under every definition.
 
 Neither analysis resolves the most fundamental issue: TLR lies on the causal path of treatment (Rx -> TLR -> outcome), so the TLR x Rx contrast is not a baseline patient-selection estimate under any time origin; disentangling it would require formal causal mediation, not a landmark. All estimates remain exploratory and imprecise (week-9 PLRT p `r format_pvalue(p_lm_tlr_os)` OS, `r format_pvalue(p_lm_tlr_pfs)` PFS) and must not guide treatment selection.
 
@@ -1726,6 +1787,8 @@ dag_crp_pfs_p <- unname(dag_crp_pfs_fit$prob["crp_num"])
 
 ## Primary interaction results
 
+The death-censoring sensitivity gives CRP x Rx PFS HR `r pfs_sens_crp["primary"]` under the primary window, `r pfs_sens_crp["all_deaths"]` when all deaths count, and `r pfs_sens_crp["anchor_alt"]` under the alternative last-assessment proxy; uncertainty about off-study ascertainment therefore affects this exploratory estimate.
+
 Neither biomarker-treatment interaction reached conventional significance in the unified model (Firth HR with 95% CI in parentheses). For **overall survival**, CRP × Rx yielded HR `r hr_txt(hr_crp_os)` (PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR `r hr_txt(hr_tmb_os)` (p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction was directionally favourable but imprecise (HR `r hr_txt(hr_crp_pfs)`, p = `r format_pvalue(p_crp_pfs)`): CRP-positive patients in the experimental arm had a lower estimated hazard of progression or death than CRP-positive controls, though the CI spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx PFS interaction was HR `r hr_txt(hr_tmb_pfs)` (p = `r format_pvalue(p_tmb_pfs)`). These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (unadjusted Firth HR `r sprintf("%.2f", dag_crp_pfs_hr)`, p = `r format_pvalue(dag_crp_pfs_p)`; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
@@ -1746,7 +1809,7 @@ The directional pattern is consistent with the descriptive imbalance: TLR-positi
 
 ## TLR landmark analysis (exploratory)
 
-A **week-9 landmark analysis** conditions on survival to the protocol time of the second (first on-treatment) CT — the scan at which TLR is defined — and measures survival from that point, to test whether the responder signal is a guarantee-time artefact. The two endpoints diverge instructively. For **OS**, `r lm_attrition$N_excluded[1]` patients are excluded (no early deaths), so the landmark estimate is identical to the responder estimate (`r format_hr_ci(lm_tlr_firth_os$HR, lm_tlr_firth_os$CI_Lower, lm_tlr_firth_os$CI_Upper)`): the OS signal is not driven by early-death immortal time. For **PFS**, `r lm_attrition$N_excluded[2]` patients are excluded, with `r n_pfs_excl_prog_tn` of the `r n_pfs_excl_prog` excluded progressors being TLR-negative, because progression and TLR are ascertained at the same scan; removing these coupled events moves the Firth TLR × Rx HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)`. The PFS responder association is therefore partly tautological. Because the actual first scans fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])`, the fixed week-9 cut retains `r n_first_scan_kept` of the `r n_first_scan_prog` first-scan progressors and `r n_scan_after_kept` patients whose TLR was read after the landmark; a per-patient landmark at the scan date and a fixed week-12 landmark, which exclude all first-scan progressors, give PFS TLR × Rx HRs of `r lm_sens_pfs_hr["scan"]` and `r lm_sens_pfs_hr["week12"]`, so the direction of the estimate does not depend on the landmark choice. Under any time origin TLR remains on the causal path of treatment, so a definitive predictive-biomarker estimate would require causal mediation rather than a landmark. Both analyses remain underpowered and exploratory, and neither supports baseline treatment selection on TLR.
+A **week-9 landmark analysis** conditions on survival to the protocol time of the second (first on-treatment) CT — close to the first on-treatment scan at which TLR is defined — and measures survival from that point, to test whether the responder signal is a guarantee-time artefact. The two endpoints diverge instructively. For **OS**, `r lm_attrition$N_excluded[1]` patients are excluded (no early deaths), so the landmark estimate is identical to the responder estimate (`r format_hr_ci(lm_tlr_firth_os$HR, lm_tlr_firth_os$CI_Lower, lm_tlr_firth_os$CI_Upper)`): the OS signal is not driven by early-death immortal time. For **PFS**, `r lm_attrition$N_excluded[2]` patients are excluded, with `r n_pfs_excl_prog_tn` of the `r n_pfs_excl_prog` excluded progressors being TLR-negative, because progression and TLR are ascertained at the same scan; removing these coupled events moves the Firth TLR × Rx HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)`. The PFS responder association is therefore partly tautological. Because the actual first scans fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])`, the fixed week-9 cut retains `r n_first_scan_kept` of the `r n_first_scan_prog` first-scan progressors and `r n_scan_after_kept` patients whose TLR was read after the landmark; a per-patient landmark at the scan date and a fixed week-12 landmark, which exclude all first-scan progressors, give PFS TLR × Rx HRs of `r lm_sens_pfs_hr["scan"]` and `r lm_sens_pfs_hr["week12"]`, so the direction of the estimate does not depend on the landmark choice. Under any time origin TLR remains on the causal path of treatment, so a definitive predictive-biomarker estimate would require causal mediation rather than a landmark. Both analyses remain underpowered and exploratory, and neither supports baseline treatment selection on TLR.
 
 \newpage
 
@@ -1757,6 +1820,8 @@ A **week-9 landmark analysis** conditions on survival to the protocol time of th
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary (DAG-informed):** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` — pre-immunotherapy biomarkers (week-4 CRP before the first nivolumab dose; baseline TMB/BRAF) as effect modifiers; TLR omitted because it is measured on treatment. **Exploratory responder analysis:** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and its treatment interaction, with CRP and TMB/BRAF retained as prognostic main-effect adjustments. Profile likelihood CIs, PLRT for interaction testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects in the primary model and the TLR terms (main effect + TLR:Rx) in the exploratory model.
 
 **Proportional hazards:** No violations in OS (global p = `r format_pvalue(p_zph_os_global)`). In PFS the global test gives p = `r format_pvalue(p_zph_pfs_global)`, carried by the biomarker main effects (CRP p = `r format_pvalue(p_zph_pfs_crp)`; TMB/BRAF p = `r format_pvalue(p_zph_pfs_tmb)`) rather than the interaction terms (CRP × Rx p = `r format_pvalue(p_zph_pfs_crp_rx)`; TMB/BRAF × Rx p = `r format_pvalue(p_zph_pfs_tmb_rx)`); PFS biomarker main-effect estimates should be read as time-averaged.
+
+**Endpoint sensitivity:** The primary rule censors `r n_deaths_censored_pfs` late deaths without recorded progression; CRP x Rx PFS HR is `r pfs_sens_crp["primary"]`, compared with `r pfs_sens_crp["all_deaths"]` under the former all-deaths rule.
 
 **Interaction estimates:**
 
@@ -1769,10 +1834,10 @@ No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_p
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
 
-**TLR week-9 landmark analysis (exploratory):** A landmark analysis conditioning on survival to the second (first on-treatment) CT in week 9 — the scan at which TLR is defined — was added. For OS, `r lm_attrition$N_excluded[1]` patients are excluded (no early deaths), so the landmark HR `r format_hr_ci(lm_tlr_firth_os$HR, lm_tlr_firth_os$CI_Lower, lm_tlr_firth_os$CI_Upper)` is identical to the responder value: the OS signal is not an early-death immortal-time artefact. For PFS, `r lm_attrition$N_excluded[2]` patients are excluded, `r n_pfs_excl_prog_tn` of the `r n_pfs_excl_prog` excluded progressors being TLR-negative because progression and TLR are read from the same scan; this shifts the HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` (responder) to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)` (landmark), exposing the PFS association as partly tautological (PLRT p `r format_pvalue(p_lm_tlr_os)` OS, `r format_pvalue(p_lm_tlr_pfs)` PFS). Because first scans fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])`, the week-9 cut retains `r n_first_scan_kept` first-scan progressors and `r n_scan_after_kept` patients scanned after the landmark; sensitivity landmarks at each patient's scan date (PFS HR `r lm_sens_pfs_hr["scan"]`) and at week 12 (`r lm_sens_pfs_hr["week12"]`) exclude all first-scan progressors and leave the direction unchanged. Both analyses are retained for comparison; both are underpowered and exploratory, and the residual confounding from TLR being treatment-influenced needs causal mediation, not a landmark. Neither supports baseline treatment selection on TLR.
+**TLR week-9 landmark analysis (exploratory):** A fixed week-9 landmark analysis — close to the first on-treatment scan at which TLR is defined — was added. For OS, `r lm_attrition$N_excluded[1]` patients are excluded (no early deaths), so the landmark HR `r format_hr_ci(lm_tlr_firth_os$HR, lm_tlr_firth_os$CI_Lower, lm_tlr_firth_os$CI_Upper)` is identical to the responder value: the OS signal is not an early-death immortal-time artefact. For PFS, `r lm_attrition$N_excluded[2]` patients are excluded (including `r lm_diag$n_pfs_excl_censored` censored at their last assessment and `r lm_diag$n_pfs_excl_death_pf` death events within the window), `r n_pfs_excl_prog_tn` of the `r n_pfs_excl_prog` excluded progressors being TLR-negative because progression and TLR are read from the same scan; this shifts the HR from `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` (responder) to `r format_hr_ci(lm_tlr_firth_pfs$HR, lm_tlr_firth_pfs$CI_Lower, lm_tlr_firth_pfs$CI_Upper)` (landmark), exposing the PFS association as partly tautological (PLRT p `r format_pvalue(p_lm_tlr_os)` OS, `r format_pvalue(p_lm_tlr_pfs)` PFS). Because first scans fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])`, the week-9 cut retains `r n_first_scan_kept` first-scan progressors and `r n_scan_after_kept` patients scanned after the landmark; sensitivity landmarks at each patient's scan date (PFS HR `r lm_sens_pfs_hr["scan"]`) and at week 12 (`r lm_sens_pfs_hr["week12"]`) exclude all first-scan progressors and leave the direction unchanged. Both analyses are retained for comparison; both are underpowered and exploratory, and the residual confounding from TLR being treatment-influenced needs causal mediation, not a landmark. Neither supports baseline treatment selection on TLR.
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.7
+**Report version:** 3.8

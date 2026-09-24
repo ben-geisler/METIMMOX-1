@@ -57,13 +57,33 @@ METIMMOX$CRP1cat <- as.factor(ifelse(METIMMOX$CRP1 < 5, 1, 0))
 METIMMOX$TMB <- as.numeric(METIMMOX$TMB)
 METIMMOX$TMBcat <- as.factor(ifelse(METIMMOX$TMB >= 9, 1, 0))
 
+# Validate the export endpoint contract before conversion (issue #181).
+endpoint_headers <- c("Days until last evaluation", "Days until progression",
+                      "Progression exit", "Days until death/last follow up", "Death")
+if (!identical(names(METIMMOX)[c(11, 13, 15, 18, 19)], endpoint_headers)) {
+  stop("Endpoint export headers changed; check positions 11, 13, 15, 18, 19.")
+}
+for (nm in endpoint_headers) {
+  x <- METIMMOX[[nm]]
+  if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
+    stop("Invalid endpoint column: ", nm, "; expected nonnegative finite numeric values.")
+  }
+  if (nm %in% c("Progression exit", "Death") && !all(x %in% c(0, 1))) {
+    stop("Invalid endpoint flag: ", nm, "; expected 0/1.")
+  }
+}
+if (any(METIMMOX$`Days until last evaluation` > METIMMOX$`Days until death/last follow up`)) {
+  stop("Last evaluation exceeds death/last follow-up time.")
+}
+METIMMOX$LastEvalwk <- METIMMOX$`Days until last evaluation` / 7
+
 METIMMOX$PFSmo <- METIMMOX$`Days until progression`*12/365
 
 METIMMOX$OSmo <-METIMMOX$`Days until death/last follow up`*12/365
 
 # NOTE (issue #149): "Days until progression" / "Progression exit" are the raw
 # trial variables (time to progression, deaths censored). The analysis PFS
-# endpoint (progression OR death) is derived in 02_setup_and_global_variables.R
+# endpoint (progression or death within the assessment window, issue #181) is derived in 02_setup_and_global_variables.R
 # via derive_pfs_endpoint(); reports reading this RDS directly must call it too.
 METIMMOX$PFSwk <- METIMMOX$`Days until progression`/7
 

@@ -203,7 +203,7 @@ Each testable edge or independence was tested using a prespecified method:
 Two edge tests need a time origin other than randomisation (issue #155):
 
 - **`PFS -> OS`**: progression is entered as a time-dependent indicator in a counting-process Firth Cox model for death (`survival::tmerge` on the progression-only trial event, `ProgressionExit` / `TTPwk`). Entering PFS time as a fixed covariate, as an earlier version did, is tautological because `PFSwk <= OSwk` by construction and PFS time is unknown at baseline (immortal-time bias).
-- **`TLR -> PFS`**: TLR is read at the first on-treatment CT, so a test from randomisation conditions on surviving progression-free to that scan (guarantee-time bias). The edge is therefore tested on the `r tolower(lm_label)` landmark PFS cohort from `tlr_landmark.R`, the same cohort and time origin used by `clinical_effectiveness.qmd` and Figure 1 of the clinical effectiveness paper: patients progression-free after the landmark, with time measured from the landmark. Of the `r lm_diag$n_first_scan_progressors` patients whose progression is recorded at the first scan itself (all TLR-negative because progression and TLR are read from the same scan), `r lm_diag$n_first_scan_progressors_kept` remain in the week-9 cohort because their scan fell after week 9, and `r lm_diag$n_scan_after_landmark_kept` retained patients had their TLR read after the landmark. The clinical effectiveness report repeats the landmark analysis at each patient's own scan date and at week 12 as sensitivity analyses.
+- **`TLR -> PFS`**: TLR is read at the first on-treatment CT, so a test from randomisation conditions on surviving progression-free to that scan (guarantee-time bias). The edge is therefore tested on the `r tolower(lm_label)` landmark PFS cohort from `tlr_landmark.R`, the same cohort and time origin used by `clinical_effectiveness.qmd` and Figure 1 of the clinical effectiveness paper: patients progression-free after the landmark, with time measured from the landmark. Of the `r lm_diag$n_first_scan_progressors` patients whose progression is recorded at the first scan itself (all TLR-negative because progression and TLR are read from the same scan), `r lm_diag$n_first_scan_progressors_kept` remain in the week-9 cohort because their scan fell after week 9, and `r lm_diag$n_scan_after_landmark_kept` retained patients had their TLR read after the landmark. A further `r lm_diag$n_pfs_excl_censored` patients are excluded because PFS was censored at a last assessment on or before week 9; `r lm_diag$n_pfs_excl_death_pf` were excluded with a death event within the window. The clinical effectiveness report repeats the landmark analysis at each patient's own scan date and at week 12 as sensitivity analyses.
 
 ## Multiple Testing
 
@@ -371,6 +371,7 @@ cat(paste0(
   "). Because progression and TLR are read from the same scan, TLR-negativity and first-scan progression are partly the same measurement; the week-9 landmark removes ",
   lm_diag$n_first_scan_progressors - lm_diag$n_first_scan_progressors_kept, " of the ", lm_diag$n_first_scan_progressors,
   " first-scan progressors and keeps ", lm_diag$n_first_scan_progressors_kept,
+  "; it also excludes ", lm_diag$n_pfs_excl_censored, " patients censored by week 9",
   ", so the estimate should be read alongside the scan-date and week-12 landmark sensitivity analyses in the clinical effectiveness report.", "\n\n",
   "Treatment-related edges: those with p < 0.05 were ", list_or_none(treatment_sig),
   " for the direct treatment edges and ", list_or_none(interaction_sig),
@@ -406,4 +407,4 @@ The data also surface `r ci_violation_summary` against the assumed graph, tracea
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.2
+**Report version:** 1.3

@@ -1,74 +1,64 @@
-# ===============================================================================
-# PFS ENDPOINT DERIVATION - SINGLE SOURCE OF TRUTH (issue #149)
-# ===============================================================================
-# The trial export records two separate things:
-#   - "Progression exit" (renamed `Progression` in 02): exit from the study
-#     because of radiological progression only, and
-#   - "Days until progression" (`PFSwk` after conversion): time to that exit,
-#     which for patients who died without a recorded progression is simply the
-#     last progression-free assessment.
-#
-# METIMMOX (Ree et al. 2024, doi:10.1038/s41416-024-02696-6) defines PFS as the
-# time to first progression on active therapy OR death from any cause, whichever
-# came first. A partitioned survival model also requires this definition: the
-# progression-free state means alive AND progression-free, so a PFS curve that
-# censors deaths overstates that state and lets OS and PFS cross.
-#
-# derive_pfs_endpoint() therefore recodes, in place,
-#   Progression <- 1 if progressed OR died, else 0
-#   PFSwk       <- time to progression if progressed,
-#                  time to death       if died without progression,
-#                  follow-up time      otherwise (censored)
-# and preserves the original trial variables as `ProgressionExit` and `TTPwk`
-# (time to progression, deaths censored) for reference. The function is
-# idempotent: re-applying it to an already-derived data frame is a no-op.
-#
-# Called by 02_setup_and_global_variables.R (the analysis pipeline) and by any
-# report that reads data/tidy/METIMMOX.rds directly.
-# ===============================================================================
+# PFS endpoint, single source of truth (issues #149, #181).
+# Protocol: CT every 8 weeks; progression on active therapy or death, with
+# censoring at the last imaging assessment. Apply a two-interval death window.
+# TTPwk is the primary assessment proxy; LastEvalwk is the alternative.
+# SAM OS / SAM PFS remain unread pending reconciliation with the data provider.
 
-#' Derive the composite PFS endpoint (progression or death)
-#'
-#' @param data Data frame with numeric columns `Progression` (progression-exit
-#'   flag), `PFSwk` (time to progression in weeks), `Death` (0/1) and `OSwk`
-#'   (time to death or last follow-up in weeks).
-#' @return The same data frame with `Progression` and `PFSwk` recoded to the
-#'   composite endpoint, plus `ProgressionExit` and `TTPwk` holding the
-#'   original values.
-#' @export
-derive_pfs_endpoint <- function(data) {
-  required <- c("Progression", "PFSwk", "Death", "OSwk")
+#' Derive PFS from preserved progression-exit variables
+#' @param data Data frame containing Progression, PFSwk, Death and OSwk.
+#' @param death_window_weeks Nonnegative window; equality counts as an event.
+#'   Inf recovers the pre-181 rule for observed assessment times.
+#' @param last_assessment Assessment-time column, TTPwk or LastEvalwk.
+#' @param verbose Print aggregate rule counts only.
+#' @return Data with raw ProgressionExit/TTPwk preserved, derived Progression,
+#'   PFSwk, PFS_rule and a pfs_endpoint provenance attribute. Missing assessment
+#'   times for non-progressors yield missing endpoints, even with window Inf.
+derive_pfs_endpoint <- function(data, death_window_weeks = 16,
+                                last_assessment = c("TTPwk", "LastEvalwk"),
+                                verbose = TRUE) {
+  fail <- function(...) stop("derive_pfs_endpoint(): ", ..., call. = FALSE)
+  last_assessment <- tryCatch(match.arg(last_assessment),
+                              error = function(e) fail(conditionMessage(e)))
+  if (!is.numeric(death_window_weeks) || length(death_window_weeks) != 1L ||
+      is.na(death_window_weeks) || death_window_weeks < 0) {
+    fail("death_window_weeks must be a nonnegative numeric scalar (Inf allowed).")
+  }
+  required <- c("Progression", "PFSwk", "Death", "OSwk",
+                if (last_assessment == "LastEvalwk") "LastEvalwk")
   missing <- setdiff(required, names(data))
-  if (length(missing) > 0) {
-    stop("derive_pfs_endpoint(): missing column(s): ",
-         paste(missing, collapse = ", "))
+  if (length(missing)) fail("missing column(s): ", paste(missing, collapse = ", "),
+                            "; re-run analysis/01_data_prep.R.")
+  if (!"ProgressionExit" %in% names(data)) data$ProgressionExit <- data$Progression
+  if (!"TTPwk" %in% names(data)) data$TTPwk <- data$PFSwk
+  for (nm in c("ProgressionExit", "Death")) {
+    if (anyNA(data[[nm]]) || !all(data[[nm]] %in% c(0, 1)))
+      fail(nm, " flags must be 0/1 without NA.")
   }
-
-  # Preserve the raw trial variables once; on repeat calls reuse them so the
-  # derivation is idempotent.
-  if (!"ProgressionExit" %in% names(data)) {
-    data$ProgressionExit <- as.numeric(data$Progression)
+  for (nm in unique(c("TTPwk", "OSwk", last_assessment))) {
+    if (!is.numeric(data[[nm]]) || any(!is.na(data[[nm]]) &
+        (!is.finite(data[[nm]]) | data[[nm]] < 0)))
+      fail(nm, " must contain nonnegative finite times or NA.")
+    if (any(data[[nm]] > data$OSwk, na.rm = TRUE)) fail(nm, " exceeds OS time.")
   }
-  if (!"TTPwk" %in% names(data)) {
-    data$TTPwk <- as.numeric(data$PFSwk)
-  }
-
   progressed <- data$ProgressionExit == 1
-  died <- as.numeric(data$Death) == 1
-
-  if (anyNA(progressed) || anyNA(died)) {
-    stop("derive_pfs_endpoint(): Progression/Death flags contain NA.")
-  }
-  if (any(data$TTPwk > data$OSwk, na.rm = TRUE)) {
-    stop("derive_pfs_endpoint(): time to progression exceeds OS time for ",
-         sum(data$TTPwk > data$OSwk, na.rm = TRUE), " patient(s).")
-  }
-
-  data$Progression <- as.numeric(progressed | died)
-  data$PFSwk <- ifelse(progressed, data$TTPwk,
-                       ifelse(died, as.numeric(data$OSwk), data$TTPwk))
-
+  died <- data$Death == 1
+  anchor <- data[[last_assessment]]
+  anchor_missing <- !progressed & is.na(anchor)
+  gap <- data$OSwk - anchor
+  death_event <- died & !progressed & !is.na(anchor) &
+    (is.infinite(death_window_weeks) | (!is.na(gap) & gap <= death_window_weeks))
+  data$Progression <- as.numeric(progressed | death_event)
+  data$PFSwk <- ifelse(progressed, data$TTPwk, ifelse(death_event, data$OSwk, anchor))
+  data$Progression[anchor_missing] <- NA_real_
+  rule <- ifelse(progressed, "progression", ifelse(death_event, "death_within_window",
+    ifelse(died, "death_censored_at_assessment", "censored_alive")))
+  rule[anchor_missing] <- "anchor_missing"
+  data$PFS_rule <- factor(rule, levels = c("progression", "death_within_window",
+    "death_censored_at_assessment", "censored_alive", "anchor_missing"))
+  counts <- table(data$PFS_rule)
+  attr(data, "pfs_endpoint") <- list(rule = "two_interval_v1",
+    death_window_weeks = death_window_weeks, last_assessment = last_assessment,
+    counts = counts)
+  if (verbose) message("PFS endpoint: ", paste(names(counts), counts, collapse = "; "))
   data
 }
-
-message("PFS endpoint helper loaded from pfs_endpoint.R")

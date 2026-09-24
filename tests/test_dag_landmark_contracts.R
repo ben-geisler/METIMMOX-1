@@ -79,7 +79,7 @@ invisible(capture.output(suppressMessages({
 })))
 
 stopifnot(
-  all(c("CT1wk", "ProgressionExit", "TTPwk") %in% names(data)),
+  all(c("CT1wk", "ProgressionExit", "TTPwk", "LastEvalwk", "PFS_rule") %in% names(data)),
   identical(is.na(data$CT1wk), is.na(data$tlr))
 )
 
@@ -94,8 +94,9 @@ for (k in names(all_lm)) {
     all(lm$pfs$PFSwk > lm$pfs$lm_wk),
     all(lm$os$OSwk_lm > 0), all(lm$pfs$PFSwk_lm > 0),
     lm$diagnostics$n_pfs <= lm$diagnostics$n_os,
-    # Every excluded PFS patient progressed at the first scan and is TLR-negative.
-    lm$diagnostics$n_pfs_excl_progressed_tlr_neg == lm$diagnostics$n_pfs_excluded
+    lm$diagnostics$n_pfs_excl_progression_exit + lm$diagnostics$n_pfs_excl_death_pf +
+      lm$diagnostics$n_pfs_excl_censored == lm$diagnostics$n_pfs_excluded,
+    lm$diagnostics$n_pfs_excl_progression_exit_tlr_neg == lm$diagnostics$n_pfs_excl_progression_exit
   )
 }
 scan_diag <- all_lm$scan$diagnostics
@@ -103,7 +104,9 @@ week9_diag <- all_lm$week9$diagnostics
 stopifnot(
   scan_diag$n_first_scan_progressors_kept == 0,
   scan_diag$n_scan_after_landmark_kept == 0,
-  scan_diag$n_pfs_excluded == scan_diag$n_first_scan_progressors,
+  scan_diag$n_pfs_excluded == scan_diag$n_first_scan_progressors +
+    scan_diag$n_pfs_excl_censored + scan_diag$n_pfs_excl_death_pf,
+  week9_diag$n_pfs_excl_censored > 0,
   all_lm$week12$diagnostics$n_first_scan_progressors_kept == 0,
   # The primary week-9 cut is known to retain first-scan progressors and
   # patients scanned after week 9; the reports state these counts.
@@ -111,6 +114,12 @@ stopifnot(
   week9_diag$n_scan_after_landmark_kept > 0,
   week9_diag$n_first_scan_progressors_kept < week9_diag$n_first_scan_progressors
 )
+old_data <- derive_pfs_endpoint(data, Inf, pfs_last_assessment, verbose = FALSE)
+old_dd <- prepare_dag_data(old_data, landmark = "week9")
+stopifnot(build_tlr_landmark_cohorts(old_dd$data_tlr)$diagnostics$n_pfs_excl_censored == 0,
+          nrow(data_complete) == 68,
+          nrow(economic_prediction_population(old_data)) == nrow(data_complete),
+          sum(data$PFS_rule == "death_censored_at_assessment") > 0)
 cat(sprintf("Landmark cohorts: week9 PFS n=%d (first-scan progressors kept %d, scanned after %d); scan PFS n=%d; week12 PFS n=%d\n",
             week9_diag$n_pfs, week9_diag$n_first_scan_progressors_kept,
             week9_diag$n_scan_after_landmark_kept, scan_diag$n_pfs,

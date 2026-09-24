@@ -35,6 +35,7 @@ execute:
 
 source(here::here("R/report_setup.R"))
 setup_report(
+  sources = "02",
   packages = c("here", "knitr", "kableExtra", "dplyr", "tableone", "vcd"),
   set_theme = FALSE
 )
@@ -62,7 +63,7 @@ names(data_full)[names(data_full) == "Progression exit"] <- "Progression"
 
 # Derive the composite PFS endpoint (progression or death), as in 02 (issue #149)
 source(here("R/pfs_endpoint.R"))
-data_full <- derive_pfs_endpoint(data_full)
+data_full <- derive_pfs_endpoint(data_full, pfs_death_window_weeks, pfs_last_assessment)
 ```
 
 # Introduction
@@ -338,4 +339,4 @@ correlation_df %>%
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.2
+**Report version:** 1.3
