@@ -34,7 +34,8 @@ execute:
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
-  funs = c("report_format"),
+  funs = c("report_format", "model_fun", "calculate_outcomes", "cea_helpers",
+           "crp_week4_estimand"),
   set_theme = FALSE
 )
 
@@ -105,6 +106,72 @@ knitr::kable(
 ```
 
 Every economic strategy uses the same complete-case population (n = `r nrow(l_params_base$prediction_population)`). Its observed joint CRP and TMB/BRAF distribution defines the base case. In the PSA, the four joint cell probabilities are drawn together from a Dirichlet distribution with the observed cell counts, and the two marginal prevalences are derived. This represents uncertainty in the trial population's joint biomarker proportions, with age and sex distributions within each cell held fixed. The population weights change control and both guided strategies together. The one-way prevalence analysis rakes this same joint distribution to the changed marginal, retaining the other marginal and the joint odds ratio (issue #166).
+
+# Estimand of the CRP-Guided Strategy
+
+```{r crp-estimand}
+# Deterministic sensitivity results of reports/technical/crp_week4_estimand.qmd,
+# recomputed with the same functions (R/crp_week4_estimand.R; issue #175).
+estimand_base <- calculate_pairwise_icers(model_fun(l_params_base))
+estimand_sens <- run_crp_missingness_sensitivity(data, l_params_base, models, time_points)
+estimand_summary <- summarise_crp_missingness(estimand_sens, estimand_base, WTP)
+estimand_optimal <- attr(estimand_summary, "optimal")
+decision_week <- which(l_params_base$l_nivo == 1)[1] - 1
+estimand_pre <- pre_decision_increments(pre_decision_outcomes(
+  l_params_base, decision_week = decision_week, time_horizon = time_horizon, cl = cl))
+n_no_week4_crp <- length(estimand_sens$restored_rows)
+n_scenarios <- nrow(estimand_sens$scenarios)
+crp_range <- estimand_summary[estimand_summary$Strategy == "crp", ]
+tmb_range <- estimand_summary[estimand_summary$Strategy == "tmb_braf", ]
+crp_pre <- estimand_pre[estimand_pre$Strategy == "crp", ]
+range_text <- function(x) {
+  parts <- character(0)
+  if (x$n_finite > 1) parts <- c(parts, sprintf("pairwise ICERs from %s to %s in %d scenarios",
+    fmt_eur(x$icer_min), fmt_eur(x$icer_max), x$n_finite))
+  if (x$n_finite == 1) parts <- c(parts, sprintf("a pairwise ICER of %s in one scenario",
+    fmt_eur(x$icer_min)))
+  if (x$n_dominated > 0) parts <- c(parts, sprintf("dominated by standard of care in %d",
+    x$n_dominated))
+  if (x$n_cost_saving > 0) parts <- c(parts, sprintf("cost-saving versus standard of care in %d",
+    x$n_cost_saving))
+  base <- switch(x$base_status,
+    "Pairwise ICER vs SoC" = fmt_eur(x$base_icer),
+    "Dominated by SoC" = "dominated by standard of care",
+    "Cost-saving vs SoC" = "cost-saving versus standard of care",
+    x$base_status)
+  sprintf("%s (base case: %s)", paste(parts, collapse = "; "), base)
+}
+optimal_text <- if (length(unique(estimand_optimal)) == 1) {
+  sprintf("%s has the highest net monetary benefit at WTP = %s in the base case and in every scenario.",
+          strategy_label(estimand_optimal[[1]]), fmt_eur(WTP))
+} else {
+  sprintf("The strategy with the highest net monetary benefit at WTP = %s differs between the base case (%s) and at least one scenario.",
+          fmt_eur(WTP), strategy_label(estimand_optimal[["base"]]))
+}
+```
+
+The economic model estimates a **randomisation-time policy**. Every strategy
+is assigned at randomisation (t = 0), and costs and QALYs are counted from
+then. The CRP-guided strategy is assigned using the week-4 CRP value (cycle 3
+day 1), which is available before the first nivolumab dose at modeled week
+`r decision_week`. The fitted treatment and biomarker-by-treatment effects act
+from t = 0, although all strategies receive identical treatment until that
+dose. The `r n_no_week4_crp` patients without a week-4 CRP are excluded from
+the complete-case cohort of `r nrow(data_complete)` patients (issue #175).
+
+The technical report `reports/technical/crp_week4_estimand.qmd` quantifies
+both choices deterministically. It restores the patients without a week-4 CRP
+under `r n_scenarios` combinations of assigned CRP status and assigned
+TMB/BRAF status (for the patients whose TMB/BRAF status is unknown):
+
+- **CRP-guided:** `r range_text(crp_range)`.
+- **TMB/BRAF-guided:** `r range_text(tmb_range)`.
+- `r optimal_text`
+
+Before the first nivolumab dose, the CRP-guided strategy accrues
+`r format(signif(crp_pre$inc_qalys_pre, 3), scientific = FALSE)` more QALYs
+than standard of care. This is `r scales::percent(crp_pre$share_qalys, accuracy = 0.001)`
+of its full-horizon QALY increment.
 
 # Utilities
 
@@ -237,4 +304,4 @@ knitr::kable(
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.4
+**Report version:** 4.5

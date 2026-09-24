@@ -4,6 +4,8 @@ Ben Geisler
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
+- [Estimand of the CRP-Guided
+  Strategy](#estimand-of-the-crp-guided-strategy)
 - [Utilities](#utilities)
 - [Costs](#costs)
   - [Post-progression treatment
@@ -58,6 +60,35 @@ distributions within each cell held fixed. The population weights change
 control and both guided strategies together. The one-way prevalence
 analysis rakes this same joint distribution to the changed marginal,
 retaining the other marginal and the joint odds ratio (issue \#166).
+
+# Estimand of the CRP-Guided Strategy
+
+The economic model estimates a **randomisation-time policy**. Every
+strategy is assigned at randomisation (t = 0), and costs and QALYs are
+counted from then. The CRP-guided strategy is assigned using the week-4
+CRP value (cycle 3 day 1), which is available before the first nivolumab
+dose at modeled week 4. The fitted treatment and biomarker-by-treatment
+effects act from t = 0, although all strategies receive identical
+treatment until that dose. The 3 patients without a week-4 CRP are
+excluded from the complete-case cohort of 68 patients (issue \#175).
+
+The technical report `reports/technical/crp_week4_estimand.qmd`
+quantifies both choices deterministically. It restores the patients
+without a week-4 CRP under 4 combinations of assigned CRP status and
+assigned TMB/BRAF status (for the patients whose TMB/BRAF status is
+unknown):
+
+- **CRP-guided:** pairwise ICERs from EUR 471,086 to EUR 823,085 in 4
+  scenarios (base case: EUR 871,972).
+- **TMB/BRAF-guided:** pairwise ICERs from EUR 456,884 to EUR 2,754,342
+  in 3 scenarios; dominated by standard of care in 1 (base case:
+  dominated by standard of care).
+- Standard of Care has the highest net monetary benefit at WTP = EUR
+  51,000 in the base case and in every scenario.
+
+Before the first nivolumab dose, the CRP-guided strategy accrues
+0.000013 more QALYs than standard of care. This is 0.035% of its
+full-horizon QALY increment.
 
 # Utilities
 
@@ -171,4 +202,4 @@ Structural model parameters
 
 **Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.4
+**Report version:** 4.5

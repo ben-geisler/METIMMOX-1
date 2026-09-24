@@ -1,0 +1,698 @@
+---
+title: "Week-4 CRP Estimand"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+# ===============================================================================
+# Week-4 CRP estimand (issue #175)
+#
+# States the estimand of the CRP-guided strategy and quantifies, deterministically,
+#   1. a missingness sensitivity analysis that restores the patients without a
+#      week-4 CRP under four assignments of CRP and unknown TMB/BRAF status;
+#   2. the costs and QALYs the model accrues before the first nivolumab dose.
+# All calculations are in R/crp_week4_estimand.R. No model code or cache is
+# changed and no PSA is run.
+#
+# Version history
+#   1.0  2026-09-24  first version
+# ===============================================================================
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "crp_week4_estimand"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+control <- get_control_strategy()
+guided <- setdiff(get_strategies(), control)
+
+# Deterministic base case, exactly as 08_basecase_analysis.R and CEA.qmd run it.
+base <- run_basecase(l_params_base, verbose = FALSE)
+base_pairwise <- calculate_pairwise_icers(base$base_results)
+
+# Missingness sensitivity analysis (four scenarios plus a reproduction run of
+# the same code on the unmodified complete-case cohort).
+sens <- run_crp_missingness_sensitivity(data, l_params_base, models, time_points)
+reproduction_diff <- max(abs(c(
+  sens$reproduction$results$Cost - base$base_results$Cost,
+  sens$reproduction$results$Effect - base$base_results$Effect)))
+if (!identical(sens$reproduction$status, "ok") || reproduction_diff > 1e-8) {
+  stop("The scenario code does not reproduce the deterministic base case.")
+}
+
+# Pre-decision accrual: the decision week is the first nivolumab dose.
+decision_week <- which(l_params_base$l_nivo == 1)[1] - 1
+pre <- pre_decision_outcomes(l_params_base, decision_week = decision_week,
+                             time_horizon = time_horizon, cl = cl)
+pre_inc <- pre_decision_increments(pre)
+if (pre$check > 1e-8) stop("Recomputed outcomes do not match model_fun().")
+if (pre$schedule$nivo_before != 0 || !pre$schedule$flox_identical) {
+  stop("Treatment schedules differ before the decision week.")
+}
+
+# Aggregate description of the restored patients (no patient-level output
+# beyond the death weeks already published in the issue and AGENTS.md).
+restored <- data[sens$restored_rows, , drop = FALSE]
+raw <- readRDS(here::here("data", "tidy", "METIMMOX.rds"))
+raw_restored <- raw[match(restored$ID, raw$ID), , drop = FALSE]
+arm_levels <- levels(data$Rx)
+is_control <- restored$Rx == arm_levels[1]
+n_restored <- nrow(restored)
+n_restored_control <- sum(is_control)
+n_restored_exp <- sum(!is_control)
+death_weeks <- sort(round(restored$OSwk[restored$Death == 1], 1))
+control_death_week <- round(restored$OSwk[is_control & restored$Death == 1], 1)
+exp_death_weeks <- sort(round(restored$OSwk[!is_control & restored$Death == 1], 1))
+n_dead_before_decision <- sum(restored$Death == 1 & restored$OSwk < decision_week)
+n_alive_at_decision <- n_restored - n_dead_before_decision
+n_baseline_crp <- sum(!is.na(raw_restored$CRP0cat))
+n_braf <- sum(raw_restored$Mutation == "BRAF")
+n_tmb_unknown <- sum(is.na(restored$tmb_braf))
+n_kras_no_tmb <- sum(raw_restored$Mutation == "KRAS" & is.na(raw_restored$TMBcat))
+n_pfs_progression <- sum(restored$PFS_rule == "progression")
+n_pfs_death_window <- sum(restored$PFS_rule == "death_within_window")
+# Context: complete-case exclusions with a week-4 CRP but no TMB/BRAF result.
+other_excluded <- data[!is.na(data$crp) & is.na(data$tmb_braf), , drop = FALSE]
+n_other_excluded <- nrow(other_excluded)
+n_other_excluded_control <- sum(other_excluded$Rx == arm_levels[1])
+n_combinations <- 2^(n_restored + n_tmb_unknown)
+
+# Formatting helpers.
+fmt_int <- function(x) ifelse(is.na(x), "--", format(round(x), big.mark = ",", trim = TRUE))
+fmt_q <- function(x, digits = 4) ifelse(is.na(x), "--", formatC(x, format = "f", digits = digits))
+fmt_small <- function(x) format(signif(x, 3), scientific = FALSE, drop0trailing = TRUE, trim = TRUE)
+fmt_pct <- function(x, digits = 1) paste0(formatC(100 * x, format = "f", digits = digits), "%")
+fmt_diff <- function(x) if (x == 0) "0, identical" else format(x, scientific = TRUE, digits = 3)
+tab <- function(x, caption, align = NULL, font_size = NULL) {
+  knitr::kable(x, booktabs = TRUE, align = align, caption = caption,
+               row.names = FALSE) %>%
+    tbl_style(latex_options = "HOLD_position", font_size = font_size)
+}
+
+# One entry per cohort: base case first, then the four scenarios.
+cohort_ids <- c("base", sens$scenarios$id)
+cohort_labels <- setNames(c("Base case", sens$scenarios$label), cohort_ids)
+cohort_runs <- c(list(base = sens$reproduction), sens$runs)
+cohort_results <- c(list(base = base$base_results),
+                    lapply(sens$runs, `[[`, "results"))
+cohort_pairwise <- c(list(base = base_pairwise), lapply(sens$runs, `[[`, "pairwise"))
+failed_runs <- names(sens$runs)[vapply(sens$runs, function(r) r$status != "ok", logical(1))]
+
+value_of <- function(results, strategy, column) {
+  if (is.null(results)) return(NA_real_)
+  results[[column]][results$Strategy == strategy]
+}
+```
+
+# Purpose
+
+The CRP-guided strategy uses the week-4 C-reactive protein value (CRP, cycle 3
+day 1), measured after the two FLOX cycles that both arms receive and before
+the first nivolumab dose. Issue #175 asked which estimand the economic model
+targets, and how much two consequences of that choice matter:
+
+- the patients without a week-4 CRP are excluded from the complete-case
+  cohort, and
+- the fitted treatment effects act from randomisation, although the
+  treatment schedules of all strategies are identical until the first
+  nivolumab dose.
+
+The chosen approach is to keep the current model and quantify both points with
+deterministic sensitivity analyses (option (c) of the issue). This report
+states the estimand, describes the patients without a week-4 CRP in aggregate,
+restores them under four biomarker assignments, and measures the costs and
+QALYs the model accrues before the first nivolumab dose. No model code and no
+cache is changed; all results are deterministic.
+
+# Estimand
+
+The economic model estimates a **randomisation-time policy**. Each strategy is
+assigned at randomisation (t = 0), and costs and QALYs are counted from that
+point over the `r time_horizon`-week horizon. Under the CRP-guided strategy,
+nivolumab is added from modeled week `r decision_week` for patients whose
+week-4 CRP is below 5 mg/L; the other patients continue FLOX alone. The
+week-4 value is available when the decision is made, because it is measured
+before the first nivolumab dose. The target population is the complete-case
+cohort of `r nrow(data_complete)` patients with age, sex, arm, week-4 CRP,
+TMB/BRAF and both endpoints recorded. Patients without a week-4 CRP are
+excluded from this cohort and are not modeled as a separate decision
+population. Under a randomisation-time estimand they belong to the target
+population, so all `r n_restored` of them are missing data, including the
+patient who died before week `r decision_week`. The missingness sensitivity
+analysis therefore restores all of them.
+
+The treatment contrast is estimated from randomisation. The joint OS and PFS
+models contain `Rx` and biomarker-by-`Rx` terms that act from t = 0, so the
+strategies' survival curves separate before week `r decision_week`, although
+every strategy receives the same FLOX, monitoring and visits until then. Two
+alternatives were considered and not adopted:
+
+- **(a)** force identical curves up to week `r decision_week` and start the
+  treatment contrast at the decision point; or
+- **(b)** a landmark estimand among patients alive at week `r decision_week`.
+  It would place the patient who died before week `r decision_week` outside
+  the decision population and treat only the patients alive at week
+  `r decision_week` as missing data.
+
+The missingness sensitivity analysis and the pre-decision accrual below
+quantify how much the results depend on the adopted estimand.
+
+# Patients Without a Week-4 CRP
+
+```{r restored-table}
+restored_table <- data.frame(
+  Characteristic = c(
+    "Patients without a week-4 CRP",
+    "Control arm / experimental arm",
+    sprintf("Died before week %d (week-4 CRP could not be measured)", decision_week),
+    sprintf("Alive at week %d without a week-4 CRP", decision_week),
+    "Deaths during follow-up",
+    "Baseline CRP (cycle 1 day 1) available",
+    "TMB/BRAF known positive (BRAF-mutant)",
+    "TMB/BRAF unknown (KRAS-mutant, no TMB result)",
+    "PFS events: recorded progression / death within window"
+  ),
+  Value = c(
+    n_restored,
+    paste(n_restored_control, "/", n_restored_exp),
+    n_dead_before_decision,
+    n_alive_at_decision,
+    sum(restored$Death),
+    n_baseline_crp,
+    n_braf,
+    n_kras_no_tmb,
+    paste(n_pfs_progression, "/", n_pfs_death_window)
+  ),
+  stringsAsFactors = FALSE
+)
+tab(restored_table, "Patients without a week-4 CRP (aggregate)",
+    align = c("l", "r"))
+```
+
+`r n_restored` patients have no week-4 CRP: `r n_restored_control` in the
+control arm and `r n_restored_exp` in the experimental arm. All
+`r sum(restored$Death)` died, at weeks `r paste(death_weeks, collapse = ", ")`:
+the control-arm patient at week `r control_death_week`, and the
+experimental-arm patients at weeks `r paste(exp_death_weeks, collapse = " and ")`.
+Only `r n_dead_before_decision` of them died before week `r decision_week`;
+the other `r n_alive_at_decision` were alive at week `r decision_week` but
+have no week-4 value. All `r n_baseline_crp` have a baseline CRP. The
+control-arm patient is BRAF-mutant and therefore TMB/BRAF-positive. The
+`r n_kras_no_tmb` experimental-arm patients are KRAS-mutant with no TMB
+result, so their TMB/BRAF status is unknown; they would be excluded from the
+complete-case cohort even with a week-4 CRP. Their PFS endpoints follow the
+issue #181 rule already applied by script 02 (a
+`r pfs_death_window_weeks`-week death window after the last assessment) and
+are used as they are.
+
+The complete-case cohort also excludes `r n_other_excluded` patients who
+have a week-4 CRP but no TMB/BRAF result
+(`r if (n_other_excluded_control == n_other_excluded) "all in the control arm" else paste(n_other_excluded_control, "in the control arm")`). They are not part of this analysis and stay excluded in
+every scenario.
+
+# Missingness Sensitivity Analysis
+
+## Methods
+
+The `r n_restored` patients without a week-4 CRP are restored to the
+complete-case cohort, giving `r sens$runs[[1]]$summary$n` patients. Four
+scenarios cross two assignments:
+
+- the CRP value assigned to all `r n_restored` patients (negative or
+  positive), and
+- the TMB/BRAF value assigned to the `r n_tmb_unknown` patients with unknown
+  TMB/BRAF status (negative or positive).
+
+The control-arm patient keeps the known TMB/BRAF-positive status. For each
+scenario:
+
+1. **Refit.** The joint OS and PFS models are refitted with the pipeline
+   formulas (`get_model_formulas()`) and the distributions selected for the
+   base case (`r sens$os_distribution` for OS, `r sens$pfs_distribution` for
+   PFS). The distributions are not re-selected.
+2. **Rebuild the population.** The common prediction population, the
+   biomarker prevalences and the joint biomarker cells are rebuilt from the
+   `r sens$runs[[1]]$summary$n`-patient cohort with the pipeline helpers,
+   among them `economic_prediction_population()` and
+   `set_population_predictions()`.
+3. **Check ordering.** OS >= PFS is checked for the control curve and the four
+   biomarker-subgroup curves at every weekly time point. The deterministic
+   model stops on a violation, so a scenario that violates the ordering is
+   reported, not clamped.
+4. **Run the model.** The deterministic model is run with the unchanged
+   schedules, prices and utilities, as script 05 builds them.
+
+Pairwise ICERs and statuses versus standard of care come from
+`calculate_pairwise_icers()`, and frontier statuses from dampack. Applied to
+the unmodified `r nrow(data_complete)`-patient cohort, the same code
+reproduces the deterministic base case (largest absolute difference in costs
+and QALYs: `r fmt_diff(reproduction_diff)`).
+Each scenario changes both the fitted treatment effects and the target
+population (its size, prevalences and age/sex mix), so a difference from the
+base case combines the two.
+
+## Scenario cohorts and fits
+
+```{r cohort-table}
+cohort_table <- do.call(rbind, lapply(cohort_ids, function(id) {
+  run <- cohort_runs[[id]]
+  s <- run$summary
+  data.frame(
+    Cohort = cohort_labels[[id]],
+    n = s$n,
+    `Control/exp.` = paste(s$n_control, "/", s$n_experimental),
+    `CRP+` = fmt_pct(s$crp),
+    `TMB/BRAF+` = fmt_pct(s$tmb_braf),
+    Converged = if (all(run$converged)) "Yes" else "No",
+    `PFS > OS points` = if (is.null(run$ordering)) "--" else as.character(run$ordering$n_violations),
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+}))
+fit_status_text <- if (length(failed_runs) == 0) {
+  sprintf(paste(
+    "All %d scenario fits converged, and no refitted scenario puts PFS above OS",
+    "on any of the five curves at any of the %d weekly time points, so every",
+    "scenario could be run through the deterministic model."),
+    nrow(sens$scenarios), length(time_points))
+} else {
+  run_status <- vapply(sens$runs[failed_runs], function(r) r$status, character(1))
+  sprintf("%d of %d scenarios could not be evaluated: %s.", length(failed_runs),
+          nrow(sens$scenarios),
+          paste(sprintf("%s (%s)", cohort_labels[failed_runs], run_status), collapse = "; "))
+}
+tab(cohort_table, "Cohorts, prevalences, convergence and OS >= PFS ordering",
+    align = c("l", "r", "r", "r", "r", "l", "r"), font_size = 9) %>%
+  tbl_footnote(general = paste(
+    "Converged: both refitted models converged with a finite covariance matrix.",
+    "PFS > OS points: weekly time points at which PFS exceeds OS, summed over the",
+    "control curve and the four biomarker-subgroup curves. The base-case row is",
+    "the reproduction run on the complete-case cohort."), threeparttable = TRUE)
+```
+
+`r fit_status_text`
+
+```{r coefficient-table}
+location <- flexsurv::flexsurv.dists[[sens$os_distribution]]$location
+coef_terms <- function(fit) {
+  est <- fit$res[, "est"]
+  names(est) <- rownames(fit$res)
+  interaction <- function(b) {
+    hit <- grepl(":", names(est)) & grepl(paste0("(^|:)", b), names(est))
+    unname(est[hit])
+  }
+  rx_main <- grepl("^Rx", names(est)) & !grepl(":", names(est))
+  c(Rx = unname(est[rx_main]),
+    setNames(vapply(get_biomarkers(), interaction, numeric(1)),
+             paste0(get_biomarkers(), "_x_rx")))
+}
+coef_table <- function(endpoint) {
+  do.call(rbind, lapply(cohort_ids, function(id) {
+    x <- coef_terms(cohort_runs[[id]]$models[[endpoint]])
+    data.frame(
+      Cohort = cohort_labels[[id]],
+      Rx = fmt_q(x[["Rx"]], 3),
+      `CRP x Rx` = fmt_q(x[["crp_x_rx"]], 3),
+      `TMB/BRAF x Rx` = fmt_q(x[["tmb_braf_x_rx"]], 3),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  }))
+}
+coef_note <- paste0(
+  "Coefficients on the flexsurvreg ", location, " scale of the ",
+  sens$os_distribution, " (OS) and ", sens$pfs_distribution,
+  " (PFS) models; Rx is the experimental arm. ",
+  if (identical(location, "rate")) "A positive coefficient raises the rate and shortens survival. " else "",
+  "Standard errors are not shown.")
+tab(coef_table("os"), "OS model: treatment and biomarker-by-treatment coefficients",
+    align = c("l", "r", "r", "r"))
+```
+
+```{r coefficient-table-pfs}
+tab(coef_table("pfs"), "PFS model: treatment and biomarker-by-treatment coefficients",
+    align = c("l", "r", "r", "r")) %>%
+  tbl_footnote(general = coef_note, threeparttable = TRUE)
+```
+
+## Cost-effectiveness results
+
+```{r outcome-tables}
+outcome_table <- function(column, formatter, with_optimal = FALSE) {
+  do.call(rbind, lapply(cohort_ids, function(id) {
+    results <- cohort_results[[id]]
+    cells <- vapply(get_strategies(), function(s) formatter(value_of(results, s, column)),
+                    character(1))
+    out <- data.frame(t(c(cohort_labels[[id]], cells)), stringsAsFactors = FALSE)
+    names(out) <- c("Cohort", strategy_label(get_strategies()))
+    if (with_optimal) {
+      out$`Highest NMB` <- if (is.null(results)) "--" else
+        strategy_label(results$Strategy[which.max(results$Effect * WTP - results$Cost)])
+    }
+    out
+  }))
+}
+tab(outcome_table("Cost", fmt_int, with_optimal = TRUE),
+    "Deterministic costs (EUR) by cohort",
+    align = c("l", rep("r", length(get_strategies())), "l"), font_size = 9) %>%
+  tbl_footnote(general = sprintf(
+    "Highest NMB: strategy with the highest net monetary benefit at WTP = %s per QALY.",
+    format_eur(WTP)), threeparttable = TRUE)
+```
+
+```{r qaly-table}
+tab(outcome_table("Effect", fmt_q), "Deterministic QALYs by cohort",
+    align = c("l", rep("r", length(get_strategies()))))
+```
+
+```{r pairwise-table-crp}
+pairwise_table <- function(strategy) {
+  do.call(rbind, lapply(cohort_ids, function(id) {
+    pw <- cohort_pairwise[[id]]
+    row <- if (is.null(pw)) NULL else pw[pw$Strategy == strategy, ]
+    if (is.null(row)) {
+      return(data.frame(Cohort = cohort_labels[[id]], `Inc. cost` = "--",
+        `Inc. QALYs` = "--", ICER = "--", Frontier = "--",
+        check.names = FALSE, stringsAsFactors = FALSE))
+    }
+    data.frame(
+      Cohort = cohort_labels[[id]],
+      `Inc. cost` = fmt_int(row$Inc_Cost),
+      `Inc. QALYs` = fmt_q(row$Inc_Effect),
+      ICER = sub("^EUR ", "", format_icer(row$ICER, row$Status)),
+      Frontier = frontier_label(row$Frontier_Status),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  }))
+}
+pairwise_note <- paste(
+  "Increments and ICERs are pairwise versus standard of care.",
+  "'Dominated' in the ICER column: pairwise status 'Dominated by SoC' (more",
+  "costly and no more effective than standard of care); a number: pairwise",
+  "status 'Pairwise ICER vs SoC'; 'Cost-saving': 'Cost-saving vs SoC'.",
+  "Frontier: dampack efficiency-frontier status",
+  "across all three strategies.")
+pairwise_caption <- function(strategy) paste0(strategy_label(strategy),
+  ": increments and ICER pairwise versus standard of care (EUR, QALYs)")
+tab(pairwise_table("crp"), pairwise_caption("crp"),
+    align = c("l", "r", "r", "r", "l"), font_size = 9)
+```
+
+```{r pairwise-table-tmb-braf}
+tab(pairwise_table("tmb_braf"), pairwise_caption("tmb_braf"),
+    align = c("l", "r", "r", "r", "l"), font_size = 9) %>%
+  tbl_footnote(general = pairwise_note, threeparttable = TRUE)
+```
+
+```{r range-summary}
+scenario_rows <- function(strategy) {
+  do.call(rbind, lapply(sens$scenarios$id, function(id) {
+    pw <- sens$runs[[id]]$pairwise
+    if (is.null(pw)) return(NULL)
+    cbind(scenario = id, pw[pw$Strategy == strategy, ])
+  }))
+}
+icer_range_text <- function(strategy) {
+  rows <- scenario_rows(strategy)
+  base_row <- base_pairwise[base_pairwise$Strategy == strategy, ]
+  base_text <- switch(base_row$Status,
+    "Pairwise ICER vs SoC" = paste("a pairwise ICER of", format_eur(base_row$ICER)),
+    "Dominated by SoC" = "dominated by standard of care",
+    "Cost-saving vs SoC" = "cost-saving versus standard of care",
+    base_row$Status)
+  finite <- rows[rows$Status == "Pairwise ICER vs SoC", ]
+  dominated <- rows[rows$Status == "Dominated by SoC", ]
+  parts <- character(0)
+  if (nrow(finite) > 0) {
+    lo <- finite[which.min(finite$ICER), ]
+    hi <- finite[which.max(finite$ICER), ]
+    parts <- c(parts, if (nrow(finite) == 1)
+      sprintf("a pairwise ICER of %s in one scenario (%s)", format_eur(lo$ICER),
+              cohort_labels[[lo$scenario]]) else
+      sprintf("pairwise ICERs from %s (%s) to %s (%s) in %d scenarios",
+              format_eur(lo$ICER), cohort_labels[[lo$scenario]],
+              format_eur(hi$ICER), cohort_labels[[hi$scenario]], nrow(finite)))
+  }
+  if (nrow(dominated) > 0) {
+    parts <- c(parts, sprintf("dominated by standard of care in %d (%s)",
+      nrow(dominated), paste(cohort_labels[dominated$scenario], collapse = "; ")))
+  }
+  other <- rows[!rows$Status %in% c("Pairwise ICER vs SoC", "Dominated by SoC"), ]
+  if (nrow(other) > 0) {
+    parts <- c(parts, sprintf("%s in %d", paste(unique(other$Status), collapse = "/"),
+                              nrow(other)))
+  }
+  sprintf("%s: %s (base case: %s)", strategy_label(strategy),
+          paste(parts, collapse = "; "), base_text)
+}
+frontier_text <- function(strategy) {
+  rows <- scenario_rows(strategy)
+  sprintf("%s was on the efficiency frontier in %d of %d scenarios",
+          strategy_label(strategy), sum(rows$Frontier_Status == "ND"), nrow(rows))
+}
+optimal_all <- vapply(sens$scenarios$id, function(id) {
+  r <- sens$runs[[id]]$results
+  if (is.null(r)) NA_character_ else r$Strategy[which.max(r$Effect * WTP - r$Cost)]
+}, character(1))
+base_optimal <- with(base$base_results, Strategy[which.max(Effect * WTP - Cost)])
+```
+
+**Range across the four scenarios.**
+
+- `r icer_range_text("crp")`.
+- `r icer_range_text("tmb_braf")`.
+- `r frontier_text("crp")`; `r frontier_text("tmb_braf")`.
+- `r if (all(optimal_all == base_optimal, na.rm = TRUE)) sprintf("%s had the highest net monetary benefit at WTP = %s in the base case and in every evaluated scenario, so the decision does not change.", strategy_label(base_optimal), format_eur(WTP)) else sprintf("The strategy with the highest net monetary benefit at WTP = %s changes from %s in the base case to %s in at least one scenario.", format_eur(WTP), strategy_label(base_optimal), paste(unique(strategy_label(optimal_all[optimal_all != base_optimal])), collapse = ", "))`
+
+```{r scenario-drivers}
+sc <- sens$scenarios
+inc_effect <- function(id, strategy) value_of(sens$runs[[id]]$pairwise, strategy, "Inc_Effect")
+# Mean absolute change in a strategy's incremental QALYs when one assignment is
+# switched from negative to positive with the other assignment held fixed.
+switch_change <- function(strategy, switched) {
+  held <- setdiff(c("crp", "tmb_braf"), switched)
+  mean(vapply(0:1, function(v) {
+    lo <- sc$id[sc[[held]] == v & sc[[switched]] == 0]
+    hi <- sc$id[sc[[held]] == v & sc[[switched]] == 1]
+    abs(inc_effect(hi, strategy) - inc_effect(lo, strategy))
+  }, numeric(1)))
+}
+changes <- outer(guided, c("crp", "tmb_braf"), Vectorize(switch_change))
+dimnames(changes) <- list(guided, c("crp", "tmb_braf"))
+control_qalys <- vapply(sens$scenarios$id, function(id)
+  value_of(sens$runs[[id]]$results, control, "Effect"), numeric(1))
+crp_rows <- scenario_rows("crp")
+crp_base <- base_pairwise[base_pairwise$Strategy == "crp", ]
+crp_ratio <- crp_rows$ICER[crp_rows$Status == "Pairwise ICER vs SoC"] / crp_base$ICER
+```
+
+Standard-of-care QALYs fall from
+`r fmt_q(value_of(base$base_results, control, "Effect"))` in the base case to
+between `r fmt_q(min(control_qalys, na.rm = TRUE))` and
+`r fmt_q(max(control_qalys, na.rm = TRUE))`, because every restored patient
+died within `r ceiling(max(restored$OSwk))` weeks and the population is
+standardised to the enlarged cohort.
+`r if (crp_base$Status == "Pairwise ICER vs SoC" && length(crp_ratio) > 0) sprintf("The CRP-guided pairwise ICER is lower than in the base case in %d of %d evaluated scenarios, at %s to %s of its base-case value.", sum(crp_ratio < 1), length(crp_ratio), fmt_pct(min(crp_ratio), 0), fmt_pct(max(crp_ratio), 0)) else ""`
+Both assignments enter the joint model, so each one moves both guided
+strategies. Switching the CRP assignment from negative to positive changes
+the incremental QALYs of the CRP-guided strategy by
+`r fmt_q(changes["crp", "crp"])` on average and those of the TMB/BRAF-guided
+strategy by `r fmt_q(changes["tmb_braf", "crp"])`. Switching the TMB/BRAF
+assignment changes them by `r fmt_q(changes["crp", "tmb_braf"])` and
+`r fmt_q(changes["tmb_braf", "tmb_braf"])`. These changes are large relative
+to the base-case increments of
+`r fmt_q(value_of(base_pairwise, "crp", "Inc_Effect"))` (CRP-guided) and
+`r fmt_q(value_of(base_pairwise, "tmb_braf", "Inc_Effect"))` (TMB/BRAF-guided).
+The interaction estimates rest on few patients per arm and biomarker cell, so
+`r n_restored` patients with early deaths are enough to move them.
+
+# Costs and QALYs Accrued Before the First Nivolumab Dose
+
+## Methods
+
+All strategies receive the same treatment schedule until modeled week
+`r decision_week`: no nivolumab dose is scheduled before week
+`r decision_week`, and the FLOX schedules of the two arms are identical at
+grid points 0 to `r decision_week - 1` (both checked when the report is
+rendered). The first nivolumab
+dose is at week `r pre$schedule$first_nivo_week`. Apart from the one-time
+diagnostic test, any difference the model accrues between strategies before
+week `r decision_week` therefore comes only from the fitted `Rx` and
+biomarker-by-`Rx` effects acting from t = 0.
+
+The deterministic base-case traces (`model_fun(..., return_traces = TRUE)`)
+are passed through `calculate_outcomes()` subgroup by subgroup, and each
+component is split at week `r decision_week` using the model's own
+discounting and trapezoidal interval weights:
+
+- **QALYs and ongoing progressed-state costs** (interval flows) are counted
+  over the intervals from week 0 to week `r decision_week`. This is the full
+  trapezoidal weight of grid points 0 to `r decision_week - 1` plus half the
+  weight of grid point `r decision_week`.
+- **Scheduled and one-time charges** are counted at grid points 0 to
+  `r decision_week - 1`: drugs, CT scans, blood tests, visits, the baseline
+  visit and the diagnostic test (CRP or NGS). Every charge at grid point
+  `r decision_week`, including the first nivolumab dose, is excluded.
+- **End-of-life costs** are counted for deaths in the intervals ending at
+  weeks 1 to `r decision_week`, charged at those grid points.
+
+The recomputed full-horizon totals equal `model_fun()` (largest absolute
+difference `r fmt_diff(pre$check)`). The
+diagnostic test is charged at t = 0 in every biomarker-guided strategy, so it
+is shown separately from the survival-dependent part of the cost increment.
+
+## Results
+
+```{r pre-strategy-table}
+week_idx <- decision_week + 1
+traces <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl,
+                    return_traces = TRUE)$traces
+occupancy_at <- function(strategy) {
+  t <- traces[[strategy]]
+  c(os = 1 - t$p_d[week_idx], pfs = t$p_pf[week_idx])
+}
+period <- sprintf("weeks 0-%d", decision_week)
+x <- pre$strategy
+occ <- sapply(x$Strategy, occupancy_at)
+pre_table <- data.frame(
+  Measure = c(paste("QALYs,", period), "QALYs, full horizon",
+              paste("Cost,", period), "of which diagnostic test",
+              "Cost, full horizon",
+              sprintf("OS at week %d", decision_week),
+              sprintf("PFS at week %d", decision_week)),
+  rbind(fmt_q(x$qalys_pre, 5), fmt_q(x$qalys_full),
+        format_eur(x$cost_pre), format_eur(x$diagnostic_pre),
+        format_eur(x$cost_full),
+        fmt_q(occ["os", ]), fmt_q(occ["pfs", ])),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+names(pre_table) <- c("Measure", strategy_label(x$Strategy))
+tab(pre_table, sprintf("Discounted QALYs and costs before week %d and over the full horizon (deterministic base case)", decision_week),
+    align = c("l", rep("r", nrow(x)))) %>%
+  tbl_footnote(general = sprintf(paste(
+    "%s: accrued before the first nivolumab dose, as defined in the Methods.",
+    "OS and PFS: population-averaged survival probabilities."), period),
+    threeparttable = TRUE)
+```
+
+```{r pre-increment-table}
+inc_table <- data.frame(
+  Measure = c(paste("Inc. QALYs,", period), "Inc. QALYs, full horizon",
+              "Share of full-horizon QALY increment",
+              paste("Inc. cost,", period), "of which diagnostic test",
+              "of which survival-dependent", "Inc. cost, full horizon",
+              "Share of full-horizon cost increment",
+              "Share, survival-dependent part only"),
+  rbind(fmt_small(pre_inc$inc_qalys_pre), fmt_q(pre_inc$inc_qalys_full),
+        fmt_pct(pre_inc$share_qalys, 3),
+        format_eur(pre_inc$inc_cost_pre, 0.01),
+        format_eur(pre_inc$inc_diagnostic_pre, 0.01),
+        format_eur(pre_inc$inc_cost_pre_survival, 0.01),
+        format_eur(pre_inc$inc_cost_full),
+        fmt_pct(pre_inc$share_cost, 3), fmt_pct(pre_inc$share_cost_survival, 3)),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+names(inc_table) <- c("Measure", strategy_label(pre_inc$Strategy))
+tab(inc_table, sprintf("Increments versus standard of care: before week %d and full horizon", decision_week),
+    align = c("l", rep("r", nrow(pre_inc)))) %>%
+  tbl_footnote(general = paste(
+    "Survival-dependent: the pre-decision cost increment without the diagnostic",
+    "test, that is, the part driven by differences in state occupancy."),
+    threeparttable = TRUE)
+```
+
+```{r pre-text}
+crp_inc <- pre_inc[pre_inc$Strategy == "crp", ]
+tmb_inc <- pre_inc[pre_inc$Strategy == "tmb_braf", ]
+os_gap <- vapply(guided, function(s) occupancy_at(s)[["os"]] - occupancy_at(control)[["os"]], numeric(1))
+pfs_gap <- vapply(guided, function(s) occupancy_at(s)[["pfs"]] - occupancy_at(control)[["pfs"]], numeric(1))
+```
+
+Before week `r decision_week`, the CRP-guided strategy accrues
+`r fmt_small(crp_inc$inc_qalys_pre)` more QALYs than standard of care, which
+is `r fmt_pct(crp_inc$share_qalys, 3)` of its full-horizon QALY increment of
+`r fmt_q(crp_inc$inc_qalys_full)`. The survival-dependent part of its cost
+increment before week `r decision_week` is
+`r format_eur(crp_inc$inc_cost_pre_survival, 0.01)`
+(`r fmt_pct(crp_inc$share_cost_survival, 3)` of the full-horizon cost
+increment). The CRP test adds `r format_eur(crp_inc$inc_diagnostic_pre, 0.01)`.
+
+For the TMB/BRAF-guided strategy the corresponding values are
+`r fmt_small(tmb_inc$inc_qalys_pre)` QALYs
+(`r fmt_pct(tmb_inc$share_qalys, 3)` of `r fmt_q(tmb_inc$inc_qalys_full)`) and
+`r format_eur(tmb_inc$inc_cost_pre_survival, 0.01)`. Its larger pre-decision
+cost increment is the NGS test
+(`r format_eur(tmb_inc$inc_diagnostic_pre, 0.01)`), which the strategy
+genuinely incurs.
+
+The costs and QALYs accrued before the first nivolumab dose therefore
+contribute almost nothing directly to either strategy's increments. The
+curves have nevertheless separated by week `r decision_week`:
+population-averaged OS differs from standard of care by
+`r fmt_small(os_gap[["crp"]])` (CRP-guided) and
+`r fmt_small(os_gap[["tmb_braf"]])` (TMB/BRAF-guided), and PFS by
+`r fmt_small(pfs_gap[["crp"]])` and `r fmt_small(pfs_gap[["tmb_braf"]])`.
+This separation carries into the rest of the horizon. The split above does
+not attribute its later consequences; that would need the curves re-anchored
+at the decision point (option (a)), which is not estimated here.
+
+# Limitations
+
+- **Corner scenarios only.** The four scenarios give every restored patient
+  the same CRP value, and every patient with unknown TMB/BRAF the same
+  TMB/BRAF value. With `r n_restored` unknown CRP values and
+  `r n_tmb_unknown` unknown TMB/BRAF values there are `r n_combinations`
+  combinations. The model is not linear in the assignments, so intermediate
+  combinations need not fall between the corner results; the reported range
+  covers the corner scenarios only. No imputation model or missing-data
+  mechanism is assumed.
+- **Distributions not re-selected.** Each scenario keeps the base-case
+  distributions and checks only the OS >= PFS ordering. A new
+  ordering-constrained selection on the enlarged cohort could choose a
+  different pair.
+- **Population and effects change together.** Restoring patients changes the
+  target population (size, prevalences and age/sex mix) as well as the fitted
+  effects, and the scenarios do not separate the two.
+- **Deterministic only.** The scenarios quantify the sensitivity of the point
+  estimates; parameter uncertainty is not propagated (no PSA).
+- **Other exclusions.** The `r n_other_excluded` patients with a week-4 CRP
+  but no TMB/BRAF result remain excluded in every scenario.
+- **Pre-decision split.** The split before week `r decision_week` measures
+  the costs and QALYs accrued in that period and the survival difference
+  reached by its end. It is not an estimate of option (a), which would refit
+  or re-anchor the curves so that the strategies are identical up to the
+  decision point.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0
