@@ -257,8 +257,19 @@ data_complete$tmb_braf_num <- as.numeric(as.character(data_complete$tmb_braf))
 data_complete$Rx_num <- as.numeric(data_complete$Rx) - 1  # 0 = Control, 1 = Experimental
 
 # TLR-COMPLETE COHORT: used only by the exploratory TLR responder and landmark
-# analyses and by the TLR columns of the sample-characteristics table.
-data_tlr <- data_complete[!is.na(data_complete$tlr_num), ]
+# analyses and by the TLR columns of the sample-characteristics table. It is
+# the shared TLR landmark base cohort of tlr_landmark.R (issue #184), the
+# TLR-classified patients within the complete-case cohort, the same base
+# cohort as Figure 1 of the clinical paper and the DAG association tests.
+# Applying the helper to data_complete keeps the report's derived columns
+# (crp_num, tlr_num, tmb_braf_num, Rx_num, factor coding).
+data_tlr <- tlr_landmark_base_cohort(data_complete, tlr_col = "tlr_num")
+# Same patients (65) as the former rule and as the helper applied to `data`,
+# in the same order.
+stopifnot(
+  identical(data_tlr$ID, data_complete$ID[!is.na(data_complete$tlr_num)]),
+  identical(data_tlr$ID, tlr_landmark_base_cohort(data)$ID)
+)
 n_tlr_total   <- nrow(data_tlr)
 n_tlr_missing <- n_total_missing_tlr <- nrow(data_complete) - n_tlr_total
 
@@ -366,7 +377,7 @@ n_cc_out_by_wk4 <- sum(data_complete$OSwk <= 4 | data_complete$PFSwk <= 4)
 
 **CRP timing.** CRP is not a baseline (pre-randomization) measurement: the value used throughout is the week-4 CRP at the start of nivolumab, matching the post-hoc CRP analysis of the trial paper. Because nivolumab has not yet been given at week 4 and both arms receive identical FLOX until then, the DAG carries no `T -> CRP` edge. Two consequences follow. First, week-4 CRP-positivity differs by arm (experimental `r crp_arm_pos["Experimental arm"]`/`r crp_arm_n["Experimental arm"]`, control `r crp_arm_pos["Control arm"]`/`r crp_arm_n["Control arm"]`; Fisher p = `r format_pvalue(crp_arm_fisher_p)`) whereas baseline CRP was balanced (8/38 vs 7/35; p = 1; `CRP0cat` in `01_data_prep.R`, which is not part of the analysis data); this is treated as chance imbalance on a week-4 measurement in a small trial, not as a failure of randomization, and is what the `CRP:Rx` interaction is estimated against. Second, the `r nrow(crp_missing)` patients with no week-4 CRP (`r crp_missing_arm_text` patients) are excluded from the complete-case data: `r crp_missing_outcome` (`r crp_missing_times` `r crp_missing_weeks`). The exclusion is therefore not the same as conditioning on survival to week 4; the technical report `crp_week4_estimand.qmd` restores these patients under alternative CRP assignments. The clock remains randomization; a landmark analysis at week 4 would drop `r if (n_cc_out_by_wk4 == 0) "no further patients" else paste(n_cc_out_by_wk4, "further patient(s)")` from the complete-case cohort.
 
-**Model specification is motivated by the causal DAG** (see `dag.qmd` and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized with no parents, so no confounding adjustment is needed for causal identification; Age and Sex are included as precision covariates. TLR (Tumor Lesion Reduction) is encoded as a post-randomization intermediate variable (T → TLR → PFS): it is not a pre-treatment baseline characteristic and conditioning on it as a covariate would block part of the treatment effect pathway. TLR is therefore excluded from the primary survival models and examined separately as a descriptive endpoint.
+**Model specification is motivated by the causal DAG** (see `dag.qmd` and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized with no parents, so no confounding adjustment is needed for causal identification; Age and Sex are included as precision covariates. Target lesion reduction (TLR) is positive when the sum of target-lesion diameters at the first on-treatment CT is at least 10% below its baseline value. TLR is encoded as a post-randomization intermediate variable (T → TLR → PFS): it is not a pre-treatment baseline characteristic and conditioning on it as a covariate would block part of the treatment effect pathway. TLR is therefore excluded from the primary survival models and examined separately as a descriptive endpoint.
 
 The **unified DAG-informed model** is:
 
@@ -1052,7 +1063,7 @@ The primary rule gives `r pfs_sens_events["primary"]` PFS events and CRP x Rx HR
 
 # Exploratory: TLR as a Predictive Biomarker (Responder Analysis)
 
-This section presents an **exploratory responder analysis** that includes TLR (Tumor Lesion Reduction) as an effect modifier in a Cox model with the same structural form as the primary analysis. Because TLR is measured post-randomization (at the first on-treatment CT scan), this is not a treatment-selection analysis: TLR status is itself influenced by treatment, and the resulting TLR x Rx interaction is informative only as a hypothesis-generating, responder-stratified contrast. It cannot be used to guide the decision to add immunotherapy, which is made before TLR is observed. The primary causal-DAG-informed analysis remains the inferential anchor for predictive biomarker claims.
+This section presents an **exploratory responder analysis** that includes target lesion reduction (TLR) as an effect modifier in a Cox model with the same structural form as the primary analysis. Because TLR is measured post-randomization (at the first on-treatment CT scan), this is not a treatment-selection analysis: TLR status is itself influenced by treatment, and the resulting TLR x Rx interaction is informative only as a hypothesis-generating, responder-stratified contrast. It cannot be used to guide the decision to add immunotherapy, which is made before TLR is observed. The primary causal-DAG-informed analysis remains the inferential anchor for predictive biomarker claims.
 
 The model adjusts for the pre-immunotherapy biomarkers **CRP** and **TMB/BRAF** as prognostic main effects (their treatment interactions belong to the primary analysis and are not re-estimated here). In the ridge sensitivity model, CRP and TMB/BRAF remain **unpenalized** (well-established prognostic adjustment covariates), while the **TLR main effect and TLR x Rx interaction are penalized**. These are the post-randomization terms whose stability we want to stress-test against the small effective sample size and the coupling of TLR and progression, which are read from the same first on-treatment scan.
 
@@ -1081,8 +1092,8 @@ tlr_by_arm %>%
         caption = "TLR Prevalence by Treatment Arm (Descriptive)",
         booktabs = TRUE, format = report_table_format()) %>%
   tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
-  tbl_footnote(general = "TLR = Tumour Lesion Reduction >= 10% at first CT scan (post-treatment).",
-           footnote_as_chunk = TRUE)
+  tbl_footnote(general = "TLR = target lesion reduction at the first on-treatment CT (post-treatment; definition in the Overview).",
+           footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
 ### Kaplan-Meier Curves Stratified by TLR
@@ -1403,10 +1414,13 @@ tlr_comparison_pfs %>%
 
 ```{r tlr-landmark-cohort, include=FALSE}
 # =============================================================================
-# LANDMARK COHORT CONSTRUCTION (issue #155)
-# All three landmark definitions come from tlr_landmark.R, shared with
-# clin_effect_figure1.qmd and the DAG association tests. Endpoint-specific
-# at-risk sets, strictly after the landmark; clock reset to the landmark:
+# LANDMARK COHORT CONSTRUCTION (issues #155, #184)
+# The base cohort (tlr_landmark_base_cohort(), data_tlr above) and all three
+# landmark definitions come from tlr_landmark.R and are shared with
+# clin_effect_figure1.qmd and the DAG association tests, so the cohorts
+# themselves, not only the landmark rule, are identical across the three.
+# Endpoint-specific at-risk sets, strictly after the landmark; clock reset
+# to the landmark:
 #   OS  cohort: OSwk  > landmark; analysis time OSwk_lm  = OSwk  - landmark
 #   PFS cohort: PFSwk > landmark; analysis time PFSwk_lm = PFSwk - landmark
 # Primary: fixed week 9. Sensitivity: per-patient first-scan date (CT1wk) and
@@ -1415,8 +1429,8 @@ tlr_comparison_pfs %>%
 # =============================================================================
 LANDMARK_WK <- tlr_landmark_spec("week9")$week
 
-# Landmark cohorts are built from the TLR-complete subset (the responder
-# analysis cohort), so attrition is measured against n_tlr_total.
+# Landmark cohorts are built from the shared base cohort data_tlr (also the
+# responder analysis cohort), so attrition is measured against n_tlr_total.
 lm_all  <- build_all_tlr_landmark_cohorts(data_tlr)
 lm_main <- lm_all$week9
 
@@ -1473,7 +1487,7 @@ The responder analysis above treats TLR status as if it were known at baseline. 
 
 A **landmark analysis** addresses this bias by (i) fixing a landmark time, (ii) restricting each endpoint to the patients still at risk for it at the landmark, and (iii) measuring time **from the landmark onward**. The at-risk conditions differ by endpoint: the **OS** cohort requires only that the patient is alive and uncensored at the landmark, whereas the **PFS** cohort also requires that no progression and no PFS-counted death has occurred and that the patient was not censored at an earlier assessment. The primary landmark is **week 9**, the protocol time of the second CT (the first on-treatment response assessment): TLR compares this scan to the baseline CT, so a patient's TLR status does not exist until that scan. The actual first on-treatment scans, however, were not all at week 9: in the trial extract they fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])` after inclusion (median `r sprintf("%.1f", median(data_tlr$CT1wk))`). A fixed week-9 landmark therefore does not guarantee that every retained patient had reached the scan, and it does not remove every patient whose progression was recorded at the first scan, so it reduces the bias rather than removing it. Both departures are counted below, and two sensitivity landmarks are reported (issue #155): a **per-patient landmark at each patient's own first-scan date**, which by construction retains no patient whose TLR is read after the landmark and, for PFS, no first-scan progressor, and a **fixed week-12 landmark**, `r wk12_departure_text`. This section **complements** the responder analysis above (which is retained for comparison); it does not replace it.
 
-The three landmark definitions live in `R/tlr_landmark.R` and are shared with Figure 1 of the clinical effectiveness paper and the DAG association tests, so all three use one cohort rule: a patient enters an endpoint-specific cohort only if the endpoint time is strictly after the landmark. Because the small trial loses patients with events or censoring before the landmark, the cohort sizes and event counts are reported explicitly, and all model fits are wrapped so a too-small cohort degrades gracefully rather than aborting the render.
+The base cohort and the three landmark definitions live in `R/tlr_landmark.R` and are shared with Figure 1 of the clinical effectiveness paper and the DAG association tests (issue #184). All three start from the same `r n_tlr_total` TLR-classified patients of the `r n_total`-patient complete-case cohort (`tlr_landmark_base_cohort()`) and apply the same rule: a patient enters an endpoint-specific cohort only if the endpoint time is strictly after the landmark. They therefore analyse the same landmark cohorts. Because the small trial loses patients with events or censoring before the landmark, the cohort sizes and event counts are reported explicitly, and all model fits are wrapped so a too-small cohort degrades gracefully rather than aborting the render.
 
 ## Landmark Cohort and Attrition
 
@@ -1576,7 +1590,7 @@ render_lm_char_table(
 
 The PFS at-risk set drops the `r nrow(data_lm_os) - nrow(data_lm_pfs)` patient(s) who had already progressed, died, or were censored by week 9, leaving n = `r nrow(data_lm_pfs)`.
 
-*Definitions:* percentages are column percentages; the "Deaths" and "PFS events" rows count events over the whole follow-up, not only after the landmark. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction >= 10% at the first on-treatment CT.
+*Definitions:* percentages are column percentages; the "Deaths" and "PFS events" rows count events over the whole follow-up, not only after the landmark. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 mut/Mb or BRAF mutation; TLR-positive = target lesion reduction, as defined in the Overview.
 
 **Note:** In both cohorts the two TLR groups are well matched on age, sex, and TMB/BRAF status, but differ sharply on treatment arm and CRP: the TLR-positive group is enriched for control-arm patients and for CRP-positivity, while every TLR-negative patient died during follow-up. These imbalances are the descriptive counterpart of the interaction estimates below and reinforce that TLR status is realised after randomization rather than being a baseline characteristic.
 
@@ -1599,8 +1613,8 @@ tlr_by_arm_lm %>%
         caption = "TLR Prevalence by Treatment Arm, Week-9 Landmark Cohort (OS at-risk set)",
         booktabs = TRUE, format = report_table_format()) %>%
   tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
-  tbl_footnote(general = "Restricted to patients alive at week 9. TLR = Tumour Lesion Reduction >= 10% at first CT scan.",
-           footnote_as_chunk = TRUE)
+  tbl_footnote(general = "Restricted to patients alive and uncensored at week 9. TLR = target lesion reduction (definition in the Overview).",
+           footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
 ### Landmark Kaplan-Meier Curves Stratified by TLR
@@ -2013,7 +2027,7 @@ p_zph_pfs_tmb_rx <- get_zph_p(zph_pfs_df, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 hr_txt <- function(x) format_hr_ci(x$HR, x$CI_Lower, x$CI_Upper)
 hr_pt  <- function(x) if (is.na(x$HR)) "--" else sprintf("%.2f", x$HR)
 
-# Unadjusted Firth Cox CRP -> PFS on the complete-case cohort: the DAG
+# Marginal Firth Cox CRP -> PFS (CRP alone) on the complete-case cohort: the DAG
 # association test quoted in the Discussion, with the specification of
 # run_dag_edge_tests() in dag_association_tests.R (issue #157).
 dag_crp_pfs_warnings <- character()
@@ -2071,7 +2085,7 @@ The death-censoring sensitivity gives CRP x Rx PFS HR `r pfs_sens_crp["primary"]
 
 Neither biomarker-treatment interaction reached conventional significance in the unified model (Firth HR with 95% CI in parentheses). For **overall survival**, CRP × Rx yielded HR `r hr_txt(hr_crp_os)` (PLRT p = `r format_pvalue(p_crp_os)`) and TMB/BRAF × Rx HR `r hr_txt(hr_tmb_os)` (p = `r format_pvalue(p_tmb_os)`) — point estimates close to null with very wide confidence intervals. For **progression-free survival**, the CRP × Rx interaction was directionally favourable but imprecise (HR `r hr_txt(hr_crp_pfs)`, p = `r format_pvalue(p_crp_pfs)`). The interaction HR is the ratio of the treatment hazard ratio in CRP-positive patients to that in CRP-negative patients (at the same TMB/BRAF status), so an estimate below 1 means a smaller estimated treatment hazard ratio in CRP-positive than in CRP-negative patients; the CI spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx PFS interaction was HR `r hr_txt(hr_tmb_pfs)` (p = `r format_pvalue(p_tmb_pfs)`). These results are consistent with the trial being underpowered to detect treatment-effect heterogeneity (n = `r n_total`, `r sum(data_complete$Progression)` PFS events (progression or death), `r sum(data_complete$Death)` deaths): even a moderate subgroup effect (HR ~0.5) would require far larger samples for reliable estimation.
 
-The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (unadjusted Firth HR `r sprintf("%.2f", dag_crp_pfs_hr)`, p = `r format_pvalue(dag_crp_pfs_p)`; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
+The PFS pattern is worth noting as a hypothesis-generating finding. The CRP direction (HR `r hr_pt(hr_crp_pfs)`) is consistent with the DAG association test showing CRP → PFS (marginal Firth HR `r sprintf("%.2f", dag_crp_pfs_hr)`, p = `r format_pvalue(dag_crp_pfs_p)`; see the DAG associations report) and the biological hypothesis that low CRP (reflecting lower systemic inflammation) identifies patients more likely to respond to immunotherapy. However, the OS CRP interaction estimate (HR `r hr_pt(hr_crp_os)`) is closer to null, suggesting that any PFS benefit does not clearly translate to an OS benefit in this dataset.
 
 ## Proportional hazards
 
@@ -2120,4 +2134,4 @@ No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_p
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.9
+**Report version:** 3.10

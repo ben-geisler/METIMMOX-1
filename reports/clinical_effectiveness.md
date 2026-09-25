@@ -115,8 +115,10 @@ cohort.
 **Model specification is motivated by the causal DAG** (see `dag.qmd`
 and `dag_associations.qmd`). The DAG encodes treatment (T) as randomized
 with no parents, so no confounding adjustment is needed for causal
-identification; Age and Sex are included as precision covariates. TLR
-(Tumor Lesion Reduction) is encoded as a post-randomization intermediate
+identification; Age and Sex are included as precision covariates. Target
+lesion reduction (TLR) is positive when the sum of target-lesion
+diameters at the first on-treatment CT is at least 10% below its
+baseline value. TLR is encoded as a post-randomization intermediate
 variable (T → TLR → PFS): it is not a pre-treatment baseline
 characteristic and conditioning on it as a covariate would block part of
 the treatment effect pathway. TLR is therefore excluded from the primary
@@ -486,7 +488,7 @@ formula fixed.
 # Exploratory: TLR as a Predictive Biomarker (Responder Analysis)
 
 This section presents an **exploratory responder analysis** that
-includes TLR (Tumor Lesion Reduction) as an effect modifier in a Cox
+includes target lesion reduction (TLR) as an effect modifier in a Cox
 model with the same structural form as the primary analysis. Because TLR
 is measured post-randomization (at the first on-treatment CT scan), this
 is not a treatment-selection analysis: TLR status is itself influenced
@@ -520,8 +522,8 @@ which are read from the same first on-treatment scan.
 
 TLR Prevalence by Treatment Arm (Descriptive)
 
-*Note:* TLR = Tumour Lesion Reduction \>= 10% at first CT scan
-(post-treatment).
+*Note:* TLR = target lesion reduction at the first on-treatment CT
+(post-treatment; definition in the Overview).
 
 ### Kaplan-Meier Curves Stratified by TLR
 
@@ -691,11 +693,14 @@ first scan was at week 12.1. This section **complements** the responder
 analysis above (which is retained for comparison); it does not replace
 it.
 
-The three landmark definitions live in `R/tlr_landmark.R` and are shared
-with Figure 1 of the clinical effectiveness paper and the DAG
-association tests, so all three use one cohort rule: a patient enters an
-endpoint-specific cohort only if the endpoint time is strictly after the
-landmark. Because the small trial loses patients with events or
+The base cohort and the three landmark definitions live in
+`R/tlr_landmark.R` and are shared with Figure 1 of the clinical
+effectiveness paper and the DAG association tests (issue \#184). All
+three start from the same 65 TLR-classified patients of the 68-patient
+complete-case cohort (`tlr_landmark_base_cohort()`) and apply the same
+rule: a patient enters an endpoint-specific cohort only if the endpoint
+time is strictly after the landmark. They therefore analyse the same
+landmark cohorts. Because the small trial loses patients with events or
 censoring before the landmark, the cohort sizes and event counts are
 reported explicitly, and all model fits are wrapped so a too-small
 cohort degrades gracefully rather than aborting the render.
@@ -774,8 +779,8 @@ died, or were censored by week 9, leaving n = 56.
 *Definitions:* percentages are column percentages; the “Deaths” and “PFS
 events” rows count events over the whole follow-up, not only after the
 landmark. CRP-positive = CRP \< 5 mg/L; TMB/BRAF-positive = TMB \>= 9
-mut/Mb or BRAF mutation; TLR-positive = tumour lesion reduction \>= 10%
-at the first on-treatment CT.
+mut/Mb or BRAF mutation; TLR-positive = target lesion reduction, as
+defined in the Overview.
 
 **Note:** In both cohorts the two TLR groups are well matched on age,
 sex, and TMB/BRAF status, but differ sharply on treatment arm and CRP:
@@ -794,8 +799,8 @@ randomization rather than being a baseline characteristic.
 
 TLR Prevalence by Treatment Arm, Week-9 Landmark Cohort (OS at-risk set)
 
-*Note:* Restricted to patients alive at week 9. TLR = Tumour Lesion
-Reduction \>= 10% at first CT scan.
+*Note:* Restricted to patients alive and uncensored at week 9. TLR =
+target lesion reduction (definition in the Overview).
 
 ### Landmark Kaplan-Meier Curves Stratified by TLR
 
@@ -1064,7 +1069,7 @@ require far larger samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The
 CRP direction (HR 0.26) is consistent with the DAG association test
-showing CRP → PFS (unadjusted Firth HR 0.39, p = 0.003; see the DAG
+showing CRP → PFS (marginal Firth HR 0.39, p = 0.003; see the DAG
 associations report) and the biological hypothesis that low CRP
 (reflecting lower systemic inflammation) identifies patients more likely
 to respond to immunotherapy. However, the OS CRP interaction estimate
@@ -1265,4 +1270,4 @@ supports baseline treatment selection on TLR.
 
 **Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.9
+**Report version:** 3.10
