@@ -14,6 +14,7 @@ Ben Geisler
   - [Methods](#methods-1)
   - [Results](#results)
 - [Limitations](#limitations)
+- [Scope decision](#scope-decision)
 
 # Purpose
 
@@ -358,7 +359,8 @@ differs from standard of care by -0.00000512 (CRP-guided) and -0.0000975
 (TMB/BRAF-guided), and PFS by 0.00333 and 0.000199. This separation
 carries into the rest of the horizon. The split above does not attribute
 its later consequences; that would need the curves re-anchored at the
-decision point (option (a)), which is not estimated here.
+decision point (option (a)), which is not estimated here (see [Scope
+decision](#scope-decision)).
 
 # Limitations
 
@@ -386,8 +388,29 @@ decision point (option (a)), which is not estimated here.
   re-anchor the curves so that the strategies are identical up to the
   decision point.
 
+# Scope decision
+
+On 25 September 2026 it was decided (user decision, issue \#175) not to
+extend this analysis with any of the three analyses listed as
+limitations above:
+
+- all 32 combinations of the unknown CRP and TMB/BRAF values;
+- option (a), which re-anchors every strategy’s curves to standard of
+  care up to week 4;
+- a new ordering-constrained distribution selection in each scenario.
+
+The reason is that none of them is expected to change the conclusion.
+Standard of Care has the highest net monetary benefit at WTP = EUR
+51,000 per QALY in the base case and in all 4 scenarios. The lowest
+pairwise ICER of any guided strategy, in the base case or any scenario,
+is EUR 456,884 per QALY, about 9 times the threshold. The three analyses
+could shift the ICERs, but a guided strategy would need its ICER to fall
+roughly that many times to change the decision. Revisit it if a later
+model change brings a guided strategy’s ICER close to the threshold, or
+if a reviewer or the manuscript (issue \#160) requires these analyses.
+
 ------------------------------------------------------------------------
 
 **Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.0
+**Report version:** 1.1

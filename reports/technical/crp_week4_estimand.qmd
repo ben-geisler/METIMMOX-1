@@ -662,7 +662,8 @@ population-averaged OS differs from standard of care by
 `r fmt_small(pfs_gap[["crp"]])` and `r fmt_small(pfs_gap[["tmb_braf"]])`.
 This separation carries into the rest of the horizon. The split above does
 not attribute its later consequences; that would need the curves re-anchored
-at the decision point (option (a)), which is not estimated here.
+at the decision point (option (a)), which is not estimated here (see
+[Scope decision](#scope-decision)).
 
 # Limitations
 
@@ -691,8 +692,34 @@ at the decision point (option (a)), which is not estimated here.
   or re-anchor the curves so that the strategies are identical up to the
   decision point.
 
+# Scope decision
+
+```{r scope-decision}
+guided_rows <- rbind(scenario_rows("crp"), scenario_rows("tmb_braf"))
+finite_icers <- c(
+  guided_rows$ICER[guided_rows$Status == "Pairwise ICER vs SoC"],
+  base_pairwise$ICER[base_pairwise$Strategy %in% guided &
+                       base_pairwise$Status == "Pairwise ICER vs SoC"])
+min_icer <- min(finite_icers)
+decision_stable <- base_optimal == control &&
+  all(!is.na(optimal_all)) && all(optimal_all == control)
+```
+
+On 25 September 2026 it was decided (user decision, issue #175) not to extend
+this analysis with any of the three analyses listed as limitations above:
+
+- all `r n_combinations` combinations of the unknown CRP and TMB/BRAF values;
+- option (a), which re-anchors every strategy's curves to standard of care up
+  to week `r decision_week`;
+- a new ordering-constrained distribution selection in each scenario.
+
+`r if (decision_stable) sprintf("The reason is that none of them is expected to change the conclusion. %s has the highest net monetary benefit at WTP = %s per QALY in the base case and in all %d scenarios. The lowest pairwise ICER of any guided strategy, in the base case or any scenario, is %s per QALY, about %.0f times the threshold. The three analyses could shift the ICERs, but a guided strategy would need its ICER to fall roughly that many times to change the decision.", strategy_label(base_optimal), format_eur(WTP), nrow(sens$scenarios), format_eur(min_icer), min_icer / WTP) else "**The premise of this decision no longer holds:** standard of care no longer has the highest net monetary benefit in the base case and every scenario. Revisit the decision."`
+Revisit it if a later model change brings a guided strategy's ICER close to
+the threshold, or if a reviewer or the manuscript (issue #160) requires these
+analyses.
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.0
+**Report version:** 1.1
