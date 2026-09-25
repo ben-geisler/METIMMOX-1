@@ -119,17 +119,3 @@ get_interaction_hr <- function(results_df, pattern) {
     CI_Upper = results_df$CI_Upper[idx[1]]
   )
 }
-
-#' Extract the first matching interaction HR and standard error from ridge Cox
-extract_ridge_interaction <- function(model, term_pattern) {
-  if (is.null(model)) return(list(HR = NA_real_, SE = NA_real_))
-
-  coef_table <- summary(model)$coefficients
-  idx <- grep(term_pattern, rownames(coef_table))
-  if (length(idx) == 0) return(list(HR = NA_real_, SE = NA_real_))
-
-  list(
-    HR = exp(coef_table[idx[1], "coef"]),
-    SE = coef_table[idx[1], "se(coef)"]
-  )
-}
