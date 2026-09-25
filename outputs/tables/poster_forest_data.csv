@@ -1,22 +1,22 @@
 "endpoint","biomarker","effect","estimator","HR","lo","hi"
-"PFS","CRP","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.696463946304019,0.21053480134598,1.87109969272471
-"PFS","CRP","Interaction (predictive)","Single-biomarker (Firth Cox)",0.354630868180644,0.0986379220969573,1.43606797334287
-"PFS","TLR","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.262559422650238,0.110171913074514,0.682540912093023
-"PFS","TLR","Interaction (predictive)","Single-biomarker (Firth Cox)",0.979735737646238,0.305729226821144,2.95538504506869
-"PFS","TMB/BRAF","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.862176552810026,0.389044284102286,1.84305646473586
-"PFS","TMB/BRAF","Interaction (predictive)","Single-biomarker (Firth Cox)",0.368879108874858,0.124850422361703,1.08302650398958
+"PFS","CRP","Main effect (prognostic)","Single-biomarker (Firth Cox)",1.04039538751627,0.205053324079314,3.38727723305651
+"PFS","CRP","Interaction (predictive)","Single-biomarker (Firth Cox)",0.227271051969175,0.0506793030987058,1.37603065849756
+"PFS","TLR","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.248539753054531,0.094695407444258,0.712170653848971
+"PFS","TLR","Interaction (predictive)","Single-biomarker (Firth Cox)",0.505635314028149,0.137894897437577,1.74221951007902
+"PFS","TMB/BRAF","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.709938096574743,0.274113937537766,1.73815721834365
+"PFS","TMB/BRAF","Interaction (predictive)","Single-biomarker (Firth Cox)",0.389563356080869,0.113461150359562,1.32660027994293
 "OS","CRP","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.525770045546944,0.137635700004873,1.47671963744155
 "OS","CRP","Interaction (predictive)","Single-biomarker (Firth Cox)",0.721429125937493,0.200388836302281,3.22904743885728
 "OS","TLR","Main effect (prognostic)","Single-biomarker (Firth Cox)",0.191925718948431,0.0782914528835949,0.508833318444128
 "OS","TLR","Interaction (predictive)","Single-biomarker (Firth Cox)",1.97608392761439,0.610332643609094,6.05506196064821
 "OS","TMB/BRAF","Main effect (prognostic)","Single-biomarker (Firth Cox)",1.02896587411872,0.443195412698305,2.31016831002165
 "OS","TMB/BRAF","Interaction (predictive)","Single-biomarker (Firth Cox)",0.586423694002538,0.200541695916689,1.71869499514191
-"PFS","CRP","Main effect (prognostic)","Joint (Firth Cox)",0.711336957241493,0.199923406548941,2.14278101212471
-"PFS","CRP","Interaction (predictive)","Joint (Firth Cox)",0.580413457519597,0.133587381138987,2.76059643894406
-"PFS","TLR","Main effect (prognostic)","Joint (Firth Cox)",0.225735220511971,0.0906517447823402,0.603847007454743
-"PFS","TLR","Interaction (predictive)","Joint (Firth Cox)",1.64849094740927,0.485030253572097,5.36376514642088
-"PFS","TMB/BRAF","Main effect (prognostic)","Joint (Firth Cox)",0.653389033038793,0.283932593541288,1.4826843682405
-"PFS","TMB/BRAF","Interaction (predictive)","Joint (Firth Cox)",0.835817161660771,0.241746086977149,2.86167100379458
+"PFS","CRP","Main effect (prognostic)","Joint (Firth Cox)",1.49835395726581,0.271865684478954,5.79673351218933
+"PFS","CRP","Interaction (predictive)","Joint (Firth Cox)",0.260535448092832,0.045565981661651,1.85898372683123
+"PFS","TLR","Main effect (prognostic)","Joint (Firth Cox)",0.162087688647768,0.0550334194127707,0.499390242798329
+"PFS","TLR","Interaction (predictive)","Joint (Firth Cox)",0.829943532168128,0.215485858680795,3.01449237678572
+"PFS","TMB/BRAF","Main effect (prognostic)","Joint (Firth Cox)",0.707327826324343,0.272494842028105,1.78287679316521
+"PFS","TMB/BRAF","Interaction (predictive)","Joint (Firth Cox)",0.561153039493427,0.138649656955541,2.19996535390113
 "OS","CRP","Main effect (prognostic)","Joint (Firth Cox)",0.69568288920832,0.177376879628241,2.06359064906382
 "OS","CRP","Interaction (predictive)","Joint (Firth Cox)",0.711154568885655,0.171056936841417,3.55551014662498
 "OS","TLR","Main effect (prognostic)","Joint (Firth Cox)",0.20221249071181,0.0798099227136549,0.547116659027803

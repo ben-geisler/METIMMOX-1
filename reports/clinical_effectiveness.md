@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -23,6 +23,8 @@ Ben Geisler
   - [Forest Plot](#forest-plot)
 - [Sensitivity Analysis: Ridge
   Regression](#sensitivity-analysis-ridge-regression)
+  - [PFS Endpoint Sensitivity: Death-Censoring
+    Rule](#pfs-endpoint-sensitivity-death-censoring-rule)
 - [Exploratory: TLR as a Predictive Biomarker (Responder
   Analysis)](#exploratory-tlr-as-a-predictive-biomarker-responder-analysis)
   - [Descriptive Context](#descriptive-context)
@@ -64,6 +66,11 @@ Ben Geisler
   - [TLR landmark analysis
     (exploratory)](#tlr-landmark-analysis-exploratory)
 - [Summary](#summary)
+
+PFS counts recorded progression and deaths within 16 weeks (inclusive)
+of the last assessment, using TTPwk as the assessment-time proxy. In the
+primary cohort, 13 deaths without recorded progression are censored at
+that assessment and 1 count as PFS death events.
 
 # Overview
 
@@ -227,7 +234,7 @@ collinearity structure.
 | Control (FLOX alone) | 32 (47.1%) | 6 (26.1%) | 26 (57.8%) | 22 (53.7%) | 7 (29.2%) | 14 (46.7%) | 18 (47.4%) |
 | Experimental (FLOX/nivolumab) | 36 (52.9%) | 17 (73.9%) | 19 (42.2%) | 19 (46.3%) | 17 (70.8%) | 16 (53.3%) | 20 (52.6%) |
 | Deaths (OS events) | 59 (86.8%) | 17 (73.9%) | 42 (93.3%) | 32 (78.0%) | 24 (100.0%) | 23 (76.7%) | 36 (94.7%) |
-| PFS events (progression or death) | 63 (92.6%) | 19 (82.6%) | 44 (97.8%) | 36 (87.8%) | 24 (100.0%) | 25 (83.3%) | 38 (100.0%) |
+| PFS events (progression or death) | 50 (73.5%) | 15 (65.2%) | 35 (77.8%) | 28 (68.3%) | 21 (87.5%) | 19 (63.3%) | 31 (81.6%) |
 | CRP-positive (low CRP) | 23 (33.8%) | 23 (100.0%) | 0 (0.0%) | 18 (43.9%) | 4 (16.7%) | 11 (36.7%) | 12 (31.6%) |
 | TLR-positive (early response) | 41 (63.1%) | 18 (81.8%) | 23 (53.5%) | 41 (100.0%) | 0 (0.0%) | 18 (62.1%) | 23 (63.9%) |
 | TMB/BRAF-positive | 30 (44.1%) | 11 (47.8%) | 19 (42.2%) | 18 (43.9%) | 11 (45.8%) | 30 (100.0%) | 0 (0.0%) |
@@ -270,14 +277,14 @@ assumption for that covariate.
 
 | Covariate | \<U+03C7\>\<U+00B2\> (OS) | p-value | \<U+03C7\>\<U+00B2\> (PFS) | p-value |
 |:---|---:|:---|---:|:---|
-| Age | 0.68 | 0.411 | 0.07 | 0.796 |
-| sex | 0.12 | 0.729 | 0.16 | 0.689 |
-| Rx | 4.83 | 0.028 | 0.01 | 0.926 |
-| crp_num | 0.38 | 0.536 | 2.29 | 0.130 |
-| tmb_braf_num | 0.94 | 0.332 | 2.98 | 0.084 |
-| Rx:crp_num | 3.08 | 0.079 | 1.20 | 0.272 |
-| Rx:tmb_braf_num | 0.97 | 0.324 | 1.62 | 0.203 |
-| GLOBAL | 8.98 | 0.254 | 11.48 | 0.119 |
+| Age | 0.68 | 0.411 | 0.05 | 0.816 |
+| sex | 0.12 | 0.729 | 0.01 | 0.928 |
+| Rx | 4.83 | 0.028 | 0.03 | 0.856 |
+| crp_num | 0.38 | 0.536 | 2.14 | 0.144 |
+| tmb_braf_num | 0.94 | 0.332 | 3.67 | 0.056 |
+| Rx:crp_num | 3.08 | 0.079 | 1.53 | 0.216 |
+| Rx:tmb_braf_num | 0.97 | 0.324 | 3.32 | 0.068 |
+| GLOBAL | 8.98 | 0.254 | 14.28 | 0.046 |
 
 Schoenfeld Residual Test for Proportional Hazards Assumption
 
@@ -318,13 +325,13 @@ Unified Model - Overall Survival: Standard Cox vs Firth
 
 | Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
 |:------------------|:-------------------------|:------------------|
-| CRP x Rx          | 0.44 (0.11-1.74)         | 0.42 (0.11-1.68)  |
-| TMB/BRAF x Rx     | 0.66 (0.21-2.12)         | 0.66 (0.21-2.05)  |
-| Rx (Experimental) | 1.79 (0.87-3.72)         | 1.79 (0.88-3.73)  |
-| CRP               | 0.75 (0.25-2.26)         | 0.81 (0.26-2.21)  |
-| TMB/BRAF          | 0.77 (0.35-1.71)         | 0.79 (0.36-1.72)  |
-| Age               | 1.00 (0.97-1.03)         | 1.00 (0.97-1.03)  |
-| Sex               | 1.07 (0.62-1.84)         | 1.06 (0.62-1.84)  |
+| CRP x Rx          | 0.28 (0.06-1.41)         | 0.26 (0.06-1.34)  |
+| TMB/BRAF x Rx     | 0.67 (0.18-2.52)         | 0.65 (0.18-2.41)  |
+| Rx (Experimental) | 1.82 (0.79-4.17)         | 1.81 (0.81-4.19)  |
+| CRP               | 1.15 (0.31-4.27)         | 1.29 (0.32-4.04)  |
+| TMB/BRAF          | 0.67 (0.26-1.75)         | 0.70 (0.27-1.76)  |
+| Age               | 0.99 (0.96-1.02)         | 0.99 (0.96-1.02)  |
+| Sex               | 1.15 (0.63-2.12)         | 1.15 (0.63-2.12)  |
 
 Unified Model - Progression-Free Survival: Standard Cox vs Firth
 
@@ -355,13 +362,13 @@ Unified Model: Overall Survival - Full Coefficient Table
 
 | Term                            | HR (95% CI)      | PLRT p-value |
 |:--------------------------------|:-----------------|:-------------|
-| RxExperimental arm:crp_num      | 0.42 (0.11-1.68) | 0.213        |
-| RxExperimental arm:tmb_braf_num | 0.66 (0.21-2.05) | 0.469        |
-| Age                             | 1.00 (0.97-1.03) | 0.826        |
-| sex1                            | 1.06 (0.62-1.84) | 0.821        |
-| RxExperimental arm              | 1.79 (0.88-3.73) | 0.108        |
-| crp_num                         | 0.81 (0.26-2.21) | 0.687        |
-| tmb_braf_num                    | 0.79 (0.36-1.72) | 0.550        |
+| RxExperimental arm:crp_num      | 0.26 (0.06-1.34) | 0.102        |
+| RxExperimental arm:tmb_braf_num | 0.65 (0.18-2.41) | 0.516        |
+| Age                             | 0.99 (0.96-1.02) | 0.611        |
+| sex1                            | 1.15 (0.63-2.12) | 0.649        |
+| RxExperimental arm              | 1.81 (0.81-4.19) | 0.147        |
+| crp_num                         | 1.29 (0.32-4.04) | 0.695        |
+| tmb_braf_num                    | 0.70 (0.27-1.76) | 0.453        |
 
 Unified Model: Progression-Free Survival - Full Coefficient Table
 
@@ -410,14 +417,14 @@ regularization.
 
 | Interaction   | Firth (95% CI)   | Ridge (point est.) |
 |:--------------|:-----------------|:-------------------|
-| CRP x Rx      | 0.42 (0.11-1.68) | 0.33               |
-| TMB/BRAF x Rx | 0.66 (0.21-2.05) | 0.51               |
+| CRP x Rx      | 0.26 (0.06-1.34) | 0.33               |
+| TMB/BRAF x Rx | 0.65 (0.18-2.41) | 0.45               |
 
 Progression-Free Survival: Firth vs Ridge Regression
 
 *Note:* Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF
 main effects only; interaction product terms built before fitting;
-lambda by 10-fold CV (lambda.min = 109.761). glmnet gives no standard
+lambda by 10-fold CV (lambda.min = 88.691). glmnet gives no standard
 errors.
 
 **Interpretation:** Firth provides the best unbiased point estimate
@@ -431,6 +438,33 @@ moves substantially under ridge, the effect is sensitive to how the
 biomarker main effects are estimated in this sample.
 
 
+
+## PFS Endpoint Sensitivity: Death-Censoring Rule
+
+| Rule | Window (wk) | Anchor | PFS events | Deaths censored | CRP x Rx HR (95% CI) | PLRT p | TMB/BRAF x Rx HR (95% CI) | PLRT p | KM control (wk) | KM experimental (wk) |
+|:---|---:|:---|---:|---:|:---|:---|:---|:---|---:|---:|
+| primary | 16 | TTPwk | 50 | 13 | 0.26 (0.06-1.34) | 0.102 | 0.65 (0.18-2.41) | 0.516 | 41.9 | 42.9 |
+| all_deaths | Inf | TTPwk | 63 | 0 | 0.42 (0.11-1.68) | 0.213 | 0.66 (0.21-2.05) | 0.469 | 44.0 | 45.9 |
+| anchor_alt | 16 | LastEvalwk | 50 | 13 | 0.36 (0.09-1.78) | 0.197 | 0.80 (0.22-2.91) | 0.737 | 41.9 | 42.9 |
+| window8 | 8 | TTPwk | 50 | 13 | 0.26 (0.06-1.34) | 0.102 | 0.65 (0.18-2.41) | 0.516 | 41.9 | 42.9 |
+| window24 | 24 | TTPwk | 51 | 12 | 0.24 (0.06-1.23) | 0.084 | 0.68 (0.19-2.47) | 0.553 | 41.9 | 42.9 |
+
+PFS sensitivity to the death window and last-assessment proxy, on the
+same complete-case cohort
+
+*Note:* A death without recorded progression is an event if the gap from
+the assessment is at most the window; otherwise censor at that
+assessment. Inf reproduces the pre-181 rule, an upper bound on observed
+PFS follow-up. Recorded progression times are unchanged. KM values are
+median PFS by randomized arm. TTPwk is Days until progression;
+LastEvalwk is Days until last evaluation. Assessment-date provenance
+remains subject to data-provider reconciliation.
+
+The primary rule gives 50 PFS events and CRP x Rx HR 0.26 (0.06-1.34);
+counting all deaths gives 63 events and HR 0.42 (0.11-1.68). Using the
+alternative assessment date gives HR 0.36 (0.09-1.78). These analyses
+change endpoint ascertainment while holding the patient cohort and model
+formula fixed.
 
 # Exploratory: TLR as a Predictive Biomarker (Responder Analysis)
 
@@ -504,13 +538,13 @@ TLR Responder Model - Overall Survival: Standard Cox vs Firth
 
 | Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
 |:------------------|:-------------------------|:------------------|
-| TLR x Rx          | 1.47 (0.45-4.81)         | 1.49 (0.45-4.67)  |
-| TLR (main effect) | 0.24 (0.09-0.61)         | 0.24 (0.10-0.62)  |
-| Rx (Experimental) | 0.75 (0.29-1.96)         | 0.73 (0.30-1.97)  |
-| CRP               | 0.46 (0.23-0.92)         | 0.47 (0.23-0.92)  |
-| TMB/BRAF          | 0.55 (0.30-1.00)         | 0.56 (0.30-0.99)  |
-| Age               | 0.99 (0.96-1.02)         | 0.99 (0.96-1.02)  |
-| Sex               | 1.11 (0.62-2.01)         | 1.11 (0.62-2.01)  |
+| TLR x Rx          | 0.71 (0.19-2.65)         | 0.73 (0.20-2.56)  |
+| TLR (main effect) | 0.18 (0.06-0.54)         | 0.19 (0.07-0.56)  |
+| Rx (Experimental) | 1.31 (0.43-3.94)         | 1.26 (0.45-3.91)  |
+| CRP               | 0.42 (0.18-0.98)         | 0.44 (0.19-0.97)  |
+| TMB/BRAF          | 0.46 (0.23-0.94)         | 0.48 (0.23-0.94)  |
+| Age               | 1.00 (0.97-1.03)         | 1.00 (0.97-1.03)  |
+| Sex               | 1.10 (0.55-2.18)         | 1.10 (0.56-2.17)  |
 
 TLR Responder Model - Progression-Free Survival: Standard Cox vs Firth
 
@@ -534,13 +568,13 @@ TLR Responder Model: Overall Survival - Full Coefficient Table
 
 | Term                       | HR (95% CI)      | PLRT p-value |
 |:---------------------------|:-----------------|:-------------|
-| RxExperimental arm:tlr_num | 1.49 (0.45-4.67) | 0.504        |
-| Age                        | 0.99 (0.96-1.02) | 0.357        |
-| sex1                       | 1.11 (0.62-2.01) | 0.728        |
-| RxExperimental arm         | 0.73 (0.30-1.97) | 0.522        |
-| crp_num                    | 0.47 (0.23-0.92) | 0.027        |
-| tmb_braf_num               | 0.56 (0.30-0.99) | 0.047        |
-| tlr_num                    | 0.24 (0.10-0.62) | 0.005        |
+| RxExperimental arm:tlr_num | 0.73 (0.20-2.56) | 0.630        |
+| Age                        | 1.00 (0.97-1.03) | 0.987        |
+| sex1                       | 1.10 (0.56-2.17) | 0.788        |
+| RxExperimental arm         | 1.26 (0.45-3.91) | 0.664        |
+| crp_num                    | 0.44 (0.19-0.97) | 0.043        |
+| tmb_braf_num               | 0.48 (0.23-0.94) | 0.033        |
+| tlr_num                    | 0.19 (0.07-0.56) | 0.004        |
 
 TLR Responder Model: Progression-Free Survival - Full Coefficient Table
 
@@ -573,13 +607,13 @@ are shown for reference.
 
 | Term              | Firth (95% CI)   | Ridge HR (SE)   |
 |:------------------|:-----------------|:----------------|
-| TLR x Rx          | 1.49 (0.45-4.67) | 1.33 (SE: 0.58) |
-| TLR (main effect) | 0.24 (0.10-0.62) | 0.26 (SE: 0.47) |
-| Age               | 0.99 (0.96-1.02) | 0.99 (SE: 0.02) |
-| Sex               | 1.11 (0.62-2.01) | 1.12 (SE: 0.30) |
-| Rx (Experimental) | 1.49 (0.45-4.67) | 0.80 (SE: 0.48) |
-| CRP               | 0.47 (0.23-0.92) | 0.46 (SE: 0.36) |
-| TMB/BRAF          | 0.56 (0.30-0.99) | 0.55 (SE: 0.30) |
+| TLR x Rx          | 0.73 (0.20-2.56) | 0.67 (SE: 0.63) |
+| TLR (main effect) | 0.19 (0.07-0.56) | 0.20 (SE: 0.53) |
+| Age               | 1.00 (0.97-1.03) | 1.00 (SE: 0.02) |
+| Sex               | 1.10 (0.56-2.17) | 1.11 (SE: 0.35) |
+| Rx (Experimental) | 0.73 (0.20-2.56) | 1.38 (SE: 0.55) |
+| CRP               | 0.44 (0.19-0.97) | 0.42 (SE: 0.42) |
+| TMB/BRAF          | 0.48 (0.23-0.94) | 0.47 (SE: 0.36) |
 
 TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all
 coefficients
@@ -645,7 +679,7 @@ cohort degrades gracefully rather than aborting the render.
 | Endpoint | N in TLR-complete cohort | N at risk at week 9 | N excluded (event/censor \< week 9) | Events from week 9 |
 |:---|---:|---:|---:|---:|
 | Overall survival | 65 | 65 | 0 | 56 |
-| Progression-free survival | 65 | 60 | 5 | 55 |
+| Progression-free survival | 65 | 56 | 9 | 44 |
 
 Week-9 landmark cohort: attrition and remaining events
 
@@ -662,10 +696,10 @@ analysis, overall and split by the TLR status that becomes defined at
 the week-9 scan. The at-risk set is endpoint-specific: the
 **overall-survival** cohort keeps everyone alive at week 9, whereas the
 **progression-free-survival** cohort additionally drops patients who had
-already progressed by week 9. The PFS cohort is therefore smaller.
-Reporting both fixes the denominators for the OS and PFS models that
-follow and makes the composition of the two TLR groups directly
-comparable.
+progressed, died within the death window, or been censored by week 9.
+The PFS cohort is therefore smaller. Reporting both fixes the
+denominators for the OS and PFS models that follow and makes the
+composition of the two TLR groups directly comparable.
 
 #### Overall-survival at-risk set (OSwk \> 9)
 
@@ -677,7 +711,7 @@ comparable.
 | Control arm (FLOX)                |     29 (44.6%) |   22 (53.7%) |    7 (29.2%) |
 | Experimental arm (FLOX/nivolumab) |     36 (55.4%) |   19 (46.3%) |   17 (70.8%) |
 | Deaths (OS events)                |     56 (86.2%) |   32 (78.0%) |  24 (100.0%) |
-| PFS events (progression or death) |     60 (92.3%) |   36 (87.8%) |  24 (100.0%) |
+| PFS events (progression or death) |     49 (75.4%) |   28 (68.3%) |   21 (87.5%) |
 | CRP-positive                      |     22 (33.8%) |   18 (43.9%) |    4 (16.7%) |
 | TMB/BRAF-positive                 |     29 (44.6%) |   18 (43.9%) |   11 (45.8%) |
 
@@ -692,21 +726,21 @@ deaths without a TLR value are already outside this cohort).
 
 | Characteristic                    | At-risk cohort | TLR-positive | TLR-negative |
 |:----------------------------------|---------------:|-------------:|-------------:|
-| n                                 |             60 |           41 |           19 |
-| Age, years, mean (SD)             |     64.4 (9.9) |   65.0 (9.9) |  63.0 (10.2) |
-| Female sex                        |     28 (46.7%) |   19 (46.3%) |    9 (47.4%) |
-| Control arm (FLOX)                |     28 (46.7%) |   22 (53.7%) |    6 (31.6%) |
-| Experimental arm (FLOX/nivolumab) |     32 (53.3%) |   19 (46.3%) |   13 (68.4%) |
-| Deaths (OS events)                |     51 (85.0%) |   32 (78.0%) |  19 (100.0%) |
-| PFS events (progression or death) |     55 (91.7%) |   36 (87.8%) |  19 (100.0%) |
-| CRP-positive                      |     22 (36.7%) |   18 (43.9%) |    4 (21.1%) |
-| TMB/BRAF-positive                 |     26 (43.3%) |   18 (43.9%) |    8 (42.1%) |
+| n                                 |             56 |           38 |           18 |
+| Age, years, mean (SD)             |     64.7 (9.6) |   65.6 (9.2) |  62.8 (10.5) |
+| Female sex                        |     26 (46.4%) |   18 (47.4%) |    8 (44.4%) |
+| Control arm (FLOX)                |     24 (42.9%) |   19 (50.0%) |    5 (27.8%) |
+| Experimental arm (FLOX/nivolumab) |     32 (57.1%) |   19 (50.0%) |   13 (72.2%) |
+| Deaths (OS events)                |     47 (83.9%) |   29 (76.3%) |  18 (100.0%) |
+| PFS events (progression or death) |     44 (78.6%) |   28 (73.7%) |   16 (88.9%) |
+| CRP-positive                      |     20 (35.7%) |   16 (42.1%) |    4 (22.2%) |
+| TMB/BRAF-positive                 |     24 (42.9%) |   17 (44.7%) |    7 (38.9%) |
 
 Characteristics of the week-9 PFS landmark cohort (alive and
 progression-free at week 9), by TLR status
 
-The PFS at-risk set drops the 5 patient(s) who had already progressed,
-died, or were censored by week 9, leaving n = 60.
+The PFS at-risk set drops the 9 patient(s) who had already progressed,
+died, or were censored by week 9, leaving n = 56.
 
 *Definitions:* percentages are column percentages; the “Deaths” and “PFS
 events” rows count events over the whole follow-up, not only after the
@@ -763,13 +797,13 @@ Landmark (Week 9) TLR Model - Overall Survival: Standard Cox vs Firth
 
 | Term              | Standard Cox HR (95% CI) | Firth HR (95% CI) |
 |:------------------|:-------------------------|:------------------|
-| TLR x Rx          | 1.86 (0.52-6.64)         | 1.88 (0.52-6.38)  |
-| TLR (main effect) | 0.22 (0.08-0.61)         | 0.22 (0.09-0.63)  |
-| Rx (Experimental) | 0.55 (0.19-1.61)         | 0.54 (0.20-1.63)  |
-| CRP               | 0.53 (0.26-1.10)         | 0.54 (0.26-1.09)  |
-| TMB/BRAF          | 0.44 (0.23-0.84)         | 0.45 (0.23-0.83)  |
-| Age               | 0.99 (0.96-1.03)         | 0.99 (0.96-1.03)  |
-| Sex               | 1.02 (0.55-1.91)         | 1.02 (0.55-1.91)  |
+| TLR x Rx          | 0.86 (0.21-3.54)         | 0.88 (0.21-3.38)  |
+| TLR (main effect) | 0.17 (0.05-0.56)         | 0.18 (0.06-0.58)  |
+| Rx (Experimental) | 0.98 (0.28-3.42)         | 0.95 (0.29-3.40)  |
+| CRP               | 0.54 (0.23-1.26)         | 0.55 (0.23-1.24)  |
+| TMB/BRAF          | 0.34 (0.15-0.73)         | 0.35 (0.16-0.73)  |
+| Age               | 1.00 (0.97-1.04)         | 1.00 (0.97-1.04)  |
+| Sex               | 0.93 (0.44-1.97)         | 0.94 (0.45-1.97)  |
 
 Landmark (Week 9) TLR Model - Progression-Free Survival: Standard Cox vs
 Firth
@@ -794,13 +828,13 @@ Landmark TLR Model: Overall Survival - Full Coefficient Table
 
 | Term                       | HR (95% CI)      | PLRT p-value |
 |:---------------------------|:-----------------|:-------------|
-| RxExperimental arm:tlr_num | 1.88 (0.52-6.38) | 0.327        |
-| Age                        | 0.99 (0.96-1.03) | 0.703        |
-| sex1                       | 1.02 (0.55-1.91) | 0.946        |
-| RxExperimental arm         | 0.54 (0.20-1.63) | 0.264        |
-| crp_num                    | 0.54 (0.26-1.09) | 0.085        |
-| tmb_braf_num               | 0.45 (0.23-0.83) | 0.011        |
-| tlr_num                    | 0.22 (0.09-0.63) | 0.006        |
+| RxExperimental arm:tlr_num | 0.88 (0.21-3.38) | 0.852        |
+| Age                        | 1.00 (0.97-1.04) | 0.807        |
+| sex1                       | 0.94 (0.45-1.97) | 0.860        |
+| RxExperimental arm         | 0.95 (0.29-3.40) | 0.936        |
+| crp_num                    | 0.55 (0.23-1.24) | 0.153        |
+| tmb_braf_num               | 0.35 (0.16-0.73) | 0.005        |
+| tlr_num                    | 0.18 (0.06-0.58) | 0.006        |
 
 Landmark TLR Model: Progression-Free Survival - Full Coefficient Table
 
@@ -831,13 +865,13 @@ TMB/BRAF are unpenalized.
 
 | Term              | Firth (95% CI)   | Ridge HR (SE)   |
 |:------------------|:-----------------|:----------------|
-| TLR x Rx          | 1.88 (0.52-6.38) | 1.63 (SE: 0.62) |
-| TLR (main effect) | 0.22 (0.09-0.63) | 0.25 (SE: 0.50) |
-| Age               | 0.99 (0.96-1.03) | 0.99 (SE: 0.02) |
-| Sex               | 1.02 (0.55-1.91) | 1.03 (SE: 0.32) |
-| Rx (Experimental) | 1.88 (0.52-6.38) | 0.61 (SE: 0.54) |
-| CRP               | 0.54 (0.26-1.09) | 0.53 (SE: 0.37) |
-| TMB/BRAF          | 0.45 (0.23-0.83) | 0.45 (SE: 0.33) |
+| TLR x Rx          | 0.88 (0.21-3.38) | 0.79 (SE: 0.68) |
+| TLR (main effect) | 0.18 (0.06-0.58) | 0.19 (SE: 0.57) |
+| Age               | 1.00 (0.97-1.04) | 1.00 (SE: 0.02) |
+| Sex               | 0.94 (0.45-1.97) | 0.95 (SE: 0.38) |
+| Rx (Experimental) | 0.88 (0.21-3.38) | 1.05 (SE: 0.62) |
+| CRP               | 0.55 (0.23-1.24) | 0.54 (SE: 0.43) |
+| TMB/BRAF          | 0.35 (0.16-0.73) | 0.34 (SE: 0.39) |
 
 Landmark TLR Model - Progression-Free Survival: Firth vs Ridge, all
 coefficients
@@ -857,30 +891,31 @@ is invariant to a common shift of the time origin when no one leaves the
 risk set. The OS responder signal is therefore not an early-death
 guarantee-time artefact.
 
-*Progression-free survival* exposes a deeper problem. 5 patients are
-excluded, of whom 5 progressed, 5 of them **TLR-negative**. This is not
-a coincidence: progression and TLR are read from the *same* first
-on-treatment scan, so a patient whose tumour grows at that scan is
-simultaneously classified as a progression and as TLR-negative. In total
-8 patients progressed at their first scan, all TLR-negative. The fixed
-week-9 cut removes only the 5 whose scan fell before week 9 and **keeps
-3** whose scan fell after it, with landmark times of 0.3 to 1.0 weeks;
-it also keeps 19 patients whose TLR was read after week 9, so for them
-the landmark covariate is measured after the landmark. Even so, the
-landmark shifts the Firth TLR x Rx HR from 1.49 (0.45-4.67) (responder)
-to 1.88 (0.52-6.38) (week-9 landmark). The responder PFS association is
-thus **partly tautological** — TLR-negativity and early progression are
-the same measurement — which the landmark makes explicit by excluding
-the coupled events. The sensitivity landmarks below remove all 8
-first-scan progressors.
+*Progression-free survival* exposes a deeper problem. 9 patients are
+excluded, of whom 5 progressed, 5 of them **TLR-negative**; 0 died
+progression-free within the death window and 4 were censored at a last
+assessment on or before week 9. This is not a coincidence: progression
+and TLR are read from the *same* first on-treatment scan, so a patient
+whose tumour grows at that scan is simultaneously classified as a
+progression and as TLR-negative. In total 8 patients progressed at their
+first scan, all TLR-negative. The fixed week-9 cut removes only the 5
+whose scan fell before week 9 and **keeps 3** whose scan fell after it,
+with landmark times of 0.3 to 1.0 weeks; it also keeps 19 patients whose
+TLR was read after week 9, so for them the landmark covariate is
+measured after the landmark. Even so, the landmark shifts the Firth TLR
+x Rx HR from 0.73 (0.20-2.56) (responder) to 0.88 (0.21-3.38) (week-9
+landmark). The responder PFS association is thus **partly tautological**
+— TLR-negativity and early progression are the same measurement — which
+the landmark makes explicit by excluding the coupled events. The
+sensitivity landmarks below remove all 8 first-scan progressors.
 
 ### Landmark Sensitivity: Scan-Date and Week-12 Landmarks
 
-| Landmark | N (OS) | N (PFS) | PFS events | First-scan progressors retained | TLR read after landmark | OS TLR x Rx HR (95% CI) | PLRT p | PFS TLR x Rx HR (95% CI) | PLRT p |
-|:---|---:|---:|---:|---:|---:|:---|:---|:---|:---|
-| Fixed week 9 (primary) | 65 | 60 | 55 | 3 | 19 | 2.47 (0.75-7.75) | 0.135 | 1.88 (0.52-6.38) | 0.327 |
-| Per-patient first on-treatment CT date | 65 | 57 | 52 | 0 | 0 | 2.42 (0.73-7.58) | 0.144 | 1.88 (0.48-6.85) | 0.350 |
-| Fixed week 12 | 65 | 57 | 52 | 0 | 1 | 2.47 (0.75-7.75) | 0.135 | 1.97 (0.51-7.16) | 0.318 |
+| Landmark | N (OS) | N (PFS) | PFS events | Censored before landmark | First-scan progressors retained | TLR read after landmark | OS TLR x Rx HR (95% CI) | PLRT p | PFS TLR x Rx HR (95% CI) | PLRT p |
+|:---|---:|---:|---:|---:|---:|---:|:---|:---|:---|:---|
+| Fixed week 9 (primary) | 65 | 56 | 44 | 4 | 3 | 19 | 2.47 (0.75-7.75) | 0.135 | 0.88 (0.21-3.38) | 0.852 |
+| Per-patient first on-treatment CT date | 65 | 52 | 41 | 5 | 0 | 0 | 2.42 (0.73-7.58) | 0.144 | 0.75 (0.16-3.18) | 0.703 |
+| Fixed week 12 | 65 | 51 | 41 | 6 | 0 | 1 | 2.47 (0.75-7.75) | 0.135 | 0.85 (0.18-3.57) | 0.829 |
 
 TLR x Rx interaction under three landmark definitions (Firth Cox, full
 adjustment set)
@@ -895,20 +930,22 @@ came after the landmark. The per-patient landmark sets both to zero by
 construction.
 
 The per-patient scan-date landmark and the week-12 landmark both exclude
-all 8 first-scan progressors (PFS cohort n = 57 and 57 versus 60 at week
-9) and give a PFS TLR x Rx HR of 1.88 (0.48-6.85) (PLRT p 0.350) and
-1.97 (0.51-7.16) (p 0.318), against 1.88 (0.52-6.38) (p 0.327) at week
-9. No patient dies before week 12, so the OS estimate is unchanged under
-every landmark. The direction of the PFS estimate is therefore not an
-artefact of the three first-scan progressors that the week-9 cut
-retains, but the confidence intervals are wide under every definition.
+all 8 first-scan progressors (PFS cohort n = 52 and 51 versus 56 at week
+9) and give a PFS TLR x Rx HR of 0.75 (0.16-3.18) (PLRT p 0.703) and
+0.85 (0.18-3.57) (p 0.829), against 0.88 (0.21-3.38) (p 0.852) at week
+9. No patient dies before week 12, so the two fixed landmarks give
+identical OS estimates; resetting time to each patient’s scan date
+changes the risk sets and can change the OS estimate. The direction of
+the PFS estimate is therefore not an artefact of the 3 first-scan
+progressors that the week-9 cut retains, but the confidence intervals
+are wide under every definition.
 
 Neither analysis resolves the most fundamental issue: TLR lies on the
 causal path of treatment (Rx -\> TLR -\> outcome), so the TLR x Rx
 contrast is not a baseline patient-selection estimate under any time
 origin; disentangling it would require formal causal mediation, not a
 landmark. All estimates remain exploratory and imprecise (week-9 PLRT p
-0.135 OS, 0.327 PFS) and must not guide treatment selection.
+0.135 OS, 0.852 PFS) and must not guide treatment selection.
 
 
 
@@ -916,25 +953,31 @@ landmark. All estimates remain exploratory and imprecise (week-9 PLRT p
 
 ## Primary interaction results
 
+The death-censoring sensitivity gives CRP x Rx PFS HR 0.26 (0.06-1.34)
+under the primary window, 0.42 (0.11-1.68) when all deaths count, and
+0.36 (0.09-1.78) under the alternative last-assessment proxy;
+uncertainty about off-study ascertainment therefore affects this
+exploratory estimate.
+
 Neither biomarker-treatment interaction reached conventional
 significance in the unified model (Firth HR with 95% CI in parentheses).
 For **overall survival**, CRP × Rx yielded HR 0.65 (0.19-2.60) (PLRT p =
 0.520) and TMB/BRAF × Rx HR 0.95 (0.32-2.82) (p = 0.919) — point
 estimates close to null with very wide confidence intervals. For
 **progression-free survival**, the CRP × Rx interaction was
-directionally favourable but imprecise (HR 0.42 (0.11-1.68), p = 0.213):
+directionally favourable but imprecise (HR 0.26 (0.06-1.34), p = 0.102):
 CRP-positive patients in the experimental arm had a lower estimated
 hazard of progression or death than CRP-positive controls, though the CI
 spans more than an order of magnitude and includes 1. The TMB/BRAF × Rx
-PFS interaction was HR 0.66 (0.21-2.05) (p = 0.469). These results are
+PFS interaction was HR 0.65 (0.18-2.41) (p = 0.516). These results are
 consistent with the trial being underpowered to detect treatment-effect
-heterogeneity (n = 68, 63 PFS events (progression or death), 59 deaths):
+heterogeneity (n = 68, 50 PFS events (progression or death), 59 deaths):
 even a moderate subgroup effect (HR ~0.5) would require far larger
 samples for reliable estimation.
 
 The PFS pattern is worth noting as a hypothesis-generating finding. The
-CRP direction (HR 0.42) is consistent with the DAG association test
-showing CRP → PFS (unadjusted Firth HR 0.41, p = 0.001; see the DAG
+CRP direction (HR 0.26) is consistent with the DAG association test
+showing CRP → PFS (unadjusted Firth HR 0.39, p = 0.003; see the DAG
 associations report) and the biological hypothesis that low CRP
 (reflecting lower systemic inflammation) identifies patients more likely
 to respond to immunotherapy. However, the OS CRP interaction estimate
@@ -943,31 +986,26 @@ clearly translate to an OS benefit in this dataset.
 
 ## Proportional hazards
 
-The PH assumption was well supported in overall survival (Schoenfeld
-global p = 0.254). In progression-free survival the global test
-indicated some departure from proportionality (p = 0.119), and this is
-carried by the biomarker main effects rather than the interaction terms:
-CRP main effect p = 0.130, TMB/BRAF main effect p = 0.084, versus CRP ×
-Rx p = 0.272 and TMB/BRAF × Rx p = 0.203. This suggests that the
-prognostic hazard ratios for CRP and TMB/BRAF are not constant over time
-in PFS, which may reflect different kinetics of early vs late events
-(now including deaths) across biomarker-defined subgroups. The PFS
-main-effect estimates for CRP and TMB/BRAF should therefore be read as
-time-averaged effects; a time-varying Cox model or landmark analysis
-would be more appropriate for characterizing them. The interaction
-estimates themselves are not flagged by this diagnostic.
+The Schoenfeld global test gives p = 0.254 for OS and p = 0.046 for PFS.
+In PFS, the biomarker main-effect tests give p = 0.144 for CRP and 0.056
+for TMB/BRAF; the interaction tests give p = 0.216 and 0.068,
+respectively. These tests do not establish that the global PFS departure
+is confined to the main effects or that the interaction hazards are
+constant. The reported Cox hazard ratios are time-averaged summaries;
+time-varying effects would require further investigation in a larger
+cohort.
 
 ## Ridge regression sensitivity
 
 The ridge model penalizes the CRP and TMB/BRAF main effects with a
-cross-validated lambda (OS lambda.min = 86.857, PFS lambda.min =
-109.761) and estimates the interaction terms as pre-built product terms,
-so the ridge and Firth interaction coefficients are the same
+cross-validated lambda (OS lambda.min = 86.857, PFS lambda.min = 88.691)
+and estimates the interaction terms as pre-built product terms, so the
+ridge and Firth interaction coefficients are the same
 treatment-by-biomarker contrast. For OS, the CRP × Rx estimate changes
 substantially under this penalization (Firth HR 0.65 → Ridge HR 0.40),
 and the TMB/BRAF × Rx estimate changes little (0.95 → 0.86). For PFS,
-the CRP × Rx estimate changes little (0.42 → 0.33) and the TMB/BRAF × Rx
-estimate changes little (0.66 → 0.51). A shift of at least 1.5-fold in
+the CRP × Rx estimate changes little (0.26 → 0.33) and the TMB/BRAF × Rx
+estimate changes little (0.65 → 0.45). A shift of at least 1.5-fold in
 the HR is labelled “substantial”. Because only the main effects are
 penalized, any shift in an interaction term reflects redistribution of
 the shrunken main-effect signal rather than independent support for a
@@ -983,15 +1021,15 @@ The exploratory responder model —
 differential treatment effect between TLR-positive and TLR-negative
 subgroups while adjusting for the pre-immunotherapy biomarkers as
 prognostic main effects. The Firth-estimated TLR × Rx HR was 2.47
-(0.75-7.75) for overall survival and 1.49 (0.45-4.67) for
+(0.75-7.75) for overall survival and 0.73 (0.20-2.56) for
 progression-free survival. The OS estimate sits **above 1.0**, which
 directionally implies the (TLR-positive vs TLR-negative) hazard contrast
 is *worse* on the experimental arm than on the control arm — the
 opposite of a “TLR-positive predicts immunotherapy benefit” pattern. PFS
 is closer to null. Ridge shrinkage of the TLR terms gives 2.12 (SE:
-0.58) (OS) and 1.33 (SE: 0.58) (PFS): ridge moves the OS estimate
+0.58) (OS) and 0.67 (SE: 0.63) (PFS): ridge moves the OS estimate
 modestly toward null but preserves the directional pattern, and barely
-changes the PFS estimate. PLRT p-values (0.135 OS, 0.504 PFS) do not
+changes the PFS estimate. PLRT p-values (0.135 OS, 0.630 PFS) do not
 reach conventional significance, consistent with the wide
 profile-likelihood CIs in this small sample.
 
@@ -1014,34 +1052,36 @@ generation, but not a causal predictive-biomarker estimate.
 ## TLR landmark analysis (exploratory)
 
 A **week-9 landmark analysis** conditions on survival to the protocol
-time of the second (first on-treatment) CT — the scan at which TLR is
-defined — and measures survival from that point, to test whether the
-responder signal is a guarantee-time artefact. The two endpoints diverge
-instructively. For **OS**, 0 patients are excluded (no early deaths), so
-the landmark estimate is identical to the responder estimate (2.47
-(0.75-7.75)): the OS signal is not driven by early-death immortal time.
-For **PFS**, 5 patients are excluded, with 5 of the 5 excluded
-progressors being TLR-negative, because progression and TLR are
-ascertained at the same scan; removing these coupled events moves the
-Firth TLR × Rx HR from 1.49 (0.45-4.67) to 1.88 (0.52-6.38). The PFS
-responder association is therefore partly tautological. Because the
-actual first scans fell between weeks 6.7 and 12.1, the fixed week-9 cut
-retains 3 of the 8 first-scan progressors and 19 patients whose TLR was
-read after the landmark; a per-patient landmark at the scan date and a
-fixed week-12 landmark, which exclude all first-scan progressors, give
-PFS TLR × Rx HRs of 1.88 (0.48-6.85) and 1.97 (0.51-7.16), so the
-direction of the estimate does not depend on the landmark choice. Under
-any time origin TLR remains on the causal path of treatment, so a
-definitive predictive-biomarker estimate would require causal mediation
-rather than a landmark. Both analyses remain underpowered and
-exploratory, and neither supports baseline treatment selection on TLR.
+time of the second (first on-treatment) CT — close to the first
+on-treatment scan at which TLR is defined — and measures survival from
+that point, to test whether the responder signal is a guarantee-time
+artefact. The two endpoints diverge instructively. For **OS**, 0
+patients are excluded (no early deaths), so the landmark estimate is
+identical to the responder estimate (2.47 (0.75-7.75)): the OS signal is
+not driven by early-death immortal time. For **PFS**, 9 patients are
+excluded (including 4 censored at their last assessment and 0 death
+events within the window), with 5 of the 5 excluded progressors being
+TLR-negative, because progression and TLR are ascertained at the same
+scan; removing these coupled events moves the Firth TLR × Rx HR from
+0.73 (0.20-2.56) to 0.88 (0.21-3.38). The PFS responder association is
+therefore partly tautological. Because the actual first scans fell
+between weeks 6.7 and 12.1, the fixed week-9 cut retains 3 of the 8
+first-scan progressors and 19 patients whose TLR was read after the
+landmark; a per-patient landmark at the scan date and a fixed week-12
+landmark, which exclude all first-scan progressors, give PFS TLR × Rx
+HRs of 0.75 (0.16-3.18) and 0.85 (0.18-3.57), so the direction of the
+estimate does not depend on the landmark choice. Under any time origin
+TLR remains on the causal path of treatment, so a definitive
+predictive-biomarker estimate would require causal mediation rather than
+a landmark. Both analyses remain underpowered and exploratory, and
+neither supports baseline treatment selection on TLR.
 
 
 
 # Summary
 
 **Study:** METIMMOX-1 biomarker subgroup analysis. N = 68 complete
-cases, 59 OS events, 63 PFS events (progression or death).
+cases, 59 OS events, 50 PFS events (progression or death).
 
 **Methods:** Two Firth-corrected Cox analyses are presented. **Primary
 (DAG-informed):**
@@ -1056,30 +1096,34 @@ testing. Ridge sensitivity analysis penalizes the CRP/TMB main effects
 in the primary model and the TLR terms (main effect + TLR:Rx) in the
 exploratory model.
 
-**Proportional hazards:** No violations in OS (global p = 0.254). In PFS
-the global test gives p = 0.119, carried by the biomarker main effects
-(CRP p = 0.130; TMB/BRAF p = 0.084) rather than the interaction terms
-(CRP × Rx p = 0.272; TMB/BRAF × Rx p = 0.203); PFS biomarker main-effect
-estimates should be read as time-averaged.
+**Proportional hazards:** Global Schoenfeld p = 0.254 for OS and 0.046
+for PFS. PFS biomarker main-effect p-values are 0.144 (CRP) and 0.056
+(TMB/BRAF), with interaction p-values 0.216 and 0.068. The global PFS
+result does not isolate a particular term; interpret the Cox HRs as
+time-averaged summaries.
+
+**Endpoint sensitivity:** The primary rule censors 13 late deaths
+without recorded progression; CRP x Rx PFS HR is 0.26 (0.06-1.34),
+compared with 0.42 (0.11-1.68) under the former all-deaths rule.
 
 **Interaction estimates:**
 
 | Interaction   | OS HR (95% CI)   | PLRT p | PFS HR (95% CI)  | PLRT p |
 |---------------|------------------|--------|------------------|--------|
-| CRP × Rx      | 0.65 (0.19-2.60) | 0.520  | 0.42 (0.11-1.68) | 0.213  |
-| TMB/BRAF × Rx | 0.95 (0.32-2.82) | 0.919  | 0.66 (0.21-2.05) | 0.469  |
+| CRP × Rx      | 0.65 (0.19-2.60) | 0.520  | 0.26 (0.06-1.34) | 0.102  |
+| TMB/BRAF × Rx | 0.95 (0.32-2.82) | 0.919  | 0.65 (0.18-2.41) | 0.516  |
 
-No interaction is statistically significant. CRP × Rx PFS (HR 0.42) is
+No interaction is statistically significant. CRP × Rx PFS (HR 0.26) is
 the strongest directional signal; under ridge regularization of the
 biomarker main effects (glmnet, CV lambda) it changes little (Ridge HR
 0.33). The TMB/BRAF × Rx OS interaction changes little (Ridge HR 0.86 vs
-Firth 0.95). The PFS PH departure concerns the biomarker main effects,
-not the interaction terms.
+Firth 0.95). The PFS PH diagnostic does not establish which term drives
+the global departure.
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR 2.47
-(0.75-7.75) for OS and 1.49 (0.45-4.67) for PFS. Ridge-penalized TLR
-terms: 2.12 (SE: 0.58) (OS), 1.33 (SE: 0.58) (PFS). PLRT p-values (0.135
-OS, 0.504 PFS) do not reach conventional significance in this small
+(0.75-7.75) for OS and 0.73 (0.20-2.56) for PFS. Ridge-penalized TLR
+terms: 2.12 (SE: 0.58) (OS), 0.67 (SE: 0.63) (PFS). PLRT p-values (0.135
+OS, 0.630 PFS) do not reach conventional significance in this small
 sample. TLR-positive prevalence: control 75.9%, experimental 52.8% —
 markedly higher TLR-positivity in the control arm. The OS direction (HR
 \> 1) of TLR × Rx, combined with the prevalence pattern, is more
@@ -1089,27 +1133,28 @@ TLR is post-randomization, this is a responder-stratified,
 hypothesis-generating contrast rather than a causal predictive-biomarker
 estimate.
 
-**TLR week-9 landmark analysis (exploratory):** A landmark analysis
-conditioning on survival to the second (first on-treatment) CT in week 9
-— the scan at which TLR is defined — was added. For OS, 0 patients are
-excluded (no early deaths), so the landmark HR 2.47 (0.75-7.75) is
-identical to the responder value: the OS signal is not an early-death
-immortal-time artefact. For PFS, 5 patients are excluded, 5 of the 5
-excluded progressors being TLR-negative because progression and TLR are
-read from the same scan; this shifts the HR from 1.49 (0.45-4.67)
-(responder) to 1.88 (0.52-6.38) (landmark), exposing the PFS association
-as partly tautological (PLRT p 0.135 OS, 0.327 PFS). Because first scans
-fell between weeks 6.7 and 12.1, the week-9 cut retains 3 first-scan
-progressors and 19 patients scanned after the landmark; sensitivity
-landmarks at each patient’s scan date (PFS HR 1.88 (0.48-6.85)) and at
-week 12 (1.97 (0.51-7.16)) exclude all first-scan progressors and leave
-the direction unchanged. Both analyses are retained for comparison; both
-are underpowered and exploratory, and the residual confounding from TLR
-being treatment-influenced needs causal mediation, not a landmark.
-Neither supports baseline treatment selection on TLR.
+**TLR week-9 landmark analysis (exploratory):** A fixed week-9 landmark
+analysis — close to the first on-treatment scan at which TLR is defined
+— was added. For OS, 0 patients are excluded (no early deaths), so the
+landmark HR 2.47 (0.75-7.75) is identical to the responder value: the OS
+signal is not an early-death immortal-time artefact. For PFS, 9 patients
+are excluded (including 4 censored at their last assessment and 0 death
+events within the window), 5 of the 5 excluded progressors being
+TLR-negative because progression and TLR are read from the same scan;
+this shifts the HR from 0.73 (0.20-2.56) (responder) to 0.88 (0.21-3.38)
+(landmark), exposing the PFS association as partly tautological (PLRT p
+0.135 OS, 0.852 PFS). Because first scans fell between weeks 6.7 and
+12.1, the week-9 cut retains 3 first-scan progressors and 19 patients
+scanned after the landmark; sensitivity landmarks at each patient’s scan
+date (PFS HR 0.75 (0.16-3.18)) and at week 12 (0.85 (0.18-3.57)) exclude
+all first-scan progressors and leave the direction unchanged. Both
+analyses are retained for comparison; both are underpowered and
+exploratory, and the residual confounding from TLR being
+treatment-influenced needs causal mediation, not a landmark. Neither
+supports baseline treatment selection on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.7
+**Report version:** 3.8

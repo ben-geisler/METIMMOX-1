@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-09-21
+2026-09-25
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -169,6 +169,6 @@ Structural model parameters
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.4

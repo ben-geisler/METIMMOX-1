@@ -1,6 +1,6 @@
 # Joint OS/PFS Coefficient Sampling
 Ben Geisler
-2026-09-21
+2026-09-25
 
 - [Change and scope](#change-and-scope)
 - [Covariance construction](#covariance-construction)
@@ -73,7 +73,7 @@ coefficients.
 | Successful pairs                           | 996           |
 | Failed pairs                               | 4             |
 | Normal PSA draws                           | 5000          |
-| Minimum joint covariance eigenvalue        | 4.0783643e-07 |
+| Minimum joint covariance eigenvalue        | 4.7652676e-07 |
 | Maximum OS marginal covariance difference  | 0             |
 | Maximum PFS marginal covariance difference | 0             |
 
@@ -89,15 +89,15 @@ Excluded bootstrap pairs by reason
 
 | Coefficient                  | Target | Realised |
 |:-----------------------------|-------:|---------:|
-| shape                        |  0.359 |    0.373 |
-| rate                         |  0.634 |    0.645 |
-| Age                          |  0.679 |    0.692 |
-| sex1                         |  0.645 |    0.636 |
-| RxExperimental arm           |  0.585 |    0.585 |
-| crp1                         |  0.358 |    0.343 |
-| tmb_braf1                    |  0.651 |    0.658 |
-| RxExperimental arm:crp1      |  0.471 |    0.471 |
-| RxExperimental arm:tmb_braf1 |  0.671 |    0.685 |
+| shape                        |  0.332 |    0.345 |
+| rate                         |  0.682 |    0.692 |
+| Age                          |  0.723 |    0.734 |
+| sex1                         |  0.682 |    0.674 |
+| RxExperimental arm           |  0.651 |    0.651 |
+| crp1                         |  0.409 |    0.392 |
+| tmb_braf1                    |  0.679 |    0.687 |
+| RxExperimental arm:crp1      |  0.488 |    0.487 |
+| RxExperimental arm:tmb_braf1 |  0.688 |    0.701 |
 
 OS/PFS correlations for corresponding coefficient coordinates
 
@@ -130,25 +130,25 @@ recentering uncertain draws or relaxing the existing diagnostic.
 
 | Strategy | Outcome | Base   | PSA mean | MC SE  | Difference (SE) |
 |:---------|:--------|:-------|:---------|:-------|:----------------|
-| control  | Cost    | 21523  | 21497    | 36     | -0.73           |
-| control  | QALYs   | 1.3644 | 1.4012   | 0.0042 | +8.77           |
-| crp      | Cost    | 53948  | 53531    | 88     | -4.75           |
-| crp      | QALYs   | 1.3849 | 1.4075   | 0.0038 | +5.94           |
-| tmb_braf | Cost    | 62685  | 62113    | 94     | -6.11           |
-| tmb_braf | QALYs   | 1.3529 | 1.3832   | 0.0039 | +7.80           |
+| control  | Cost    | 20967  | 20932    | 36     | -0.96           |
+| control  | QALYs   | 1.3400 | 1.3775   | 0.0042 | +8.97           |
+| crp      | Cost    | 53686  | 53228    | 88     | -5.20           |
+| crp      | QALYs   | 1.3775 | 1.4007   | 0.0038 | +6.11           |
+| tmb_braf | Cost    | 62382  | 61752    | 95     | -6.64           |
+| tmb_braf | QALYs   | 1.3389 | 1.3696   | 0.0039 | +7.89           |
 
 PSA means versus fitted-parameter results
 
 | Strategy | Outcome | Base    | PSA mean | MC SE  | Difference (SE) |
 |:---------|:--------|:--------|:---------|:-------|:----------------|
-| crp      | Cost    | 32424   | 32034    | 80     | -4.88           |
-| crp      | QALYs   | 0.0205  | 0.0063   | 0.0027 | -5.34           |
-| tmb_braf | Cost    | 41161   | 40616    | 86     | -6.36           |
-| tmb_braf | QALYs   | -0.0115 | -0.0180  | 0.0025 | -2.61           |
+| crp      | Cost    | 32720   | 32296    | 81     | -5.21           |
+| crp      | QALYs   | 0.0375  | 0.0232   | 0.0027 | -5.39           |
+| tmb_braf | Cost    | 41416   | 40820    | 87     | -6.83           |
+| tmb_braf | QALYs   | -0.0011 | -0.0079  | 0.0025 | -2.76           |
 
 Incremental PSA means versus fitted-parameter increments
 
-At the unchanged five-Monte-Carlo-SE threshold, 4 of 6 level comparisons
+At the unchanged five-Monte-Carlo-SE threshold, 5 of 6 level comparisons
 exceed the criterion. The criterion tests equality of outcome means; it
 is not a general consequence of correctly centred coefficient draws in a
 nonlinear model. Its numerical result remains visible in the test
@@ -162,6 +162,6 @@ conditioning alone guarantees ordered survival curves.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

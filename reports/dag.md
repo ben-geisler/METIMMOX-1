@@ -1,6 +1,6 @@
 # Causal DAG
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Introduction](#introduction)
 - [Node Definitions](#node-definitions)
@@ -182,6 +182,6 @@ alt="Figure 3. Simplified causal DAG for METIMMOX-1. Solid arrows denote assumed
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 2.2

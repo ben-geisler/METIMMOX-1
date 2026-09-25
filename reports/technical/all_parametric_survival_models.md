@@ -1,6 +1,6 @@
 # All Parametric Survival Models
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Overview](#overview)
 - [Information Criteria](#information-criteria)
@@ -40,15 +40,15 @@ Fitted economic survival formulas
 |         genf | 670.98 | 695.39 |          Overall survival |      3.99 |      8.43 |
 |     gompertz | 673.66 | 693.63 |          Overall survival |      6.67 |      6.67 |
 |  exponential | 686.14 | 703.89 |          Overall survival |     19.15 |     16.93 |
-|    lognormal | 634.96 | 654.93 | Progression-free survival |      0.00 |      0.00 |
-|        gamma | 636.86 | 656.83 | Progression-free survival |      1.90 |      1.90 |
-|     gengamma | 636.96 | 659.15 | Progression-free survival |      2.00 |      4.22 |
-|       llogis | 637.39 | 657.37 | Progression-free survival |      2.44 |      2.44 |
-|      weibull | 638.25 | 658.23 | Progression-free survival |      3.29 |      3.29 |
-|    weibullph | 638.25 | 658.23 | Progression-free survival |      3.29 |      3.29 |
-|         genf | 638.96 | 663.37 | Progression-free survival |      4.00 |      8.44 |
-|     gompertz | 640.68 | 660.66 | Progression-free survival |      5.73 |      5.73 |
-|  exponential | 645.75 | 663.51 | Progression-free survival |     10.80 |      8.58 |
+|     gengamma | 496.05 | 518.24 | Progression-free survival |      0.00 |      0.23 |
+|    lognormal | 498.04 | 518.02 | Progression-free survival |      1.99 |      0.00 |
+|         genf | 498.07 | 522.48 | Progression-free survival |      2.02 |      4.46 |
+|        gamma | 500.16 | 520.13 | Progression-free survival |      4.11 |      2.11 |
+|      weibull | 501.29 | 521.26 | Progression-free survival |      5.24 |      3.24 |
+|    weibullph | 501.29 | 521.26 | Progression-free survival |      5.24 |      3.24 |
+|       llogis | 501.56 | 521.53 | Progression-free survival |      5.51 |      3.52 |
+|     gompertz | 505.31 | 525.29 | Progression-free survival |      9.26 |      7.27 |
+|  exponential | 509.48 | 527.24 | Progression-free survival |     13.43 |      9.22 |
 
 Information criteria for all fitted distributions
 
@@ -139,89 +139,89 @@ Information criteria for all fitted distributions
 | OS | genf | tmb_braf1 | 0.0585 | 0.2330 | \[-0.3981, 0.5151\] |
 | OS | genf | RxExperimental arm:crp1 | 0.0752 | 0.4225 | \[-0.7530, 0.9034\] |
 | OS | genf | RxExperimental arm:tmb_braf1 | 0.0822 | 0.3292 | \[-0.5629, 0.7274\] |
-| PFS | exponential | rate | 0.0258 | 0.0249 | \[0.0039, 0.1714\] |
-| PFS | exponential | Age | -0.0037 | 0.0144 | \[-0.0320, 0.0245\] |
-| PFS | exponential | sex1 | 0.0718 | 0.2674 | \[-0.4522, 0.5959\] |
-| PFS | exponential | RxExperimental arm | 0.4714 | 0.3673 | \[-0.2485, 1.1913\] |
-| PFS | exponential | crp1 | -0.3244 | 0.5481 | \[-1.3986, 0.7498\] |
-| PFS | exponential | tmb_braf1 | -0.2357 | 0.3960 | \[-1.0118, 0.5404\] |
-| PFS | exponential | RxExperimental arm:crp1 | -0.6180 | 0.6791 | \[-1.9489, 0.7130\] |
-| PFS | exponential | RxExperimental arm:tmb_braf1 | -0.2985 | 0.5660 | \[-1.4078, 0.8109\] |
-| PFS | weibull | shape | 1.3913 | 0.1383 | \[1.1450, 1.6906\] |
-| PFS | weibull | scale | 40.3187 | 28.7575 | \[9.9628, 163.1662\] |
-| PFS | weibull | Age | 0.0040 | 0.0108 | \[-0.0171, 0.0251\] |
-| PFS | weibull | sex1 | -0.0211 | 0.1976 | \[-0.4083, 0.3661\] |
-| PFS | weibull | RxExperimental arm | -0.4314 | 0.2643 | \[-0.9494, 0.0865\] |
-| PFS | weibull | crp1 | 0.2860 | 0.4025 | \[-0.5028, 1.0749\] |
-| PFS | weibull | tmb_braf1 | 0.2279 | 0.2874 | \[-0.3355, 0.7913\] |
-| PFS | weibull | RxExperimental arm:crp1 | 0.5269 | 0.4991 | \[-0.4512, 1.5050\] |
-| PFS | weibull | RxExperimental arm:tmb_braf1 | 0.2938 | 0.4185 | \[-0.5265, 1.1142\] |
-| PFS | weibullph | shape | 1.3913 | 0.1383 | \[1.1450, 1.6906\] |
-| PFS | weibullph | scale | 0.0058 | 0.0066 | \[0.0006, 0.0531\] |
-| PFS | weibullph | Age | -0.0056 | 0.0150 | \[-0.0350, 0.0238\] |
-| PFS | weibullph | sex1 | 0.0293 | 0.2747 | \[-0.5090, 0.5677\] |
-| PFS | weibullph | RxExperimental arm | 0.6002 | 0.3696 | \[-0.1241, 1.3246\] |
-| PFS | weibullph | crp1 | -0.3980 | 0.5603 | \[-1.4962, 0.7003\] |
-| PFS | weibullph | tmb_braf1 | -0.3171 | 0.4013 | \[-1.1037, 0.4695\] |
-| PFS | weibullph | RxExperimental arm:crp1 | -0.7331 | 0.6940 | \[-2.0933, 0.6272\] |
-| PFS | weibullph | RxExperimental arm:tmb_braf1 | -0.4088 | 0.5834 | \[-1.5522, 0.7346\] |
-| PFS | llogis | shape | 2.0830 | 0.2182 | \[1.6964, 2.5578\] |
-| PFS | llogis | scale | 49.9798 | 40.5110 | \[10.2060, 244.7566\] |
-| PFS | llogis | Age | -0.0019 | 0.0118 | \[-0.0250, 0.0211\] |
-| PFS | llogis | sex1 | -0.2055 | 0.2112 | \[-0.6195, 0.2084\] |
-| PFS | llogis | RxExperimental arm | -0.7299 | 0.3328 | \[-1.3821, -0.0777\] |
-| PFS | llogis | crp1 | 0.3212 | 0.4396 | \[-0.5404, 1.1827\] |
-| PFS | llogis | tmb_braf1 | 0.0041 | 0.3311 | \[-0.6448, 0.6530\] |
-| PFS | llogis | RxExperimental arm:crp1 | 0.9115 | 0.5562 | \[-0.1787, 2.0017\] |
-| PFS | llogis | RxExperimental arm:tmb_braf1 | 0.4037 | 0.4481 | \[-0.4745, 1.2819\] |
-| PFS | lognormal | meanlog | 3.8454 | 0.7703 | \[2.3357, 5.3552\] |
-| PFS | lognormal | sdlog | 0.8258 | 0.0741 | \[0.6926, 0.9847\] |
-| PFS | lognormal | Age | -0.0022 | 0.0109 | \[-0.0235, 0.0191\] |
-| PFS | lognormal | sex1 | -0.1827 | 0.2054 | \[-0.5852, 0.2199\] |
-| PFS | lognormal | RxExperimental arm | -0.5874 | 0.3175 | \[-1.2098, 0.0350\] |
-| PFS | lognormal | crp1 | 0.1876 | 0.4336 | \[-0.6622, 1.0374\] |
-| PFS | lognormal | tmb_braf1 | 0.1246 | 0.3204 | \[-0.5033, 0.7525\] |
-| PFS | lognormal | RxExperimental arm:crp1 | 1.0230 | 0.5358 | \[-0.0270, 2.0731\] |
-| PFS | lognormal | RxExperimental arm:tmb_braf1 | 0.2211 | 0.4332 | \[-0.6279, 1.0702\] |
-| PFS | gamma | shape | 1.7902 | 0.2925 | \[1.2996, 2.4659\] |
-| PFS | gamma | rate | 0.0466 | 0.0343 | \[0.0110, 0.1973\] |
-| PFS | gamma | Age | -0.0038 | 0.0107 | \[-0.0248, 0.0171\] |
-| PFS | gamma | sex1 | 0.0554 | 0.1987 | \[-0.3341, 0.4448\] |
-| PFS | gamma | RxExperimental arm | 0.4732 | 0.2760 | \[-0.0676, 1.0141\] |
-| PFS | gamma | crp1 | -0.2964 | 0.4125 | \[-1.1050, 0.5121\] |
-| PFS | gamma | tmb_braf1 | -0.1892 | 0.2963 | \[-0.7698, 0.3915\] |
-| PFS | gamma | RxExperimental arm:crp1 | -0.6076 | 0.5076 | \[-1.6026, 0.3873\] |
-| PFS | gamma | RxExperimental arm:tmb_braf1 | -0.2977 | 0.4200 | \[-1.1209, 0.5254\] |
-| PFS | gompertz | shape | 0.0094 | 0.0034 | \[0.0027, 0.0160\] |
-| PFS | gompertz | rate | 0.0182 | 0.0183 | \[0.0025, 0.1304\] |
-| PFS | gompertz | Age | -0.0035 | 0.0150 | \[-0.0328, 0.0258\] |
-| PFS | gompertz | sex1 | 0.0247 | 0.2734 | \[-0.5111, 0.5605\] |
-| PFS | gompertz | RxExperimental arm | 0.5788 | 0.3688 | \[-0.1440, 1.3015\] |
-| PFS | gompertz | crp1 | -0.3481 | 0.5575 | \[-1.4407, 0.7446\] |
-| PFS | gompertz | tmb_braf1 | -0.3710 | 0.4045 | \[-1.1639, 0.4218\] |
-| PFS | gompertz | RxExperimental arm:crp1 | -0.7779 | 0.7000 | \[-2.1499, 0.5940\] |
-| PFS | gompertz | RxExperimental arm:tmb_braf1 | -0.4210 | 0.5876 | \[-1.5727, 0.7306\] |
-| PFS | gengamma | mu | 3.8407 | 0.8179 | \[2.2376, 5.4438\] |
-| PFS | gengamma | sigma | 0.8256 | 0.0757 | \[0.6898, 0.9882\] |
-| PFS | gengamma | Q | 0.0087 | 0.5810 | \[-1.1301, 1.1475\] |
-| PFS | gengamma | Age | -0.0021 | 0.0127 | \[-0.0270, 0.0228\] |
-| PFS | gengamma | sex1 | -0.1809 | 0.2353 | \[-0.6421, 0.2802\] |
-| PFS | gengamma | RxExperimental arm | -0.5862 | 0.3257 | \[-1.2247, 0.0522\] |
-| PFS | gengamma | crp1 | 0.1900 | 0.4586 | \[-0.7087, 1.0888\] |
-| PFS | gengamma | tmb_braf1 | 0.1247 | 0.3204 | \[-0.5031, 0.7526\] |
-| PFS | gengamma | RxExperimental arm:crp1 | 1.0172 | 0.6584 | \[-0.2733, 2.3076\] |
-| PFS | gengamma | RxExperimental arm:tmb_braf1 | 0.2228 | 0.4497 | \[-0.6585, 1.1042\] |
-| PFS | genf | mu | 3.8415 | 0.8179 | \[2.2384, 5.4446\] |
-| PFS | genf | sigma | 0.8254 | 0.0757 | \[0.6896, 0.9879\] |
-| PFS | genf | Q | 0.0079 | 0.5817 | \[-1.1322, 1.1480\] |
-| PFS | genf | P | 0.0004 | 0.0143 | \[0.0000, 3767584399327780893062886026626.0000\] |
-| PFS | genf | Age | -0.0021 | 0.0126 | \[-0.0269, 0.0226\] |
-| PFS | genf | sex1 | -0.1810 | 0.2354 | \[-0.6423, 0.2803\] |
-| PFS | genf | RxExperimental arm | -0.5864 | 0.3257 | \[-1.2249, 0.0520\] |
-| PFS | genf | crp1 | 0.1901 | 0.4586 | \[-0.7087, 1.0889\] |
-| PFS | genf | tmb_braf1 | 0.1243 | 0.3203 | \[-0.5034, 0.7521\] |
-| PFS | genf | RxExperimental arm:crp1 | 1.0173 | 0.6587 | \[-0.2736, 2.3083\] |
-| PFS | genf | RxExperimental arm:tmb_braf1 | 0.2235 | 0.4497 | \[-0.6579, 1.1049\] |
+| PFS | exponential | rate | 0.0330 | 0.0359 | \[0.0039, 0.2789\] |
+| PFS | exponential | Age | -0.0073 | 0.0158 | \[-0.0383, 0.0237\] |
+| PFS | exponential | sex1 | 0.1380 | 0.2973 | \[-0.4447, 0.7208\] |
+| PFS | exponential | RxExperimental arm | 0.5189 | 0.4102 | \[-0.2850, 1.3228\] |
+| PFS | exponential | crp1 | -0.0651 | 0.6570 | \[-1.3529, 1.2227\] |
+| PFS | exponential | tmb_braf1 | -0.3421 | 0.4728 | \[-1.2689, 0.5846\] |
+| PFS | exponential | RxExperimental arm:crp1 | -0.8879 | 0.7900 | \[-2.4364, 0.6605\] |
+| PFS | exponential | RxExperimental arm:tmb_braf1 | -0.3330 | 0.6409 | \[-1.5892, 0.9232\] |
+| PFS | weibull | shape | 1.4630 | 0.1602 | \[1.1804, 1.8132\] |
+| PFS | weibull | scale | 31.0771 | 23.6241 | \[7.0045, 137.8805\] |
+| PFS | weibull | Age | 0.0072 | 0.0110 | \[-0.0143, 0.0288\] |
+| PFS | weibull | sex1 | -0.0851 | 0.2071 | \[-0.4910, 0.3208\] |
+| PFS | weibull | RxExperimental arm | -0.4777 | 0.2815 | \[-1.0294, 0.0740\] |
+| PFS | weibull | crp1 | -0.0283 | 0.4553 | \[-0.9207, 0.8641\] |
+| PFS | weibull | tmb_braf1 | 0.2816 | 0.3312 | \[-0.3676, 0.9308\] |
+| PFS | weibull | RxExperimental arm:crp1 | 0.8651 | 0.5516 | \[-0.2160, 1.9463\] |
+| PFS | weibull | RxExperimental arm:tmb_braf1 | 0.3664 | 0.4548 | \[-0.5250, 1.2578\] |
+| PFS | weibullph | shape | 1.4630 | 0.1602 | \[1.1804, 1.8132\] |
+| PFS | weibullph | scale | 0.0066 | 0.0082 | \[0.0006, 0.0758\] |
+| PFS | weibullph | Age | -0.0106 | 0.0161 | \[-0.0422, 0.0210\] |
+| PFS | weibullph | sex1 | 0.1245 | 0.3025 | \[-0.4683, 0.7173\] |
+| PFS | weibullph | RxExperimental arm | 0.6989 | 0.4160 | \[-0.1164, 1.5141\] |
+| PFS | weibullph | crp1 | 0.0415 | 0.6663 | \[-1.2645, 1.3475\] |
+| PFS | weibullph | tmb_braf1 | -0.4120 | 0.4852 | \[-1.3629, 0.5390\] |
+| PFS | weibullph | RxExperimental arm:crp1 | -1.2657 | 0.8155 | \[-2.8641, 0.3328\] |
+| PFS | weibullph | RxExperimental arm:tmb_braf1 | -0.5361 | 0.6688 | \[-1.8468, 0.7747\] |
+| PFS | llogis | shape | 2.0380 | 0.2305 | \[1.6329, 2.5437\] |
+| PFS | llogis | scale | 33.7290 | 29.6553 | \[6.0202, 188.9727\] |
+| PFS | llogis | Age | 0.0021 | 0.0127 | \[-0.0228, 0.0270\] |
+| PFS | llogis | sex1 | -0.2072 | 0.2361 | \[-0.6699, 0.2555\] |
+| PFS | llogis | RxExperimental arm | -0.5991 | 0.3538 | \[-1.2925, 0.0944\] |
+| PFS | llogis | crp1 | 0.0566 | 0.5385 | \[-0.9989, 1.1121\] |
+| PFS | llogis | tmb_braf1 | 0.1411 | 0.3842 | \[-0.6119, 0.8941\] |
+| PFS | llogis | RxExperimental arm:crp1 | 1.1401 | 0.6431 | \[-0.1204, 2.4007\] |
+| PFS | llogis | RxExperimental arm:tmb_braf1 | 0.2831 | 0.5028 | \[-0.7023, 1.2685\] |
+| PFS | lognormal | meanlog | 3.5067 | 0.8264 | \[1.8869, 5.1264\] |
+| PFS | lognormal | sdlog | 0.8171 | 0.0817 | \[0.6717, 0.9939\] |
+| PFS | lognormal | Age | 0.0014 | 0.0115 | \[-0.0213, 0.0240\] |
+| PFS | lognormal | sex1 | -0.1929 | 0.2203 | \[-0.6247, 0.2390\] |
+| PFS | lognormal | RxExperimental arm | -0.5186 | 0.3322 | \[-1.1697, 0.1325\] |
+| PFS | lognormal | crp1 | -0.0861 | 0.4850 | \[-1.0367, 0.8645\] |
+| PFS | lognormal | tmb_braf1 | 0.2160 | 0.3520 | \[-0.4738, 0.9058\] |
+| PFS | lognormal | RxExperimental arm:crp1 | 1.2897 | 0.5813 | \[0.1503, 2.4291\] |
+| PFS | lognormal | RxExperimental arm:tmb_braf1 | 0.1801 | 0.4617 | \[-0.7249, 1.0851\] |
+| PFS | gamma | shape | 1.8980 | 0.3348 | \[1.3432, 2.6818\] |
+| PFS | gamma | rate | 0.0644 | 0.0511 | \[0.0136, 0.3045\] |
+| PFS | gamma | Age | -0.0069 | 0.0112 | \[-0.0288, 0.0150\] |
+| PFS | gamma | sex1 | 0.1142 | 0.2114 | \[-0.3002, 0.5287\] |
+| PFS | gamma | RxExperimental arm | 0.4970 | 0.2963 | \[-0.0837, 1.0777\] |
+| PFS | gamma | crp1 | 0.0190 | 0.4703 | \[-0.9028, 0.9408\] |
+| PFS | gamma | tmb_braf1 | -0.2555 | 0.3378 | \[-0.9175, 0.4066\] |
+| PFS | gamma | RxExperimental arm:crp1 | -0.9574 | 0.5642 | \[-2.0633, 0.1485\] |
+| PFS | gamma | RxExperimental arm:tmb_braf1 | -0.3255 | 0.4553 | \[-1.2178, 0.5669\] |
+| PFS | gompertz | shape | 0.0115 | 0.0045 | \[0.0027, 0.0204\] |
+| PFS | gompertz | rate | 0.0240 | 0.0269 | \[0.0027, 0.2163\] |
+| PFS | gompertz | Age | -0.0085 | 0.0161 | \[-0.0399, 0.0230\] |
+| PFS | gompertz | sex1 | 0.1544 | 0.3009 | \[-0.4354, 0.7442\] |
+| PFS | gompertz | RxExperimental arm | 0.6906 | 0.4189 | \[-0.1304, 1.5116\] |
+| PFS | gompertz | crp1 | 0.0460 | 0.6650 | \[-1.2574, 1.3494\] |
+| PFS | gompertz | tmb_braf1 | -0.3986 | 0.4795 | \[-1.3383, 0.5412\] |
+| PFS | gompertz | RxExperimental arm:crp1 | -1.2884 | 0.8330 | \[-2.9211, 0.3443\] |
+| PFS | gompertz | RxExperimental arm:tmb_braf1 | -0.6333 | 0.6826 | \[-1.9712, 0.7047\] |
+| PFS | gengamma | mu | 4.0298 | 0.3623 | \[3.3196, 4.7399\] |
+| PFS | gengamma | sigma | 0.3510 | 0.0468 | \[0.2703, 0.4558\] |
+| PFS | gengamma | Q | -3.6054 | 0.1448 | \[-3.8892, -3.3216\] |
+| PFS | gengamma | Age | -0.0213 | 0.0041 | \[-0.0293, -0.0133\] |
+| PFS | gengamma | sex1 | -0.3585 | 0.1837 | \[-0.7186, 0.0016\] |
+| PFS | gengamma | RxExperimental arm | -0.2495 | 0.1824 | \[-0.6070, 0.1080\] |
+| PFS | gengamma | crp1 | -0.2335 | 0.2586 | \[-0.7403, 0.2733\] |
+| PFS | gengamma | tmb_braf1 | 0.2753 | 0.2476 | \[-0.2100, 0.7605\] |
+| PFS | gengamma | RxExperimental arm:crp1 | 1.6668 | 0.2419 | \[1.1926, 2.1411\] |
+| PFS | gengamma | RxExperimental arm:tmb_braf1 | -0.5251 | 0.2970 | \[-1.1073, 0.0571\] |
+| PFS | genf | mu | 4.0358 | 0.3487 | \[3.3524, 4.7193\] |
+| PFS | genf | sigma | 0.3368 | 0.0444 | \[0.2601, 0.4360\] |
+| PFS | genf | Q | -3.6666 | 0.1637 | \[-3.9875, -3.3458\] |
+| PFS | genf | P | 0.0000 | 0.0004 | \[0.0000, 28112.4609\] |
+| PFS | genf | Age | -0.0216 | 0.0038 | \[-0.0291, -0.0141\] |
+| PFS | genf | sex1 | -0.3871 | 0.1890 | \[-0.7576, -0.0167\] |
+| PFS | genf | RxExperimental arm | -0.2332 | 0.1776 | \[-0.5814, 0.1150\] |
+| PFS | genf | crp1 | -0.2121 | 0.2646 | \[-0.7307, 0.3065\] |
+| PFS | genf | tmb_braf1 | 0.3062 | 0.2475 | \[-0.1788, 0.7913\] |
+| PFS | genf | RxExperimental arm:crp1 | 1.6559 | 0.2417 | \[1.1822, 2.1295\] |
+| PFS | genf | RxExperimental arm:tmb_braf1 | -0.5689 | 0.2967 | \[-1.1503, 0.0126\] |
 
 Coefficient estimates for all fitted parametric models
 
@@ -230,7 +230,7 @@ Coefficient estimates for all fitted parametric models
 | Endpoint                  | Distribution |    AIC |
 |:--------------------------|:-------------|-------:|
 | Overall survival          | gamma        | 667.31 |
-| Progression-free survival | gamma        | 636.86 |
+| Progression-free survival | gamma        | 500.16 |
 
 Selected minimum-combined-AIC pair satisfying OS \>= PFS
 
@@ -242,6 +242,6 @@ and `models$best_fit$ordering_aic_penalty`, respectively.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.0

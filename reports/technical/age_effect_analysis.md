@@ -1,6 +1,6 @@
 # Age Effect Analysis
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Overview](#overview)
 - [Age Distribution](#age-distribution)
@@ -32,11 +32,11 @@ Age distribution in the economic survival complete-case data
 | Strategy | Endpoint | Base Case Years | Mean-Age Years | Difference |
 |:---|:---|---:|---:|---:|
 | Standard of Care | Overall survival | 2.187 | 2.185 | -0.001 |
-| Standard of Care | Progression-free survival | 1.122 | 1.121 | -0.001 |
+| Standard of Care | Progression-free survival | 0.935 | 0.933 | -0.002 |
 | CRP-guided | Overall survival | 2.187 | 2.186 | -0.001 |
-| CRP-guided | Progression-free survival | 1.286 | 1.284 | -0.002 |
+| CRP-guided | Progression-free survival | 1.229 | 1.225 | -0.004 |
 | TMB/BRAF-guided | Overall survival | 2.148 | 2.146 | -0.001 |
-| TMB/BRAF-guided | Progression-free survival | 1.205 | 1.203 | -0.002 |
+| TMB/BRAF-guided | Progression-free survival | 1.099 | 1.095 | -0.004 |
 
 Restricted mean survival (years) over the 520-week (10-year) horizon,
 trapezoidal rule, under observed-age and mean-age predictions
@@ -54,6 +54,6 @@ definitions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.0

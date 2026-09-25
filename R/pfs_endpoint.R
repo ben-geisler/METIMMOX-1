@@ -2,7 +2,8 @@
 # Protocol: CT every 8 weeks; progression on active therapy or death, with
 # censoring at the last imaging assessment. Apply a two-interval death window.
 # TTPwk is the primary assessment proxy; LastEvalwk is the alternative.
-# SAM OS / SAM PFS remain unread pending reconciliation with the data provider.
+# SAM OS / SAM PFS encode (days, event). They are cross-checked in validation,
+# but not adopted here: their date/event differences still need reconciliation.
 
 #' Derive PFS from preserved progression-exit variables
 #' @param data Data frame containing Progression, PFSwk, Death and OSwk.

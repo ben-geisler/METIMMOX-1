@@ -1,6 +1,6 @@
 # Cost-Effectiveness Analysis
 Ben Geisler
-2026-09-23
+2026-09-25
 
 - [Overview](#overview)
 - [Economic Survival Model](#economic-survival-model)
@@ -100,9 +100,9 @@ progressed utility above the progression-free utility.
 
 | Strategy | Cost | QALYs | Probability CE |
 |:---|:---|:---|:---|
-| Standard of Care | EUR 21,497 (EUR 17,027; EUR 26,813) | 1.4012 (0.8576; 2.0146) | 100.0% |
-| CRP-guided | EUR 53,531 (EUR 41,640; EUR 66,068) | 1.4075 (0.8813; 1.9277) | 0.0% |
-| TMB/BRAF-guided | EUR 62,113 (EUR 49,768; EUR 75,706) | 1.3832 (0.8564; 1.9241) | 0.0% |
+| Standard of Care | EUR 20,932 (EUR 16,426; EUR 26,270) | 1.3775 (0.8327; 1.9959) | 100.0% |
+| CRP-guided | EUR 53,228 (EUR 41,270; EUR 65,837) | 1.4007 (0.8726; 1.9218) | 0.0% |
+| TMB/BRAF-guided | EUR 61,752 (EUR 49,309; EUR 75,492) | 1.3696 (0.8382; 1.9110) | 0.0% |
 
 Primary probabilistic results: means (95 percent uncertainty intervals),
 WTP EUR 51,000
@@ -110,8 +110,8 @@ WTP EUR 51,000
 | Strategy | Incremental cost | Incremental QALYs | ICER |
 |:---|:---|:---|:---|
 | Standard of Care | EUR 0 (EUR 0; EUR 0) | 0.0000 (0.0000; 0.0000) | – |
-| CRP-guided | EUR 32,034 (EUR 21,360; EUR 43,510) | 0.0063 (-0.3869; 0.3619) | EUR 5,093,844 |
-| TMB/BRAF-guided | EUR 40,616 (EUR 29,318; EUR 52,937) | -0.0180 (-0.3658; 0.3245) | Dominated |
+| CRP-guided | EUR 32,296 (EUR 21,488; EUR 44,005) | 0.0232 (-0.3654; 0.3769) | EUR 1,390,876 |
+| TMB/BRAF-guided | EUR 40,820 (EUR 29,419; EUR 53,369) | -0.0079 (-0.3594; 0.3400) | Dominated |
 
 Primary pairwise results versus standard of care: means (95 percent
 uncertainty intervals)
@@ -130,18 +130,18 @@ data-fig-align="center" alt="Cost-effectiveness acceptability curves" />
 
 | Strategy         |       Cost | QALYs |        NMB |
 |:-----------------|-----------:|------:|-----------:|
-| Standard of Care | EUR 21,523 | 1.364 | EUR 48,061 |
-| CRP-guided       | EUR 53,948 | 1.385 | EUR 16,684 |
-| TMB/BRAF-guided  | EUR 62,685 | 1.353 |  EUR 6,312 |
+| Standard of Care | EUR 20,967 | 1.340 | EUR 47,371 |
+| CRP-guided       | EUR 53,686 | 1.377 | EUR 16,565 |
+| TMB/BRAF-guided  | EUR 62,382 | 1.339 |  EUR 5,901 |
 
 Deterministic point evaluation anchoring the one-way sensitivity
 analysis; WTP = EUR 51,000
 
 | Strategy | Cost | QALYs | Incremental Cost | Incremental QALYs | ICER | Status |
 |:---|---:|---:|---:|---:|---:|:---|
-| Standard of Care | EUR 21,523 | 1.364 | – | – | – | ND |
-| CRP-guided | EUR 53,948 | 1.385 | EUR 32,424 | 0.021 | EUR 1,578,614 | ND |
-| TMB/BRAF-guided | EUR 62,685 | 1.353 | – | – | Dominated | D |
+| Standard of Care | EUR 20,967 | 1.340 | – | – | – | ND |
+| CRP-guided | EUR 53,686 | 1.377 | EUR 32,720 | 0.038 | EUR 871,972 | ND |
+| TMB/BRAF-guided | EUR 62,382 | 1.339 | – | – | Dominated | D |
 
 Deterministic efficiency-frontier results
 
@@ -180,12 +180,12 @@ correctness criterion.
 
 | Strategy | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
-| Standard of Care | Cost | EUR 21,523 | EUR 21,497 | EUR 36 | -EUR 27 | -0.7 |
-| Standard of Care | QALYs | 1.3644 | 1.4012 | 0.0042 | +0.0368 | +8.8 |
-| CRP-guided | Cost | EUR 53,948 | EUR 53,531 | EUR 88 | -EUR 417 | -4.7 |
-| CRP-guided | QALYs | 1.3849 | 1.4075 | 0.0038 | +0.0225 | +5.9 |
-| TMB/BRAF-guided | Cost | EUR 62,685 | EUR 62,113 | EUR 94 | -EUR 572 | -6.1 |
-| TMB/BRAF-guided | QALYs | 1.3529 | 1.3832 | 0.0039 | +0.0303 | +7.8 |
+| Standard of Care | Cost | EUR 20,967 | EUR 20,932 | EUR 36 | -EUR 35 | -1.0 |
+| Standard of Care | QALYs | 1.3400 | 1.3775 | 0.0042 | +0.0376 | +9.0 |
+| CRP-guided | Cost | EUR 53,686 | EUR 53,228 | EUR 88 | -EUR 458 | -5.2 |
+| CRP-guided | QALYs | 1.3775 | 1.4007 | 0.0038 | +0.0233 | +6.1 |
+| TMB/BRAF-guided | Cost | EUR 62,382 | EUR 61,752 | EUR 95 | -EUR 630 | -6.6 |
+| TMB/BRAF-guided | QALYs | 1.3389 | 1.3696 | 0.0039 | +0.0307 | +7.9 |
 
 Methods diagnostic: PSA means versus deterministic point evaluations
 (Monte Carlo SE)
@@ -199,10 +199,10 @@ the fitted-parameter scenario.
 
 | Comparison | Outcome | Base Case | PSA Mean | PSA SE | Difference | Difference (SE) |
 |:---|:---|---:|---:|---:|---:|---:|
-| CRP-guided vs Standard of Care | Cost | EUR 32,424 | EUR 32,034 | EUR 80 | -EUR 390 | -4.9 |
-| CRP-guided vs Standard of Care | QALYs | +0.0205 | +0.0063 | 0.0027 | -0.0143 | -5.3 |
-| TMB/BRAF-guided vs Standard of Care | Cost | EUR 41,161 | EUR 40,616 | EUR 86 | -EUR 545 | -6.4 |
-| TMB/BRAF-guided vs Standard of Care | QALYs | -0.0115 | -0.0180 | 0.0025 | -0.0065 | -2.6 |
+| CRP-guided vs Standard of Care | Cost | EUR 32,720 | EUR 32,296 | EUR 81 | -EUR 423 | -5.2 |
+| CRP-guided vs Standard of Care | QALYs | +0.0375 | +0.0232 | 0.0027 | -0.0143 | -5.4 |
+| TMB/BRAF-guided vs Standard of Care | Cost | EUR 41,416 | EUR 40,820 | EUR 87 | -EUR 596 | -6.8 |
+| TMB/BRAF-guided vs Standard of Care | QALYs | -0.0011 | -0.0079 | 0.0025 | -0.0069 | -2.8 |
 
 Incremental PSA means versus base-case increments relative to standard
 of care
@@ -273,6 +273,6 @@ as described in the project documentation.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-23  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.6

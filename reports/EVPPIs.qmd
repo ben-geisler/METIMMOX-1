@@ -114,6 +114,7 @@ EVPPI is estimated by nonparametric regression of net monetary benefit on the pa
 
 ```{r evpi-summary}
 psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+  select(Strategy, Mean_Cost, Mean_QALY, Prob_CE) %>%
   mutate(
     Strategy = strategy_label(Strategy),
     Mean_Cost = format_eur(Mean_Cost),
@@ -294,4 +295,4 @@ Population-level values assume `r annual_incidence_norway` annual eligible patie
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.2
+**Report version:** 5.3

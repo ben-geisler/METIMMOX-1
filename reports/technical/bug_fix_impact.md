@@ -1,6 +1,6 @@
 # Bug Fix Impact Analysis
 Ben Geisler
-2026-09-23
+2026-09-25
 
 - [Snapshot Inventory](#snapshot-inventory)
 - [Impact Comparisons](#impact-comparisons)
@@ -20,9 +20,18 @@ Ben Geisler
   - [Issue 168: baseline vs fixed](#issue-168-baseline-vs-fixed)
   - [Batch \#173 / \#171 / \#163: baseline vs
     fixed](#batch-173--171--163-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 168
-    fixed](#cumulative-issue-145-baseline-vs-issue-168-fixed)
+  - [Issue 181: baseline vs fixed](#issue-181-baseline-vs-fixed)
+  - [Cumulative: issue 145 baseline vs issue 181
+    fixed](#cumulative-issue-145-baseline-vs-issue-181-fixed)
 - [Interpretation](#interpretation)
+
+Issue \#181 changes PFS ascertainment for deaths without recorded
+progression: deaths more than 16 weeks after the last assessment are
+censored at that assessment (primary proxy: `TTPwk`). Recorded
+progression times and OS are unchanged. The clinical report compares the
+former all-deaths rule and the alternative `LastEvalwk` anchor. The
+baseline/fixed snapshots below capture the resulting economic changes
+after refitting and regenerating every downstream cache.
 
 # Snapshot Inventory
 
@@ -58,6 +67,8 @@ Ben Geisler
 | snapshot_168_fixed_b8e1b02.rds    | 168   | fixed    | b8e1b02 | 2026-09-22 12:04:46 |
 | snapshot_173_baseline_1b50e8d.rds | 173   | baseline | 1b50e8d | 2026-09-21 15:09:17 |
 | snapshot_173_fixed_1b50e8d.rds    | 173   | fixed    | 1b50e8d | 2026-09-21 16:04:39 |
+| snapshot_181_baseline_2a48ae8.rds | 181   | baseline | 2a48ae8 | 2026-09-24 17:07:25 |
+| snapshot_181_fixed_791443e.rds    | 181   | fixed    | 791443e | 2026-09-24 19:19:42 |
 
 Available single-model snapshots
 
@@ -91,7 +102,8 @@ filenames carry the same pre-fix HEAD identifier.
 | Issue 166: baseline vs fixed | snapshot_166_baseline_96d0710.rds | snapshot_166_fixed_96d0710.rds |
 | Issue 168: baseline vs fixed | snapshot_168_baseline_b8e1b02.rds | snapshot_168_fixed_b8e1b02.rds |
 | Batch \#173 / \#171 / \#163: baseline vs fixed | snapshot_173_baseline_1b50e8d.rds | snapshot_173_fixed_1b50e8d.rds |
-| Cumulative: issue 145 baseline vs issue 168 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_168_fixed_b8e1b02.rds |
+| Issue 181: baseline vs fixed | snapshot_181_baseline_2a48ae8.rds | snapshot_181_fixed_791443e.rds |
+| Cumulative: issue 145 baseline vs issue 181 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_181_fixed_791443e.rds |
 
 Impact comparisons included in this report
 
@@ -591,29 +603,53 @@ PSA cache md5 before 90645792c191da22ce9a8c81ed323ff9 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
-## Cumulative: issue 145 baseline vs issue 168 fixed
+## Issue 181: baseline vs fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
 |:---|---:|---:|---:|---:|---:|---:|
-| Standard of Care | EUR 20,867 | 1.4141 | EUR 21,523 | 1.3644 | EUR 656 | -0.0497 |
-| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,948 | 1.3849 | -EUR 1,078 | 0.0007 |
-| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,685 | 1.3529 | EUR 1,887 | -0.0002 |
+| Standard of Care | EUR 21,523 | 1.3644 | EUR 20,967 | 1.3400 | -EUR 557 | -0.0244 |
+| CRP-guided | EUR 53,948 | 1.3849 | EUR 53,686 | 1.3775 | -EUR 262 | -0.0075 |
+| TMB/BRAF-guided | EUR 62,685 | 1.3529 | EUR 62,382 | 1.3389 | -EUR 302 | -0.0140 |
 
-Base case impact – Cumulative: issue 145 baseline vs issue 168 fixed
+Base case impact – Issue 181: baseline vs fixed
 
 | Strategy         | NMB Before |  NMB After | NMB Change |
 |:-----------------|-----------:|-----------:|-----------:|
-| Standard of Care | EUR 51,254 | EUR 48,061 | -EUR 3,193 |
-| CRP-guided       | EUR 15,570 | EUR 16,684 |  EUR 1,113 |
-| TMB/BRAF-guided  |  EUR 8,207 |  EUR 6,312 | -EUR 1,896 |
+| Standard of Care | EUR 48,061 | EUR 47,371 |   -EUR 690 |
+| CRP-guided       | EUR 16,684 | EUR 16,565 |   -EUR 119 |
+| TMB/BRAF-guided  |  EUR 6,312 |  EUR 5,901 |   -EUR 410 |
+
+Net monetary benefit impact – Issue 181: baseline vs fixed
+
+PSA cache md5 before ca7e7d9091880b1f5879fe9cd8a7f967 (modified
+2026-09-22 12:04), after ace97153eb4660b2df5642cbc4348c60 (modified
+2026-09-24 17:54).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
+
+## Cumulative: issue 145 baseline vs issue 181 fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,867 | 1.4141 | EUR 20,967 | 1.3400 | EUR 99 | -0.0742 |
+| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,686 | 1.3775 | -EUR 1,340 | -0.0068 |
+| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,382 | 1.3389 | EUR 1,585 | -0.0141 |
+
+Base case impact – Cumulative: issue 145 baseline vs issue 181 fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 51,254 | EUR 47,371 | -EUR 3,883 |
+| CRP-guided       | EUR 15,570 | EUR 16,565 |    EUR 995 |
+| TMB/BRAF-guided  |  EUR 8,207 |  EUR 5,901 | -EUR 2,306 |
 
 Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
-168 fixed
+181 fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 ca7e7d9091880b1f5879fe9cd8a7f967
-(modified 2026-09-22 12:04, regenerated inside the snapshot run).
-Identity of the two PSA files cannot be established from metadata.
+the PSA cache md5; after PSA cache md5 ace97153eb4660b2df5642cbc4348c60
+(modified 2026-09-24 17:54). Identity of the two PSA files cannot be
+established from metadata.
 
 # Interpretation
 
@@ -680,6 +716,6 @@ record](../../validation/issue168_2026-09-22/README.md).
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-23  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.6
+**Report version:** 4.7

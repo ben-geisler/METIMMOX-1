@@ -1,0 +1,6 @@
+"Comparison","N","Agree","Time_only_differs","Event_only_differs","Both_differ"
+"SAM OS vs export OS (eligible export rows)",74,71,0,2,1
+"SAM OS vs analysis OS",68,65,0,2,1
+"SAM PFS vs primary (16 weeks, TTPwk)",68,46,17,3,2
+"SAM PFS vs pre-181 (all deaths, TTPwk)",68,42,14,1,11
+"SAM PFS vs alternative (16 weeks, LastEvalwk)",68,51,12,2,3

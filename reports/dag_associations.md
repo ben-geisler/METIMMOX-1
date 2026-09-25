@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -57,7 +57,7 @@ and 03. The main complete-case dataset used for survival and interaction
 models contains 68 patients. TLR in the DAG corresponds to `tlr` in the
 data, and the TLR subset with observed `tlr` contains 68 patients. The
 TLR landmark PFS cohort (patients progression-free after the week 9
-landmark, see below) contains 63 patients.
+landmark, see below) contains 59 patients.
 
 Patients without follow-up CT assessment have `tlr = NA` and were
 excluded from TLR analyses. Those analyses therefore rely on a
@@ -66,10 +66,10 @@ included in each model.
 
 | Dataset | N | Deaths | PFS_events |
 |:---|:---|:---|:---|
-| Source dataset after scripts 02 and 03 | 74 | 65 | 69 |
-| Main complete-case dataset for survival and interaction models | 68 | 59 | 63 |
-| TLR subset with observed tlr | 68 | 59 | 63 |
-| TLR landmark PFS cohort (progression-free after week 9) | 63 | 54 | 58 |
+| Source dataset after scripts 02 and 03 | 74 | 65 | 55 |
+| Main complete-case dataset for survival and interaction models | 68 | 59 | 50 |
+| TLR subset with observed tlr | 68 | 59 | 51 |
+| TLR landmark PFS cohort (progression-free after week 9) | 59 | 50 | 46 |
 
 Analysis datasets used in the DAG association report
 
@@ -132,9 +132,12 @@ Two edge tests need a time origin other than randomisation (issue
   whose progression is recorded at the first scan itself (all
   TLR-negative because progression and TLR are read from the same scan),
   3 remain in the week-9 cohort because their scan fell after week 9,
-  and 19 retained patients had their TLR read after the landmark. The
-  clinical effectiveness report repeats the landmark analysis at each
-  patient’s own scan date and at week 12 as sensitivity analyses.
+  and 19 retained patients had their TLR read after the landmark. A
+  further 4 patients are excluded because PFS was censored at a last
+  assessment on or before week 9; 0 were excluded with a death event
+  within the window. The clinical effectiveness report repeats the
+  landmark analysis at each patient’s own scan date and at week 12 as
+  sensitivity analyses.
 
 ## Multiple Testing
 
@@ -188,7 +191,7 @@ drive the CRP-guided strategy in the economic model.
 ## Mediator edge (TLR -\> PFS)
 
 The `TLR -> PFS` edge was estimated in the week 9 landmark PFS cohort (n
-= 63) with time measured from the landmark, as described in Methods.
+= 59) with time measured from the landmark, as described in Methods.
 
 ## Outcome chain (PFS -\> OS)
 
@@ -204,21 +207,21 @@ after a recorded progression with the hazard before it.
 | Age -\> OS | Firth Cox | 68 | 1.00 (95% CI 0.98 to 1.03) | 0.861 | No association detected (p \>= 0.05) |
 | Age -\> TMB_BRAF | Wilcoxon rank-sum | 69 | Median Age: TMB/BRAF=0=61.0, TMB/BRAF=1=65.0 | 0.450 | No association detected (p \>= 0.05) |
 | CRP -\> OS | Firth Cox | 68 | 0.49 (95% CI 0.27 to 0.84) | 0.009 | Association detected (p \< 0.05) |
-| CRP -\> PFS | Firth Cox | 68 | 0.41 (95% CI 0.23 to 0.71) | 0.001 | Association detected (p \< 0.05) |
+| CRP -\> PFS | Firth Cox | 68 | 0.39 (95% CI 0.20 to 0.73) | 0.003 | Association detected (p \< 0.05) |
 | CRP -\> TLR | Firth logistic | 68 | 3.48 (95% CI 1.14 to 12.59) | 0.028 | Association detected (p \< 0.05) |
 | PFS -\> OS | Firth Cox, time-dependent progression | 68 | 3.75 (95% CI 2.09 to 7.12) | \<0.001 | Association detected (p \< 0.05) |
 | Sex -\> TMB_BRAF | Fisher’s exact | 69 | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
 | T -\> OS | Firth Cox | 68 | 0.96 (95% CI 0.58 to 1.61) | 0.873 | No association detected (p \>= 0.05) |
-| T -\> PFS | Firth Cox | 68 | 0.80 (95% CI 0.49 to 1.33) | 0.392 | No association detected (p \>= 0.05) |
+| T -\> PFS | Firth Cox | 68 | 0.77 (95% CI 0.44 to 1.38) | 0.376 | No association detected (p \>= 0.05) |
 | T -\> TLR | Firth logistic | 68 | 0.33 (95% CI 0.11 to 0.90) | 0.030 | Association detected (p \< 0.05) |
-| TLR -\> PFS | Firth Cox (week 9 landmark PFS cohort) | 63 | 0.36 (95% CI 0.21 to 0.65) | \<0.001 | Association detected (p \< 0.05) |
+| TLR -\> PFS | Firth Cox (week 9 landmark PFS cohort) | 59 | 0.22 (95% CI 0.11 to 0.43) | \<0.001 | Association detected (p \< 0.05) |
 | TMB_BRAF -\> OS | Firth Cox | 68 | 0.68 (95% CI 0.40 to 1.13) | 0.139 | No association detected (p \>= 0.05) |
-| TMB_BRAF -\> PFS | Firth Cox | 68 | 0.49 (95% CI 0.28 to 0.84) | 0.009 | Association detected (p \< 0.05) |
+| TMB_BRAF -\> PFS | Firth Cox | 68 | 0.39 (95% CI 0.21 to 0.73) | 0.003 | Association detected (p \< 0.05) |
 | TMB_BRAF -\> TLR | Firth logistic | 65 | 0.92 (95% CI 0.34 to 2.52) | 0.877 | No association detected (p \>= 0.05) |
 | TxCRP -\> OS | Firth Cox interaction | 68 | 0.63 (95% CI 0.19 to 2.41) | 0.480 | No association detected (p \>= 0.05) |
-| TxCRP -\> PFS | Firth Cox interaction | 68 | 0.26 (95% CI 0.08 to 0.91) | 0.036 | Association detected (p \< 0.05) |
+| TxCRP -\> PFS | Firth Cox interaction | 68 | 0.15 (95% CI 0.04 to 0.73) | 0.021 | Association detected (p \< 0.05) |
 | TxTMB -\> OS | Firth Cox interaction | 68 | 0.63 (95% CI 0.22 to 1.79) | 0.385 | No association detected (p \>= 0.05) |
-| TxTMB -\> PFS | Firth Cox interaction | 68 | 0.36 (95% CI 0.13 to 1.00) | 0.051 | No association detected (p \>= 0.05) |
+| TxTMB -\> PFS | Firth Cox interaction | 68 | 0.40 (95% CI 0.12 to 1.34) | 0.137 | No association detected (p \>= 0.05) |
 
 Direct edge tests
 
@@ -298,21 +301,21 @@ Conditional-independence tests
 | Direct edge | Age -\> OS | 1.00 (95% CI 0.98 to 1.03) | 0.861 | No association detected (p \>= 0.05) |
 | Direct edge | Age -\> TMB_BRAF | Median Age: TMB/BRAF=0=61.0, TMB/BRAF=1=65.0 | 0.450 | No association detected (p \>= 0.05) |
 | Direct edge | CRP -\> OS | 0.49 (95% CI 0.27 to 0.84) | 0.009 | Association detected (p \< 0.05) |
-| Direct edge | CRP -\> PFS | 0.41 (95% CI 0.23 to 0.71) | 0.001 | Association detected (p \< 0.05) |
+| Direct edge | CRP -\> PFS | 0.39 (95% CI 0.20 to 0.73) | 0.003 | Association detected (p \< 0.05) |
 | Direct edge | CRP -\> TLR | 3.48 (95% CI 1.14 to 12.59) | 0.028 | Association detected (p \< 0.05) |
 | Direct edge | PFS -\> OS | 3.75 (95% CI 2.09 to 7.12) | \<0.001 | Association detected (p \< 0.05) |
 | Direct edge | Sex -\> TMB_BRAF | 0.87 (95% CI 0.30 to 2.48) | 0.812 | No association detected (p \>= 0.05) |
 | Direct edge | T -\> OS | 0.96 (95% CI 0.58 to 1.61) | 0.873 | No association detected (p \>= 0.05) |
-| Direct edge | T -\> PFS | 0.80 (95% CI 0.49 to 1.33) | 0.392 | No association detected (p \>= 0.05) |
+| Direct edge | T -\> PFS | 0.77 (95% CI 0.44 to 1.38) | 0.376 | No association detected (p \>= 0.05) |
 | Direct edge | T -\> TLR | 0.33 (95% CI 0.11 to 0.90) | 0.030 | Association detected (p \< 0.05) |
-| Direct edge | TLR -\> PFS | 0.36 (95% CI 0.21 to 0.65) | \<0.001 | Association detected (p \< 0.05) |
+| Direct edge | TLR -\> PFS | 0.22 (95% CI 0.11 to 0.43) | \<0.001 | Association detected (p \< 0.05) |
 | Direct edge | TMB_BRAF -\> OS | 0.68 (95% CI 0.40 to 1.13) | 0.139 | No association detected (p \>= 0.05) |
-| Direct edge | TMB_BRAF -\> PFS | 0.49 (95% CI 0.28 to 0.84) | 0.009 | Association detected (p \< 0.05) |
+| Direct edge | TMB_BRAF -\> PFS | 0.39 (95% CI 0.21 to 0.73) | 0.003 | Association detected (p \< 0.05) |
 | Direct edge | TMB_BRAF -\> TLR | 0.92 (95% CI 0.34 to 2.52) | 0.877 | No association detected (p \>= 0.05) |
 | Direct edge | TxCRP -\> OS | 0.63 (95% CI 0.19 to 2.41) | 0.480 | No association detected (p \>= 0.05) |
-| Direct edge | TxCRP -\> PFS | 0.26 (95% CI 0.08 to 0.91) | 0.036 | Association detected (p \< 0.05) |
+| Direct edge | TxCRP -\> PFS | 0.15 (95% CI 0.04 to 0.73) | 0.021 | Association detected (p \< 0.05) |
 | Direct edge | TxTMB -\> OS | 0.63 (95% CI 0.22 to 1.79) | 0.385 | No association detected (p \>= 0.05) |
-| Direct edge | TxTMB -\> PFS | 0.36 (95% CI 0.13 to 1.00) | 0.051 | No association detected (p \>= 0.05) |
+| Direct edge | TxTMB -\> PFS | 0.40 (95% CI 0.12 to 1.34) | 0.137 | No association detected (p \>= 0.05) |
 | Conditional independence | Age *\|\|* CRP | Median Age: CRP=0=65.0, CRP=1=64.5 | 0.961 | Compatible with DAG-implied CI |
 | Conditional independence | Age *\|\|* Sex | Median Age: Sex=0=65.5, Sex=1=64.5 | 0.961 | Compatible with DAG-implied CI |
 | Conditional independence | Age *\|\|* T | Median Age: T=0=65.5, T=1=60.5 | 0.172 | Compatible with arm balance |
@@ -349,19 +352,19 @@ estimated with a time-dependent progression indicator, gives HR 3.75
 (95% CI 2.09 to 7.12) (p = \<0.001) for death after versus before a
 recorded progression; this is an estimate of how much a progression
 raises the subsequent death hazard, not a restatement of PFS \<= OS. TLR
--\> PFS on the week 9 landmark cohort gives HR 0.36 (95% CI 0.21 to
-0.65) (p = \<0.001, n = 63). Because progression and TLR are read from
+-\> PFS on the week 9 landmark cohort gives HR 0.22 (95% CI 0.11 to
+0.43) (p = \<0.001, n = 59). Because progression and TLR are read from
 the same scan, TLR-negativity and first-scan progression are partly the
 same measurement; the week-9 landmark removes 5 of the 8 first-scan
-progressors and keeps 3, so the estimate should be read alongside the
-scan-date and week-12 landmark sensitivity analyses in the clinical
-effectiveness report.
+progressors and keeps 3; it also excludes 4 patients censored by week 9,
+so the estimate should be read alongside the scan-date and week-12
+landmark sensitivity analyses in the clinical effectiveness report.
 
 Treatment-related edges: those with p \< 0.05 were none for the direct
 treatment edges and TxCRP -\> PFS for the interaction edges. TxCRP -\>
-PFS gives HR 0.26 (95% CI 0.08 to 0.91) (p = 0.036) and TxCRP -\> OS HR
-0.63 (95% CI 0.19 to 2.41) (p = 0.480); TxTMB -\> PFS gives HR 0.36 (95%
-CI 0.13 to 1.00) (p = 0.051) and TxTMB -\> OS HR 0.63 (95% CI 0.22 to
+PFS gives HR 0.15 (95% CI 0.04 to 0.73) (p = 0.021) and TxCRP -\> OS HR
+0.63 (95% CI 0.19 to 2.41) (p = 0.480); TxTMB -\> PFS gives HR 0.40 (95%
+CI 0.12 to 1.34) (p = 0.137) and TxTMB -\> OS HR 0.63 (95% CI 0.22 to
 1.79) (p = 0.385). These are the same treatment-by-biomarker contrasts
 as the interaction terms of the economic survival model, estimated here
 without covariate adjustment, and the intervals are wide.
@@ -408,6 +411,6 @@ need refinement or stronger justification in future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.2
+**Report version:** 1.3

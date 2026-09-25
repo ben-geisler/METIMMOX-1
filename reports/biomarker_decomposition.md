@@ -1,6 +1,6 @@
 # Biomarker Effect Decomposition
 Ben Geisler
-2026-09-21
+2026-09-25
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -37,18 +37,18 @@ years and is not an estimate of unrestricted mean survival.
 | CRP       | Overall survival          | Negative |  1.87 |
 | CRP       | Overall survival          | Weighted |  2.19 |
 | CRP       | Overall survival          | Control  |  2.19 |
-| CRP       | Progression-free survival | Positive |  1.85 |
-| CRP       | Progression-free survival | Negative |  1.00 |
-| CRP       | Progression-free survival | Weighted |  1.29 |
-| CRP       | Progression-free survival | Control  |  1.12 |
+| CRP       | Progression-free survival | Positive |  1.81 |
+| CRP       | Progression-free survival | Negative |  0.93 |
+| CRP       | Progression-free survival | Weighted |  1.23 |
+| CRP       | Progression-free survival | Control  |  0.94 |
 | TMB/BRAF  | Overall survival          | Positive |  2.22 |
 | TMB/BRAF  | Overall survival          | Negative |  2.09 |
 | TMB/BRAF  | Overall survival          | Weighted |  2.15 |
 | TMB/BRAF  | Overall survival          | Control  |  2.19 |
-| TMB/BRAF  | Progression-free survival | Positive |  1.44 |
-| TMB/BRAF  | Progression-free survival | Negative |  1.02 |
-| TMB/BRAF  | Progression-free survival | Weighted |  1.20 |
-| TMB/BRAF  | Progression-free survival | Control  |  1.12 |
+| TMB/BRAF  | Progression-free survival | Positive |  1.45 |
+| TMB/BRAF  | Progression-free survival | Negative |  0.82 |
+| TMB/BRAF  | Progression-free survival | Weighted |  1.10 |
+| TMB/BRAF  | Progression-free survival | Control  |  0.94 |
 
 Restricted mean survival (years) over the 520-week (10-year) horizon,
 trapezoidal rule, by biomarker subgroup and strategy curve
@@ -70,6 +70,6 @@ economic strategy effect.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-21  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.0

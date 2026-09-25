@@ -1,0 +1,33 @@
+Issue #181 regenerated results
+Baseline: snapshot_181_baseline_2a48ae8.rds 
+Fixed: snapshot_181_fixed_791443e.rds 
+PSA cache md5 before ca7e7d9091880b1f5879fe9cd8a7f967 (modified 2026-09-22 12:04), after ace97153eb4660b2df5642cbc4348c60 (modified 2026-09-24 17:54). 
+Sampling fingerprint: 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 
+Baseline PSA fingerprint: 997b684e7196beb9eaa034d1f376f814b170751e11339ff8fada06d25f2d785f 
+Fixed PSA fingerprint: c6b2bc37397d9f47ce7b0e833e0dc4f036f2737cd47c38922637ba5773c9438d 
+Deterministic results:
+  Strategy     Cost   Effect
+1  control 20966.63 1.339952
+2      crp 53686.33 1.377476
+3 tmb_braf 62382.22 1.338895
+PSA summary:
+         Strategy meanCost   sdCost meanEffect  sdEffect Cost_2.5_percent
+control   control 20931.85 2573.072   1.377530 0.2963788         16426.41
+crp           crp 53228.19 6231.337   1.400750 0.2691975         41270.05
+tmb_braf tmb_braf 61751.88 6715.093   1.369621 0.2755195         49309.33
+         Cost_97.5_percent Effect_2.5_percent Effect_97.5_percent
+control           26269.50          0.8326579            1.995899
+crp               65837.39          0.8725681            1.921825
+tmb_braf          75491.91          0.8382343            1.910988
+EVPI per patient at EUR 51,000: 0 
+EVPPI rows: 0 
+Paired bootstrap attempted/successful/failed:
+$n_attempted
+[1] 1000
+
+$n_successful
+[1] 996
+
+$n_failed
+[1] 4
+

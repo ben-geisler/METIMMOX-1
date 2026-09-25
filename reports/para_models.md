@@ -1,6 +1,6 @@
 # Parametric Survival Models
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Overview](#overview)
 - [Distribution Selection](#distribution-selection)
@@ -27,7 +27,7 @@ candidate families: the selected pair is the one with the lowest
 combined AIC among all pairs whose population-averaged curves satisfy OS
 \>= PFS for control and every economic biomarker subgroup at every
 weekly time point of the 10-year horizon. Under this rule the selected
-pair is **OS gamma / PFS gamma** (combined AIC 1304.16), which is 2.22
+pair is **OS gamma / PFS gamma** (combined AIC 1167.47), which is 4.43
 AIC above the unconstrained minimum-AIC pair. The lowest marginal-AIC
 distribution of an endpoint taken on its own is therefore not
 necessarily the selected one; the “Selected” column marks the
@@ -49,33 +49,34 @@ Overall survival distribution comparison (ordered by marginal AIC)
 
 | Distribution |    AIC |    BIC | delta_AIC | delta_BIC | Selected |
 |:-------------|-------:|-------:|----------:|----------:|:--------:|
-| lognormal    | 634.96 | 654.93 |      0.00 |      0.00 |          |
-| gamma        | 636.86 | 656.83 |      1.90 |      1.90 |   Yes    |
-| gengamma     | 636.96 | 659.15 |      2.00 |      4.22 |          |
-| llogis       | 637.39 | 657.37 |      2.44 |      2.44 |          |
-| weibull      | 638.25 | 658.23 |      3.29 |      3.29 |          |
-| weibullph    | 638.25 | 658.23 |      3.29 |      3.29 |          |
-| genf         | 638.96 | 663.37 |      4.00 |      8.44 |          |
-| gompertz     | 640.68 | 660.66 |      5.73 |      5.73 |          |
-| exponential  | 645.75 | 663.51 |     10.80 |      8.58 |          |
+| gengamma     | 496.05 | 518.24 |      0.00 |      0.23 |          |
+| lognormal    | 498.04 | 518.02 |      1.99 |      0.00 |          |
+| genf         | 498.07 | 522.48 |      2.02 |      4.46 |          |
+| gamma        | 500.16 | 520.13 |      4.11 |      2.11 |   Yes    |
+| weibull      | 501.29 | 521.26 |      5.24 |      3.24 |          |
+| weibullph    | 501.29 | 521.26 |      5.24 |      3.24 |          |
+| llogis       | 501.56 | 521.53 |      5.51 |      3.52 |          |
+| gompertz     | 505.31 | 525.29 |      9.26 |      7.27 |          |
+| exponential  | 509.48 | 527.24 |     13.43 |      9.22 |          |
 
 Progression-free survival distribution comparison (ordered by marginal
 AIC)
 
 | Rank | OS distribution | PFS distribution | Combined AIC | OS \>= PFS | Violating points | Selected |
 |---:|:---|:---|---:|:--:|---:|:--:|
-| 1 | weibull | lognormal | 1301.94 | No | 865 |  |
-| 2 | weibullph | lognormal | 1301.94 | No | 865 |  |
-| 3 | gamma | lognormal | 1302.26 | No | 563 |  |
-| 4 | llogis | lognormal | 1303.81 | No | 8 |  |
-| 5 | weibull | gamma | 1303.84 | No | 241 |  |
-| 6 | weibullph | gamma | 1303.84 | No | 241 |  |
-| 7 | gengamma | lognormal | 1303.93 | No | 826 |  |
-| 8 | weibull | gengamma | 1303.94 | No | 855 |  |
-| 9 | weibullph | gengamma | 1303.94 | No | 855 |  |
-| 10 | gamma | gamma | 1304.16 | Yes | 0 | Yes |
-| 11 | gamma | gengamma | 1304.26 | No | 555 |  |
-| 12 | weibull | llogis | 1304.38 | No | 1162 |  |
+| 1 | weibull | gengamma | 1163.03 | No | 1614 |  |
+| 2 | weibullph | gengamma | 1163.03 | No | 1614 |  |
+| 3 | gamma | gengamma | 1163.36 | No | 1590 |  |
+| 4 | llogis | gengamma | 1164.90 | No | 1480 |  |
+| 5 | gengamma | gengamma | 1165.02 | No | 1614 |  |
+| 6 | weibull | lognormal | 1165.03 | No | 761 |  |
+| 7 | weibullph | lognormal | 1165.03 | No | 761 |  |
+| 8 | weibull | genf | 1165.05 | No | 1590 |  |
+| 9 | weibullph | genf | 1165.05 | No | 1590 |  |
+| 10 | gamma | lognormal | 1165.35 | No | 507 |  |
+| 11 | gamma | genf | 1165.37 | No | 1564 |  |
+| 12 | llogis | lognormal | 1166.90 | No | 8 |  |
+| 20 | gamma | gamma | 1167.47 | Yes | 0 | Yes |
 
 Joint (OS, PFS) pair audit: top 12 of 81 pairs by combined AIC plus the
 selected pair
@@ -107,15 +108,15 @@ for Weibull PH). The `Scale` column states this for every row.
 | OS | gamma | tmb_braf1 | covariate effect on log(rate) | -0.0663 | 0.2474 | \[-0.5513, 0.4187\] |
 | OS | gamma | RxExperimental arm:crp1 | covariate effect on log(rate) | -0.1711 | 0.4137 | \[-0.9820, 0.6397\] |
 | OS | gamma | RxExperimental arm:tmb_braf1 | covariate effect on log(rate) | -0.0982 | 0.3451 | \[-0.7746, 0.5782\] |
-| PFS | gamma | shape | baseline parameter (natural scale) | 1.7902 | 0.2925 | \[1.2996, 2.4659\] |
-| PFS | gamma | rate | baseline parameter (natural scale) | 0.0466 | 0.0343 | \[0.0110, 0.1973\] |
-| PFS | gamma | Age | covariate effect on log(rate) | -0.0038 | 0.0107 | \[-0.0248, 0.0171\] |
-| PFS | gamma | sex1 | covariate effect on log(rate) | 0.0554 | 0.1987 | \[-0.3341, 0.4448\] |
-| PFS | gamma | RxExperimental arm | covariate effect on log(rate) | 0.4732 | 0.2760 | \[-0.0676, 1.0141\] |
-| PFS | gamma | crp1 | covariate effect on log(rate) | -0.2964 | 0.4125 | \[-1.1050, 0.5121\] |
-| PFS | gamma | tmb_braf1 | covariate effect on log(rate) | -0.1892 | 0.2963 | \[-0.7698, 0.3915\] |
-| PFS | gamma | RxExperimental arm:crp1 | covariate effect on log(rate) | -0.6076 | 0.5076 | \[-1.6026, 0.3873\] |
-| PFS | gamma | RxExperimental arm:tmb_braf1 | covariate effect on log(rate) | -0.2977 | 0.4200 | \[-1.1209, 0.5254\] |
+| PFS | gamma | shape | baseline parameter (natural scale) | 1.8980 | 0.3348 | \[1.3432, 2.6818\] |
+| PFS | gamma | rate | baseline parameter (natural scale) | 0.0644 | 0.0511 | \[0.0136, 0.3045\] |
+| PFS | gamma | Age | covariate effect on log(rate) | -0.0069 | 0.0112 | \[-0.0288, 0.0150\] |
+| PFS | gamma | sex1 | covariate effect on log(rate) | 0.1142 | 0.2114 | \[-0.3002, 0.5287\] |
+| PFS | gamma | RxExperimental arm | covariate effect on log(rate) | 0.4970 | 0.2963 | \[-0.0837, 1.0777\] |
+| PFS | gamma | crp1 | covariate effect on log(rate) | 0.0190 | 0.4703 | \[-0.9028, 0.9408\] |
+| PFS | gamma | tmb_braf1 | covariate effect on log(rate) | -0.2555 | 0.3378 | \[-0.9175, 0.4066\] |
+| PFS | gamma | RxExperimental arm:crp1 | covariate effect on log(rate) | -0.9574 | 0.5642 | \[-2.0633, 0.1485\] |
+| PFS | gamma | RxExperimental arm:tmb_braf1 | covariate effect on log(rate) | -0.3255 | 0.4553 | \[-1.2178, 0.5669\] |
 | OS | weibullph | shape | baseline parameter (natural scale) | 1.7474 | 0.1883 | \[1.4147, 2.1583\] |
 | OS | weibullph | scale | baseline parameter (natural scale) | 0.0001 | 0.0002 | \[0.0000, 0.0023\] |
 | OS | weibullph | Age | covariate effect on log(scale) | 0.0075 | 0.0154 | \[-0.0227, 0.0378\] |
@@ -125,15 +126,15 @@ for Weibull PH). The `Scale` column states this for every row.
 | OS | weibullph | tmb_braf1 | covariate effect on log(scale) | -0.1029 | 0.4000 | \[-0.8868, 0.6810\] |
 | OS | weibullph | RxExperimental arm:crp1 | covariate effect on log(scale) | -0.0989 | 0.6809 | \[-1.4333, 1.2356\] |
 | OS | weibullph | RxExperimental arm:tmb_braf1 | covariate effect on log(scale) | -0.1275 | 0.5628 | \[-1.2305, 0.9756\] |
-| PFS | weibullph | shape | baseline parameter (natural scale) | 1.3913 | 0.1383 | \[1.1450, 1.6906\] |
-| PFS | weibullph | scale | baseline parameter (natural scale) | 0.0058 | 0.0066 | \[0.0006, 0.0531\] |
-| PFS | weibullph | Age | covariate effect on log(scale) | -0.0056 | 0.0150 | \[-0.0350, 0.0238\] |
-| PFS | weibullph | sex1 | covariate effect on log(scale) | 0.0293 | 0.2747 | \[-0.5090, 0.5677\] |
-| PFS | weibullph | RxExperimental arm | covariate effect on log(scale) | 0.6002 | 0.3696 | \[-0.1241, 1.3246\] |
-| PFS | weibullph | crp1 | covariate effect on log(scale) | -0.3980 | 0.5603 | \[-1.4962, 0.7003\] |
-| PFS | weibullph | tmb_braf1 | covariate effect on log(scale) | -0.3171 | 0.4013 | \[-1.1037, 0.4695\] |
-| PFS | weibullph | RxExperimental arm:crp1 | covariate effect on log(scale) | -0.7331 | 0.6940 | \[-2.0933, 0.6272\] |
-| PFS | weibullph | RxExperimental arm:tmb_braf1 | covariate effect on log(scale) | -0.4088 | 0.5834 | \[-1.5522, 0.7346\] |
+| PFS | weibullph | shape | baseline parameter (natural scale) | 1.4630 | 0.1602 | \[1.1804, 1.8132\] |
+| PFS | weibullph | scale | baseline parameter (natural scale) | 0.0066 | 0.0082 | \[0.0006, 0.0758\] |
+| PFS | weibullph | Age | covariate effect on log(scale) | -0.0106 | 0.0161 | \[-0.0422, 0.0210\] |
+| PFS | weibullph | sex1 | covariate effect on log(scale) | 0.1245 | 0.3025 | \[-0.4683, 0.7173\] |
+| PFS | weibullph | RxExperimental arm | covariate effect on log(scale) | 0.6989 | 0.4160 | \[-0.1164, 1.5141\] |
+| PFS | weibullph | crp1 | covariate effect on log(scale) | 0.0415 | 0.6663 | \[-1.2645, 1.3475\] |
+| PFS | weibullph | tmb_braf1 | covariate effect on log(scale) | -0.4120 | 0.4852 | \[-1.3629, 0.5390\] |
+| PFS | weibullph | RxExperimental arm:crp1 | covariate effect on log(scale) | -1.2657 | 0.8155 | \[-2.8641, 0.3328\] |
+| PFS | weibullph | RxExperimental arm:tmb_braf1 | covariate effect on log(scale) | -0.5361 | 0.6688 | \[-1.8468, 0.7747\] |
 
 Selected (OS gamma, PFS gamma) and Weibull PH coefficient estimates
 
@@ -159,6 +160,6 @@ reference fit.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.1

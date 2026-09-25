@@ -1,0 +1,15 @@
+"Finding","Count"
+"Complete-case deaths without recorded progression",14
+"Of those, SAM PFS censored",11
+"Of those, primary rule censored",13
+"Of those, both SAM and primary censored",10
+"Of those, SAM event but primary censored",3
+"Of those, SAM censored but primary event",1
+"Recorded progressors with different SAM PFS dates",9
+"Of those, SAM date equals last evaluation",6
+"Eligible-export SAM PFS censored deaths",15
+"Of those, SAM date equals last evaluation",14
+"Eligible-export deaths censored by SAM OS",3
+"Eligible-export non-deaths counted as SAM OS deaths",0
+"SAM OS dates earlier than exported OS date",1
+"SAM OS dates later than exported OS date",0

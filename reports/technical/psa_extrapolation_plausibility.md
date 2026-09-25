@@ -1,6 +1,6 @@
 # PSA Extrapolation Plausibility
 Ben Geisler
-2026-09-23
+2026-09-25
 
 - [Purpose and scope](#purpose-and-scope)
 - [Norwegian population reference](#norwegian-population-reference)
@@ -28,15 +28,15 @@ full fingerprint check, including population, PSA parameters, utilities
 and horizon. No cache is generated or rewritten. The reconstruction uses
 the saved `model_idx`, joint population weights and utilities of each
 PSA row, and reproduces all cached strategy QALYs to a maximum absolute
-error of 8.881784e-16. The PFS curves shown are **after the
+error of 4.440892e-16. The PFS curves shown are **after the
 subgroup-level OS clamp**, as used economically; OS is unchanged. The
 ordering analysis uses the **raw, unclamped** subgroup curves.
 
 | Strategy | Deterministic |     PSA |     Gap |    MCSE |
 |:---------|--------------:|--------:|--------:|--------:|
-| SoC      |       1.36440 | 1.40119 | 0.03680 | 0.00419 |
-| CRP      |       1.38493 | 1.40748 | 0.02255 | 0.00379 |
-| TMB/BRAF |       1.35287 | 1.38320 | 0.03034 | 0.00389 |
+| SoC      |       1.33995 | 1.37753 | 0.03758 | 0.00419 |
+| CRP      |       1.37748 | 1.40075 | 0.02327 | 0.00381 |
+| TMB/BRAF |       1.33889 | 1.36962 | 0.03073 | 0.00390 |
 
 MCSE is the Monte Carlo standard error of the PSA mean. A nonlinear mean
 under parameter uncertainty need not equal the deterministic result. The
@@ -73,15 +73,15 @@ below population survival.
 
 | Strategy | Any week: n (%) | Week 520: n (%) | Maximum OS at 520 |
 |:---------|:----------------|:----------------|:------------------|
-| SoC      | 4455 (89.10%)   | 0 (0.00%)       | 15.65%            |
-| CRP      | 4472 (89.44%)   | 0 (0.00%)       | 4.78%             |
-| TMB/BRAF | 4385 (87.70%)   | 0 (0.00%)       | 7.77%             |
+| SoC      | 4467 (89.34%)   | 0 (0.00%)       | 15.75%            |
+| CRP      | 4469 (89.38%)   | 0 (0.00%)       | 4.69%             |
+| TMB/BRAF | 4404 (88.08%)   | 0 (0.00%)       | 7.74%             |
 
 | Strategy | First week | Last week | After year 1: n | Max excess (pp) |
 |:---------|-----------:|----------:|----------------:|----------------:|
-| SoC      |          1 |        26 |               0 |          0.2879 |
-| CRP      |          1 |        23 |               0 |          0.2582 |
-| TMB/BRAF |          1 |        27 |               0 |          0.2922 |
+| SoC      |          1 |        27 |               0 |          0.2929 |
+| CRP      |          1 |        24 |               0 |          0.2616 |
+| TMB/BRAF |          1 |        27 |               0 |          0.2957 |
 
 The timing table pools all draws: it gives the earliest and latest
 weekly exceedance, and the largest vertical excess in percentage points
@@ -131,12 +131,12 @@ alt="Distributions of ten-year restricted mean OS and PFS." />
 
 | strategy | endpoint |  Mean | Median |   P95 |   P99 | Maximum |
 |:---------|:---------|------:|-------:|------:|------:|--------:|
-| CRP      | OS       | 2.230 |  2.218 | 2.644 | 2.842 |   3.216 |
-| CRP      | PFS      | 1.324 |  1.309 | 1.630 | 1.793 |   2.083 |
-| SoC      | OS       | 2.256 |  2.225 | 2.864 | 3.223 |   4.066 |
-| SoC      | PFS      | 1.186 |  1.157 | 1.595 | 1.853 |   2.476 |
-| TMB/BRAF | OS       | 2.206 |  2.185 | 2.691 | 2.921 |   3.476 |
-| TMB/BRAF | PFS      | 1.249 |  1.234 | 1.584 | 1.735 |   2.115 |
+| CRP      | OS       | 2.230 |  2.217 | 2.649 | 2.847 |   3.166 |
+| CRP      | PFS      | 1.272 |  1.255 | 1.600 | 1.781 |   2.008 |
+| SoC      | OS       | 2.256 |  2.224 | 2.858 | 3.209 |   4.036 |
+| SoC      | PFS      | 1.002 |  0.974 | 1.388 | 1.634 |   2.374 |
+| TMB/BRAF | OS       | 2.206 |  2.185 | 2.697 | 2.926 |   3.522 |
+| TMB/BRAF | PFS      | 1.145 |  1.128 | 1.487 | 1.655 |   2.057 |
 
 Contribution is the sum of QALYs in the selected upper tail divided by
 the sum over all rows, equivalently its contribution to the untrimmed
@@ -149,53 +149,53 @@ itself that any draw should be rejected.
 
 | Strategy | Top    | RMST cutoff | QALY contribution |
 |:---------|:-------|------------:|:------------------|
-| SoC      | 1.00%  |       3.224 | 1.42%             |
-| SoC      | 5.00%  |       2.865 | 6.53%             |
-| SoC      | 10.00% |       2.703 | 12.50%            |
-| CRP      | 1.00%  |       2.844 | 1.28%             |
-| CRP      | 5.00%  |       2.644 | 6.07%             |
-| CRP      | 10.00% |       2.555 | 11.83%            |
-| TMB/BRAF | 1.00%  |       2.923 | 1.32%             |
-| TMB/BRAF | 5.00%  |       2.691 | 6.16%             |
-| TMB/BRAF | 10.00% |       2.584 | 11.93%            |
+| SoC      | 1.00%  |       3.213 | 1.43%             |
+| SoC      | 5.00%  |       2.859 | 6.55%             |
+| SoC      | 10.00% |       2.707 | 12.56%            |
+| CRP      | 1.00%  |       2.853 | 1.29%             |
+| CRP      | 5.00%  |       2.649 | 6.09%             |
+| CRP      | 10.00% |       2.559 | 11.85%            |
+| TMB/BRAF | 1.00%  |       2.939 | 1.33%             |
+| TMB/BRAF | 5.00%  |       2.697 | 6.19%             |
+| TMB/BRAF | 10.00% |       2.588 | 11.95%            |
 
 | Strategy | Trim   | PSA mean | Trimmed mean | Trimmed - det. |
 |:---------|:-------|---------:|-------------:|---------------:|
-| SoC      | 1.00%  |  1.40119 |      1.39529 |        0.03089 |
-| SoC      | 5.00%  |  1.40119 |      1.37868 |        0.01429 |
-| SoC      | 10.00% |  1.40119 |      1.36229 |       -0.00210 |
-| CRP      | 1.00%  |  1.40748 |      1.40356 |        0.01863 |
-| CRP      | 5.00%  |  1.40748 |      1.39158 |        0.00665 |
-| CRP      | 10.00% |  1.40748 |      1.37887 |       -0.00606 |
-| TMB/BRAF | 1.00%  |  1.38320 |      1.37872 |        0.02585 |
-| TMB/BRAF | 5.00%  |  1.38320 |      1.36637 |        0.01350 |
-| TMB/BRAF | 10.00% |  1.38320 |      1.35351 |        0.00065 |
+| SoC      | 1.00%  |  1.37753 |      1.37155 |        0.03159 |
+| SoC      | 5.00%  |  1.37753 |      1.35510 |        0.01515 |
+| SoC      | 10.00% |  1.37753 |      1.33831 |       -0.00164 |
+| CRP      | 1.00%  |  1.40075 |      1.39668 |        0.01921 |
+| CRP      | 5.00%  |  1.40075 |      1.38471 |        0.00723 |
+| CRP      | 10.00% |  1.40075 |      1.37189 |       -0.00558 |
+| TMB/BRAF | 1.00%  |  1.36962 |      1.36504 |        0.02615 |
+| TMB/BRAF | 5.00%  |  1.36962 |      1.35250 |        0.01361 |
+| TMB/BRAF | 10.00% |  1.36962 |      1.33998 |        0.00108 |
 
 ## Ranked by PFS RMST
 
 | Strategy | Top    | RMST cutoff | QALY contribution |
 |:---------|:-------|------------:|:------------------|
-| SoC      | 1.00%  |       1.857 | 1.28%             |
-| SoC      | 5.00%  |       1.596 | 5.93%             |
-| SoC      | 10.00% |       1.478 | 11.46%            |
-| CRP      | 1.00%  |       1.796 | 1.25%             |
-| CRP      | 5.00%  |       1.630 | 5.90%             |
-| CRP      | 10.00% |       1.553 | 11.48%            |
-| TMB/BRAF | 1.00%  |       1.737 | 1.29%             |
-| TMB/BRAF | 5.00%  |       1.584 | 5.96%             |
-| TMB/BRAF | 10.00% |       1.505 | 11.61%            |
+| SoC      | 1.00%  |       1.634 | 1.27%             |
+| SoC      | 5.00%  |       1.389 | 5.90%             |
+| SoC      | 10.00% |       1.276 | 11.48%            |
+| CRP      | 1.00%  |       1.781 | 1.28%             |
+| CRP      | 5.00%  |       1.601 | 5.95%             |
+| CRP      | 10.00% |       1.513 | 11.51%            |
+| TMB/BRAF | 1.00%  |       1.657 | 1.31%             |
+| TMB/BRAF | 5.00%  |       1.487 | 5.98%             |
+| TMB/BRAF | 10.00% |       1.399 | 11.66%            |
 
 | Strategy | Trim   | PSA mean | Trimmed mean | Trimmed - det. |
 |:---------|:-------|---------:|-------------:|---------------:|
-| SoC      | 1.00%  |  1.40119 |      1.39729 |        0.03289 |
-| SoC      | 5.00%  |  1.40119 |      1.38754 |        0.02315 |
-| SoC      | 10.00% |  1.40119 |      1.37845 |        0.01405 |
-| CRP      | 1.00%  |  1.40748 |      1.40388 |        0.01894 |
-| CRP      | 5.00%  |  1.40748 |      1.39418 |        0.00924 |
-| CRP      | 10.00% |  1.40748 |      1.38434 |       -0.00059 |
-| TMB/BRAF | 1.00%  |  1.38320 |      1.37920 |        0.02634 |
-| TMB/BRAF | 5.00%  |  1.38320 |      1.36927 |        0.01640 |
-| TMB/BRAF | 10.00% |  1.38320 |      1.35849 |        0.00562 |
+| SoC      | 1.00%  |  1.37753 |      1.37379 |        0.03384 |
+| SoC      | 5.00%  |  1.37753 |      1.36444 |        0.02449 |
+| SoC      | 10.00% |  1.37753 |      1.35481 |        0.01486 |
+| CRP      | 1.00%  |  1.40075 |      1.39673 |        0.01925 |
+| CRP      | 5.00%  |  1.40075 |      1.38674 |        0.00926 |
+| CRP      | 10.00% |  1.40075 |      1.37721 |       -0.00027 |
+| TMB/BRAF | 1.00%  |  1.36962 |      1.36530 |        0.02641 |
+| TMB/BRAF | 5.00%  |  1.36962 |      1.35546 |        0.01657 |
+| TMB/BRAF | 10.00% |  1.36962 |      1.34438 |        0.00549 |
 
 # Relationship to PFS-above-OS violations
 
@@ -211,15 +211,15 @@ describe OS RMST in crossing and non-crossing draws.
 
 | Strategy | Crossings | Top 10%: n (%) | Other 90%: n (%) |
 |:---------|----------:|:---------------|:-----------------|
-| SoC      |       458 | 14 (2.80%)     | 444 (9.87%)      |
-| CRP      |       592 | 24 (4.80%)     | 568 (12.62%)     |
-| TMB/BRAF |       937 | 45 (9.00%)     | 892 (19.82%)     |
+| SoC      |       155 | 7 (1.40%)      | 148 (3.29%)      |
+| CRP      |       688 | 34 (6.80%)     | 654 (14.53%)     |
+| TMB/BRAF |       945 | 60 (12.00%)    | 885 (19.67%)     |
 
 | Strategy | RMST: crossing | RMST: other | Odds ratio (95% CI) | Fisher p |
 |:---------|---------------:|------------:|:--------------------|:---------|
-| SoC      |          2.055 |       2.242 | 0.26 (0.14, 0.45)   | \<0.001  |
-| CRP      |          2.118 |       2.231 | 0.35 (0.22, 0.53)   | \<0.001  |
-| TMB/BRAF |          2.099 |       2.204 | 0.40 (0.29, 0.55)   | \<0.001  |
+| SoC      |          2.081 |       2.229 | 0.42 (0.16, 0.89)   | 0.02     |
+| CRP      |          2.160 |       2.227 | 0.43 (0.29, 0.62)   | \<0.001  |
+| TMB/BRAF |          2.146 |       2.194 | 0.56 (0.41, 0.74)   | \<0.001  |
 
 Fisher’s exact test compares crossing odds in the upper decile versus
 the rest. It describes association within simulated draws, not clinical
@@ -231,16 +231,16 @@ these comparisons are dependent.
 The diagnostics support a broadly distributed nonlinear averaging effect
 rather than a mean dominated by a tiny, demonstrably implausible
 survival tail. Across SoC, CRP and TMB/BRAF, the highest 1% of OS-RMST
-draws contribute 1.42%, 1.28% and 1.32% of total QALYs; removing them
-changes the means by 0.00591, 0.00392 and 0.00449 QALYs, leaving gaps of
-0.03089, 0.01863 and 0.02585 above the deterministic results. The top
-10% contribute 12.50%, 11.83% and 11.93%, showing meaningful upper-tail
-sensitivity without dominance. 13312 of 15000 strategy-draw curves
+draws contribute 1.43%, 1.29% and 1.33% of total QALYs; removing them
+changes the means by 0.00598, 0.00407 and 0.00458 QALYs, leaving gaps of
+0.03159, 0.01921 and 0.02615 above the deterministic results. The top
+10% contribute 12.56%, 11.85% and 11.95%, showing meaningful upper-tail
+sensitivity without dominance. 13340 of 15000 strategy-draw curves
 exceed matched population survival at any modeled week (0 at week 520).
-Crossing rates in the top OS-RMST decile are 2.80%, 4.80% and 9.00%
-versus 9.87%, 12.62% and 19.82% in the remaining draws, distinguishing
+Crossing rates in the top OS-RMST decile are 1.40%, 6.80% and 12.00%
+versus 3.29%, 14.53% and 19.67% in the remaining draws, distinguishing
 ordering violations from optimistic OS tails. The exceedances occur
-between weeks 1 and 27, with a maximum vertical excess of 0.2922
+between weeks 1 and 27, with a maximum vertical excess of 0.2957
 percentage points; they therefore require interpretation as an
 early-curve limitation, not evidence that optimistic ten-year tails
 dominate the mean. The evidence favors the broad-spread explanation for
@@ -253,6 +253,6 @@ this paper’s scope.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-23  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

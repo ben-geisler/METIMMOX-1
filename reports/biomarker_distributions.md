@@ -1,6 +1,6 @@
 # Biomarker Distributions
 Ben Geisler
-2026-09-22
+2026-09-25
 
 - [Introduction](#introduction)
 - [Sample Characteristics](#sample-characteristics)
@@ -38,7 +38,7 @@ treatment arm and biomarker status.
 | Experimental arm (alternating FLOX/nivolumab) | 36 (55.4%) |
 |                                               |            |
 | Deaths (OS events)                            | 56 (86.2%) |
-| PFS events (progression or death)             | 60 (92.3%) |
+| PFS events (progression or death)             | 49 (75.4%) |
 |                                               |            |
 | CRP-positive (low CRP)                        | 22 (33.8%) |
 | TLR-positive (early response)                 | 41 (63.1%) |
@@ -64,8 +64,8 @@ Distribution of patient characteristics by treatment arm and CRP status.
 |  | TMB/BRAF+ | 12 (50.0) | 1 (20.0) | 6 (31.6) | 10 (58.8) |
 | Death_event (%) | No | 3 (12.5) | 2 (40.0) | 0 (0.0) | 4 (23.5) |
 |  | Yes | 21 (87.5) | 3 (60.0) | 19 (100.0) | 13 (76.5) |
-| Progression_event (%) | No | 1 (4.2) | 1 (20.0) | 0 (0.0) | 3 (17.6) |
-|  | Yes | 23 (95.8) | 4 (80.0) | 19 (100.0) | 14 (82.4) |
+| Progression_event (%) | No | 6 (25.0) | 3 (60.0) | 2 (10.5) | 5 (29.4) |
+|  | Yes | 18 (75.0) | 2 (40.0) | 17 (89.5) | 12 (70.6) |
 
 Patient Characteristics by Treatment Arm and CRP Status
 
@@ -89,8 +89,8 @@ Distribution of patient characteristics by treatment arm and TLR status.
 |  | TMB/BRAF+ | 4 (57.1) | 9 (40.9) | 7 (41.2) | 9 (47.4) |
 | Death_event (%) | No | 0 (0.0) | 5 (22.7) | 0 (0.0) | 4 (21.1) |
 |  | Yes | 7 (100.0) | 17 (77.3) | 17 (100.0) | 15 (78.9) |
-| Progression_event (%) | No | 0 (0.0) | 2 (9.1) | 0 (0.0) | 3 (15.8) |
-|  | Yes | 7 (100.0) | 20 (90.9) | 17 (100.0) | 16 (84.2) |
+| Progression_event (%) | No | 1 (14.3) | 8 (36.4) | 2 (11.8) | 5 (26.3) |
+|  | Yes | 6 (85.7) | 14 (63.6) | 15 (88.2) | 14 (73.7) |
 
 Patient Characteristics by Treatment Arm and TLR Status
 
@@ -113,8 +113,8 @@ status.
 |  | TLR+ | 13 (81.2) | 9 (69.2) | 10 (50.0) | 9 (56.2) |
 | Death_event (%) | No | 2 (12.5) | 3 (23.1) | 0 (0.0) | 4 (25.0) |
 |  | Yes | 14 (87.5) | 10 (76.9) | 20 (100.0) | 12 (75.0) |
-| Progression_event (%) | No | 0 (0.0) | 2 (15.4) | 0 (0.0) | 3 (18.8) |
-|  | Yes | 16 (100.0) | 11 (84.6) | 20 (100.0) | 13 (81.2) |
+| Progression_event (%) | No | 4 (25.0) | 5 (38.5) | 2 (10.0) | 5 (31.2) |
+|  | Yes | 12 (75.0) | 8 (61.5) | 18 (90.0) | 11 (68.8) |
 
 Patient Characteristics by Treatment Arm and TMB/BRAF Status
 
@@ -136,6 +136,6 @@ negligible.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-22  
+**Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.2
+**Report version:** 1.3
