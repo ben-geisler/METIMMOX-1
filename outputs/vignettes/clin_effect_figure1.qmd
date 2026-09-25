@@ -41,7 +41,7 @@ data_complete$Rx_num <- as.numeric(data_complete$Rx == "Experimental arm")
 data_tlr$Rx_num      <- as.numeric(data_tlr$Rx      == "Experimental arm")
 
 # Arm labels: both arms receive FLOX; the experimental arm adds nivolumab.
-ARM_LABELS <- c(experimental = "FLOX + nivolumab", control = "FLOX")
+ARM_LABELS <- c(experimental = "Experimental", control = "Control")
 
 # Helper: create 4-level group factor (treatment arm x biomarker)
 make_group <- function(rx_num, biomarker, pos_label, neg_label) {
@@ -111,7 +111,8 @@ fig1_caption <- paste0(
   " had their TLR read after week 9; see the clinical effectiveness report for ",
   "the scan-date and week-12 landmark sensitivity analyses. Within each panel, ",
   "curves are stratified by treatment arm (", ARM_LABELS[["experimental"]], " or ",
-  ARM_LABELS[["control"]], ") and biomarker status (positive or negative); for ",
+  ARM_LABELS[["control"]], ") and biomarker status (positive or negative). ",
+  "Both arms receive FLOX; the experimental arm adds nivolumab. For ",
   "TLR the arm split is descriptive because response is measured after ",
   "randomization. CRP-positive = CRP < 5 mg/L; TMB/BRAF-positive = TMB >= 9 ",
   "mut/Mb or BRAF mutation; TLR-positive = a reduction of at least 10% in the ",
@@ -163,7 +164,7 @@ km_plot <- function(data, time_col, event_col, group_col,
     font.tickslab = 9
   )
 
-  # Two legend rows: the arm labels ("FLOX + nivolumab / TMB/BRAF+") are too
+  # Two legend rows: the arm labels ("Experimental / TMB/BRAF+") are too
   # long for four entries on one line of a panel.
   p <- sp$plot +
     guides(colour = guide_legend(nrow = 2, byrow = TRUE),
