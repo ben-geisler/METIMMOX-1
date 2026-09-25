@@ -128,9 +128,10 @@ The **unified DAG-informed model** is:
 
 $$\text{Surv}(\text{time}, \text{event}) \sim \text{Age} + \text{sex} + \text{Rx} + \text{CRP} + \text{TMB/BRAF} + \text{CRP} \times \text{Rx} + \text{TMB/BRAF} \times \text{Rx}$$
 
-Ridge regression (L2-penalized Cox) is applied as a sensitivity analysis
-to assess the stability of the interaction estimates under shrinkage.
-TLR is reported in a separate exploratory section.
+Ridge regression (L2-penalized Cox), which shrinks the biomarker main
+effects and their treatment interactions together, is applied as a
+sensitivity analysis to assess how far the interaction estimates move
+under shrinkage. TLR is reported in a separate exploratory section.
 
 # Methodological Notes
 
@@ -170,27 +171,43 @@ confidence limit or PLRT, and whether the fit reached the limit.
 
 ## Ridge Regression Sensitivity Analysis
 
-We use Ridge regression as a sensitivity analysis to assess the
-stability of our interaction estimates. Ridge regression (also called
-L2-penalized regression or Tikhonov regularization) belongs to the
-family of regularized or penalized regression methods. In survival
-analysis, this is implemented as a penalized Cox model.
+We use ridge regression as a sensitivity analysis for the interaction
+estimates. Ridge regression (also called L2-penalized regression or
+Tikhonov regularization) is a penalized regression method; in survival
+analysis it is a penalized Cox model.
 
-**How Ridge regression works:**
+**How ridge regression works:**
 
-- Ridge adds a penalty term that discourages large coefficients. The
-  bigger a coefficient tries to get, the more the model resists, pulling
-  estimates toward zero (HR toward 1.0).
+- Ridge adds a penalty on the sum of the squared (standardized)
+  coefficients of the penalized terms, pulling those coefficients toward
+  zero (HR toward 1.0). Terms with a penalty factor of zero are
+  estimated without shrinkage.
 - Unlike LASSO (alpha = 1), which sets some coefficients exactly to zero
-  and performs variable selection, Ridge (alpha = 0) shrinks all
-  coefficients but retains all predictors.
+  and performs variable selection, ridge (alpha = 0) shrinks the
+  penalized coefficients but keeps every term in the model.
+- The penalty is shrinkage of a block of coefficients, not of each
+  coefficient separately. When two penalized terms are correlated, as a
+  biomarker’s main effect and its treatment interaction are, shrinking
+  the block can move one of them away from 1 while the other moves
+  toward it.
 - The degree of shrinkage is controlled by the tuning parameter lambda,
-  which is selected via **cross-validation (CV)**: the data are
-  repeatedly split into training and validation sets, and the lambda
-  that produces the best predictive performance is chosen. Here this is
+  selected by **cross-validation (CV)**: the data are split into folds,
+  each fold is predicted from a model fitted to the others, and the
+  lambda with the best out-of-fold performance is chosen. Here this is
   `glmnet::cv.glmnet(family = "cox", alpha = 0)` with 10-fold CV of the
-  partial-likelihood deviance and `lambda.min`; fold assignment is
-  seeded so the result is reproducible.
+  partial-likelihood deviance and `lambda.min`, over an explicit grid of
+  100 lambda values spaced evenly on the log scale from 0.0001 to 1000.
+- **Boundary check.** A `lambda.min` at either end of the grid means CV
+  preferred the largest (or smallest) penalty tried, so the selected
+  penalty reflects the grid limit rather than an interior optimum. The
+  report does not stop in that case: the lambda is marked as a boundary
+  solution in the tables and a note under the tables says what the
+  estimate then represents.
+- **Fold seeds.** Fold assignment is seeded with the analysis seed (123)
+  for the reported estimates. Because the fold split can change
+  `lambda.min` in a sample this small, every ridge model is also
+  refitted with 20 fold seeds (123 to 142), and the minimum, median and
+  maximum of `lambda.min` and of the interaction HRs are reported.
 - **Implementation detail.** The model is fitted on an explicit design
   matrix (Age, sex, Rx, CRP, TMB/BRAF, CRP x Rx, TMB/BRAF x Rx) in which
   the product terms are constructed before fitting. This matters because
@@ -199,9 +216,21 @@ analysis, this is implemented as a penalized Cox model.
   arm (the CRP slope within the control arm and within the experimental
   arm) rather than as the single treatment-by-biomarker contrast; the
   pre-built product term recovers the same contrast that the Firth model
-  estimates. In the primary model only the CRP and TMB/BRAF main effects
-  are penalized (penalty factor 1); Age, sex, Rx and the two interaction
-  terms have penalty factor 0. glmnet does not provide standard errors,
+  estimates.
+- **Penalty design.** In the primary model the CRP and TMB/BRAF main
+  effects and both interaction terms are penalized (penalty factor 1);
+  Age, sex and Rx are unpenalized (penalty factor 0). The biomarker main
+  effects and interactions are penalized together because penalizing one
+  group alone distorts the comparison (issue \#183). When only the main
+  effects were penalized (report versions up to 3.10), CV chose the
+  largest or nearly the largest penalty in most fold seeds; this removed
+  the CRP and TMB/BRAF main effects and let their prognostic signal move
+  into the unpenalized interactions, so the “sensitivity analysis”
+  compared the primary model with a model without biomarker main
+  effects. When only the interactions are penalized, CV shrinks them to
+  HR 1 in most fold seeds. In the exploratory TLR models the TLR main
+  effect and the TLR x Rx interaction are penalized; Age, sex, Rx, CRP
+  and TMB/BRAF are unpenalized. glmnet does not provide standard errors,
   so ridge results are point estimates.
 
 **Why not LASSO or Elastic Net?**
@@ -224,15 +253,19 @@ this analysis:
 Elastic net (alpha = 0.1–0.3) represents a compromise but does not fully
 address these concerns.
 
-**Interpreting Ridge results:**
+**Interpreting ridge results:**
 
-Ridge regression is not replacing the Firth estimates—it provides a
-reality check. When Ridge substantially shrinks an interaction
-coefficient toward zero while Firth estimates a large effect, this
-indicates the effect is too unstable to trust for practical use. The
-CV-selected lambda reflects how much regularization is needed for
-reasonable out-of-sample prediction given the sample size and
-collinearity structure.
+Ridge regression does not replace the Firth estimates; it asks how far
+each interaction moves when the biomarker terms are shrunk by the amount
+that cross-validation selects. When ridge pulls an interaction
+substantially toward HR 1 while Firth estimates a large effect, the data
+carry too little information to support the Firth magnitude, and the
+effect is too unstable to use in practice. When the interaction changes
+little, the estimate is stable under shrinkage, although it may still be
+imprecise. The CV-selected lambda reflects how much shrinkage gives the
+best out-of-sample prediction for this sample size and correlation
+structure; in a sample this small the CV curve can be flat, so the
+fold-seed spread is reported alongside each estimate.
 
 # Data Preparation
 
@@ -407,54 +440,84 @@ treatment effect.
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (L2-penalized Cox, alpha = 0) shrinks coefficients
-toward zero but does not eliminate any, providing a sensitivity check
-for the stability of the interaction estimates. The same unified model
-terms are used, entered through an explicit design matrix in which the
-CRP x Rx and TMB/BRAF x Rx product terms are built before fitting, so
-each ridge interaction coefficient is the single treatment-by-biomarker
-contrast that the Firth model estimates (issue \#153). Only the
-biomarker main effects (CRP and TMB/BRAF) are penalized; Age, sex, Rx
-and the two interaction terms carry a penalty factor of zero. The
-penalty lambda is chosen by 10-fold cross-validation of the
-partial-likelihood deviance (`glmnet::cv.glmnet`, `lambda.min`), with
-fold assignment seeded for reproducibility.
+Ridge regression (L2-penalized Cox, alpha = 0) shrinks the penalized
+coefficients toward zero without removing any term, and shows how far
+the interaction estimates move under shrinkage. The unified model terms
+are entered through an explicit design matrix in which the CRP x Rx and
+TMB/BRAF x Rx product terms are built before fitting, so each ridge
+interaction coefficient is the single treatment-by-biomarker contrast
+that the Firth model estimates (issue \#153). The CRP and TMB/BRAF main
+effects and both interaction terms are penalized together; Age, sex and
+Rx carry a penalty factor of zero (issue \#183). The penalty lambda is
+chosen by 10-fold cross-validation of the partial-likelihood deviance
+(`glmnet::cv.glmnet`, `lambda.min`) over 100 lambda values spaced evenly
+on the log scale from 0.0001 to 1000, with fold assignment seeded by the
+analysis seed (123). The fit is repeated for 20 fold seeds to show how
+much the result depends on the fold split.
 
-| Interaction   | Firth (95% CI)   | Ridge (point est.) |
-|:--------------|:-----------------|:-------------------|
-| CRP x Rx      | 0.65 (0.19-2.60) | 0.40               |
-| TMB/BRAF x Rx | 0.95 (0.32-2.82) | 0.86               |
+| Interaction   | Firth HR (95% CI) | Ridge HR |
+|:--------------|:------------------|:---------|
+| CRP x Rx      | 0.65 (0.19-2.60)  | 0.80     |
+| TMB/BRAF x Rx | 0.95 (0.32-2.82)  | 0.91     |
 
 Overall Survival: Firth vs Ridge Regression
 
-*Note:* Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF
-main effects only; interaction product terms built before fitting;
-lambda by 10-fold CV (lambda.min = 86.857). glmnet gives no standard
-errors. A substantial shift vs Firth = estimate sensitive to
-regularization.
+*Note:* Ridge: glmnet Cox, alpha = 0. Penalized: CRP, TMB/BRAF, CRP x Rx
+and TMB/BRAF x Rx; Age, sex and Rx unpenalized. lambda.min = 0.658 by
+10-fold CV (fold seed 123). glmnet gives no standard errors.
 
-| Interaction   | Firth (95% CI)   | Ridge (point est.) |
-|:--------------|:-----------------|:-------------------|
-| CRP x Rx      | 0.26 (0.06-1.34) | 0.33               |
-| TMB/BRAF x Rx | 0.65 (0.18-2.41) | 0.45               |
+| Interaction   | Firth HR (95% CI) | Ridge HR |
+|:--------------|:------------------|:---------|
+| CRP x Rx      | 0.26 (0.06-1.34)  | 0.66     |
+| TMB/BRAF x Rx | 0.65 (0.18-2.41)  | 0.74     |
 
 Progression-Free Survival: Firth vs Ridge Regression
 
-*Note:* Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF
-main effects only; interaction product terms built before fitting;
-lambda by 10-fold CV (lambda.min = 88.691). glmnet gives no standard
-errors.
+*Note:* Ridge: glmnet Cox, alpha = 0. Penalized: CRP, TMB/BRAF, CRP x Rx
+and TMB/BRAF x Rx; Age, sex and Rx unpenalized. lambda.min = 0.343 by
+10-fold CV (fold seed 123). glmnet gives no standard errors.
+
+Cross-validation selected lambda.min = 0.658 for OS and 0.343 for PFS,
+both inside the grid, so neither ridge estimate is a boundary solution.
+
+| Endpoint | Quantity         | Seed 123 (reported) |   Min | Median |   Max |
+|:---------|:-----------------|--------------------:|------:|-------:|------:|
+| OS       | lambda.min       |               0.658 | 0.404 |  0.658 | 0.911 |
+| OS       | CRP x Rx HR      |                0.80 |  0.76 |   0.80 |  0.83 |
+| OS       | TMB/BRAF x Rx HR |                0.91 |  0.91 |   0.91 |  0.92 |
+| PFS      | lambda.min       |               0.343 | 0.179 |  0.343 | 0.658 |
+| PFS      | CRP x Rx HR      |                0.66 |  0.59 |   0.66 |  0.74 |
+| PFS      | TMB/BRAF x Rx HR |                0.74 |  0.71 |   0.74 |  0.79 |
+
+Primary model ridge: lambda.min and interaction HRs over 20
+cross-validation fold seeds
+
+*Note:* Reported: the fit with fold seed 123, used in the tables and
+text. Min, Median, Max: over 20 fold seeds (123 to 142), including the
+reported one. lambda.min was at an end of the grid in 0 of 20 seeds for
+OS and 0 of 20 seeds for PFS. Grid: 100 lambda values spaced evenly on
+the log scale from 0.0001 to 1000.
+
+Across the 20 fold seeds, lambda.min ranged from 0.404 to 0.911 (OS) and
+from 0.179 to 0.658 (PFS). The CRP x Rx HR ranged from 0.76 to 0.83 (OS)
+and 0.59 to 0.74 (PFS), and the TMB/BRAF x Rx HR from 0.91 to 0.92 (OS)
+and 0.71 to 0.79 (PFS). Each interaction’s Firth-to-ridge shift gets the
+same label (substantial or little; at least 1.5-fold is substantial)
+under every fold seed.
 
 **Interpretation:** Firth’s method maximizes a penalized likelihood
 whose penalty reduces the small-sample bias of the maximum-likelihood
 estimate; the resulting estimate is bias-reduced, not unbiased. Ridge
-applies L2 shrinkage to the biomarker main effects (HR toward 1.0) with
-the penalty strength chosen by cross-validation; the interaction terms
-are unpenalized, so any movement in them reflects redistribution of the
-shrunken main-effect signal. Comparing the two methods reveals estimate
-stability: if Firth and Ridge agree closely, the estimate is robust; if
-the interaction moves substantially under ridge, the effect is sensitive
-to how the biomarker main effects are estimated in this sample.
+shrinks the CRP and TMB/BRAF main effects and both interaction terms
+jointly toward HR 1, with the penalty strength chosen by
+cross-validation, and leaves Age, sex and Rx unpenalized. Comparing the
+two shows how much of each interaction estimate survives shrinkage: if
+Firth and ridge agree closely, the estimate is stable under shrinkage
+(though still imprecise); if ridge pulls the interaction substantially
+toward 1, the data carry too little information to support the Firth
+magnitude. Because each biomarker’s main effect and interaction are
+shrunk together, a single interaction can also move away from 1. The
+Discussion lists the shift of each interaction.
 
 
 
@@ -605,50 +668,85 @@ Ridge regression is applied here with a targeted penalty: only the TLR
 main effect and the TLR x Rx interaction are L2-shrunk. CRP, TMB/BRAF,
 Age, sex, and Rx are estimated without penalty, since they enter the
 model as adjustment covariates whose effects are not the inferential
-target.
+target. The fit uses the same glmnet approach as the primary ridge
+model: an explicit design matrix with a pre-built TLR x Rx product term,
+lambda chosen by 10-fold cross-validation over the same grid with the
+analysis seed, the same boundary check, and the same 20 fold seeds for
+the spread. Report versions up to 3.10 used `survival::ridge()` with a
+fixed penalty (theta = 1) that was not cross-validated.
 
-| Term                         | Firth (95% CI)   | Ridge HR (SE)   |
-|:-----------------------------|:-----------------|:----------------|
-| TLR x Rx                     | 2.47 (0.75-7.75) | 2.12 (SE: 0.58) |
-| TLR (main effect)            | 0.21 (0.08-0.55) | 0.24 (SE: 0.47) |
-| Age (per year)               | 1.01 (0.98-1.04) | 1.01 (SE: 0.02) |
-| Sex (male vs female)         | 1.47 (0.82-2.67) | 1.49 (SE: 0.30) |
-| Rx (experimental vs control) | 0.59 (0.24-1.55) | 0.66 (SE: 0.48) |
-| CRP                          | 0.53 (0.25-1.05) | 0.52 (SE: 0.36) |
-| TMB/BRAF                     | 0.86 (0.48-1.52) | 0.86 (SE: 0.29) |
+| Term                         | Firth HR (95% CI) | Ridge HR |
+|:-----------------------------|:------------------|:---------|
+| TLR x Rx                     | 2.47 (0.75-7.75)  | 1.13     |
+| TLR (main effect)            | 0.21 (0.08-0.55)  | 0.44     |
+| Age (per year)               | 1.01 (0.98-1.04)  | 1.01     |
+| Sex (male vs female)         | 1.47 (0.82-2.67)  | 1.55     |
+| Rx (experimental vs control) | 0.59 (0.24-1.55)  | 1.09     |
+| CRP                          | 0.53 (0.25-1.05)  | 0.51     |
+| TMB/BRAF                     | 0.86 (0.48-1.52)  | 0.88     |
 
 TLR Responder Model - Overall Survival: Firth vs Ridge, all coefficients
 
-*Note:* Ridge applies L2 shrinkage to the TLR main effect and the TLR x
-Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.
-survival::ridge() does not produce confidence intervals; standard errors
-are shown for reference.
+*Note:* Ridge: glmnet Cox, alpha = 0. Penalized: TLR main effect and TLR
+x Rx; Age, sex, Rx, CRP and TMB/BRAF unpenalized. lambda.min = 0.0572 by
+10-fold CV (fold seed 123). glmnet gives no standard errors.
 
-| Term                         | Firth (95% CI)   | Ridge HR (SE)   |
-|:-----------------------------|:-----------------|:----------------|
-| TLR x Rx                     | 0.73 (0.20-2.56) | 0.67 (SE: 0.63) |
-| TLR (main effect)            | 0.19 (0.07-0.56) | 0.20 (SE: 0.53) |
-| Age (per year)               | 1.00 (0.97-1.03) | 1.00 (SE: 0.02) |
-| Sex (male vs female)         | 1.10 (0.56-2.17) | 1.11 (SE: 0.35) |
-| Rx (experimental vs control) | 1.26 (0.45-3.91) | 1.38 (SE: 0.55) |
-| CRP                          | 0.44 (0.19-0.97) | 0.42 (SE: 0.42) |
-| TMB/BRAF                     | 0.48 (0.23-0.94) | 0.47 (SE: 0.36) |
+| Term                         | Firth HR (95% CI) | Ridge HR |
+|:-----------------------------|:------------------|:---------|
+| TLR x Rx                     | 0.73 (0.20-2.56)  | 0.58     |
+| TLR (main effect)            | 0.19 (0.07-0.56)  | 0.38     |
+| Age (per year)               | 1.00 (0.97-1.03)  | 1.00     |
+| Sex (male vs female)         | 1.10 (0.56-2.17)  | 1.13     |
+| Rx (experimental vs control) | 1.26 (0.45-3.91)  | 1.69     |
+| CRP                          | 0.44 (0.19-0.97)  | 0.42     |
+| TMB/BRAF                     | 0.48 (0.23-0.94)  | 0.50     |
 
 TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all
 coefficients
 
-*Note:* Ridge applies L2 shrinkage to the TLR main effect and the TLR x
-Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.
-survival::ridge() does not produce confidence intervals; standard errors
-are shown for reference.
+*Note:* Ridge: glmnet Cox, alpha = 0. Penalized: TLR main effect and TLR
+x Rx; Age, sex, Rx, CRP and TMB/BRAF unpenalized. lambda.min = 0.0792 by
+10-fold CV (fold seed 123). glmnet gives no standard errors.
+
+Cross-validation selected lambda.min = 0.0572 for OS and 0.0792 for PFS,
+both inside the grid, so neither ridge estimate is a boundary solution.
+
+| Endpoint | Quantity    | Seed 123 (reported) |    Min | Median |    Max |
+|:---------|:------------|--------------------:|-------:|-------:|-------:|
+| OS       | lambda.min  |              0.0572 | 0.0112 | 0.0419 |  0.343 |
+| OS       | TLR x Rx HR |                1.13 |   0.92 |   1.25 |   1.80 |
+| PFS      | lambda.min  |              0.0792 | 0.0486 | 0.0673 | 0.0933 |
+| PFS      | TLR x Rx HR |                0.58 |   0.57 |   0.57 |   0.58 |
+
+TLR responder ridge: lambda.min and TLR x Rx HR over 20 cross-validation
+fold seeds
+
+*Note:* Reported: the fit with fold seed 123, used in the tables and
+text. Min, Median, Max: over 20 fold seeds (123 to 142), including the
+reported one. lambda.min was at an end of the grid in 0 of 20 seeds for
+OS and 0 of 20 seeds for PFS. Grid: 100 lambda values spaced evenly on
+the log scale from 0.0001 to 1000.
 
 **Interpretation:** The Firth HR is the penalized-likelihood estimate of
 the TLR x Rx interaction; Firth’s penalty reduces its small-sample bias
-but does not make it unbiased. The ridge HR applies L2 shrinkage
-targeted at the TLR terms; if the ridge estimate is substantially closer
-to HR = 1.0 than the Firth estimate, the responder-stratified
-interaction is sensitive to regularization, consistent with a
-small-sample, partly tautological signal. Findings here are exploratory
+but does not make it unbiased. Ridge shrinks the TLR main effect and the
+TLR x Rx interaction together, with the penalty chosen by
+cross-validation. In the responder model, for OS the TLR x Rx HR changes
+substantially and moves toward 1 (Firth 2.47, ridge 1.13; 0.92 to 1.80
+over the 20 fold seeds, a range that includes 1), and whether the shift
+counts as substantial depends on the fold seed; for PFS the TLR x Rx HR
+changes little and moves away from 1 (Firth 0.73, ridge 0.58; 0.57 to
+0.58 over the 20 fold seeds). The reported ridge OS estimate stays above
+1, but not under every fold seed, so the direction of the OS interaction
+is not robust to shrinkage. The ridge PFS estimate stays below 1 under
+every fold seed, so shrinkage changes its size but not its direction.
+Because the two TLR terms are correlated and shrunk jointly, the
+interaction need not move toward 1: when the penalty shrinks the TLR
+main effect (the TLR contrast in the control arm) more than the TLR
+contrast in the experimental arm, the interaction moves away from 1. An
+interaction that changes substantially under ridge, or whose ridge
+estimate depends on the fold seed, is not pinned down by these data, and
+its magnitude should not be interpreted. Findings here are exploratory
 and should not be used for treatment selection, since TLR is not
 measurable before nivolumab starts. They may motivate landmark or formal
 causal-mediation analyses in future work.
@@ -879,42 +977,74 @@ Landmark TLR Model: Progression-Free Survival - Full Coefficient Table
 ## Ridge Sensitivity Analysis (Landmark, TLR Terms Penalized)
 
 Ridge regression is applied to the landmark cohorts with the same
-targeted penalty as the responder analysis: only the TLR main effect and
-the TLR x Rx interaction are L2-shrunk, while Age, sex, Rx, CRP, and
-TMB/BRAF remain unpenalized.
+targeted penalty, glmnet design, lambda grid, boundary check and fold
+seeds as the responder analysis: only the TLR main effect and the TLR x
+Rx interaction are L2-shrunk, while Age, sex, Rx, CRP, and TMB/BRAF
+remain unpenalized.
 
-| Term                         | Firth (95% CI)   | Ridge HR (SE)   |
-|:-----------------------------|:-----------------|:----------------|
-| TLR x Rx                     | 2.47 (0.75-7.75) | 2.12 (SE: 0.58) |
-| TLR (main effect)            | 0.21 (0.08-0.55) | 0.24 (SE: 0.47) |
-| Age (per year)               | 1.01 (0.98-1.04) | 1.01 (SE: 0.02) |
-| Sex (male vs female)         | 1.47 (0.82-2.67) | 1.49 (SE: 0.30) |
-| Rx (experimental vs control) | 0.59 (0.24-1.55) | 0.66 (SE: 0.48) |
-| CRP                          | 0.53 (0.25-1.05) | 0.52 (SE: 0.36) |
-| TMB/BRAF                     | 0.86 (0.48-1.52) | 0.86 (SE: 0.29) |
+| Term                         | Firth HR (95% CI) | Ridge HR |
+|:-----------------------------|:------------------|:---------|
+| TLR x Rx                     | 2.47 (0.75-7.75)  | 1.13     |
+| TLR (main effect)            | 0.21 (0.08-0.55)  | 0.44     |
+| Age (per year)               | 1.01 (0.98-1.04)  | 1.01     |
+| Sex (male vs female)         | 1.47 (0.82-2.67)  | 1.55     |
+| Rx (experimental vs control) | 0.59 (0.24-1.55)  | 1.09     |
+| CRP                          | 0.53 (0.25-1.05)  | 0.51     |
+| TMB/BRAF                     | 0.86 (0.48-1.52)  | 0.88     |
 
 Landmark TLR Model - Overall Survival: Firth vs Ridge, all coefficients
 
-*Note:* Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR
-main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and
-TMB/BRAF are unpenalized.
+*Note:* Week-9 landmark cohort; time from the landmark. Ridge: glmnet
+Cox, alpha = 0. Penalized: TLR main effect and TLR x Rx; Age, sex, Rx,
+CRP and TMB/BRAF unpenalized. lambda.min = 0.0572 by 10-fold CV (fold
+seed 123). glmnet gives no standard errors.
 
-| Term                         | Firth (95% CI)   | Ridge HR (SE)   |
-|:-----------------------------|:-----------------|:----------------|
-| TLR x Rx                     | 0.88 (0.21-3.38) | 0.79 (SE: 0.68) |
-| TLR (main effect)            | 0.18 (0.06-0.58) | 0.19 (SE: 0.57) |
-| Age (per year)               | 1.00 (0.97-1.04) | 1.00 (SE: 0.02) |
-| Sex (male vs female)         | 0.94 (0.45-1.97) | 0.95 (SE: 0.38) |
-| Rx (experimental vs control) | 0.95 (0.29-3.40) | 1.05 (SE: 0.62) |
-| CRP                          | 0.55 (0.23-1.24) | 0.54 (SE: 0.43) |
-| TMB/BRAF                     | 0.35 (0.16-0.73) | 0.34 (SE: 0.39) |
+| Term                         | Firth HR (95% CI) | Ridge HR |
+|:-----------------------------|:------------------|:---------|
+| TLR x Rx                     | 0.88 (0.21-3.38)  | 0.63     |
+| TLR (main effect)            | 0.18 (0.06-0.58)  | 0.32     |
+| Age (per year)               | 1.00 (0.97-1.04)  | 1.00     |
+| Sex (male vs female)         | 0.94 (0.45-1.97)  | 0.99     |
+| Rx (experimental vs control) | 0.95 (0.29-3.40)  | 1.31     |
+| CRP                          | 0.55 (0.23-1.24)  | 0.53     |
+| TMB/BRAF                     | 0.35 (0.16-0.73)  | 0.36     |
 
 Landmark TLR Model - Progression-Free Survival: Firth vs Ridge, all
 coefficients
 
-*Note:* Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR
-main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and
-TMB/BRAF are unpenalized.
+*Note:* Week-9 landmark cohort; time from the landmark. Ridge: glmnet
+Cox, alpha = 0. Penalized: TLR main effect and TLR x Rx; Age, sex, Rx,
+CRP and TMB/BRAF unpenalized. lambda.min = 0.0486 by 10-fold CV (fold
+seed 123). glmnet gives no standard errors.
+
+Cross-validation selected lambda.min = 0.0572 for OS and 0.0486 for PFS,
+both inside the grid, so neither ridge estimate is a boundary solution.
+
+| Endpoint | Quantity    | Seed 123 (reported) |    Min | Median |   Max |
+|:---------|:------------|--------------------:|-------:|-------:|------:|
+| OS       | lambda.min  |              0.0572 | 0.0112 | 0.0419 | 0.343 |
+| OS       | TLR x Rx HR |                1.13 |   0.92 |   1.25 |  1.80 |
+| PFS      | lambda.min  |              0.0486 | 0.0413 | 0.0792 |  0.11 |
+| PFS      | TLR x Rx HR |                0.63 |   0.63 |   0.64 |  0.65 |
+
+Landmark TLR ridge: lambda.min and TLR x Rx HR over 20 cross-validation
+fold seeds
+
+*Note:* Reported: the fit with fold seed 123, used in the tables and
+text. Min, Median, Max: over 20 fold seeds (123 to 142), including the
+reported one. lambda.min was at an end of the grid in 0 of 20 seeds for
+OS and 0 of 20 seeds for PFS. Grid: 100 lambda values spaced evenly on
+the log scale from 0.0001 to 1000.
+
+Under the week-9 landmark, for OS the TLR x Rx HR changes substantially
+and moves toward 1 (Firth 2.47, ridge 1.13; 0.92 to 1.80 over the 20
+fold seeds, a range that includes 1), and whether the shift counts as
+substantial depends on the fold seed; for PFS the TLR x Rx HR changes
+little and moves away from 1 (Firth 0.88, ridge 0.63; 0.63 to 0.65 over
+the 20 fold seeds). The reported ridge OS estimate stays above 1, but
+not under every fold seed, so the direction of the OS interaction is not
+robust to shrinkage. The ridge PFS estimate stays below 1 under every
+fold seed, so shrinkage changes its size but not its direction.
 
 **Interpretation:** The two endpoints behave differently under the
 landmark.
@@ -1092,22 +1222,28 @@ larger cohort.
 
 ## Ridge regression sensitivity
 
-The ridge model penalizes the CRP and TMB/BRAF main effects with a
-cross-validated lambda (OS lambda.min = 86.857, PFS lambda.min = 88.691)
-and estimates the interaction terms as pre-built product terms, so the
-ridge and Firth interaction coefficients are the same
+The ridge model shrinks the CRP and TMB/BRAF main effects and both
+treatment interactions together, leaves Age, sex and Rx unpenalized, and
+chooses lambda by cross-validation (OS lambda.min = 0.658, PFS
+lambda.min = 0.343). The interactions are pre-built product terms, so
+the ridge and Firth interaction coefficients are the same
 treatment-by-biomarker contrast. For OS, the CRP × Rx estimate changes
-substantially under this penalization (Firth HR 0.65 → Ridge HR 0.40),
-and the TMB/BRAF × Rx estimate changes little (0.95 → 0.86). For PFS,
-the CRP × Rx estimate changes little (0.26 → 0.33) and the TMB/BRAF × Rx
-estimate changes little (0.65 → 0.45). A shift of at least 1.5-fold in
-the HR is labelled “substantial”. Because only the main effects are
-penalized, any shift in an interaction term reflects redistribution of
-the shrunken main-effect signal rather than independent support for a
-particular effect size: an interaction that moves substantially is
-sensitive to how the biomarker main effects are estimated and should not
-be over-interpreted, while one that changes little is not driven by the
-main-effect estimates.
+little under shrinkage and moves toward 1 (Firth HR 0.65 → Ridge HR
+0.80), and the TMB/BRAF × Rx estimate changes little and moves away from
+1 (0.95 → 0.91). For PFS, the CRP × Rx estimate changes substantially
+and moves toward 1 (0.26 → 0.66), and the TMB/BRAF × Rx estimate changes
+little and moves toward 1 (0.65 → 0.74). A shift of at least 1.5-fold in
+the HR is labelled “substantial”. Of the four interaction HRs, only CRP
+x Rx (PFS) changes substantially under shrinkage. Each interaction’s
+Firth-to-ridge shift gets the same label (substantial or little; at
+least 1.5-fold is substantial) under every fold seed. An interaction
+that ridge pulls substantially toward 1 carries too little information
+in this sample to support its Firth magnitude and should not be
+over-interpreted; one that changes little is stable under shrinkage but
+remains imprecise, as its wide Firth confidence interval shows. Because
+each biomarker’s main effect and interaction are shrunk together, a
+small move away from 1 reflects the joint shrinkage of correlated terms
+rather than support for a larger effect.
 
 ## TLR responder analysis (exploratory)
 
@@ -1121,12 +1257,19 @@ progression-free survival. The OS estimate sits **above 1.0**, which
 directionally implies the (TLR-positive vs TLR-negative) hazard contrast
 is *worse* on the experimental arm than on the control arm — the
 opposite of a “TLR-positive predicts immunotherapy benefit” pattern. PFS
-is closer to null. Ridge shrinkage of the TLR terms gives 2.12 (SE:
-0.58) (OS) and 0.67 (SE: 0.63) (PFS): ridge moves the OS estimate
-modestly toward null but preserves the directional pattern, and barely
-changes the PFS estimate. PLRT p-values (0.135 OS, 0.630 PFS) do not
-reach conventional significance, consistent with the wide
-profile-likelihood CIs in this small sample.
+is closer to null. Under ridge shrinkage of the TLR main effect and the
+TLR × Rx interaction (glmnet, cross-validated lambda), for OS the TLR x
+Rx HR changes substantially and moves toward 1 (Firth 2.47, ridge 1.13;
+0.92 to 1.80 over the 20 fold seeds, a range that includes 1), and
+whether the shift counts as substantial depends on the fold seed; for
+PFS the TLR x Rx HR changes little and moves away from 1 (Firth 0.73,
+ridge 0.58; 0.57 to 0.58 over the 20 fold seeds). The reported ridge OS
+estimate stays above 1, but not under every fold seed, so the direction
+of the OS interaction is not robust to shrinkage. The ridge PFS estimate
+stays below 1 under every fold seed, so shrinkage changes its size but
+not its direction. PLRT p-values (0.135 OS, 0.630 PFS) do not reach
+conventional significance, consistent with the wide profile-likelihood
+CIs in this small sample.
 
 The directional pattern is consistent with the descriptive imbalance:
 TLR-positive prevalence is 75.9% in the control arm and 52.8% in the
@@ -1196,9 +1339,10 @@ measured on treatment. **Exploratory responder analysis:**
 its treatment interaction, with CRP and TMB/BRAF retained as prognostic
 main-effect adjustments. Profile likelihood CIs, PLRT for interaction
 testing; all 15 Firth fits converged without reaching the iteration
-limit. Ridge sensitivity analysis penalizes the CRP/TMB main effects in
-the primary model and the TLR terms (main effect + TLR:Rx) in the
-exploratory model.
+limit. Ridge sensitivity analysis (glmnet, lambda by 10-fold CV over a
+fixed grid, spread over 20 fold seeds) shrinks the CRP and TMB/BRAF main
+effects and their treatment interactions together in the primary model,
+and the TLR terms (main effect + TLR:Rx) in the exploratory models.
 
 **Proportional hazards:** Global Schoenfeld p = 0.254 for OS and 0.046
 for PFS. PFS biomarker main-effect p-values are 0.144 (CRP) and 0.056
@@ -1221,22 +1365,28 @@ compared with 0.42 (0.11-1.68) under the former all-deaths rule.
 | TMB/BRAF × Rx | 0.95 (0.32-2.82) | 0.919  | 0.65 (0.18-2.41) | 0.516  |
 
 No interaction is statistically significant. CRP × Rx PFS (HR 0.26) is
-the strongest directional signal; under ridge regularization of the
-biomarker main effects (glmnet, CV lambda) it changes little (Ridge HR
-0.33). The TMB/BRAF × Rx OS interaction changes little (Ridge HR 0.86 vs
-Firth 0.95). The PFS PH diagnostic does not establish which term drives
-the global departure.
+the strongest directional signal; under ridge shrinkage of the biomarker
+main effects and interactions together (glmnet, CV lambda) it changes
+substantially and moves toward 1 (Ridge HR 0.66; 0.59 to 0.74 over 20
+fold seeds). Of the four interaction HRs, only CRP x Rx (PFS) changes
+substantially under shrinkage. The PFS PH diagnostic does not establish
+which term drives the global departure.
 
 **TLR responder analysis (exploratory):** Firth TLR × Rx HR 2.47
-(0.75-7.75) for OS and 0.73 (0.20-2.56) for PFS. Ridge-penalized TLR
-terms: 2.12 (SE: 0.58) (OS), 0.67 (SE: 0.63) (PFS). PLRT p-values (0.135
-OS, 0.630 PFS) do not reach conventional significance in this small
-sample. TLR-positive prevalence: control 75.9%, experimental 52.8% —
-markedly higher TLR-positivity in the control arm. The OS direction (HR
-\> 1) of TLR × Rx, combined with the prevalence pattern, is more
-consistent with TLR acting as a prognostic marker for chemo-responsive
-disease than as a predictive marker for immunotherapy benefit. Because
-TLR is post-randomization, this is a responder-stratified,
+(0.75-7.75) for OS and 0.73 (0.20-2.56) for PFS. Ridge with the TLR
+terms penalized (glmnet, CV lambda): TLR × Rx HR 1.13 for OS (0.92 to
+1.80 over 20 fold seeds) and 0.58 for PFS (0.57 to 0.58). The reported
+ridge OS estimate stays above 1, but not under every fold seed, so the
+direction of the OS interaction is not robust to shrinkage. The ridge
+PFS estimate stays below 1 under every fold seed, so shrinkage changes
+its size but not its direction. PLRT p-values (0.135 OS, 0.630 PFS) do
+not reach conventional significance in this small sample. TLR-positive
+prevalence: control 75.9%, experimental 52.8% — markedly higher
+TLR-positivity in the control arm. The OS direction (HR \> 1) of TLR ×
+Rx, combined with the prevalence pattern, is more consistent with TLR
+acting as a prognostic marker for chemo-responsive disease than as a
+predictive marker for immunotherapy benefit. Because TLR is
+post-randomization, this is a responder-stratified,
 hypothesis-generating contrast rather than a causal predictive-biomarker
 estimate.
 
@@ -1270,4 +1420,4 @@ supports baseline treatment selection on TLR.
 
 **Report completed on:** 2026-09-25  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 3.10
+**Report version:** 3.11

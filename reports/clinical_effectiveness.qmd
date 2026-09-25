@@ -383,7 +383,7 @@ The **unified DAG-informed model** is:
 
 $$\text{Surv}(\text{time}, \text{event}) \sim \text{Age} + \text{sex} + \text{Rx} + \text{CRP} + \text{TMB/BRAF} + \text{CRP} \times \text{Rx} + \text{TMB/BRAF} \times \text{Rx}$$
 
-Ridge regression (L2-penalized Cox) is applied as a sensitivity analysis to assess the stability of the interaction estimates under shrinkage. TLR is reported in a separate exploratory section.
+Ridge regression (L2-penalized Cox), which shrinks the biomarker main effects and their treatment interactions together, is applied as a sensitivity analysis to assess how far the interaction estimates move under shrinkage. TLR is reported in a separate exploratory section.
 
 # Methodological Notes
 
@@ -410,14 +410,37 @@ Firth's penalty reduces the small-sample bias of the maximum-likelihood estimate
 
 ## Ridge Regression Sensitivity Analysis
 
-We use Ridge regression as a sensitivity analysis to assess the stability of our interaction estimates. Ridge regression (also called L2-penalized regression or Tikhonov regularization) belongs to the family of regularized or penalized regression methods. In survival analysis, this is implemented as a penalized Cox model.
+```{r ridge-settings, include=FALSE}
+# Ridge settings shared by the primary and TLR ridge fits and quoted in the
+# Methods text (issue #183). glmnet expects a decreasing lambda sequence.
+RIDGE_NFOLDS       <- 10
+RIDGE_LAMBDA_RANGE <- c(1e-4, 1e3)
+RIDGE_N_LAMBDA     <- 100
+RIDGE_LAMBDA_GRID  <- exp(seq(log(RIDGE_LAMBDA_RANGE[2]), log(RIDGE_LAMBDA_RANGE[1]),
+                              length.out = RIDGE_N_LAMBDA))
+RIDGE_N_SEEDS      <- 20
+RIDGE_SEEDS        <- analysis_seed + seq_len(RIDGE_N_SEEDS) - 1L
+stopifnot(RIDGE_SEEDS[1] == analysis_seed)
 
-**How Ridge regression works:**
+# Lambda for display: three significant digits, no scientific notation.
+fmt_lambda_value <- function(x) trimws(formatC(x, digits = 3, format = "fg"))
+ridge_grid_txt <- sprintf("%d lambda values spaced evenly on the log scale from %s to %s",
+                          RIDGE_N_LAMBDA, fmt_lambda_value(RIDGE_LAMBDA_RANGE[1]),
+                          fmt_lambda_value(RIDGE_LAMBDA_RANGE[2]))
+```
 
-- Ridge adds a penalty term that discourages large coefficients. The bigger a coefficient tries to get, the more the model resists, pulling estimates toward zero (HR toward 1.0).
-- Unlike LASSO (alpha = 1), which sets some coefficients exactly to zero and performs variable selection, Ridge (alpha = 0) shrinks all coefficients but retains all predictors.
-- The degree of shrinkage is controlled by the tuning parameter lambda, which is selected via **cross-validation (CV)**: the data are repeatedly split into training and validation sets, and the lambda that produces the best predictive performance is chosen. Here this is `glmnet::cv.glmnet(family = "cox", alpha = 0)` with 10-fold CV of the partial-likelihood deviance and `lambda.min`; fold assignment is seeded so the result is reproducible.
-- **Implementation detail.** The model is fitted on an explicit design matrix (Age, sex, Rx, CRP, TMB/BRAF, CRP x Rx, TMB/BRAF x Rx) in which the product terms are constructed before fitting. This matters because `survival::ridge()` with a factor treatment variable and a formula interaction such as `crp:Rx` codes the interaction separately for each arm (the CRP slope within the control arm and within the experimental arm) rather than as the single treatment-by-biomarker contrast; the pre-built product term recovers the same contrast that the Firth model estimates. In the primary model only the CRP and TMB/BRAF main effects are penalized (penalty factor 1); Age, sex, Rx and the two interaction terms have penalty factor 0. glmnet does not provide standard errors, so ridge results are point estimates.
+We use ridge regression as a sensitivity analysis for the interaction estimates. Ridge regression (also called L2-penalized regression or Tikhonov regularization) is a penalized regression method; in survival analysis it is a penalized Cox model.
+
+**How ridge regression works:**
+
+- Ridge adds a penalty on the sum of the squared (standardized) coefficients of the penalized terms, pulling those coefficients toward zero (HR toward 1.0). Terms with a penalty factor of zero are estimated without shrinkage.
+- Unlike LASSO (alpha = 1), which sets some coefficients exactly to zero and performs variable selection, ridge (alpha = 0) shrinks the penalized coefficients but keeps every term in the model.
+- The penalty is shrinkage of a block of coefficients, not of each coefficient separately. When two penalized terms are correlated, as a biomarker's main effect and its treatment interaction are, shrinking the block can move one of them away from 1 while the other moves toward it.
+- The degree of shrinkage is controlled by the tuning parameter lambda, selected by **cross-validation (CV)**: the data are split into folds, each fold is predicted from a model fitted to the others, and the lambda with the best out-of-fold performance is chosen. Here this is `glmnet::cv.glmnet(family = "cox", alpha = 0)` with `r RIDGE_NFOLDS`-fold CV of the partial-likelihood deviance and `lambda.min`, over an explicit grid of `r ridge_grid_txt`.
+- **Boundary check.** A `lambda.min` at either end of the grid means CV preferred the largest (or smallest) penalty tried, so the selected penalty reflects the grid limit rather than an interior optimum. The report does not stop in that case: the lambda is marked as a boundary solution in the tables and a note under the tables says what the estimate then represents.
+- **Fold seeds.** Fold assignment is seeded with the analysis seed (`r analysis_seed`) for the reported estimates. Because the fold split can change `lambda.min` in a sample this small, every ridge model is also refitted with `r RIDGE_N_SEEDS` fold seeds (`r min(RIDGE_SEEDS)` to `r max(RIDGE_SEEDS)`), and the minimum, median and maximum of `lambda.min` and of the interaction HRs are reported.
+- **Implementation detail.** The model is fitted on an explicit design matrix (Age, sex, Rx, CRP, TMB/BRAF, CRP x Rx, TMB/BRAF x Rx) in which the product terms are constructed before fitting. This matters because `survival::ridge()` with a factor treatment variable and a formula interaction such as `crp:Rx` codes the interaction separately for each arm (the CRP slope within the control arm and within the experimental arm) rather than as the single treatment-by-biomarker contrast; the pre-built product term recovers the same contrast that the Firth model estimates.
+- **Penalty design.** In the primary model the CRP and TMB/BRAF main effects and both interaction terms are penalized (penalty factor 1); Age, sex and Rx are unpenalized (penalty factor 0). The biomarker main effects and interactions are penalized together because penalizing one group alone distorts the comparison (issue #183). When only the main effects were penalized (report versions up to 3.10), CV chose the largest or nearly the largest penalty in most fold seeds; this removed the CRP and TMB/BRAF main effects and let their prognostic signal move into the unpenalized interactions, so the "sensitivity analysis" compared the primary model with a model without biomarker main effects. When only the interactions are penalized, CV shrinks them to HR 1 in most fold seeds. In the exploratory TLR models the TLR main effect and the TLR x Rx interaction are penalized; Age, sex, Rx, CRP and TMB/BRAF are unpenalized. glmnet does not provide standard errors, so ridge results are point estimates.
 
 **Why not LASSO or Elastic Net?**
 
@@ -431,9 +454,9 @@ We determined that LASSO and elastic net are **not appropriate** for this analys
 
 Elastic net (alpha = 0.1–0.3) represents a compromise but does not fully address these concerns.
 
-**Interpreting Ridge results:**
+**Interpreting ridge results:**
 
-Ridge regression is not replacing the Firth estimates—it provides a reality check. When Ridge substantially shrinks an interaction coefficient toward zero while Firth estimates a large effect, this indicates the effect is too unstable to trust for practical use. The CV-selected lambda reflects how much regularization is needed for reasonable out-of-sample prediction given the sample size and collinearity structure.
+Ridge regression does not replace the Firth estimates; it asks how far each interaction moves when the biomarker terms are shrunk by the amount that cross-validation selects. When ridge pulls an interaction substantially toward HR 1 while Firth estimates a large effect, the data carry too little information to support the Firth magnitude, and the effect is too unstable to use in practice. When the interaction changes little, the estimate is stable under shrinkage, although it may still be imprecise. The CV-selected lambda reflects how much shrinkage gives the best out-of-sample prediction for this sample size and correlation structure; in a sample this small the CV curve can be flat, so the fold-seed spread is reported alongside each estimate.
 
 # Data Preparation
 
@@ -853,7 +876,7 @@ if (nrow(forest_data) > 0) {
 
 # Sensitivity Analysis: Ridge Regression
 
-Ridge regression (L2-penalized Cox, alpha = 0) shrinks coefficients toward zero but does not eliminate any, providing a sensitivity check for the stability of the interaction estimates. The same unified model terms are used, entered through an explicit design matrix in which the CRP x Rx and TMB/BRAF x Rx product terms are built before fitting, so each ridge interaction coefficient is the single treatment-by-biomarker contrast that the Firth model estimates (issue #153). Only the biomarker main effects (CRP and TMB/BRAF) are penalized; Age, sex, Rx and the two interaction terms carry a penalty factor of zero. The penalty lambda is chosen by 10-fold cross-validation of the partial-likelihood deviance (`glmnet::cv.glmnet`, `lambda.min`), with fold assignment seeded for reproducibility.
+Ridge regression (L2-penalized Cox, alpha = 0) shrinks the penalized coefficients toward zero without removing any term, and shows how far the interaction estimates move under shrinkage. The unified model terms are entered through an explicit design matrix in which the CRP x Rx and TMB/BRAF x Rx product terms are built before fitting, so each ridge interaction coefficient is the single treatment-by-biomarker contrast that the Firth model estimates (issue #153). The CRP and TMB/BRAF main effects and both interaction terms are penalized together; Age, sex and Rx carry a penalty factor of zero (issue #183). The penalty lambda is chosen by `r RIDGE_NFOLDS`-fold cross-validation of the partial-likelihood deviance (`glmnet::cv.glmnet`, `lambda.min`) over `r ridge_grid_txt`, with fold assignment seeded by the analysis seed (`r analysis_seed`). The fit is repeated for `r RIDGE_N_SEEDS` fold seeds to show how much the result depends on the fold split.
 
 ```{r ridge-regression, include=FALSE}
 # =============================================================================
@@ -865,44 +888,66 @@ Ridge regression (L2-penalized Cox, alpha = 0) shrinks coefficients toward zero 
 # each arm rather than the CRP x Rx contrast. Building crp_x_rx = crp * Rx_num
 # beforehand gives the same single interaction coefficient as the Firth model.
 #
-# Penalty design: L2 penalty on the biomarker main effects only (penalty
-# factor 1 for crp and tmb_braf, 0 for Age, sex, Rx, and both interactions).
-# Lambda: 10-fold CV of the Cox partial-likelihood deviance, lambda.min.
+# Penalty design (issue #183): the biomarker block, i.e. the CRP and TMB/BRAF
+# main effects AND both treatment interactions, has penalty factor 1; Age, sex
+# and Rx have penalty factor 0. Penalizing the main effects alone let CV
+# remove them (lambda.min at or near the upper end of the path) and moved their
+# prognostic signal into the unpenalized interactions; penalizing the
+# interactions alone let CV shrink them to HR 1.
+#
+# Lambda: RIDGE_NFOLDS-fold CV of the Cox partial-likelihood deviance over the
+# explicit grid RIDGE_LAMBDA_GRID (ridge-settings chunk), lambda.min. A
+# lambda.min at either end of the grid is FLAGGED as a boundary solution in the
+# tables and in a note under them; the render does not stop, because a
+# boundary fit is still a valid, if less informative, sensitivity result.
+#
+# Seeds: the reported fit uses analysis_seed; every model is refitted over
+# RIDGE_SEEDS (whose first element is analysis_seed) to show how lambda.min and
+# the interaction HRs depend on the fold split.
+#
 # glmnet reports no standard errors, so the ridge estimates are point estimates.
 # =============================================================================
 
+ridge_base_columns <- function(df) {
+  cbind(
+    Age      = df$Age,
+    sex_male = as.numeric(df$sex == SEX_MALE_LEVEL),
+    Rx       = df$Rx_num,
+    crp      = df$crp_num,
+    tmb_braf = df$tmb_braf_num
+  )
+}
 ridge_design <- function(df) {
   cbind(
-    Age           = df$Age,
-    sex_male      = as.numeric(df$sex == SEX_MALE_LEVEL),
-    Rx            = df$Rx_num,
-    crp           = df$crp_num,
-    tmb_braf      = df$tmb_braf_num,
+    ridge_base_columns(df),
     crp_x_rx      = df$crp_num * df$Rx_num,
     tmb_braf_x_rx = df$tmb_braf_num * df$Rx_num
   )
 }
 ridge_penalty_factor <- c(Age = 0, sex_male = 0, Rx = 0, crp = 1, tmb_braf = 1,
-                          crp_x_rx = 0, tmb_braf_x_rx = 0)
-RIDGE_NFOLDS <- 10
+                          crp_x_rx = 1, tmb_braf_x_rx = 1)
 
 fit_ridge_cv <- function(time, event, X, penalty_factor, seed = analysis_seed,
-                         nfolds = RIDGE_NFOLDS) {
+                         nfolds = RIDGE_NFOLDS, lambda = RIDGE_LAMBDA_GRID) {
   stopifnot(identical(colnames(X), names(penalty_factor)))
   y <- survival::Surv(time, event)
   set.seed(seed)
   tryCatch({
     cvfit <- glmnet::cv.glmnet(
-      x = X, y = y, family = "cox", alpha = 0,
+      x = X, y = y, family = "cox", alpha = 0, lambda = lambda,
       penalty.factor = unname(penalty_factor),
       nfolds = nfolds, standardize = TRUE
     )
+    lambda_min <- cvfit$lambda.min
+    # Boundary: lambda.min at the largest or smallest penalty of the fitted path
+    # (the path is the whole grid unless glmnet stopped early).
+    boundary <- if (lambda_min >= max(cvfit$lambda)) "upper" else
+      if (lambda_min <= min(cvfit$lambda)) "lower" else "none"
     beta <- as.matrix(coef(cvfit, s = "lambda.min"))[, 1]
     list(
-      cvfit = cvfit,
-      lambda_min = cvfit$lambda.min,
-      lambda_1se = cvfit$lambda.1se,
-      coefs = data.frame(Term = names(beta), HR = exp(beta), SE = NA_real_,
+      cvfit = cvfit, seed = seed, lambda_min = lambda_min,
+      n_lambda = length(cvfit$lambda), boundary = boundary,
+      coefs = data.frame(Term = names(beta), HR = unname(exp(beta)),
                          stringsAsFactors = FALSE)
     )
   }, error = function(e) {
@@ -911,29 +956,178 @@ fit_ridge_cv <- function(time, event, X, penalty_factor, seed = analysis_seed,
   })
 }
 
-X_primary <- ridge_design(data_complete)
-ridge_os_fit  <- fit_ridge_cv(data_complete$OSwk,  data_complete$Death,
-                              X_primary, ridge_penalty_factor)
-ridge_pfs_fit <- fit_ridge_cv(data_complete$PFSwk, data_complete$Progression,
-                              X_primary, ridge_penalty_factor)
-ridge_os_ok  <- !is.null(ridge_os_fit)
-ridge_pfs_ok <- !is.null(ridge_pfs_fit)
-
 get_ridge_term <- function(fit, term) {
-  if (is.null(fit)) return(list(HR = NA_real_, SE = NA_real_))
+  if (is.null(fit)) return(list(HR = NA_real_))
   idx <- match(term, fit$coefs$Term)
-  if (is.na(idx)) return(list(HR = NA_real_, SE = NA_real_))
-  list(HR = fit$coefs$HR[idx], SE = NA_real_)
+  list(HR = if (is.na(idx)) NA_real_ else fit$coefs$HR[idx])
 }
+
+# Refit over RIDGE_SEEDS. The first seed is analysis_seed, so the first refit
+# must reproduce the reported fit exactly.
+ridge_seed_spread <- function(time, event, X, penalty_factor, terms, fit) {
+  fits <- lapply(RIDGE_SEEDS, function(s)
+    fit_ridge_cv(time, event, X, penalty_factor, seed = s))
+  ok <- !vapply(fits, is.null, logical(1))
+  fits_ok <- fits[ok]
+  hr <- matrix(NA_real_, nrow = length(fits_ok), ncol = length(terms),
+               dimnames = list(NULL, terms))
+  for (tm in terms) {
+    hr[, tm] <- vapply(fits_ok, function(f) get_ridge_term(f, tm)$HR, numeric(1))
+  }
+  if (!is.null(fit) && ok[1]) {
+    stopifnot(
+      isTRUE(all.equal(fits[[1]]$lambda_min, fit$lambda_min)),
+      isTRUE(all.equal(unname(hr[1, ]),
+                       vapply(terms, function(tm) get_ridge_term(fit, tm)$HR,
+                              numeric(1), USE.NAMES = FALSE)))
+    )
+  }
+  list(
+    n_seeds    = length(RIDGE_SEEDS),
+    n_ok       = length(fits_ok),
+    lambda_min = vapply(fits_ok, `[[`, numeric(1), "lambda_min"),
+    n_boundary = sum(vapply(fits_ok, function(f) f$boundary != "none", logical(1))),
+    hr         = hr
+  )
+}
+
+# One ridge model: the reported (analysis_seed) fit plus the fold-seed spread
+# of lambda.min and of the HRs of `terms`.
+run_ridge_model <- function(time, event, X, penalty_factor, terms) {
+  fit <- fit_ridge_cv(time, event, X, penalty_factor)
+  list(fit = fit, terms = terms,
+       spread = ridge_seed_spread(time, event, X, penalty_factor, terms, fit))
+}
+
+X_primary <- ridge_design(data_complete)
+ridge_primary_terms <- c("crp_x_rx", "tmb_braf_x_rx")
+ridge_os  <- run_ridge_model(data_complete$OSwk,  data_complete$Death,
+                             X_primary, ridge_penalty_factor, ridge_primary_terms)
+ridge_pfs <- run_ridge_model(data_complete$PFSwk, data_complete$Progression,
+                             X_primary, ridge_penalty_factor, ridge_primary_terms)
+ridge_os_fit  <- ridge_os$fit
+ridge_pfs_fit <- ridge_pfs$fit
 
 ridge_crp_os  <- get_ridge_term(ridge_os_fit,  "crp_x_rx")
 ridge_tmb_os  <- get_ridge_term(ridge_os_fit,  "tmb_braf_x_rx")
 ridge_crp_pfs <- get_ridge_term(ridge_pfs_fit, "crp_x_rx")
 ridge_tmb_pfs <- get_ridge_term(ridge_pfs_fit, "tmb_braf_x_rx")
 
-fmt_lambda <- function(fit) if (is.null(fit)) "--" else sprintf("%.3f", fit$lambda_min)
-ridge_lambda_os  <- fmt_lambda(ridge_os_fit)
-ridge_lambda_pfs <- fmt_lambda(ridge_pfs_fit)
+# lambda.min for display; a boundary solution is marked in the value itself.
+ridge_lambda_label <- function(fit) {
+  if (is.null(fit)) return("--")
+  edge <- switch(fit$boundary, upper = " (upper grid edge)",
+                 lower = " (lower edge of the path)", "")
+  paste0(fmt_lambda_value(fit$lambda_min), edge)
+}
+ridge_lambda_os  <- ridge_lambda_label(ridge_os_fit)
+ridge_lambda_pfs <- ridge_lambda_label(ridge_pfs_fit)
+
+# Lambda statement quoted under the Firth-vs-ridge tables. When a reported fit
+# is a boundary solution the paragraph opens with a bold note.
+ridge_boundary_text <- function(models) {
+  fits <- lapply(models, `[[`, "fit")
+  is_null <- vapply(fits, is.null, logical(1))
+  ok <- fits[!is_null]
+  out <- character()
+  if (length(ok) > 0) {
+    b <- vapply(ok, `[[`, character(1), "boundary")
+    lam <- vapply(ok, function(f) fmt_lambda_value(f$lambda_min), character(1))
+    if (all(b == "none")) {
+      out <- sprintf(
+        "Cross-validation selected lambda.min = %s, %s inside the grid, so %s a boundary solution.",
+        paste(sprintf("%s for %s", lam, names(ok)), collapse = " and "),
+        if (length(ok) == 1) "which lies" else if (length(ok) == 2) "both" else "all",
+        if (length(ok) == 1) "the ridge estimate is not" else
+          if (length(ok) == 2) "neither ridge estimate is" else "no ridge estimate is")
+    } else {
+      edge_txt <- vapply(names(ok)[b != "none"], function(nm) {
+        f <- ok[[nm]]
+        if (f$boundary == "upper") {
+          sprintf(paste0("for %s, lambda.min is at the upper end of the grid (%s): ",
+                         "cross-validation preferred the largest penalty tried, so the ",
+                         "penalized coefficients are shrunk almost to zero (HR close to 1) ",
+                         "and the estimate reflects the grid limit rather than an interior ",
+                         "cross-validation optimum"), nm, fmt_lambda_value(f$lambda_min))
+        } else {
+          sprintf(paste0("for %s, lambda.min is at the lower end of the lambda path (%s): ",
+                         "cross-validation preferred the smallest penalty fitted, so the ",
+                         "ridge estimate is close to the unpenalized Cox estimate"),
+                  nm, fmt_lambda_value(f$lambda_min))
+        }
+      }, character(1))
+      out <- paste0("**Boundary solution:** ", paste(edge_txt, collapse = "; "),
+                    if (sum(b != "none") == 1) {
+                      ". Read this ridge estimate as a boundary solution, not as the result of a "
+                    } else {
+                      ". Read these ridge estimates as boundary solutions, not as the result of a "
+                    },
+                    "cross-validation-optimal penalty.")
+      interior <- names(ok)[b == "none"]
+      if (length(interior) > 0) {
+        out <- paste(out, sprintf("For %s, lambda.min = %s lies inside the grid.",
+                                  paste(interior, collapse = " and "),
+                                  paste(lam[b == "none"], collapse = " and ")))
+      }
+    }
+  }
+  if (any(is_null)) {
+    out <- paste(out, sprintf("The ridge fit failed for %s.",
+                              paste(names(fits)[is_null], collapse = " and ")))
+  }
+  trimws(out)
+}
+ridge_primary_boundary_text <- ridge_boundary_text(list(OS = ridge_os, PFS = ridge_pfs))
+
+# Fold-seed stability table: lambda.min and each HR under the reported seed
+# and their minimum, median and maximum over RIDGE_SEEDS.
+spread_stats <- function(x) if (length(x) == 0) rep(NA_real_, 3) else
+  c(min(x), stats::median(x), max(x))
+fmt_or_dash <- function(x, f) ifelse(is.na(x), "--", f(x))
+fmt_hr2 <- function(x) sprintf("%.2f", x)
+
+ridge_stability_rows <- function(model, endpoint, term_labels) {
+  sp <- model$spread
+  lam <- spread_stats(sp$lambda_min)
+  rows <- data.frame(Endpoint = endpoint, Quantity = "lambda.min",
+                     Reported = ridge_lambda_label(model$fit),
+                     Min = fmt_or_dash(lam[1], fmt_lambda_value),
+                     Median = fmt_or_dash(lam[2], fmt_lambda_value),
+                     Max = fmt_or_dash(lam[3], fmt_lambda_value),
+                     stringsAsFactors = FALSE)
+  for (tm in model$terms) {
+    s <- spread_stats(sp$hr[, tm])
+    rows <- rbind(rows, data.frame(
+      Endpoint = endpoint, Quantity = paste(term_labels[[tm]], "HR"),
+      Reported = fmt_or_dash(get_ridge_term(model$fit, tm)$HR, fmt_hr2),
+      Min = fmt_or_dash(s[1], fmt_hr2), Median = fmt_or_dash(s[2], fmt_hr2),
+      Max = fmt_or_dash(s[3], fmt_hr2), stringsAsFactors = FALSE))
+  }
+  rows
+}
+
+render_ridge_stability_table <- function(models, term_labels, caption) {
+  tab <- do.call(rbind, lapply(names(models), function(nm)
+    ridge_stability_rows(models[[nm]], nm, term_labels)))
+  n_boundary <- vapply(models, function(m) m$spread$n_boundary, numeric(1))
+  n_ok <- vapply(models, function(m) m$spread$n_ok, numeric(1))
+  note <- paste0(
+    "Reported: the fit with fold seed ", analysis_seed, ", used in the tables and text. ",
+    "Min, Median, Max: over ", RIDGE_N_SEEDS, " fold seeds (", min(RIDGE_SEEDS), " to ",
+    max(RIDGE_SEEDS), "), including the reported one. lambda.min was at an end of the grid in ",
+    paste(sprintf("%d of %d seeds for %s", n_boundary, n_ok, names(models)), collapse = " and "),
+    ". Grid: ", ridge_grid_txt, ".")
+  tab %>%
+    kable(col.names = c("Endpoint", "Quantity", sprintf("Seed %d (reported)", analysis_seed), "Min", "Median", "Max"),
+          caption = caption, booktabs = TRUE, align = c("l", "l", "r", "r", "r", "r"),
+          linesep = "", format = report_table_format()) %>%
+    tbl_style(latex_options = c("HOLD_position"), font_size = 9) %>%
+    tbl_footnote(general = note, footnote_as_chunk = TRUE, threeparttable = TRUE)
+}
+
+# Seed-spread sentence: range of lambda.min and of each HR over the seeds.
+range_txt <- function(x, f) if (length(x) == 0) "--" else
+  sprintf("%s to %s", f(min(x)), f(max(x)))
 
 # Qualitative label for the Firth -> ridge shift, used in the narrative so the
 # wording follows the numbers (a >= 1.5-fold change in HR is called substantial).
@@ -942,12 +1136,71 @@ shift_word <- function(firth_hr, ridge_hr, threshold = 1.5) {
   ratio <- exp(abs(log(ridge_hr) - log(firth_hr)))
   if (ratio >= threshold) "changes substantially" else "changes little"
 }
+# Direction of the Firth -> ridge shift relative to HR = 1. Joint shrinkage of
+# correlated terms can move a single coefficient away from 1.
+shift_direction <- function(firth_hr, ridge_hr) {
+  if (is.na(firth_hr) || is.na(ridge_hr)) return("in an undetermined direction")
+  if (log(firth_hr) * log(ridge_hr) < 0) return("across 1")
+  if (abs(log(ridge_hr)) <= abs(log(firth_hr))) "toward 1" else "away from 1"
+}
+# Is the shift_word() label the same under every fold seed?
+shift_word_stable <- function(firth_hr, hr_seeds) {
+  length(unique(vapply(hr_seeds, function(h) shift_word(firth_hr, h), character(1)))) <= 1
+}
+
+ridge_term_labels <- list(crp_x_rx = "CRP x Rx", tmb_braf_x_rx = "TMB/BRAF x Rx",
+                          tlr_x_rx = "TLR x Rx")
+
+ridge_primary_seed_text <- sprintf(
+  paste0("Across the %d fold seeds, lambda.min ranged from %s (OS) and from %s (PFS). ",
+         "The CRP x Rx HR ranged from %s (OS) and %s (PFS), and the TMB/BRAF x Rx HR ",
+         "from %s (OS) and %s (PFS)."),
+  RIDGE_N_SEEDS,
+  range_txt(ridge_os$spread$lambda_min, fmt_lambda_value),
+  range_txt(ridge_pfs$spread$lambda_min, fmt_lambda_value),
+  range_txt(ridge_os$spread$hr[, "crp_x_rx"], fmt_hr2),
+  range_txt(ridge_pfs$spread$hr[, "crp_x_rx"], fmt_hr2),
+  range_txt(ridge_os$spread$hr[, "tmb_braf_x_rx"], fmt_hr2),
+  range_txt(ridge_pfs$spread$hr[, "tmb_braf_x_rx"], fmt_hr2))
+
+primary_shift_checks <- list(
+  "CRP x Rx (OS)"       = list(firth = hr_crp_os$HR,  ridge = ridge_crp_os$HR,
+                               hr = ridge_os$spread$hr[, "crp_x_rx"]),
+  "TMB/BRAF x Rx (OS)"  = list(firth = hr_tmb_os$HR,  ridge = ridge_tmb_os$HR,
+                               hr = ridge_os$spread$hr[, "tmb_braf_x_rx"]),
+  "CRP x Rx (PFS)"      = list(firth = hr_crp_pfs$HR, ridge = ridge_crp_pfs$HR,
+                               hr = ridge_pfs$spread$hr[, "crp_x_rx"]),
+  "TMB/BRAF x Rx (PFS)" = list(firth = hr_tmb_pfs$HR, ridge = ridge_tmb_pfs$HR,
+                               hr = ridge_pfs$spread$hr[, "tmb_braf_x_rx"])
+)
+primary_shift_unstable <- names(primary_shift_checks)[!vapply(primary_shift_checks, function(x)
+  shift_word_stable(x$firth, x$hr), logical(1))]
+ridge_primary_seed_class_text <- if (length(primary_shift_unstable) == 0) {
+  "Each interaction's Firth-to-ridge shift gets the same label (substantial or little; at least 1.5-fold is substantial) under every fold seed."
+} else {
+  sprintf("Whether the Firth-to-ridge shift counts as substantial (at least 1.5-fold) depends on the fold seed for %s.",
+          paste(primary_shift_unstable, collapse = " and "))
+}
+primary_shift_substantial <- names(primary_shift_checks)[vapply(primary_shift_checks, function(x)
+  shift_word(x$firth, x$ridge) == "changes substantially", logical(1))]
+ridge_primary_substantial_text <- if (length(primary_shift_substantial) == 0) {
+  "None of the four interaction HRs changes substantially under shrinkage."
+} else {
+  sprintf("Of the four interaction HRs, %s%s %s substantially under shrinkage.",
+          if (length(primary_shift_substantial) == 1) "only " else "",
+          paste(primary_shift_substantial, collapse = " and "),
+          if (length(primary_shift_substantial) == 1) "changes" else "change")
+}
 ```
 
 ```{r table-ridge-os}
-format_ridge_hr <- function(hr, se) {
-  if (is.na(hr)) return("--")
-  if (is.na(se)) sprintf("%.2f", hr) else sprintf("%.2f (SE: %.2f)", hr, se)
+format_ridge_hr <- function(hr) if (is.na(hr)) "--" else sprintf("%.2f", hr)
+
+ridge_table_note <- function(fit) {
+  paste0("Ridge: glmnet Cox, alpha = 0. Penalized: CRP, TMB/BRAF, CRP x Rx and ",
+         "TMB/BRAF x Rx; Age, sex and Rx unpenalized. lambda.min = ", ridge_lambda_label(fit),
+         " by ", RIDGE_NFOLDS, "-fold CV (fold seed ", analysis_seed, "). ",
+         "glmnet gives no standard errors.")
 }
 
 data.frame(
@@ -956,20 +1209,14 @@ data.frame(
     format_hr_ci(hr_crp_os$HR, hr_crp_os$CI_Lower, hr_crp_os$CI_Upper),
     format_hr_ci(hr_tmb_os$HR, hr_tmb_os$CI_Lower, hr_tmb_os$CI_Upper)
   ),
-  Ridge = c(
-    format_ridge_hr(ridge_crp_os$HR, ridge_crp_os$SE),
-    format_ridge_hr(ridge_tmb_os$HR, ridge_tmb_os$SE)
-  )
+  Ridge = c(format_ridge_hr(ridge_crp_os$HR), format_ridge_hr(ridge_tmb_os$HR))
 ) %>%
-  kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
+  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
         caption = "Overall Survival: Firth vs Ridge Regression",
         booktabs = TRUE, format = report_table_format()) %>%
-  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
-  tbl_footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
-                            "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
-                            "-fold CV (lambda.min = ", ridge_lambda_os, "). glmnet gives no standard errors. ",
-                            "A substantial shift vs Firth = estimate sensitive to regularization."),
-           footnote_as_chunk = TRUE, threeparttable = TRUE)
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10) %>%
+  tbl_footnote(general = ridge_table_note(ridge_os_fit),
+               footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
 ```{r table-ridge-pfs}
@@ -979,22 +1226,28 @@ data.frame(
     format_hr_ci(hr_crp_pfs$HR, hr_crp_pfs$CI_Lower, hr_crp_pfs$CI_Upper),
     format_hr_ci(hr_tmb_pfs$HR, hr_tmb_pfs$CI_Lower, hr_tmb_pfs$CI_Upper)
   ),
-  Ridge = c(
-    format_ridge_hr(ridge_crp_pfs$HR, ridge_crp_pfs$SE),
-    format_ridge_hr(ridge_tmb_pfs$HR, ridge_tmb_pfs$SE)
-  )
+  Ridge = c(format_ridge_hr(ridge_crp_pfs$HR), format_ridge_hr(ridge_tmb_pfs$HR))
 ) %>%
-  kable(col.names = c("Interaction", "Firth (95% CI)", "Ridge (point est.)"),
+  kable(col.names = c("Interaction", "Firth HR (95% CI)", "Ridge HR"),
         caption = "Progression-Free Survival: Firth vs Ridge Regression",
         booktabs = TRUE, format = report_table_format()) %>%
-  tbl_style(latex_options = c("hold_position"), font_size = 10) %>%
-  tbl_footnote(general = paste0("Ridge: glmnet L2 penalty (alpha = 0) on the CRP and TMB/BRAF main effects only; ",
-                            "interaction product terms built before fitting; lambda by ", RIDGE_NFOLDS,
-                            "-fold CV (lambda.min = ", ridge_lambda_pfs, "). glmnet gives no standard errors."),
-           footnote_as_chunk = TRUE, threeparttable = TRUE)
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10) %>%
+  tbl_footnote(general = ridge_table_note(ridge_pfs_fit),
+               footnote_as_chunk = TRUE, threeparttable = TRUE)
 ```
 
-**Interpretation:** Firth's method maximizes a penalized likelihood whose penalty reduces the small-sample bias of the maximum-likelihood estimate; the resulting estimate is bias-reduced, not unbiased. Ridge applies L2 shrinkage to the biomarker main effects (HR toward 1.0) with the penalty strength chosen by cross-validation; the interaction terms are unpenalized, so any movement in them reflects redistribution of the shrunken main-effect signal. Comparing the two methods reveals estimate stability: if Firth and Ridge agree closely, the estimate is robust; if the interaction moves substantially under ridge, the effect is sensitive to how the biomarker main effects are estimated in this sample.
+`r ridge_primary_boundary_text`
+
+```{r table-ridge-seeds}
+render_ridge_stability_table(
+  list(OS = ridge_os, PFS = ridge_pfs), ridge_term_labels,
+  caption = sprintf("Primary model ridge: lambda.min and interaction HRs over %d cross-validation fold seeds",
+                    RIDGE_N_SEEDS))
+```
+
+`r ridge_primary_seed_text` `r ridge_primary_seed_class_text`
+
+**Interpretation:** Firth's method maximizes a penalized likelihood whose penalty reduces the small-sample bias of the maximum-likelihood estimate; the resulting estimate is bias-reduced, not unbiased. Ridge shrinks the CRP and TMB/BRAF main effects and both interaction terms jointly toward HR 1, with the penalty strength chosen by cross-validation, and leaves Age, sex and Rx unpenalized. Comparing the two shows how much of each interaction estimate survives shrinkage: if Firth and ridge agree closely, the estimate is stable under shrinkage (though still imprecise); if ridge pulls the interaction substantially toward 1, the data carry too little information to support the Firth magnitude. Because each biomarker's main effect and interaction are shrunk together, a single interaction can also move away from 1. The Discussion lists the shift of each interaction.
 
 \newpage
 
@@ -1265,91 +1518,73 @@ if (!is.null(results_tlr_pfs)) {
 
 ## Ridge Sensitivity Analysis (TLR Terms Penalized)
 
-Ridge regression is applied here with a targeted penalty: only the TLR main effect and the TLR x Rx interaction are L2-shrunk. CRP, TMB/BRAF, Age, sex, and Rx are estimated without penalty, since they enter the model as adjustment covariates whose effects are not the inferential target.
+Ridge regression is applied here with a targeted penalty: only the TLR main effect and the TLR x Rx interaction are L2-shrunk. CRP, TMB/BRAF, Age, sex, and Rx are estimated without penalty, since they enter the model as adjustment covariates whose effects are not the inferential target. The fit uses the same glmnet approach as the primary ridge model: an explicit design matrix with a pre-built TLR x Rx product term, lambda chosen by `r RIDGE_NFOLDS`-fold cross-validation over the same grid with the analysis seed, the same boundary check, and the same `r RIDGE_N_SEEDS` fold seeds for the spread. Report versions up to 3.10 used `survival::ridge()` with a fixed penalty (theta = 1) that was not cross-validated.
 
 ```{r tlr-ridge, include=FALSE}
 # =============================================================================
-# RIDGE SENSITIVITY: penalize TLR main effect + TLR x Rx interaction
-# CRP and TMB/BRAF main effects remain unpenalized (prognostic adjustment)
+# RIDGE SENSITIVITY (TLR responder model), glmnet with CV lambda (issue #183)
+# Penalized: TLR main effect and TLR x Rx (penalty factor 1). Unpenalized: Age,
+# sex, Rx, CRP and TMB/BRAF (prognostic adjustment). Same design helpers, grid,
+# boundary check and fold seeds as the primary ridge chunk. Replaces
+# survival::ridge(tlr_num, tlr_x_rx, theta = 1), whose penalty was fixed rather
+# than cross-validated. glmnet gives no standard errors, so there is no SE.
 # Rx_num is defined earlier (0 = Control, 1 = Experimental).
-# survival::ridge() takes raw variables, so pre-construct the interaction.
 # =============================================================================
-
-data_tlr$tlr_x_rx <- data_tlr$tlr_num * data_tlr$Rx_num
-
-ridge_tlr_os_ok <- TRUE
-tryCatch({
-  ridge_tlr_os <- coxph(
-    Surv(OSwk, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
-      ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-    data = data_tlr
+ridge_design_tlr <- function(df) {
+  cbind(
+    ridge_base_columns(df),
+    tlr      = df$tlr_num,
+    tlr_x_rx = df$tlr_num * df$Rx_num
   )
-}, error = function(e) { ridge_tlr_os_ok <<- FALSE; ridge_tlr_os <<- NULL })
+}
+ridge_penalty_factor_tlr <- c(Age = 0, sex_male = 0, Rx = 0, crp = 0, tmb_braf = 0,
+                              tlr = 1, tlr_x_rx = 1)
 
-ridge_tlr_pfs_ok <- TRUE
-tryCatch({
-  ridge_tlr_pfs <- coxph(
-    Surv(PFSwk, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
-      ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-    data = data_tlr
-  )
-}, error = function(e) { ridge_tlr_pfs_ok <<- FALSE; ridge_tlr_pfs <<- NULL })
+ridge_tlr_os  <- run_ridge_model(data_tlr$OSwk, data_tlr$Death,
+                                 ridge_design_tlr(data_tlr), ridge_penalty_factor_tlr,
+                                 "tlr_x_rx")
+ridge_tlr_pfs <- run_ridge_model(data_tlr$PFSwk, data_tlr$Progression,
+                                 ridge_design_tlr(data_tlr), ridge_penalty_factor_tlr,
+                                 "tlr_x_rx")
 
-ridge_tlr_os_int  <- if (!is.null(ridge_tlr_os))  extract_ridge_interaction(ridge_tlr_os,  "tlr_x_rx\\)")  else list(HR = NA, SE = NA)
-ridge_tlr_pfs_int <- if (!is.null(ridge_tlr_pfs)) extract_ridge_interaction(ridge_tlr_pfs, "tlr_x_rx\\)") else list(HR = NA, SE = NA)
+ridge_tlr_os_int  <- get_ridge_term(ridge_tlr_os$fit,  "tlr_x_rx")
+ridge_tlr_pfs_int <- get_ridge_term(ridge_tlr_pfs$fit, "tlr_x_rx")
 
 # Firth TLR x Rx HRs for the in-text inline summary
 tlr_firth_os  <- get_interaction_hr(results_tlr_os,  "tlr_num.*Rx|Rx.*tlr_num")
 tlr_firth_pfs <- get_interaction_hr(results_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num")
 
-# Extract all ridge coefficients into a tidy data frame
-extract_all_ridge_coefs <- function(model) {
-  if (is.null(model)) return(NULL)
-  ct <- summary(model)$coefficients
-  data.frame(
-    Term = rownames(ct),
-    HR = exp(ct[, "coef"]),
-    SE = ct[, "se(coef)"],
-    stringsAsFactors = FALSE
-  )
-}
-
-ridge_tlr_os_coefs  <- extract_all_ridge_coefs(ridge_tlr_os)
-ridge_tlr_pfs_coefs <- extract_all_ridge_coefs(ridge_tlr_pfs)
-
 # Build the full-coefficient Firth vs Ridge comparison.
 # Firth coefficient names: Age, sex<level>, Rx<level>, crp_num, tmb_braf_num,
 #   tlr_num, Rx<level>:tlr_num
-# Ridge coefficient names: Age, sex<level>, Rx<level>, crp_num, tmb_braf_num,
-#   ridge(tlr_num), ridge(tlr_x_rx)
-# Ridge patterns use the closing ")" to disambiguate the TLR main effect
-# from the TLR x Rx interaction. The Rx pattern excludes interaction terms
-# (issue #182: "^Rx[A-Za-z]" also matched "RxExperimental arm:tlr_num", which
-# extract_coxphf_results() sorts first), and every pattern must match exactly
-# one term (match_one_term()).
+# Ridge (design-matrix) names: Age, sex_male, Rx, crp, tmb_braf, tlr, tlr_x_rx
+# Every ridge pattern is anchored, so "^tlr$" cannot match "tlr_x_rx". The Firth
+# Rx pattern excludes interaction terms (issue #182: "^Rx[A-Za-z]" also matched
+# "RxExperimental arm:tlr_num", which extract_coxphf_results() sorts first), and
+# every pattern must match exactly one term (match_one_term()).
 build_tlr_comparison <- function(firth_results, ridge_coefs) {
   row_specs <- list(
     list(label = "TLR x Rx",
          firth_pat = "tlr_num.*Rx|Rx.*tlr_num",
-         ridge_pat = "tlr_x_rx\\)"),
+         ridge_pat = "^tlr_x_rx$"),
     list(label = "TLR (main effect)",
          firth_pat = "^tlr_num$",
-         ridge_pat = "tlr_num\\)"),
+         ridge_pat = "^tlr$"),
     list(label = "Age (per year)",
          firth_pat = "^Age$",
          ridge_pat = "^Age$"),
     list(label = "Sex (male vs female)",
          firth_pat = "^sex[^:]*$",
-         ridge_pat = "^sex[^:]*$"),
+         ridge_pat = "^sex_male$"),
     list(label = "Rx (experimental vs control)",
          firth_pat = "^Rx[^:]+$",
-         ridge_pat = "^Rx[^:]+$"),
+         ridge_pat = "^Rx$"),
     list(label = "CRP",
          firth_pat = "^crp_num$",
-         ridge_pat = "^crp_num$"),
+         ridge_pat = "^crp$"),
     list(label = "TMB/BRAF",
          firth_pat = "^tmb_braf_num$",
-         ridge_pat = "^tmb_braf_num$")
+         ridge_pat = "^tmb_braf$")
   )
 
   do.call(rbind, lapply(row_specs, function(rs) {
@@ -1367,10 +1602,7 @@ build_tlr_comparison <- function(firth_results, ridge_coefs) {
 
     if (!is.null(ridge_coefs)) {
       r_idx <- match_one_term(rs$ridge_pat, ridge_coefs$Term, "Firth vs ridge table (ridge)")
-      ridge_cell <- format_ridge_hr(
-        ridge_coefs$HR[r_idx],
-        ridge_coefs$SE[r_idx]
-      )
+      ridge_cell <- format_ridge_hr(ridge_coefs$HR[r_idx])
     }
 
     data.frame(Term = rs$label, Firth = firth_cell, Ridge = ridge_cell,
@@ -1378,35 +1610,95 @@ build_tlr_comparison <- function(firth_results, ridge_coefs) {
   }))
 }
 
-tlr_comparison_os  <- build_tlr_comparison(results_tlr_os,  ridge_tlr_os_coefs)
-tlr_comparison_pfs <- build_tlr_comparison(results_tlr_pfs, ridge_tlr_pfs_coefs)
+tlr_comparison_os  <- build_tlr_comparison(results_tlr_os,  ridge_tlr_os$fit$coefs)
+tlr_comparison_pfs <- build_tlr_comparison(results_tlr_pfs, ridge_tlr_pfs$fit$coefs)
+
+# Firth vs ridge table of the TLR models (responder and landmark). The footnote
+# is wrapped to the table width (threeparttable).
+render_tlr_ridge_table <- function(comparison, caption, fit, cohort_note = NULL) {
+  note <- paste(c(
+    cohort_note,
+    "Ridge: glmnet Cox, alpha = 0. Penalized: TLR main effect and TLR x Rx; Age, sex, Rx, CRP and TMB/BRAF unpenalized.",
+    sprintf("lambda.min = %s by %d-fold CV (fold seed %d).", ridge_lambda_label(fit),
+            RIDGE_NFOLDS, analysis_seed),
+    "glmnet gives no standard errors."), collapse = " ")
+  comparison %>%
+    kable(col.names = c("Term", "Firth HR (95% CI)", "Ridge HR"),
+          caption = caption, booktabs = TRUE, format = report_table_format()) %>%
+    tbl_style(latex_options = c("HOLD_position"), font_size = 9) %>%
+    tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
+    tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(comparison), bold = TRUE) %>%
+    tbl_footnote(general = note, footnote_as_chunk = TRUE, threeparttable = TRUE)
+}
+
+# Firth -> ridge shift of the TLR x Rx HR, with the fold-seed range; used here,
+# in the landmark ridge section and in the Discussion.
+ridge_shift_phrase <- function(firth, model, term, endpoint) {
+  r <- get_ridge_term(model$fit, term)$HR
+  hr_s <- model$spread$hr[, term]
+  spans_1 <- length(hr_s) > 0 && min(hr_s) < 1 && max(hr_s) > 1
+  stable <- shift_word_stable(firth$HR, hr_s)
+  sprintf("for %s the TLR x Rx HR %s and moves %s (Firth %s, ridge %s; %s over the %d fold seeds%s)%s",
+          endpoint, shift_word(firth$HR, r), shift_direction(firth$HR, r),
+          format_ridge_hr(firth$HR), format_ridge_hr(r), range_txt(hr_s, fmt_hr2),
+          model$spread$n_ok, if (spans_1) ", a range that includes 1" else "",
+          if (stable) "" else ", and whether the shift counts as substantial depends on the fold seed")
+}
+
+# Does the ridge estimate keep the Firth direction relative to HR 1, at the
+# reported seed and under every fold seed?
+ridge_direction_kept_text <- function(firth, model, term, endpoint) {
+  r <- get_ridge_term(model$fit, term)$HR
+  hr_s <- model$spread$hr[, term]
+  if (is.na(firth$HR) || is.na(r) || length(hr_s) == 0) return("")
+  side <- if (firth$HR > 1) "above" else "below"
+  same_side <- function(h) (h > 1) == (firth$HR > 1)
+  if (same_side(r) && all(same_side(hr_s))) {
+    sprintf("The ridge %s estimate stays %s 1 under every fold seed, so shrinkage changes its size but not its direction.",
+            endpoint, side)
+  } else if (same_side(r)) {
+    sprintf("The reported ridge %s estimate stays %s 1, but not under every fold seed, so the direction of the %s interaction is not robust to shrinkage.",
+            endpoint, side, endpoint)
+  } else {
+    sprintf("The ridge %s estimate is no longer %s 1, so the direction of the %s interaction does not survive shrinkage.",
+            endpoint, side, endpoint)
+  }
+}
+
+ridge_tlr_boundary_text <- ridge_boundary_text(list(OS = ridge_tlr_os, PFS = ridge_tlr_pfs))
+tlr_ridge_shift_body <- paste0(
+  ridge_shift_phrase(tlr_firth_os, ridge_tlr_os, "tlr_x_rx", "OS"), "; ",
+  ridge_shift_phrase(tlr_firth_pfs, ridge_tlr_pfs, "tlr_x_rx", "PFS"), ".")
+tlr_ridge_shift_text <- paste0("In the responder model, ", tlr_ridge_shift_body)
+tlr_ridge_direction_text <- paste(
+  ridge_direction_kept_text(tlr_firth_os, ridge_tlr_os, "tlr_x_rx", "OS"),
+  ridge_direction_kept_text(tlr_firth_pfs, ridge_tlr_pfs, "tlr_x_rx", "PFS"))
 ```
 
 ```{r table-tlr-ridge-os}
-tlr_comparison_os %>%
-  kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
-        caption = "TLR Responder Model - Overall Survival: Firth vs Ridge, all coefficients",
-        booktabs = TRUE, format = report_table_format()) %>%
-  tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
-  tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-  tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_os), bold = TRUE) %>%
-  tbl_footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
-           footnote_as_chunk = TRUE)
+render_tlr_ridge_table(
+  tlr_comparison_os,
+  caption = "TLR Responder Model - Overall Survival: Firth vs Ridge, all coefficients",
+  fit = ridge_tlr_os$fit)
 ```
 
 ```{r table-tlr-ridge-pfs}
-tlr_comparison_pfs %>%
-  kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
-        caption = "TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
-        booktabs = TRUE, format = report_table_format()) %>%
-  tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
-  tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-  tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(tlr_comparison_pfs), bold = TRUE) %>%
-  tbl_footnote(general = "Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized. survival::ridge() does not produce confidence intervals; standard errors are shown for reference.",
-           footnote_as_chunk = TRUE)
+render_tlr_ridge_table(
+  tlr_comparison_pfs,
+  caption = "TLR Responder Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
+  fit = ridge_tlr_pfs$fit)
 ```
 
-**Interpretation:** The Firth HR is the penalized-likelihood estimate of the TLR x Rx interaction; Firth's penalty reduces its small-sample bias but does not make it unbiased. The ridge HR applies L2 shrinkage targeted at the TLR terms; if the ridge estimate is substantially closer to HR = 1.0 than the Firth estimate, the responder-stratified interaction is sensitive to regularization, consistent with a small-sample, partly tautological signal. Findings here are exploratory and should not be used for treatment selection, since TLR is not measurable before nivolumab starts. They may motivate landmark or formal causal-mediation analyses in future work.
+`r ridge_tlr_boundary_text`
+
+```{r table-tlr-ridge-seeds}
+render_ridge_stability_table(
+  list(OS = ridge_tlr_os, PFS = ridge_tlr_pfs), ridge_term_labels,
+  caption = sprintf("TLR responder ridge: lambda.min and TLR x Rx HR over %d cross-validation fold seeds",
+                    RIDGE_N_SEEDS))
+```
+
+**Interpretation:** The Firth HR is the penalized-likelihood estimate of the TLR x Rx interaction; Firth's penalty reduces its small-sample bias but does not make it unbiased. Ridge shrinks the TLR main effect and the TLR x Rx interaction together, with the penalty chosen by cross-validation. `r tlr_ridge_shift_text` `r tlr_ridge_direction_text` Because the two TLR terms are correlated and shrunk jointly, the interaction need not move toward 1: when the penalty shrinks the TLR main effect (the TLR contrast in the control arm) more than the TLR contrast in the experimental arm, the interaction moves away from 1. An interaction that changes substantially under ridge, or whose ridge estimate depends on the fold seed, is not pinned down by these data, and its magnitude should not be interpreted. Findings here are exploratory and should not be used for treatment selection, since TLR is not measurable before nivolumab starts. They may motivate landmark or formal causal-mediation analyses in future work.
 
 \newpage
 
@@ -1424,7 +1716,8 @@ tlr_comparison_pfs %>%
 #   OS  cohort: OSwk  > landmark; analysis time OSwk_lm  = OSwk  - landmark
 #   PFS cohort: PFSwk > landmark; analysis time PFSwk_lm = PFSwk - landmark
 # Primary: fixed week 9. Sensitivity: per-patient first-scan date (CT1wk) and
-# fixed week 12. The helper also adds the ridge product term tlr_x_rx.
+# fixed week 12. The helper also adds the product term tlr_x_rx; the ridge fits
+# build their own design matrix with ridge_design_tlr().
 # The chunk runs before the section text, which quotes its counts.
 # =============================================================================
 LANDMARK_WK <- tlr_landmark_spec("week9")$week
@@ -1759,64 +2052,71 @@ if (!is.null(results_lm_tlr_pfs)) {
 
 ## Ridge Sensitivity Analysis (Landmark, TLR Terms Penalized)
 
-Ridge regression is applied to the landmark cohorts with the same targeted penalty as the responder analysis: only the TLR main effect and the TLR x Rx interaction are L2-shrunk, while Age, sex, Rx, CRP, and TMB/BRAF remain unpenalized.
+Ridge regression is applied to the landmark cohorts with the same targeted penalty, glmnet design, lambda grid, boundary check and fold seeds as the responder analysis: only the TLR main effect and the TLR x Rx interaction are L2-shrunk, while Age, sex, Rx, CRP, and TMB/BRAF remain unpenalized.
 
 ```{r lm-tlr-ridge, include=FALSE}
-# Reuses build_tlr_comparison() and extract_all_ridge_coefs() defined in the
-# responder ridge chunk above. Models fitted on the week-9 landmark cohorts.
-ridge_lm_tlr_os <- tryCatch(
-  coxph(Surv(OSwk_lm, Death) ~ Age + sex + Rx + crp_num + tmb_braf_num +
-          ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-        data = data_lm_os),
-  error = function(e) NULL)
+# Reuses ridge_design_tlr(), ridge_penalty_factor_tlr, run_ridge_model(),
+# build_tlr_comparison() and render_tlr_ridge_table() from the responder ridge
+# chunk above. Models fitted on the week-9 landmark cohorts, time measured from
+# the landmark. fit_ridge_cv() returns NULL (with a warning) if a cohort is too
+# small to fit, and the tables and text then show "--".
+ridge_lm_tlr_os  <- run_ridge_model(data_lm_os$OSwk_lm, data_lm_os$Death,
+                                    ridge_design_tlr(data_lm_os), ridge_penalty_factor_tlr,
+                                    "tlr_x_rx")
+ridge_lm_tlr_pfs <- run_ridge_model(data_lm_pfs$PFSwk_lm, data_lm_pfs$Progression,
+                                    ridge_design_tlr(data_lm_pfs), ridge_penalty_factor_tlr,
+                                    "tlr_x_rx")
 
-ridge_lm_tlr_pfs <- tryCatch(
-  coxph(Surv(PFSwk_lm, Progression) ~ Age + sex + Rx + crp_num + tmb_braf_num +
-          ridge(tlr_num, tlr_x_rx, theta = 1, scale = TRUE),
-        data = data_lm_pfs),
-  error = function(e) NULL)
-
-ridge_lm_tlr_os_int  <- if (!is.null(ridge_lm_tlr_os))  extract_ridge_interaction(ridge_lm_tlr_os,  "tlr_x_rx\\)")  else list(HR = NA, SE = NA)
-ridge_lm_tlr_pfs_int <- if (!is.null(ridge_lm_tlr_pfs)) extract_ridge_interaction(ridge_lm_tlr_pfs, "tlr_x_rx\\)") else list(HR = NA, SE = NA)
+ridge_lm_tlr_os_int  <- get_ridge_term(ridge_lm_tlr_os$fit,  "tlr_x_rx")
+ridge_lm_tlr_pfs_int <- get_ridge_term(ridge_lm_tlr_pfs$fit, "tlr_x_rx")
 
 # Firth landmark TLR x Rx HRs for the in-text inline summary
 lm_tlr_firth_os  <- if (!is.null(results_lm_tlr_os))  get_interaction_hr(results_lm_tlr_os,  "tlr_num.*Rx|Rx.*tlr_num") else list(HR = NA, CI_Lower = NA, CI_Upper = NA)
 lm_tlr_firth_pfs <- if (!is.null(results_lm_tlr_pfs)) get_interaction_hr(results_lm_tlr_pfs, "tlr_num.*Rx|Rx.*tlr_num") else list(HR = NA, CI_Lower = NA, CI_Upper = NA)
 
-ridge_lm_tlr_os_coefs  <- extract_all_ridge_coefs(ridge_lm_tlr_os)
-ridge_lm_tlr_pfs_coefs <- extract_all_ridge_coefs(ridge_lm_tlr_pfs)
+lm_tlr_comparison_os  <- if (!is.null(results_lm_tlr_os))  build_tlr_comparison(results_lm_tlr_os,  ridge_lm_tlr_os$fit$coefs)  else NULL
+lm_tlr_comparison_pfs <- if (!is.null(results_lm_tlr_pfs)) build_tlr_comparison(results_lm_tlr_pfs, ridge_lm_tlr_pfs$fit$coefs) else NULL
 
-lm_tlr_comparison_os  <- if (!is.null(results_lm_tlr_os))  build_tlr_comparison(results_lm_tlr_os,  ridge_lm_tlr_os_coefs)  else NULL
-lm_tlr_comparison_pfs <- if (!is.null(results_lm_tlr_pfs)) build_tlr_comparison(results_lm_tlr_pfs, ridge_lm_tlr_pfs_coefs) else NULL
+ridge_lm_boundary_text <- ridge_boundary_text(list(OS = ridge_lm_tlr_os, PFS = ridge_lm_tlr_pfs))
+lm_ridge_shift_text <- paste0(
+  "Under the week-9 landmark, ",
+  ridge_shift_phrase(lm_tlr_firth_os, ridge_lm_tlr_os, "tlr_x_rx", "OS"), "; ",
+  ridge_shift_phrase(lm_tlr_firth_pfs, ridge_lm_tlr_pfs, "tlr_x_rx", "PFS"), ".")
+lm_ridge_direction_text <- paste(
+  ridge_direction_kept_text(lm_tlr_firth_os, ridge_lm_tlr_os, "tlr_x_rx", "OS"),
+  ridge_direction_kept_text(lm_tlr_firth_pfs, ridge_lm_tlr_pfs, "tlr_x_rx", "PFS"))
 ```
 
 ```{r table-lm-tlr-ridge-os}
 if (!is.null(lm_tlr_comparison_os)) {
-  lm_tlr_comparison_os %>%
-    kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
-          caption = "Landmark TLR Model - Overall Survival: Firth vs Ridge, all coefficients",
-          booktabs = TRUE, format = report_table_format()) %>%
-    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
-    tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-    tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_os), bold = TRUE) %>%
-    tbl_footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
-             footnote_as_chunk = TRUE)
+  render_tlr_ridge_table(
+    lm_tlr_comparison_os,
+    caption = "Landmark TLR Model - Overall Survival: Firth vs Ridge, all coefficients",
+    fit = ridge_lm_tlr_os$fit,
+    cohort_note = "Week-9 landmark cohort; time from the landmark.")
 }
 ```
 
 ```{r table-lm-tlr-ridge-pfs}
 if (!is.null(lm_tlr_comparison_pfs)) {
-  lm_tlr_comparison_pfs %>%
-    kable(col.names = c("Term", "Firth (95% CI)", "Ridge HR (SE)"),
-          caption = "Landmark TLR Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
-          booktabs = TRUE, format = report_table_format()) %>%
-    tbl_style(latex_options = c("hold_position"), font_size = 9) %>%
-    tbl_pack_rows("TLR Terms (Ridge-penalized)", 1, 2, bold = TRUE) %>%
-    tbl_pack_rows("Adjustment Covariates (Ridge-unpenalized)", 3, nrow(lm_tlr_comparison_pfs), bold = TRUE) %>%
-    tbl_footnote(general = "Week-9 landmark cohort. Ridge applies L2 shrinkage to the TLR main effect and the TLR x Rx interaction only; Age, sex, Rx, CRP, and TMB/BRAF are unpenalized.",
-             footnote_as_chunk = TRUE)
+  render_tlr_ridge_table(
+    lm_tlr_comparison_pfs,
+    caption = "Landmark TLR Model - Progression-Free Survival: Firth vs Ridge, all coefficients",
+    fit = ridge_lm_tlr_pfs$fit,
+    cohort_note = "Week-9 landmark cohort; time from the landmark.")
 }
 ```
+
+`r ridge_lm_boundary_text`
+
+```{r table-lm-tlr-ridge-seeds}
+render_ridge_stability_table(
+  list(OS = ridge_lm_tlr_os, PFS = ridge_lm_tlr_pfs), ridge_term_labels,
+  caption = sprintf("Landmark TLR ridge: lambda.min and TLR x Rx HR over %d cross-validation fold seeds",
+                    RIDGE_N_SEEDS))
+```
+
+`r lm_ridge_shift_text` `r lm_ridge_direction_text`
 
 ```{r lm-firth-comparison, include=FALSE}
 # Responder versus week-9 landmark Firth estimates. The text describes the
@@ -2093,11 +2393,11 @@ The Schoenfeld global test gives p = `r format_pvalue(p_zph_os_global)` for OS a
 
 ## Ridge regression sensitivity
 
-The ridge model penalizes the CRP and TMB/BRAF main effects with a cross-validated lambda (OS lambda.min = `r ridge_lambda_os`, PFS lambda.min = `r ridge_lambda_pfs`) and estimates the interaction terms as pre-built product terms, so the ridge and Firth interaction coefficients are the same treatment-by-biomarker contrast. For OS, the CRP × Rx estimate `r shift_word(hr_crp_os$HR, ridge_crp_os$HR)` under this penalization (Firth HR `r hr_pt(hr_crp_os)` → Ridge HR `r hr_pt(ridge_crp_os)`), and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_os$HR, ridge_tmb_os$HR)` (`r hr_pt(hr_tmb_os)` → `r hr_pt(ridge_tmb_os)`). For PFS, the CRP × Rx estimate `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (`r hr_pt(hr_crp_pfs)` → `r hr_pt(ridge_crp_pfs)`) and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_pfs$HR, ridge_tmb_pfs$HR)` (`r hr_pt(hr_tmb_pfs)` → `r hr_pt(ridge_tmb_pfs)`). A shift of at least 1.5-fold in the HR is labelled "substantial". Because only the main effects are penalized, any shift in an interaction term reflects redistribution of the shrunken main-effect signal rather than independent support for a particular effect size: an interaction that moves substantially is sensitive to how the biomarker main effects are estimated and should not be over-interpreted, while one that changes little is not driven by the main-effect estimates.
+The ridge model shrinks the CRP and TMB/BRAF main effects and both treatment interactions together, leaves Age, sex and Rx unpenalized, and chooses lambda by cross-validation (OS lambda.min = `r ridge_lambda_os`, PFS lambda.min = `r ridge_lambda_pfs`). The interactions are pre-built product terms, so the ridge and Firth interaction coefficients are the same treatment-by-biomarker contrast. For OS, the CRP × Rx estimate `r shift_word(hr_crp_os$HR, ridge_crp_os$HR)` under shrinkage and moves `r shift_direction(hr_crp_os$HR, ridge_crp_os$HR)` (Firth HR `r hr_pt(hr_crp_os)` → Ridge HR `r hr_pt(ridge_crp_os)`), and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_os$HR, ridge_tmb_os$HR)` and moves `r shift_direction(hr_tmb_os$HR, ridge_tmb_os$HR)` (`r hr_pt(hr_tmb_os)` → `r hr_pt(ridge_tmb_os)`). For PFS, the CRP × Rx estimate `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` and moves `r shift_direction(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (`r hr_pt(hr_crp_pfs)` → `r hr_pt(ridge_crp_pfs)`), and the TMB/BRAF × Rx estimate `r shift_word(hr_tmb_pfs$HR, ridge_tmb_pfs$HR)` and moves `r shift_direction(hr_tmb_pfs$HR, ridge_tmb_pfs$HR)` (`r hr_pt(hr_tmb_pfs)` → `r hr_pt(ridge_tmb_pfs)`). A shift of at least 1.5-fold in the HR is labelled "substantial". `r ridge_primary_substantial_text` `r ridge_primary_seed_class_text` An interaction that ridge pulls substantially toward 1 carries too little information in this sample to support its Firth magnitude and should not be over-interpreted; one that changes little is stable under shrinkage but remains imprecise, as its wide Firth confidence interval shows. Because each biomarker's main effect and interaction are shrunk together, a small move away from 1 reflects the joint shrinkage of correlated terms rather than support for a larger effect.
 
 ## TLR responder analysis (exploratory)
 
-The exploratory responder model — `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the differential treatment effect between TLR-positive and TLR-negative subgroups while adjusting for the pre-immunotherapy biomarkers as prognostic main effects. The Firth-estimated TLR × Rx HR was `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for overall survival and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for progression-free survival. The OS estimate sits **above 1.0**, which directionally implies the (TLR-positive vs TLR-negative) hazard contrast is *worse* on the experimental arm than on the control arm — the opposite of a "TLR-positive predicts immunotherapy benefit" pattern. PFS is closer to null. Ridge shrinkage of the TLR terms gives `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS) and `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS): ridge moves the OS estimate modestly toward null but preserves the directional pattern, and barely changes the PFS estimate. PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance, consistent with the wide profile-likelihood CIs in this small sample.
+The exploratory responder model — `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — estimates the differential treatment effect between TLR-positive and TLR-negative subgroups while adjusting for the pre-immunotherapy biomarkers as prognostic main effects. The Firth-estimated TLR × Rx HR was `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for overall survival and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for progression-free survival. The OS estimate sits **above 1.0**, which directionally implies the (TLR-positive vs TLR-negative) hazard contrast is *worse* on the experimental arm than on the control arm — the opposite of a "TLR-positive predicts immunotherapy benefit" pattern. PFS is closer to null. Under ridge shrinkage of the TLR main effect and the TLR × Rx interaction (glmnet, cross-validated lambda), `r tlr_ridge_shift_body` `r tlr_ridge_direction_text` PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance, consistent with the wide profile-likelihood CIs in this small sample.
 
 The directional pattern is consistent with the descriptive imbalance: TLR-positive prevalence is `r tlr_by_arm$pct_tlr_pos[1]`% in the control arm and `r tlr_by_arm$pct_tlr_pos[2]`% in the experimental arm. If TLR cleanly captured immunotherapy response one would expect higher TLR-positivity in the experimental arm, not lower. The observed prevalence pattern, together with the OS direction (HR > 1) of the TLR × Rx interaction, is more consistent with TLR acting as a **prognostic** marker (identifying chemotherapy-responsive disease, which is more prevalent in the control arm by chance or by timing) than as a predictive marker for immunotherapy benefit. Possible explanations for the imbalance include small-sample randomization imbalance, a timing artefact (TLR measured at a fixed CT that may occur during different treatment phases across arms), or genuine heterogeneity in the patient mix. Because TLR is itself influenced by treatment, the TLR × Rx interaction is a responder-stratified contrast — useful for hypothesis generation, but not a causal predictive-biomarker estimate.
 
@@ -2111,7 +2411,7 @@ A **week-9 landmark analysis** measures survival from the protocol time of the s
 
 **Study:** METIMMOX-1 biomarker subgroup analysis. N = `r n_total` complete cases, `r sum(data_complete$Death)` OS events, `r sum(data_complete$Progression)` PFS events (progression or death).
 
-**Methods:** Two Firth-corrected Cox analyses are presented. **Primary (DAG-informed):** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` — pre-immunotherapy biomarkers (week-4 CRP before the first nivolumab dose; baseline TMB/BRAF) as effect modifiers; TLR omitted because it is measured on treatment. **Exploratory responder analysis:** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and its treatment interaction, with CRP and TMB/BRAF retained as prognostic main-effect adjustments. Profile likelihood CIs, PLRT for interaction testing; `r if (length(firth_not_converged) == 0) sprintf("all %d Firth fits converged without reaching the iteration limit", nrow(firth_convergence)) else sprintf("%d of %d Firth fits did not converge cleanly (see Firth Model Convergence)", length(firth_not_converged), nrow(firth_convergence))`. Ridge sensitivity analysis penalizes the CRP/TMB main effects in the primary model and the TLR terms (main effect + TLR:Rx) in the exploratory model.
+**Methods:** Two Firth-corrected Cox analyses are presented. **Primary (DAG-informed):** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + CRP:Rx + TMB/BRAF:Rx` — pre-immunotherapy biomarkers (week-4 CRP before the first nivolumab dose; baseline TMB/BRAF) as effect modifiers; TLR omitted because it is measured on treatment. **Exploratory responder analysis:** `Surv ~ Age + sex + Rx + CRP + TMB/BRAF + TLR + TLR:Rx` — adds TLR and its treatment interaction, with CRP and TMB/BRAF retained as prognostic main-effect adjustments. Profile likelihood CIs, PLRT for interaction testing; `r if (length(firth_not_converged) == 0) sprintf("all %d Firth fits converged without reaching the iteration limit", nrow(firth_convergence)) else sprintf("%d of %d Firth fits did not converge cleanly (see Firth Model Convergence)", length(firth_not_converged), nrow(firth_convergence))`. Ridge sensitivity analysis (glmnet, lambda by `r RIDGE_NFOLDS`-fold CV over a fixed grid, spread over `r RIDGE_N_SEEDS` fold seeds) shrinks the CRP and TMB/BRAF main effects and their treatment interactions together in the primary model, and the TLR terms (main effect + TLR:Rx) in the exploratory models.
 
 **Proportional hazards:** Global Schoenfeld p = `r format_pvalue(p_zph_os_global)` for OS and `r format_pvalue(p_zph_pfs_global)` for PFS. PFS biomarker main-effect p-values are `r format_pvalue(p_zph_pfs_crp)` (CRP) and `r format_pvalue(p_zph_pfs_tmb)` (TMB/BRAF), with interaction p-values `r format_pvalue(p_zph_pfs_crp_rx)` and `r format_pvalue(p_zph_pfs_tmb_rx)`. The global PFS result does not isolate a particular term. `r ph_flag_os_text` `r ph_flag_pfs_text` Interpret the Cox HRs as time-averaged summaries.
 
@@ -2124,9 +2424,9 @@ A **week-9 landmark analysis** measures survival from the protocol time of the s
 | CRP × Rx    | `r hr_txt(hr_crp_os)` | `r format_pvalue(p_crp_os)` | `r hr_txt(hr_crp_pfs)` | `r format_pvalue(p_crp_pfs)` |
 | TMB/BRAF × Rx | `r hr_txt(hr_tmb_os)` | `r format_pvalue(p_tmb_os)` | `r hr_txt(hr_tmb_pfs)` | `r format_pvalue(p_tmb_pfs)` |
 
-No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_pfs)`) is the strongest directional signal; under ridge regularization of the biomarker main effects (glmnet, CV lambda) it `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (Ridge HR `r hr_pt(ridge_crp_pfs)`). The TMB/BRAF × Rx OS interaction `r shift_word(hr_tmb_os$HR, ridge_tmb_os$HR)` (Ridge HR `r hr_pt(ridge_tmb_os)` vs Firth `r hr_pt(hr_tmb_os)`). The PFS PH diagnostic does not establish which term drives the global departure.
+No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_pfs)`) is the strongest directional signal; under ridge shrinkage of the biomarker main effects and interactions together (glmnet, CV lambda) it `r shift_word(hr_crp_pfs$HR, ridge_crp_pfs$HR)` and moves `r shift_direction(hr_crp_pfs$HR, ridge_crp_pfs$HR)` (Ridge HR `r hr_pt(ridge_crp_pfs)`; `r range_txt(ridge_pfs$spread$hr[, "crp_x_rx"], fmt_hr2)` over `r ridge_pfs$spread$n_ok` fold seeds). `r ridge_primary_substantial_text` The PFS PH diagnostic does not establish which term drives the global departure.
 
-**TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge-penalized TLR terms: `r format_ridge_hr(ridge_tlr_os_int$HR, ridge_tlr_os_int$SE)` (OS), `r format_ridge_hr(ridge_tlr_pfs_int$HR, ridge_tlr_pfs_int$SE)` (PFS). PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
+**TLR responder analysis (exploratory):** Firth TLR × Rx HR `r format_hr_ci(tlr_firth_os$HR, tlr_firth_os$CI_Lower, tlr_firth_os$CI_Upper)` for OS and `r format_hr_ci(tlr_firth_pfs$HR, tlr_firth_pfs$CI_Lower, tlr_firth_pfs$CI_Upper)` for PFS. Ridge with the TLR terms penalized (glmnet, CV lambda): TLR × Rx HR `r format_ridge_hr(ridge_tlr_os_int$HR)` for OS (`r range_txt(ridge_tlr_os$spread$hr[, "tlr_x_rx"], fmt_hr2)` over `r ridge_tlr_os$spread$n_ok` fold seeds) and `r format_ridge_hr(ridge_tlr_pfs_int$HR)` for PFS (`r range_txt(ridge_tlr_pfs$spread$hr[, "tlr_x_rx"], fmt_hr2)`). `r tlr_ridge_direction_text` PLRT p-values (`r format_pvalue(p_tlr_os)` OS, `r format_pvalue(p_tlr_pfs)` PFS) do not reach conventional significance in this small sample. TLR-positive prevalence: control `r tlr_by_arm$pct_tlr_pos[1]`%, experimental `r tlr_by_arm$pct_tlr_pos[2]`% — markedly higher TLR-positivity in the control arm. The OS direction (HR > 1) of TLR × Rx, combined with the prevalence pattern, is more consistent with TLR acting as a prognostic marker for chemo-responsive disease than as a predictive marker for immunotherapy benefit. Because TLR is post-randomization, this is a responder-stratified, hypothesis-generating contrast rather than a causal predictive-biomarker estimate.
 
 **TLR week-9 landmark analysis (exploratory):** A fixed week-9 landmark analysis — close to the first on-treatment scan at which TLR is defined — was added; its OS cohort requires patients alive and uncensored at week 9, and its PFS cohort also requires them to be progression-free and not censored at an earlier assessment. `r os_lm_summary_text` For **PFS**, `r lm_attrition$N_excluded[2]` patients are excluded (including `r lm_diag$n_pfs_excl_censored` censored at their last assessment and `r lm_diag$n_pfs_excl_death_pf` death events within the window), `r n_pfs_excl_prog_tn` of the `r n_pfs_excl_prog` excluded progressors being TLR-negative because progression and TLR are read from the same scan. The TLR main effect is `r tlr_main_change_word` (HR `r hr_pt(tlr_main_resp_pfs)` responder, `r hr_pt(tlr_main_lm_pfs)` landmark) and the TLR x Rx HR `r pfs_int_move_text`; the week-9 PLRT p-values are `r format_pvalue(p_lm_tlr_os)` (OS) and `r format_pvalue(p_lm_tlr_pfs)` (PFS). Because first scans fell between weeks `r sprintf("%.1f", scan_wk_range[1])` and `r sprintf("%.1f", scan_wk_range[2])`, the week-9 cut retains `r n_first_scan_kept` first-scan progressors and `r n_scan_after_kept` patients scanned after the landmark; sensitivity landmarks at each patient's scan date (PFS HR `r lm_sens_pfs_hr["scan"]`) and at week 12 (`r lm_sens_pfs_hr["week12"]`) `r if (sens_remove_all_fsp) "exclude all first-scan progressors" else "exclude more first-scan progressors"` and `r if (pfs_same_direction) "leave the direction unchanged" else "change the direction"`. Both analyses are retained for comparison; both are underpowered and exploratory, and the residual confounding from TLR being treatment-influenced needs causal mediation, not a landmark. Neither supports baseline treatment selection on TLR.
 
@@ -2134,4 +2434,4 @@ No interaction is statistically significant. CRP × Rx PFS (HR `r hr_pt(hr_crp_p
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 3.10
+**Report version:** 3.11
