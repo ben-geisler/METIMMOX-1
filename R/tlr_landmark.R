@@ -12,7 +12,9 @@
 #   week9  - fixed landmark at week 9 (primary, retained from earlier versions)
 #   scan   - per-patient landmark at the patient's own first on-treatment CT
 #            (CT1wk, derived in 02_setup_and_global_variables.R)
-#   week12 - fixed landmark at week 12, after the latest first scan (week 12.1)
+#   week12 - fixed landmark at week 12. It is NOT after every first scan (the
+#            latest was at week 12.1), so it can retain patients whose TLR is
+#            read after the landmark; the diagnostics count them (issue #176).
 #
 # A patient enters an endpoint-specific cohort only if the endpoint time is
 # strictly greater than the landmark (event-free and uncensored AT the
@@ -205,6 +207,78 @@ tlr_landmark_base_cohort <- function(data, tlr_col = "tlr") {
   }
   complete <- stats::complete.cases(data[, TLR_BASE_COHORT_VARS, drop = FALSE])
   data[complete & !is.na(data[[tlr_col]]), , drop = FALSE]
+}
+
+# ===============================================================================
+# PATIENTS WITHOUT A TLR VALUE (issue #182)
+# ===============================================================================
+# Complete-case patients without a TLR value left the study before the first
+# on-treatment CT; they are not all early deaths. Their exit reason comes from
+# the raw exit flags: `ProgressionExit` (carried in `data` by script 03) and
+# `AE exit`, which is not carried in `data` and is read from the tidy trial
+# export (data/tidy/METIMMOX.rds) and joined by ID, so the analysis data (and
+# the economic prediction population) are unchanged. A progression exit takes
+# precedence over an adverse-event exit.
+
+#' Exit-reason categories, in reporting order
+TLR_MISSING_EXIT_REASONS <- c("death after progression", "progression",
+                              "adverse event", "no recorded reason")
+
+#' Study-exit reasons of the patients without a TLR value
+#'
+#' @param cohort Data frame with `ID`, `Rx`, `Death`, `ProgressionExit` and the
+#'   TLR column; the patients with a missing TLR value are summarised.
+#' @param raw Tidy trial export with `ID` and `AE exit`; read from
+#'   data/tidy/METIMMOX.rds when NULL.
+#' @param tlr_col Name of the TLR column (default `tlr`).
+#' @return A list with `n`, `by_arm` (named counts), `reasons` (named counts in
+#'   TLR_MISSING_EXIT_REASONS order, zero counts dropped), `reason_text` (for
+#'   example "1 death after progression, 1 adverse event, 1 with no recorded
+#'   reason") and `arm_text` (for example "all in the control arm").
+tlr_missing_exit_summary <- function(cohort, raw = NULL, tlr_col = "tlr") {
+  needed <- c("ID", "Rx", "Death", "ProgressionExit", tlr_col)
+  missing <- setdiff(needed, names(cohort))
+  if (length(missing) > 0) {
+    stop("tlr_missing_exit_summary(): missing column(s): ",
+         paste(missing, collapse = ", "))
+  }
+  if (is.null(raw)) raw <- readRDS(here::here("data", "tidy", "METIMMOX.rds"))
+  if (!all(c("ID", "AE exit") %in% names(raw))) {
+    stop("tlr_missing_exit_summary(): raw data need ID and `AE exit`.")
+  }
+  miss <- cohort[is.na(cohort[[tlr_col]]), , drop = FALSE]
+  ae <- raw[["AE exit"]][match(miss$ID, raw$ID)]
+  if (anyNA(ae) || !all(ae %in% c(0, 1))) {
+    stop("tlr_missing_exit_summary(): `AE exit` is missing or not 0/1 for ",
+         "a patient without TLR.")
+  }
+  reason <- ifelse(miss$ProgressionExit == 1,
+                   ifelse(miss$Death == 1, "death after progression", "progression"),
+                   ifelse(ae == 1, "adverse event", "no recorded reason"))
+  reasons <- table(factor(reason, levels = TLR_MISSING_EXIT_REASONS))
+  reasons <- reasons[reasons > 0]
+  plural <- c("death after progression" = "deaths after progression",
+              "progression" = "progression exits",
+              "adverse event" = "adverse events",
+              "no recorded reason" = "no recorded reason")
+  reason_phrase <- vapply(names(reasons), function(r) {
+    n <- reasons[[r]]
+    label <- if (r == "no recorded reason") "with no recorded reason" else
+      if (r == "progression") (if (n == 1) "progression exit" else plural[[r]]) else
+        if (n == 1) r else plural[[r]]
+    paste(n, label)
+  }, character(1))
+  by_arm <- table(droplevels(as.factor(miss$Rx)))
+  arm_names <- tolower(names(by_arm))
+  arm_text <- if (length(by_arm) == 1) {
+    paste("all in the", arm_names)
+  } else {
+    paste(paste(as.integer(by_arm), "in the", arm_names), collapse = " and ")
+  }
+  list(n = nrow(miss), by_arm = stats::setNames(as.integer(by_arm), names(by_arm)),
+       reasons = stats::setNames(as.integer(reasons), names(reasons)),
+       reason_text = paste(reason_phrase, collapse = ", "),
+       arm_text = arm_text)
 }
 
 message("TLR landmark helpers loaded from tlr_landmark.R")

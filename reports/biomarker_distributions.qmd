@@ -64,13 +64,30 @@ names(data_full)[names(data_full) == "Progression exit"] <- "Progression"
 # Derive the composite PFS endpoint (progression or death), as in 02 (issue #149)
 source(here("R/pfs_endpoint.R"))
 data_full <- derive_pfs_endpoint(data_full, pfs_death_window_weeks, pfs_last_assessment)
+
+# Patients without a week-4 CRP, described by arm and by death or follow-up
+# time relative to week 4 (issue #182): only those who died before week 4
+# could not have had the measurement.
+crp_missing <- data_full[is.na(data_full$crp), ]
+crp_missing_arm <- table(droplevels(as.factor(crp_missing$Rx)))
+crp_missing_arm_text <- paste(sprintf("%d %s", as.integer(crp_missing_arm),
+                                      sub(" arm$", "-arm", tolower(names(crp_missing_arm)))),
+                              collapse = " and ")
+crp_missing_before4 <- crp_missing$Death == 1 & crp_missing$OSwk < 4
+fmt_weeks <- function(x) paste(sprintf("%.1f", sort(x)), collapse = " and ")
+crp_missing_text <- sprintf(
+  "%d died before week 4 (week %s) and %d %s alive at week 4 without a week-4 value (%s at weeks %s)",
+  sum(crp_missing_before4), fmt_weeks(crp_missing$OSwk[crp_missing_before4]),
+  sum(!crp_missing_before4), if (sum(!crp_missing_before4) == 1) "was" else "were",
+  if (all(crp_missing$Death[!crp_missing_before4] == 1)) "later deaths" else "death or last follow-up",
+  fmt_weeks(crp_missing$OSwk[!crp_missing_before4]))
 ```
 
 # Introduction
 
 This report presents the distribution of patient characteristics stratified by treatment arm and biomarker status. Three biomarker strategies are evaluated:
 
-- **CRP**: C-reactive protein at week 4 (cycle 3 day 1), measured after two FLOX cycles common to both arms and before the first nivolumab dose (positive: CRP < 5 mg/L). This is not the baseline value; the three patients without a week-4 CRP died early (weeks 2.4, 15.7 and 20.9) and are excluded from the complete-case tables below.
+- **CRP**: C-reactive protein at week 4 (cycle 3 day 1), measured after two FLOX cycles common to both arms and before the first nivolumab dose (positive: CRP < 5 mg/L). This is not the baseline value. The `r nrow(crp_missing)` patients without a week-4 CRP (`r crp_missing_arm_text` patients) are excluded from the complete-case tables below: `r crp_missing_text`.
 - **TLR**: Target lesion reduction at the first on-treatment CT (positive: a reduction of at least 10% in the sum of target-lesion diameters)
 - **TMB/BRAF**: Combined biomarker from baseline NGS (positive: TMB $\geq$ 9 mut/MB OR BRAF mutation)
 
@@ -339,4 +356,4 @@ correlation_df %>%
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.4
+**Report version:** 1.5

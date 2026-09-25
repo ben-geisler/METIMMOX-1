@@ -28,6 +28,10 @@
 #      an interaction node given its biomarker are arm-balance checks within
 #      that stratum, and the adjusted primary-model interaction terms are
 #      available for reconciliation.
+#   7. (issues #176, #182) Clinical-report helpers: the exit reasons of the
+#      patients without a TLR value (tlr_missing_exit_summary()) and the
+#      coxphf convergence diagnostics (coxphf_convergence()); the week-12
+#      landmark still retains a patient scanned after week 12.
 
 suppressPackageStartupMessages({
   library(here); library(dplyr); library(survival); library(dagitty)
@@ -138,6 +142,42 @@ stopifnot(is.na(defn_row$p_value), is.na(defn_row$N),
           grepl("TxCRP is fixed by {CRP, T}", defn_row$Test, fixed = TRUE))
 
 # ---------------------------------------------------------------------------
+# 1c. Clinical-report helpers (issues #176, #182; no trial data needed)
+# ---------------------------------------------------------------------------
+# Exit reasons of patients without TLR: progression exit first (death after
+# progression or progression), then the raw AE exit flag, else no recorded
+# reason. Patients with a TLR value are ignored.
+toy_cohort <- data.frame(
+  ID = paste0("p", 1:6), Rx = factor(c("Control arm", "Control arm", "Control arm",
+                                        "Experimental arm", "Control arm", "Control arm")),
+  Death = c(1, 1, 0, 1, 1, 0), ProgressionExit = c(1, 0, 0, 0, 1, 0),
+  tlr = c(NA, NA, NA, NA, NA, 1))
+toy_raw <- data.frame(ID = paste0("p", 6:1), `AE exit` = c(0, 1, 0, 0, 1, 1),
+                      check.names = FALSE)
+toy_exit <- tlr_missing_exit_summary(toy_cohort, raw = toy_raw)
+stopifnot(
+  toy_exit$n == 5,
+  identical(toy_exit$reasons, c("death after progression" = 2L, "adverse event" = 1L,
+                                "no recorded reason" = 2L)),
+  identical(toy_exit$reason_text,
+            "2 deaths after progression, 1 adverse event, 2 with no recorded reason"),
+  identical(toy_exit$arm_text, "4 in the control arm and 1 in the experimental arm"),
+  inherits(tryCatch(tlr_missing_exit_summary(toy_cohort, raw = toy_raw[-2, ]),
+                    error = function(e) e), "error")
+)
+# coxphf convergence diagnostics: a converged fit, and a fit that reaches the
+# iteration limit is flagged.
+set.seed(1)
+toy_surv <- data.frame(time = rexp(40), status = rbinom(40, 1, 0.8), x = rbinom(40, 1, 0.5))
+toy_fit <- fit_firth_cox(Surv(time, status) ~ x, toy_surv, "toy")
+toy_conv <- coxphf_convergence(toy_fit)
+stopifnot(toy_conv$Status == "Converged", toy_conv$Maxit == FIRTH_COX_MAXIT,
+          toy_conv$N == 40, toy_conv$Events == sum(toy_surv$status),
+          toy_conv$Iterations < FIRTH_COX_MAXIT,
+          coxphf_convergence(toy_fit, maxit = toy_conv$Iterations)$Status == "Reached maxit",
+          coxphf_convergence(NULL)$Status == "Fit failed")
+
+# ---------------------------------------------------------------------------
 # 2. A DAG edit that adds an untested edge must stop the report
 # ---------------------------------------------------------------------------
 dag_extra <- dagitty(sub("PFS -> OS\n}", "PFS -> OS\nSex -> OS\n}", DAG_SPEC, fixed = TRUE))
@@ -218,6 +258,17 @@ stopifnot(old_dd$landmark$diagnostics$n_pfs_excl_censored == 0,
           nrow(data_complete) == 68,
           nrow(economic_prediction_population(old_data)) == nrow(data_complete),
           sum(data$PFS_rule == "death_censored_at_assessment") > 0)
+# Issue #182: the complete-case patients without TLR left the study before the
+# first on-treatment CT for three different recorded reasons; they are not all
+# early deaths. Issue #176: the week-12 landmark is not after every first scan.
+live_exit <- tlr_missing_exit_summary(data_complete)
+stopifnot(live_exit$n == nrow(data_complete) - nrow(base),
+          identical(live_exit$reason_text,
+                    "1 death after progression, 1 adverse event, 1 with no recorded reason"),
+          identical(live_exit$arm_text, "all in the control arm"),
+          all_lm$week12$diagnostics$n_scan_after_landmark_kept ==
+            sum(base$CT1wk > 12 & base$PFSwk > 12),
+          max(base$CT1wk) > 12)
 cat(sprintf("Landmark cohorts (base n=%d): week9 OS n=%d, PFS n=%d (first-scan progressors kept %d, scanned after %d); scan PFS n=%d; week12 PFS n=%d\n",
             nrow(base), week9_diag$n_os,
             week9_diag$n_pfs, week9_diag$n_first_scan_progressors_kept,

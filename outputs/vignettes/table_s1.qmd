@@ -18,6 +18,7 @@ begin_artifact_render("table_s1")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04"),
+  funs = "tlr_landmark",
   packages = c("here", "dplyr", "knitr", "kableExtra", "tableone", "survival"),
   set_theme = FALSE
 )
@@ -27,10 +28,13 @@ setup_report(
 # The cohort is `data_complete` from script 04: the complete-case cohort of the
 # economic survival models (complete on age, sex, arm, week-4 CRP, TMB/BRAF and
 # both endpoints). TLR completeness is NOT required (issue #157); the patients
-# without a TLR reading (early deaths before the first on-treatment CT) are
-# shown as "Not assessed".
+# without a TLR reading, who left the study before the first on-treatment CT
+# (exit reasons from tlr_missing_exit_summary(); issue #182), are shown as
+# "Not assessed".
 n_total <- nrow(data_complete)
 n_tlr_missing <- sum(is.na(data_complete$tlr))
+tlr_missing <- tlr_missing_exit_summary(data_complete)
+stopifnot(tlr_missing$n == n_tlr_missing)
 arm_levels <- levels(data_complete$Rx)
 
 cat("Patients in the economic complete-case cohort:", n_total, "\n")
@@ -131,8 +135,8 @@ kable(tab_df,
             n_baseline + 1, nrow(tab_df)) %>%
   footnote(
     general = c(
-      sprintf("Data from the METIMMOX trial (NCT03388190). n = %d: the complete-case cohort of the economic survival models (complete on age, sex, arm, week-4 CRP, TMB/BRAF and both endpoints). TLR was not assessed in %d of these patients (early deaths before the first on-treatment CT).",
-              n_total, n_tlr_missing),
+      sprintf("Data from the METIMMOX trial (NCT03388190). n = %d: the complete-case cohort of the economic survival models (complete on age, sex, arm, week-4 CRP, TMB/BRAF and both endpoints). TLR was not assessed in %d of these patients (%s), who left the study before the first on-treatment CT (%s).",
+              n_total, n_tlr_missing, tlr_missing$arm_text, tlr_missing$reason_text),
       "Baseline characteristics: mean (SD) or n (%); p-values from the chi-squared test (categorical variables; the TLR test compares all three levels including Not assessed) or the t-test (age). Follow-up and outcome rows are descriptive only: follow-up is the reverse Kaplan-Meier median with interquartile range, survival medians are Kaplan-Meier estimates with 95% CI, NR = not reached; no p-values are reported for censored outcomes.",
       "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
       "Biomarker definitions: CRP-positive (CRP <5.0 mg/L at week 4, before the first nivolumab dose); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E); TLR-positive (target lesion reduction: a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT; an on-treatment measure, described here only and excluded from the economic model)."
