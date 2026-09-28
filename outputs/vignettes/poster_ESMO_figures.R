@@ -35,7 +35,10 @@ data_complete$crp_num      <- as.numeric(as.character(data_complete$crp))
 data_complete$tlr_num      <- as.numeric(as.character(data_complete$tlr))
 data_complete$tmb_braf_num <- as.numeric(as.character(data_complete$tmb_braf))
 data_complete$Rx_num <- as.numeric(data_complete$Rx == "Experimental arm")
-data_tlr <- data_complete[!is.na(data_complete$tlr_num), ]
+# Shared TLR landmark base cohort (issue #184): the TLR-classified patients of
+# the complete-case cohort, as in the clinical report, Figure 1 and Table S2.
+data_tlr <- tlr_landmark_base_cohort(data_complete)
+stopifnot(identical(sort(data_tlr$ID), sort(tlr_landmark_base_cohort(data)$ID)))
 lm9 <- build_tlr_landmark_cohorts(data_tlr, landmark = "week9")
 
 cat("n complete =", nrow(data_complete), "; n TLR =", nrow(data_tlr),
@@ -224,8 +227,9 @@ hr_crp_os  <- gi(res_os,  "crp_num.*Rx|Rx.*crp_num")
 hr_tmb_os  <- gi(res_os,  "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
 hr_crp_pfs <- gi(res_pfs, "crp_num.*Rx|Rx.*crp_num")
 hr_tmb_pfs <- gi(res_pfs, "tmb_braf_num.*Rx|Rx.*tmb_braf_num")
-# Ridge point estimates from reports/clinical_effectiveness.md (v3.7, 2026-09-18)
-ridge <- c(crp_os = 0.40, tmb_os = 0.86, crp_pfs = 0.33, tmb_pfs = 0.51)
+# Ridge point estimates from reports/clinical_effectiveness.md (v3.11, issue #183:
+# glmnet Cox, biomarker main effects and interactions penalized, CV lambda)
+ridge <- c(crp_os = 0.80, tmb_os = 0.91, crp_pfs = 0.66, tmb_pfs = 0.74)
 lab_crp <- "CRP × treatment"; lab_tmb <- "TMB/BRAF × treatment"
 forest <- data.frame(
   Biomarker = factor(rep(c(lab_crp, lab_tmb), 2), levels = c(lab_tmb, lab_crp)),
@@ -236,6 +240,7 @@ forest <- data.frame(
   hi = c(hr_crp_os$CI_Upper, hr_tmb_os$CI_Upper, hr_crp_pfs$CI_Upper, hr_tmb_pfs$CI_Upper),
   ridge = c(ridge["crp_os"], ridge["tmb_os"], ridge["crp_pfs"], ridge["tmb_pfs"])
 )
+stopifnot(min(forest$lo) > 0.045, max(forest$hi) < 9)  # every interval inside the axis
 forest$label <- sprintf("%.2f (%.2f–%.2f)", forest$HR, forest$lo, forest$hi)
 write.csv(forest, file.path(out_dir, "forest.csv"), row.names = FALSE)
 est_levels <- c("Firth Cox (95% profile-likelihood CI)", "Ridge Cox (point estimate)")
@@ -252,9 +257,9 @@ fig2 <- ggplot(forest, aes(y = Biomarker)) +
              label.size = 0, label.padding = unit(0.18, "lines")) +
   scale_shape_manual(values = c(21, 23), name = NULL) +
   scale_fill_manual(values = c("#0072B2", "white"), name = NULL) +
-  scale_x_log10(breaks = c(0.1, 0.25, 0.5, 1, 2, 4, 8),
-                labels = c("0.1", "0.25", "0.5", "1", "2", "4", "8"),
-                limits = c(0.09, 9)) +
+  scale_x_log10(breaks = c(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8),
+                labels = c("0.05", "0.1", "0.25", "0.5", "1", "2", "4", "8"),
+                limits = c(0.045, 9)) +
   scale_y_discrete(expand = expansion(add = c(0.6, 0.9))) +
   facet_wrap(~ Outcome) +
   labs(x = "Hazard ratio for the treatment × biomarker interaction (log scale)", y = NULL,
@@ -276,13 +281,15 @@ ggsave(file.path(out_dir, "poster_esmo_forest.png"), fig2, width = 13.1, height 
 # out so that poster-sized nodes do not overlap.
 poster_dag <- dagitty::dagitty('dag {
 bb="0,0,1,1"
-Demo     [pos="0.42,0.06"]
+Sex      [pos="0.02,0.06"]
+Age      [pos="0.46,0.06"]
 TMB_BRAF [pos="0.22,0.36"]
 CRP      [pos="0.22,0.84"]
 T        [exposure,pos="0.02,0.60"]
 Survival [outcome,pos="0.90,0.60"]
-Demo -> TMB_BRAF
-Demo -> Survival
+Age -> TMB_BRAF
+Age -> Survival
+Sex -> TMB_BRAF
 TMB_BRAF -> Survival
 CRP -> Survival
 T -> Survival
@@ -297,8 +304,7 @@ tidy_dag_obj$data <- tidy_dag_obj$data |>
 node_data <- ggdag::node_status(tidy_dag_obj)$data |>
   dplyr::distinct(name, x, y, status) |>
   dplyr::mutate(status = dplyr::if_else(is.na(status), "covariate", status),
-                label = dplyr::case_when(name == "Demo" ~ "Age/<br>Sex",
-                                         name == "Survival" ~ "PFS/<br>OS",
+                label = dplyr::case_when(name == "Survival" ~ "PFS/<br>OS",
                                          name == "TMB_BRAF" ~ "TMB/<br><i>BRAF</i>",
                                          TRUE ~ name))
 x_range <- range(node_data$x); y_range <- range(node_data$y)

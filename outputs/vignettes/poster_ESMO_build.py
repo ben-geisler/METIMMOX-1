@@ -324,7 +324,8 @@ shapes.append(header_box("Methods header", COL_A_X, METH_HDR_Y, COL_A_W, 1.07, "
 METH_Y = METH_HDR_Y + 1.07 + 0.28
 METH_W = COL_A_W - 0.05
 me = [
-    bullet([run("68 complete cases (59 deaths; 63 progression-or-death events).", BS)]),
+    bullet([run("68 complete cases (59 deaths; 50 progression-or-death events; deaths >16 weeks after "
+                "the last scan censored for PFS).", BS)]),
     bullet([run("Biomarkers before nivolumab: TMB " + GE + "9 mut/Mb or ", BS), run("BRAF", BS, i=True),
             run(" V600E (baseline); CRP <5 mg/L at week 4, after 2 FLOX cycles common to both arms "
                 "(by chance 47% vs 19% positive).", BS)]),
@@ -334,7 +335,8 @@ me = [
                 "treatment, biomarker main effects and treatment " + X + " biomarker interactions (", BS),
             run("Figure 1", BS, b=True),
             run("); profile-likelihood 95% CIs, penalized likelihood-ratio tests (PLRT).", BS)]),
-    bullet([run("Ridge-penalized Cox as co-primary stability estimator.", BS)]),
+    bullet([run("Stability check: ridge-penalized Cox shrinking the biomarker terms "
+                "(cross-validated penalty).", BS)]),
 ]
 shapes.append(round_box("Methods box", 0.36, METH_Y, METH_W, BOTTOM - METH_Y, me, anchor="t", tIns=0.12))
 DAG_W = 8.6
@@ -358,23 +360,23 @@ shapes.append(pic("Figure 2 Kaplan-Meier", "rId5", RES_X, 6.29, KM_W, KM_H,
 KS = KEY_SZ
 key = [
     para([run("No marginal treatment effect: ", KS, b=True),
-          run("OS HR 0.96 (95% CI 0.58" + EN + "1.61); PFS HR 0.80 (0.49" + EN + "1.33).", KS)],
+          run("OS HR 0.96 (95% CI 0.58" + EN + "1.61); PFS HR 0.77 (0.44" + EN + "1.38).", KS)],
          bullet=True, spc_after=16, end_sz=KS),
     para([run("Prognostic: ", KS, b=True),
           run("CRP <5 mg/L and TMB/", KS), run("BRAF", KS, i=True),
-          run(" positivity were associated with longer PFS (HR 0.41 and 0.49) and, for CRP, longer OS "
+          run(" positivity were associated with longer PFS (HR 0.39 each) and, for CRP, longer OS "
               "(HR 0.49), regardless of treatment (", KS), run("Table 1", KS, b=True), run(", ", KS),
           run("Figure 2", KS, b=True), run(").", KS)], bullet=True, spc_after=16, end_sz=KS),
     para([run("Not predictive: ", KS, b=True),
           run("no treatment " + X + " biomarker interaction reached significance (", KS),
           run("Figure 3", KS, b=True),
-          run("). Most consistent signal: CRP " + X + " treatment for PFS, HR 0.42 (0.11" + EN + "1.68), "
-              "p = 0.21, ridge HR 0.33; attenuated for OS (HR 0.65).", KS)],
+          run("). Largest signal: CRP " + X + " treatment for PFS, HR 0.26 (0.06" + EN + "1.34), "
+              "p = 0.10, but it shrinks toward 1 under ridge (HR 0.66) and is weaker for OS (HR 0.65).", KS)],
          bullet=True, spc_after=16, end_sz=KS),
     para([run("TLR: ", KS, b=True),
-          run("strongly prognostic for both endpoints (landmark HR 0.35), but more frequent with FLOX alone "
-              "(76% vs 53%) and with an interaction HR >1: a marker of chemotherapy-responsive disease, "
-              "not of nivolumab benefit.", KS)], bullet=True, spc_after=0, end_sz=KS),
+          run("strongly prognostic (landmark HR 0.35 OS, 0.21 PFS), but more frequent with FLOX alone "
+              "(76% vs 53%), with inconsistent interactions (HR 2.47 OS, 0.88 PFS): a marker of "
+              "chemotherapy-responsive disease, not of nivolumab benefit.", KS)], bullet=True, spc_after=0, end_sz=KS),
 ]
 shapes.append(round_box("Key findings box", KEY_X, 6.29, KEY_W, KM_H, key, anchor="ctr", lIns=0.15, rIns=0.15))
 
@@ -417,22 +419,22 @@ rows = [
      hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN), hdr("Ridge HR", bottom=THIN),
      hdr("HR (95% CI)", bottom=THIN), hdr("p", bottom=THIN), hdr("Ridge HR", bottom=THIN)],
     data_row("Treatment (FLOX/nivolumab vs FLOX)", UNI, "0.96 (0.58" + EN + "1.61)", "0.87", EN,
-             "0.80 (0.49" + EN + "1.33)", "0.39", EN),
+             "0.77 (0.44" + EN + "1.38)", "0.38", EN),
     data_row("CRP <5 mg/L at week 4", UNI_P, "0.49 (0.27" + EN + "0.84)", "0.009", EN,
-             "0.41 (0.23" + EN + "0.71)", "0.001", EN),
+             "0.39 (0.20" + EN + "0.73)", "0.003", EN),
     data_row("TMB " + GE + "9 mut/Mb or BRAF V600E", UNI_P, "0.68 (0.40" + EN + "1.13)", "0.14", EN,
-             "0.49 (0.28" + EN + "0.84)", "0.009", EN,
+             "0.39 (0.21" + EN + "0.73)", "0.003", EN,
              term_runs=[run("TMB " + GE + "9 mut/Mb or ", TABLE_SZ), run("BRAF", TABLE_SZ, i=True),
                         run(" V600E", TABLE_SZ)]),
     data_row("TLR " + GE + "10% (week-9 landmark)†", UNI_P, "0.35 (0.21" + EN + "0.61)", "<0.001", EN,
-             "0.35 (0.20" + EN + "0.63)", "<0.001", EN),
-    data_row("CRP " + X + " treatment", INT, "0.65 (0.19" + EN + "2.60)", "0.52", "0.40",
-             "0.42 (0.11" + EN + "1.68)", "0.21", "0.33"),
-    data_row("TMB/BRAF " + X + " treatment", INT, "0.95 (0.32" + EN + "2.82)", "0.92", "0.86",
-             "0.66 (0.21" + EN + "2.05)", "0.47", "0.51",
+             "0.21 (0.11" + EN + "0.42)", "<0.001", EN),
+    data_row("CRP " + X + " treatment", INT, "0.65 (0.19" + EN + "2.60)", "0.52", "0.80",
+             "0.26 (0.06" + EN + "1.34)", "0.10", "0.66"),
+    data_row("TMB/BRAF " + X + " treatment", INT, "0.95 (0.32" + EN + "2.82)", "0.92", "0.91",
+             "0.65 (0.18" + EN + "2.41)", "0.52", "0.74",
              term_runs=[run("TMB/", TABLE_SZ), run("BRAF", TABLE_SZ, i=True), run(" " + X + " treatment", TABLE_SZ)]),
-    data_row("TLR " + X + " treatment", LMK, "2.47 (0.75" + EN + "7.75)", "0.14", EN,
-             "1.88 (0.52" + EN + "6.38)", "0.33", EN, bottom=THICK),
+    data_row("TLR " + X + " treatment", LMK, "2.47 (0.75" + EN + "7.75)", "0.14", "1.13‡",
+             "0.88 (0.21" + EN + "3.38)", "0.85", "0.63", bottom=THICK),
 ]
 ROW_H = 0.58
 TABLE_Y = TY + 0.66
@@ -444,14 +446,17 @@ foot_runs = [
     run("Unified model: ", FOOT_SZ, b=True),
     run("age + sex + treatment + CRP + TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
     run(" + both treatment " + X + " biomarker interactions. ", FOOT_SZ),
-    run("Ridge: ", FOOT_SZ, b=True), run("L2-penalized Cox, point estimates. ", FOOT_SZ),
+    run("Ridge: ", FOOT_SZ, b=True),
+    run("L2-penalized Cox with cross-validated penalty on the biomarker (or TLR) main effects and "
+        "interactions; point estimates. ", FOOT_SZ),
     run("†", FOOT_SZ, b=True),
-    run("Week-9 landmark, TLR-classified patients (n = 65 OS, 60 PFS); the responder model adjusts for age, "
+    run("Week-9 landmark, TLR-classified patients (n = 65 OS, 56 PFS); the responder model adjusts for age, "
         "sex, CRP and TMB/", FOOT_SZ), run("BRAF", FOOT_SZ, i=True),
     run("; TLR is measured on treatment, so this is not a treatment-selection estimate. ", FOOT_SZ),
+    run("‡", FOOT_SZ, b=True), run("0.92" + EN + "1.80 across cross-validation splits. ", FOOT_SZ),
     run("CI", FOOT_SZ, b=True), run(", confidence interval; ", FOOT_SZ),
     run("HR", FOOT_SZ, b=True), run(", hazard ratio; ", FOOT_SZ),
-    run("TLR", FOOT_SZ, b=True), run(", tumor lesion reduction; ", FOOT_SZ),
+    run("TLR", FOOT_SZ, b=True), run(", target lesion reduction; ", FOOT_SZ),
     run("TMB", FOOT_SZ, b=True), run(", tumor mutational burden.", FOOT_SZ),
 ]
 FOOT_Y = table_bottom + 0.08
