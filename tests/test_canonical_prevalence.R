@@ -22,7 +22,8 @@ models <- list(os = structure(list(rate = 1), class = "mock_survival_model"),
                pfs = structure(list(rate = 2), class = "mock_survival_model"))
 strategies_df <- data.frame(id = get_strategies(), prevalence = c(1, 0.5, 0.5))
 preds <- generate_population_averaged_predictions(models, strategies_df, data_complete, 0:52, quiet = TRUE)
-params <- list(dr_costs = 0.04, dr_effects = 0.04, u_np = 0.73, u_p = 0.59, u_decrement = 0.14,
+params <- list(time_horizon = 52, cl = 1 / 52,  # grid owned by params (#172)
+  dr_costs = 0.04, dr_effects = 0.04, u_np = 0.73, u_p = 0.59, u_decrement = 0.14,
   c_drug_nivo = 0, c_drug_FLOX = 100, c_test_CT = 10, c_test_blood = 5,
   c_test_CRP = 0, c_test_NGS = 0, c_test_biomarker = list(crp = 0, tmb_braf = 0),
   c_other_visit = 10, c_other_baseline = 100, c_other_follow = 20, c_other_last = 1000)

@@ -301,6 +301,63 @@ structural_scenario_sides <- function(scenario) {
 }
 
 # ---------------------------------------------------------------------------
+# Treatment and monitoring schedules (issues #49, #172)
+# ---------------------------------------------------------------------------
+# Schedules are 0/1 vectors on the weekly model grid; position i is modeled
+# week i - 1. Script 05 and build_horizon_params() both build them here, so a
+# horizon shorter than the treatment sequence truncates the schedule instead of
+# lengthening the vector, and the recurring monitoring rules work for any
+# horizon (seq(13, n, by = 12) fails for n < 13).
+
+# Drug administration positions (modeled weeks 0-38, both sequences).
+TREATMENT_SCHEDULE_POSITIONS <- list(
+  nivo = c(5, 7, 13, 15, 29, 31, 37, 39),
+  FLOX_exp = c(1, 3, 9, 11, 25, 27, 33, 35),
+  FLOX_control = c(1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39)
+)
+
+#' Positions first, first + by, ... up to n_points (empty when n_points < first)
+recurring_positions <- function(first, by, n_points) {
+  if (n_points < first) integer(0) else seq(first, n_points, by = by)
+}
+
+#' Build the six treatment and monitoring schedules on an n-point grid
+#'
+#' @param n_points Number of model time points (time_horizon + 1).
+#' @param nivo,FLOX_exp,FLOX_control Administration positions; positions beyond
+#'   the grid are dropped.
+#' @return Named list l_nivo, l_FLOX_exp, l_FLOX_control, l_CT (baseline, then
+#'   every 12 weeks from position 13), l_blood (baseline, then every 4 weeks
+#'   from position 5) and l_visit (baseline plus every administration).
+build_treatment_schedules <- function(n_points,
+                                      nivo = TREATMENT_SCHEDULE_POSITIONS$nivo,
+                                      FLOX_exp = TREATMENT_SCHEDULE_POSITIONS$FLOX_exp,
+                                      FLOX_control = TREATMENT_SCHEDULE_POSITIONS$FLOX_control) {
+  if (!is.numeric(n_points) || length(n_points) != 1L || !is.finite(n_points) ||
+      n_points < 1 || n_points != round(n_points)) {
+    stop("n_points must be a positive whole number. Got: ", paste(n_points, collapse = ", "))
+  }
+  indicator <- function(positions) {
+    v <- rep(0, n_points)
+    v[positions[positions <= n_points]] <- 1
+    v
+  }
+  l_nivo <- indicator(nivo)
+  l_FLOX_exp <- indicator(FLOX_exp)
+  l_FLOX_control <- indicator(FLOX_control)
+  l_visit <- as.numeric(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)
+  l_visit[1] <- 1
+  list(
+    l_nivo = l_nivo,
+    l_FLOX_exp = l_FLOX_exp,
+    l_FLOX_control = l_FLOX_control,
+    l_CT = indicator(c(1, recurring_positions(13, 12, n_points))),
+    l_blood = indicator(c(1, recurring_positions(5, 4, n_points))),
+    l_visit = l_visit
+  )
+}
+
+# ---------------------------------------------------------------------------
 # Applying a structural scenario to a base-case parameter list (issue #157)
 # ---------------------------------------------------------------------------
 # Moved here from 09_DSA.R so that the one-way DSA (09_DSA.R, OWSA.qmd,
@@ -350,18 +407,15 @@ build_horizon_params <- function(base_params, horizon_weeks, models,
     p$p_pfs[[paste0(bm, "_weighted_PFS")]] <- preds[[bm]]$pfs
   }
 
-  schedule <- function(positions) {
-    v <- rep(0, n)
-    v[positions[positions <= n]] <- 1
-    v
-  }
-  p$l_nivo         <- schedule(which(base_params$l_nivo == 1))
-  p$l_FLOX_exp     <- schedule(which(base_params$l_FLOX_exp == 1))
-  p$l_FLOX_control <- schedule(which(base_params$l_FLOX_control == 1))
-  p$l_CT    <- schedule(c(1, seq(13, n, by = 12)))
-  p$l_blood <- schedule(c(1, seq(5, n, by = 4)))
-  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
-  p$l_visit[1] <- 1
+  # Keep the base list's administration positions (truncated to the horizon);
+  # monitoring recurs to the end of the new horizon.
+  schedules <- build_treatment_schedules(
+    n,
+    nivo = which(base_params$l_nivo == 1),
+    FLOX_exp = which(base_params$l_FLOX_exp == 1),
+    FLOX_control = which(base_params$l_FLOX_control == 1)
+  )
+  p[names(schedules)] <- schedules
   p$time_horizon <- horizon_weeks
   p
 }

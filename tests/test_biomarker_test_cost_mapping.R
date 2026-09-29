@@ -5,6 +5,7 @@ source("R/model_fun.R")
 source("R/cea_helpers.R")
 
 params <- list(
+  time_horizon = 520, cl = 1 / 52,  # model_fun() reads its grid from params (#172)
   dr_costs = 0.04, dr_effects = 0.04, u_np = 1, u_p = 1,
   c_drug_nivo = 0, c_drug_FLOX = 0, c_test_CT = 0, c_test_blood = 16,
   c_test_CRP = 17, c_test_NGS = 2500,

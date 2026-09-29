@@ -343,11 +343,12 @@ Survival-model parameter uncertainty enters the PSA through **joint multivariate
 The core economic model is in [model_fun.R](R/model_fun.R:9-381):
 
 ```r
-model_fun(params, time_horizon = 520, cl = 1/52,
+model_fun(params, time_horizon = NULL, cl = NULL,
           determpsa = "det", return_traces = FALSE, sim_idx = NULL)
 ```
 
 **Parameters**:
+- `time_horizon`, `cl` (issue #172): the parameter list owns its grid. Both default to `params$time_horizon` and `params$cl`; an explicit argument must agree with the params value (a disagreement stops), and when params lacks a setting the argument is required. There is no hidden 520 / 1/52 default, so `model_fun(params)`, `run_basecase(params)` and script 08 run a five-year list (261 points) on its own grid, and a monthly `params$cl` is used rather than silently replaced by 1/52. Test fixtures without `params$time_horizon`/`params$cl` pass both explicitly.
 - `determpsa`: "det" for deterministic, "psa" for probabilistic (requires `sim_idx`), "curves" for explicit supplied-curve evaluation with the PSA ordering clamp; invalid modes are rejected (issue #171)
 - `sim_idx`: Coefficient-draw index, the row of the OS and PFS draw matrices in the sampling cache (required for PSA mode)
 - `return_traces`: If TRUE, returns state occupancy over time
@@ -355,6 +356,7 @@ model_fun(params, time_horizon = 520, cl = 1/52,
 **PSA Mode Behavior** (lines 17-148):
 - Uses second-order Monte Carlo: population-averaged predictions from the coefficient draw `sim_idx` of the joint model (see "Survival Prediction Methodologies" section)
 - The OS and PFS curves of a draw come from the same joint component (row `sim_idx` of the OS and PFS draw matrices, drawn jointly since issue #159)
+- A missing or invalid predicted curve (not finite, outside [0, 1], not starting at 1, increasing, or of the wrong length; issue #60) counts as a failed prediction: the draw is flagged `fallback_used` and the base-case curves are kept, so the PSA loop replaces it
 - If prediction from the sampled model fails, the draw is flagged `fallback_used` and the PSA loop re-pairs the economic-parameter draw with up to 10 other cached models; the model actually used is recorded per row as `model_idx` (issue #156)
 
 ### Parameter Structure
@@ -503,6 +505,8 @@ Treatment administration is defined by binary vectors aligned to `time_points <-
 **FLOX experimental**: Modeled weeks 0, 2, 8, 10, 24, 26, 32, 34 (R positions 1, 3, 9, 11, 25, 27, 33, 35)
 **FLOX control**: Modeled weeks 0, 2, 4, 6, 8, 10, 12, 14, 24, 26, 28, 30, 32, 34, 36, 38 (the union of the two experimental-arm position sets)
 
+The positions and monitoring rules are defined once, in `build_treatment_schedules(n_points)` in [parameter_distributions.R](R/parameter_distributions.R) (`TREATMENT_SCHEDULE_POSITIONS`, issues #49, #172). Script 05 and `build_horizon_params()` both call it: positions beyond the horizon are dropped, so every schedule has exactly `time_horizon + 1` points (script 05 formerly lengthened a vector shorter than 39 points), and the recurring CT/blood rules work on any horizon (`seq(13, n, by = 12)` formerly failed for n < 13). `model_fun()` rejects schedules of another length or with values other than 0/1.
+
 **Monitoring**:
 - CT scans: Baseline + every 12 weeks
 - Blood tests: Baseline + every 4 weeks
@@ -529,9 +533,13 @@ Issue #157 changed no model logic and no headline number; the base case, PSA and
 
 The model enforces `p_p = pmax(os - pfs, 0)` to prevent negative progressed state occupancy when PFS and OS curves cross (can happen for a sampled coefficient draw, because joint coefficient draws do not guarantee OS >= PFS).
 
+### Survival-Curve Contract (issue #60)
+
+Every OS and PFS curve must be numeric, finite, within [0, 1], start at 1 and be nonincreasing (tolerance `SURVIVAL_CURVE_TOL = 1e-10` for numerical noise), checked by `survival_curve_problem()` / `validate_survival_curve()` in [calculate_outcomes.R](R/calculate_outcomes.R). `model_fun()` checks every curve after its length check in all modes (before the ordering check), `partitioned_survival_states()` checks both curves for direct callers such as the enriched-population analysis, and invalid PSA predictions are failed draws (see "PSA Mode Behavior"). Utilities, prevalences and discount rates must be finite numeric scalars, like the cost parameters. Formerly `control_OS[2] = 1.1` gave dead occupancy -0.1 with finite QALYs, and a curve starting at 0.8 was silently overwritten to 1.
+
 ### Initial State Constraints
 
-All cohorts start 100% progression-free:
+All cohorts start 100% progression-free (the first point is set to exactly 1 only after it has been checked to equal 1 within tolerance):
 ```r
 p_pf[1] <- 1.0
 p_p[1] <- 0.0
@@ -889,6 +897,8 @@ The repository includes a snapshot comparison system for assessing the impact of
 
 **Issue #173 batch snapshot provenance (#173, #171, #163)**: baseline and fixed snapshots both precede the batch commit and carry HEAD `1b50e8d`. The baseline was saved before source edits. Survival coefficient draws were reused unchanged; economic outcomes for all 5,000 saved draws and both price scenarios were recomputed using the existing closed-form gamma predictor and explicit supplied-curve mode. Every pre-fix PSA row was reproduced with the original calculation functions, and corrected results were checked against standard PSA mode on 12 draws (maximum discrepancies EUR 1.46e-11 and 2.22e-16 QALYs). PSA, EVPPI and scenario caches have current fingerprints; 301 report/cache contracts pass with one inapplicable zero-EVPI row block skipped. See [the batch validation record](validation/issue173_batch_2026-09-21/README.md) and its executable recomputation script. At that time the five-SE mean-alignment criterion remained a known failure; issue #180 subsequently retired that criterion for comparing different estimands (see protocol below).
 
+**Issue #172/#49/#60 snapshot provenance**: both snapshots carry pre-commit HEAD `15999f9`; the baseline was saved before any source edit. The sampling fingerprint was stale on entry (after #174 rewrote `METIMMOX.rds`), so the baseline run regenerated the sampling cache and the PSA under the unchanged code: the regenerated OS/PFS draws are bitwise identical to the old cache, and the only fingerprint difference was the *order* of the stored per-column data hashes (`crp` sorted before or after `Death`, i.e. collation-locale dependent), not any data value. After the fix, PSA, EVPPI and scenario EVPPI were rebuilt (scripts 10-12) and Table 5, Figures 4/S4/5 and Table S7 re-rendered to refresh their manifest fingerprints. Deterministic results, all 5,000 PSA cost/QALY rows and `model_idx` are identical between baseline and fixed (difference exactly 0); PSA fallbacks 0/5000 in both; EVPI 0; Table 5 and Table S7 CSVs byte-identical. 593 report/cache contracts pass with one inapplicable empty-EVPPI block skipped. `test_cache_provenance.R` (canonical column order, the same locale sort issue) and `test_sampling_failure_fallback.R` (does not source `joint_survival_sampling.R`) fail identically on the pre-fix HEAD and are unrelated to this change.
+
 **Issue #159 snapshot provenance**: baseline and fixed snapshots precede the requested commit and therefore both carry HEAD `6ca19ab`; their PSA fingerprints and result hashes differ. The baseline was saved before any source change. The active sampling, PSA pair, EVPPI, scenario and ordering-diagnostic caches were then cleared and regenerated, and reports/publication outputs re-rendered before the fixed snapshot. The cumulative impact report selects snapshots by their saved timestamps, because #159 was implemented after #166.
 
 **Issue #166 snapshot provenance**: both baseline and fixed snapshots were taken before the requested fix commit, so both filenames carry HEAD 96d0710; their PSA fingerprints and result hashes differ. The baseline PSA was freshly generated under the original model. Its writer omitted pair metadata, so that newly generated pair was bound and EVPPI regenerated before applying the model fix; metadata records `snapshot_writer_pair_repaired = TRUE`. The writer now calls `bind_psa_pair()` before saving new PSA results. Historical caches were not relabelled as current.
@@ -914,7 +924,8 @@ The repository includes a snapshot comparison system for assessing the impact of
 The test suite in `tests/` includes:
 
 - **[test_interval_integration.R](tests/test_interval_integration.R)**: Exact horizon conservation, independent discounted interval integration, full scheduled and event charges, and ordering-diagnostic QALY agreement (issue #163).
-- **[test_survival_ordering.R](tests/test_survival_ordering.R)**: Verifies deterministic OS >= PFS ordering and PSA and explicit supplied-curve handling of crossings
+- **[test_survival_ordering.R](tests/test_survival_ordering.R)**: Verifies deterministic OS >= PFS ordering and PSA and explicit supplied-curve handling of crossings, and that an OS value of 1.1 is rejected in both modes (issue #60)
+- **[test_model_input_contract.R](tests/test_model_input_contract.R)**: Synthetic `model_fun()` input contract (issues #172, #49, #60): time settings come from params (a 261-point list runs through `model_fun(params)` and `run_basecase(params)`; conflicting or missing settings stop; a monthly `params$cl` is honoured); `build_treatment_schedules()` builds exact-length binary schedules for 1-60 points and reproduces the script-05 schedules at 521; the model runs on horizons of 0-38 weeks; `build_horizon_params()` works on short horizons; schedules of the wrong length or non-binary values stop; curves above 1, below 0, non-finite, starting at 0.8 or rising stop in every mode and in `partitioned_survival_states()`; an invalid mocked PSA prediction sets `fallback_used` and keeps the base-case curves; non-finite or vector utilities, discount rates and prevalences stop. Needs no trial data.
 - **[test_biomarker_test_cost_mapping.R](tests/test_biomarker_test_cost_mapping.R)**: Verifies data-driven diagnostic-test cost assignment
 - **[test_canonical_prevalence.R](tests/test_canonical_prevalence.R)**: Verifies a common target population, zero identical-treatment increments under marginal and joint prevalence changes, and no PSA endpoint-missingness leak
 - **[test_prediction_population_live.R](tests/test_prediction_population_live.R)**: Confirms zero identical-treatment increments at every prevalence DSA endpoint on trial data, and that weighted diagnostic curves reproduce PSA QALYs using sampled utilities and repeated model indices. Uses temporary caches only.
@@ -949,6 +960,7 @@ Focused executable regression tests live in [`tests/`](tests/). The durable reco
 | PFS death ascertainment | Recorded progression time preserved; death window inclusive; late deaths censored at selected assessment; Inf restores old endpoints; repeated and changed-parameter calls use raw values | [`test_pfs_endpoint.R`](tests/test_pfs_endpoint.R) | Pass (#181, 24 September 2026); live cohort remains 68 with 50 events, Inf restores 63 |
 | Raw export contract | Every positional column has its expected header and top-row block label; 74 rows, unique ID; types, ranges and dates plausible; lab blocks at the expected visit; known biomarker counts; each violation stops with a specific message | [`test_data_contract.R`](tests/test_data_contract.R); `01_data_prep.R` on the live export | Pass (#174, 29 September 2026): live export passes; the rewritten tidy RDS is identical to the previous one apart from the added `CT1date` (equal to `Date...122`); substituting the cycle-2 lab block for week 4 on live data stops (median 21 days) |
 | OS/PFS ordering | OS >= PFS at all 521 modeled time points for control and all four economic biomarker subgroups; an injected deterministic crossing must error, while a PSA crossing must be reported and capped | [`test_survival_ordering.R`](tests/test_survival_ordering.R) | Pass after ordering-constrained distribution selection |
+| Model input contract | Time settings resolved from params with conflicts stopping; schedules of exactly `time_horizon + 1` binary points on any horizon, identical to the former script-05 schedules at 521 points; every survival curve finite, within [0, 1], starting at 1 and nonincreasing (tolerance 1e-10), with invalid PSA predictions treated as failed draws; finite scalar utilities, discount rates and prevalences | [`test_model_input_contract.R`](tests/test_model_input_contract.R), [`test_survival_ordering.R`](tests/test_survival_ordering.R) | Pass (#172, #49, #60, 29 September 2026) |
 | Cohort conservation | For every strategy and cycle, PF + P + D = 1 and each occupancy is within [0, 1] | Black-box record (`BB-TR0/1`) in [`findings_blackbox.json`](validation/validateHE_Opus_2026-07-12/findings/findings_blackbox.json) | Pass for control, CRP, and TMB/BRAF |
 | Utilities = 1 | With both state utilities set to 1, discounted QALYs equal discounted life-years | Black-box record (`BB-U1`) | Pass |
 | Utilities = 0 | With both state utilities set to 0, total QALYs equal 0 for every strategy | Black-box record (`BB-U0`) | Pass |

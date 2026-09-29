@@ -30,9 +30,12 @@ run_survival_ordering_test <- function() {
   )
 
   # The clamp is forbidden in deterministic mode; supplied curves opt in explicitly.
+  # The crossed PFS curve is itself a valid survival curve (starts at 1,
+  # nonincreasing, within [0, 1]), so the ordering check, not the survival-curve
+  # contract of issue #60, is what rejects it.
   crossed_params <- l_params_base
-  crossed_params$p_pfs$control_PFS[2] <-
-    crossed_params$p_os$control_OS[2] + 0.01
+  crossed_params$p_pfs$control_PFS <-
+    pmin(1, crossed_params$p_os$control_OS + 0.01)
 
   deterministic_error <- tryCatch(
     {
@@ -68,8 +71,23 @@ run_survival_ordering_test <- function() {
     all(is.finite(psa_result$Effect))
   )
 
+  # An OS value above 1 used to pass (dead occupancy -0.1, finite QALYs); the
+  # survival-curve contract now rejects it in every mode (issue #60).
+  above_one <- l_params_base
+  above_one$p_os$control_OS[2] <- 1.1
+  for (mode in c("det", "curves")) {
+    above_one_error <- tryCatch({ model_fun(above_one, determpsa = mode); NULL },
+                                error = identity)
+    stopifnot(
+      inherits(above_one_error, "error"),
+      grepl("Survival curve 'control_OS' leaves [0, 1]",
+            conditionMessage(above_one_error), fixed = TRUE)
+    )
+  }
+
   cat("PASS: OS >= PFS at all 521 points for control and four subgroups; ",
-      "the clamp requires PSA or explicit supplied-curve mode.\n", sep = "")
+      "the clamp requires PSA or explicit supplied-curve mode; ",
+      "OS above 1 is rejected.\n", sep = "")
 }
 
 run_survival_ordering_test()

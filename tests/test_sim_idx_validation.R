@@ -25,6 +25,7 @@ time_horizon <- 52L
 cl <- 1 / 52
 curve <- exp(-seq(0, time_horizon) / 100)
 l_params_base <- list(
+  time_horizon = time_horizon, cl = cl,  # model_fun() reads its grid from params (#172)
   dr_costs = 0.04, dr_effects = 0.04, u_np = 0.73, u_p = 0.59,
   c_drug_nivo = 100, c_drug_FLOX = 10, c_test_CT = 1, c_test_blood = 1,
   c_test_CRP = 1, c_test_NGS = 1, c_test_biomarker = list(crp = 1, tmb_braf = 1),

@@ -1,4 +1,52 @@
+# Survival-curve contract (issue #60). Tolerance for numerical noise in
+# population-averaged predictions; a genuine violation is far larger.
+SURVIVAL_CURVE_TOL <- 1e-10
+
+#' Describe the first violation of the survival-curve contract
+#'
+#' A survival curve on the model grid must be numeric, finite, within [0, 1],
+#' start at 1 and be nonincreasing (all within SURVIVAL_CURVE_TOL).
+#'
+#' @param curve Survival probabilities at the model time points.
+#' @param tol Numerical tolerance.
+#' @return NULL for a valid curve, otherwise a phrase describing the problem.
+survival_curve_problem <- function(curve, tol = SURVIVAL_CURVE_TOL) {
+  if (!is.numeric(curve) || length(curve) == 0L) {
+    return("is not a non-empty numeric vector")
+  }
+  if (any(!is.finite(curve))) {
+    return(paste0("contains non-finite values at ", sum(!is.finite(curve)), " time points"))
+  }
+  if (any(curve < -tol | curve > 1 + tol)) {
+    return(paste0("leaves [0, 1] (range ", signif(min(curve), 6), " to ",
+                  signif(max(curve), 6), ")"))
+  }
+  if (abs(curve[1] - 1) > tol) {
+    return(paste0("starts at ", signif(curve[1], 6), ", not 1"))
+  }
+  rises <- diff(curve) > tol
+  if (any(rises)) {
+    return(paste0("increases at ", sum(rises), " time points (largest rise ",
+                  signif(max(diff(curve)), 6), ")"))
+  }
+  NULL
+}
+
+#' Stop unless a survival curve satisfies the contract
+#'
+#' @param curve Survival probabilities.
+#' @param name Curve name used in the error message.
+validate_survival_curve <- function(curve, name) {
+  problem <- survival_curve_problem(curve)
+  if (!is.null(problem)) stop("Survival curve '", name, "' ", problem, ".")
+  invisible(TRUE)
+}
+
 #' Build partitioned-survival state occupancy vectors
+#'
+#' Both curves must satisfy the survival-curve contract; the first point is set
+#' to exactly 1 only after it has been checked to equal 1 within tolerance
+#' (issue #60), so a curve that does not start at 1 is rejected, not repaired.
 #'
 #' @param os Overall-survival probabilities
 #' @param pfs Progression-free-survival probabilities
@@ -7,6 +55,12 @@
 #'   model_fun()'s enforce_survival_ordering() leave this NULL.
 #' @return List containing progression-free, progressed, and dead occupancy
 partitioned_survival_states <- function(os, pfs, curve_label = NULL) {
+  label <- if (is.null(curve_label)) "" else paste0(curve_label, " ")
+  validate_survival_curve(os, paste0(label, "OS"))
+  validate_survival_curve(pfs, paste0(label, "PFS"))
+  if (length(os) != length(pfs)) {
+    stop("OS and PFS curves differ in length (", length(os), " vs ", length(pfs), ").")
+  }
   if (!is.null(curve_label)) {
     violation_idx <- which(pfs > os)
     if (length(violation_idx) > 0) {

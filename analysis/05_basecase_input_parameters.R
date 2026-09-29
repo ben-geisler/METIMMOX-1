@@ -15,26 +15,21 @@ time_points_length <- length(time_points)
 # assumption is instead bounded by the Second_sequence structural scenario in
 # 09_DSA.R, which removes the second sequence and holds survival at the trial
 # estimate (a cost-side bound).
-l_nivo <- rep(0, time_points_length)
-l_nivo[c(5, 7, 13, 15, 29, 31, 37, 39)] <- 1  
-
-l_FLOX_exp <- rep(0, time_points_length)
-l_FLOX_exp[c(1, 3, 9, 11, 25, 27, 33, 35)] <- 1
-
-l_FLOX_control <- rep(0, time_points_length)
-l_FLOX_control[c(1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39)] <- 1
-
-l_CT <- rep(0, time_points_length)
-l_CT[1] <- 1  # baseline
-l_CT[seq(13, time_points_length, by=12)] <- 1  # every 12 weeks
-
-l_blood <- rep(0, time_points_length)
-l_blood[1] <- 1  # baseline
-l_blood[seq(5, time_points_length, by=4)] <- 1  # every 4 weeks
-
-l_visit <- rep(0, time_points_length)
-l_visit[1] <- 1  # baseline
-l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
+#
+# The positions and monitoring rules live in build_treatment_schedules()
+# (parameter_distributions.R, issues #49, #172), shared with the time-horizon
+# scenario: nivolumab at modeled weeks 4, 6, 12, 14, 28, 30, 36, 38; FLOX
+# (experimental) at weeks 0, 2, 8, 10, 24, 26, 32, 34; FLOX (control) at the
+# union; CT at baseline and every 12 weeks; blood tests at baseline and every
+# 4 weeks; visits at baseline and every administration. Positions beyond the
+# horizon are dropped, so every vector has exactly time_points_length points.
+schedules <- build_treatment_schedules(time_points_length)
+l_nivo <- schedules$l_nivo
+l_FLOX_exp <- schedules$l_FLOX_exp
+l_FLOX_control <- schedules$l_FLOX_control
+l_CT <- schedules$l_CT
+l_blood <- schedules$l_blood
+l_visit <- schedules$l_visit
 
 # Map configured strategy predictions into the curve keys consumed by model_fun().
 control_strategy <- get_control_strategy()

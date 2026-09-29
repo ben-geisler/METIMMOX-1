@@ -43,7 +43,7 @@
 # Provides clear error messages when parameters are misconfigured.
 # ===============================================================================
 
-validate_model_params <- function(params) {
+validate_model_params <- function(params, n_points = NULL) {
   biomarkers <- get_biomarkers()
   biomarker_cost_params <- unique(unname(biomarker_cost_key(biomarkers)))
   prevalence_params <- unname(biomarker_prevalence_key(biomarkers))
@@ -82,36 +82,99 @@ validate_model_params <- function(params) {
     }
   }
 
-  # Validate utilities are in [0, 1]
-  if (params$u_np < 0 || params$u_np > 1) {
-    stop("Utility u_np must be in [0,1]. Got: ", params$u_np)
+  # Utilities, prevalences and discount rates must be finite numeric scalars
+  # (issue #60); a range test alone admits NA, Inf or vectors.
+  require_finite_scalar <- function(p) {
+    if (!is.numeric(params[[p]]) || length(params[[p]]) != 1L || !is.finite(params[[p]])) {
+      stop("Parameter '", p, "' must be a finite numeric scalar.")
+    }
   }
-  if (params$u_p < 0 || params$u_p > 1) {
-    stop("Utility u_p must be in [0,1]. Got: ", params$u_p)
+
+  # Validate utilities are in [0, 1]
+  for (p in c("u_np", "u_p")) {
+    require_finite_scalar(p)
+    if (params[[p]] < 0 || params[[p]] > 1) {
+      stop("Utility ", p, " must be in [0,1]. Got: ", params[[p]])
+    }
   }
 
   # Validate prevalence parameters are in [0, 1]
   for (p in prevalence_params) {
+    require_finite_scalar(p)
     if (params[[p]] < 0 || params[[p]] > 1) {
       stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
     }
   }
 
   # Validate discount rates are non-negative
-  if (params$dr_costs < 0) {
-    stop("Discount rate dr_costs cannot be negative. Got: ", params$dr_costs)
+  for (p in c("dr_costs", "dr_effects")) {
+    require_finite_scalar(p)
+    if (params[[p]] < 0) {
+      stop("Discount rate ", p, " cannot be negative. Got: ", params[[p]])
+    }
   }
-  if (params$dr_effects < 0) {
-    stop("Discount rate dr_effects cannot be negative. Got: ", params$dr_effects)
+
+  # Schedules are 0/1 indicators on the model grid (issues #49, #172). A
+  # schedule of another length means it was built for a different horizon.
+  if (!is.null(n_points)) {
+    for (p in required_vectors) {
+      v <- params[[p]]
+      if (!is.numeric(v) || length(v) != n_points) {
+        stop("Schedule '", p, "' has length ", length(v), " but expected ", n_points,
+             " (time_horizon + 1); build schedules with build_treatment_schedules().")
+      }
+      if (any(!is.finite(v)) || any(!v %in% c(0, 1))) {
+        stop("Schedule '", p, "' must contain only 0 and 1.")
+      }
+    }
   }
 
   invisible(TRUE)
 }
 
-model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
+# ===============================================================================
+# TIME SETTINGS (issue #172)
+# ===============================================================================
+# The parameter list owns its grid: params$time_horizon (weeks) and params$cl
+# (years per cycle). An explicit model_fun() argument must agree with it; when
+# params lacks a setting, the argument is required. There is no hidden default,
+# so a five-year list cannot be run on the ten-year grid, nor a monthly cl
+# replaced by a weekly one.
+# ===============================================================================
+
+resolve_time_setting <- function(params, name, supplied) {
+  from_params <- params[[name]]
+  if (is.null(from_params)) {
+    if (is.null(supplied)) {
+      stop("model_fun() needs '", name, "': set params$", name,
+           " or pass ", name, " explicitly.")
+    }
+    return(supplied)
+  }
+  if (!is.null(supplied) &&
+      !isTRUE(all.equal(supplied, from_params, tolerance = 1e-12))) {
+    stop("Argument ", name, " = ", format(supplied, digits = 10),
+         " conflicts with params$", name, " = ", format(from_params, digits = 10), ".")
+  }
+  from_params
+}
+
+model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL,
                       prediction_population = params$prediction_population) {
   determpsa <- match.arg(determpsa, c("det", "psa", "curves"))
+  time_horizon <- resolve_time_setting(params, "time_horizon", time_horizon)
+  cl <- resolve_time_setting(params, "cl", cl)
+  if (!is.numeric(time_horizon) || length(time_horizon) != 1L ||
+      !is.finite(time_horizon) || time_horizon < 0 ||
+      time_horizon != round(time_horizon)) {
+    stop("time_horizon must be a non-negative whole number of cycles. Got: ",
+         paste(time_horizon, collapse = ", "))
+  }
+  if (!is.numeric(cl) || length(cl) != 1L || !is.finite(cl) || cl <= 0) {
+    stop("cl must be a positive finite cycle length in years. Got: ",
+         paste(cl, collapse = ", "))
+  }
   if (determpsa == "psa" && is.null(sim_idx)) {
     stop("PSA mode requires sim_idx; use determpsa = 'curves' to evaluate supplied curves.")
   }
@@ -130,7 +193,7 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   biomarkers_to_run <- get_biomarkers()
 
   # Validate input parameters (Issue #47)
-  validate_model_params(params)
+  validate_model_params(params, n_points = time_horizon + 1)
 
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
@@ -171,6 +234,13 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     }
 
     if (is.null(prediction_population)) stop("PSA requires an explicit prediction_population.")
+
+    valid_psa_curves <- function(...) {
+      all(vapply(list(...), function(curve) {
+        !is.null(curve) && length(curve) == time_horizon + 1 &&
+          is.null(survival_curve_problem(curve))
+      }, logical(1)))
+    }
 
     if (sim_idx %% 100 == 0) {
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
@@ -221,10 +291,10 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
         time_points = seq(0, time_horizon)
       )
 
-      # Check for NA values and handle
-      if (is.null(os_control) || is.null(pfs_control) ||
-          any(is.na(os_control)) || any(is.na(pfs_control))) {
-        warning("NA values in control survival curves for sim ", sim_idx,
+      # A missing or invalid prediction (issue #60: not finite, outside
+      # [0, 1], not starting at 1, or increasing) is a failed draw.
+      if (!valid_psa_curves(os_control, pfs_control)) {
+        warning("Missing or invalid control survival curves for sim ", sim_idx,
                 " - using base case curves")
         fallback_used <- TRUE  # Issue #79: Track fallback
       } else {
@@ -270,11 +340,11 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
           time_points = seq(0, time_horizon)
         )
 
-        # Check for NULL or NA values
+        # A missing or invalid prediction is a failed draw (issue #60).
         if (is.null(preds_os) || is.null(preds_pfs) ||
-            any(is.na(preds_os$positive)) || any(is.na(preds_os$negative)) ||
-            any(is.na(preds_pfs$positive)) || any(is.na(preds_pfs$negative))) {
-          warning("NA/NULL values in ", biomarker, " survival curves for sim ", sim_idx,
+            !valid_psa_curves(preds_os$positive, preds_os$negative,
+                              preds_pfs$positive, preds_pfs$negative)) {
+          warning("Missing or invalid ", biomarker, " survival curves for sim ", sim_idx,
                   " - using base case curves")
           fallback_used <- TRUE  # Issue #79: Track fallback
         } else {
@@ -322,12 +392,15 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   v_dw_c <- weights$cost
   v_dw_e <- weights$effect
 
-  # Helper to validate survival curve length
-  validate_curve_length <- function(curve, name) {
+  # Validate a survival curve: length first, then the survival
+  # contract of calculate_outcomes.R (issue #60: finite, within [0, 1],
+  # starting at 1, nonincreasing), in every mode.
+  validate_curve <- function(curve, name) {
     if (length(curve) != expected_length) {
       stop("Survival curve '", name, "' has length ", length(curve),
            " but expected ", expected_length, " (time_horizon + 1)")
     }
+    validate_survival_curve(curve, name)
   }
 
   # Ordered base-case curves are guaranteed during distribution selection.
@@ -382,8 +455,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
   control_pfs_key <- paste0(control_strategy, "_PFS")
   os_control <- params$p_os[[control_os_key]]
   pfs_control <- params$p_pfs[[control_pfs_key]]
-  validate_curve_length(os_control, control_os_key)
-  validate_curve_length(pfs_control, control_pfs_key)
+  validate_curve(os_control, control_os_key)
+  validate_curve(pfs_control, control_pfs_key)
 
   pfs_control <- enforce_survival_ordering(
     pfs_control, os_control, control_strategy, "control"
@@ -439,8 +512,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker positive survival curves
     os_pos <- params$p_os[[paste0(biomarker, "_pos_OS")]]
     pfs_pos <- params$p_pfs[[paste0(biomarker, "_pos_PFS")]]
-    validate_curve_length(os_pos, paste0(biomarker, "_pos_OS"))
-    validate_curve_length(pfs_pos, paste0(biomarker, "_pos_PFS"))
+    validate_curve(os_pos, paste0(biomarker, "_pos_OS"))
+    validate_curve(pfs_pos, paste0(biomarker, "_pos_PFS"))
 
     pfs_pos <- enforce_survival_ordering(
       pfs_pos, os_pos, biomarker, "positive"
@@ -458,8 +531,8 @@ model_fun <- function(params, time_horizon = 520, cl = 1/52, determpsa = "det",
     # Get biomarker negative survival curves
     os_neg <- params$p_os[[paste0(biomarker, "_neg_OS")]]
     pfs_neg <- params$p_pfs[[paste0(biomarker, "_neg_PFS")]]
-    validate_curve_length(os_neg, paste0(biomarker, "_neg_OS"))
-    validate_curve_length(pfs_neg, paste0(biomarker, "_neg_PFS"))
+    validate_curve(os_neg, paste0(biomarker, "_neg_OS"))
+    validate_curve(pfs_neg, paste0(biomarker, "_neg_PFS"))
 
     pfs_neg <- enforce_survival_ordering(
       pfs_neg, os_neg, biomarker, "negative"
