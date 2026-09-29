@@ -6,22 +6,23 @@ if (file.exists(rds_path)) {
   stop("File not found: ", rds_path)
 }
 rm(rds_path)
-if (!"LastEvalwk" %in% names(data)) {
-  stop("Missing LastEvalwk: re-run analysis/01_data_prep.R.")
+for (nm in c("LastEvalwk", "CT1date")) {
+  if (!nm %in% names(data)) stop("Missing ", nm, ": re-run analysis/01_data_prep.R.")
 }
 
 data$PFSwk <- data$`Days until progression`/7
 data$OSwk <- data$`Days until death/last follow up`/7
 
 # First on-treatment CT (issue #155): weeks from inclusion (the OS/PFS clock
-# origin) to the scan at which target lesion reduction (TLR) is read. The trial
-# export holds the scan date in the positional column `Date...122`, the date
-# column that follows the baseline target-lesion block (`TL LD...121`), just as
-# 01_data_prep.R reads the first on-treatment target-lesion sum from
-# `TL LD...130`. CT1wk is NA exactly when TLR is NA (no first on-treatment
-# scan). It defines the per-patient landmark in tlr_landmark.R and the
-# first-scan diagnostics of the week-9 landmark; the economic model ignores it.
-data$CT1wk <- as.numeric(as.Date(data$`Date...122`) -
+# origin) to the scan at which target lesion reduction (TLR) is read. CT1date is
+# the positional export column `Date...122`, the date column that follows the
+# baseline target-lesion block (`TL LD...121`); 01_data_prep.R validates it
+# against the export contract (R/data_contract.R, issue #174) together with the
+# first on-treatment target-lesion sum `TL LD...130`. CT1wk is NA exactly when
+# TLR is NA (no first on-treatment scan). It defines the per-patient landmark in
+# tlr_landmark.R and the first-scan diagnostics of the week-9 landmark; the
+# economic model ignores it.
+data$CT1wk <- as.numeric(as.Date(data$CT1date) -
                            as.Date(data$`Date of inclusion`)) / 7
 
 # Rename "Progression exit" to "Progression" for simplicity
