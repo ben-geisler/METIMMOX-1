@@ -67,3 +67,6 @@ nul
 .claude/
 .positai
 
+
+# Local model-review output folders (report_<model>/)
+report_*/
