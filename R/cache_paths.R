@@ -115,15 +115,16 @@ scenario_evppi_path <- function(label = NULL, directory = cache_dir()) {
 cache_fingerprint <- function(x) {
   canonical <- function(obj) {
     if (inherits(obj, "formula")) return(paste(deparse(obj), collapse = " "))
+    # Radix (C-order) sorting keeps hashes independent of LC_COLLATE (#185).
     if (is.data.frame(obj)) {
-      obj <- obj[, order(names(obj)), drop = FALSE]
+      obj <- obj[, order(names(obj), method = "radix"), drop = FALSE]
       return(lapply(as.list(obj), function(col) {
         if (is.factor(col)) as.character(col) else col
       }))
     }
     if (is.list(obj)) {
       out <- lapply(obj, canonical)
-      if (!is.null(names(obj))) out <- out[order(names(out))]
+      if (!is.null(names(obj))) out <- out[order(names(out), method = "radix")]
       return(out)
     }
     if (is.function(obj)) return(paste(deparse(obj), collapse = "\n"))
@@ -147,7 +148,8 @@ cache_fingerprint <- function(x) {
 #' @export
 sampling_cache_fingerprint <- function(formulas, data, distributions,
                                        n_samples, seed, method) {
-  columns <- sort(unique(c(intersect("ID", names(data)),
+  # Radix (C-order) sorting: default collation depends on LC_COLLATE (#185).
+  columns <- sort(method = "radix", unique(c(intersect("ID", names(data)),
                            unlist(lapply(formulas, all.vars)))))
   missing <- setdiff(columns, names(data))
   if (length(missing)) stop("Missing sampling columns: ", paste(missing, collapse = ", "))

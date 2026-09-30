@@ -94,7 +94,7 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
     list.files(file.path(ctx$root, "analysis"), "\\.R$", full.names = TRUE),
     file.path(ctx$root, ctx$vignette))
   source_files <- source_files[file.exists(source_files)]
-  code_hash <- digest::digest(unname(tools::md5sum(sort(source_files))), algo = "sha256")
+  code_hash <- digest::digest(unname(tools::md5sum(sort(source_files, method = "radix"))), algo = "sha256")
   trial <- file.path(ctx$root, "data/tidy/METIMMOX.rds")
   rows <- lapply(ctx$files, function(f) {
     path <- file.path(ctx$root, f)
@@ -119,7 +119,8 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
     old <- read.csv(manifest, stringsAsFactors = FALSE)
     rows <- rbind(old[!old$file %in% ctx$files, , drop = FALSE], rows)
   }
-  rows <- rows[order(rows$file), ]
+  # Locale-independent row order, so the manifest diff is stable (#185).
+  rows <- rows[order(rows$file, method = "radix"), ]
   utils::write.csv(rows, manifest, row.names = FALSE, na = "")
   options(metimmox.artifact_context = NULL)
   invisible(rows)

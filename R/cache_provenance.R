@@ -141,7 +141,7 @@ prediction_population_identity <- function() {
   setNames(lapply(c("data_complete"), function(name) {
     population <- get0(name, envir = .GlobalEnv, inherits = FALSE)
     if (!is.data.frame(population)) return(NULL)
-    columns <- sort(intersect(variables, names(population)))
+    columns <- sort(intersect(variables, names(population)), method = "radix")
     cache_fingerprint(canonical_sampling_data(population[, columns, drop = FALSE]))
   }), c("data_complete"))
 }
