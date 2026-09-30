@@ -1,6 +1,6 @@
 # Biosimilar Nivolumab Pricing Scenario
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Overview](#overview)
 - [Pricing Scenarios](#pricing-scenarios)
@@ -27,12 +27,12 @@ Nivolumab pricing scenarios
 
 | Scenario   | Strategy         |       Cost | QALYs |
 |:-----------|:-----------------|-----------:|------:|
-| Base case  | Standard of Care | EUR 20,967 | 1.340 |
-| Base case  | CRP-guided       | EUR 53,686 | 1.377 |
-| Base case  | TMB/BRAF-guided  | EUR 62,382 | 1.339 |
-| Biosimilar | Standard of Care | EUR 20,967 | 1.340 |
-| Biosimilar | CRP-guided       | EUR 31,708 | 1.377 |
-| Biosimilar | TMB/BRAF-guided  | EUR 35,850 | 1.339 |
+| Base case  | Standard of Care | EUR 25,764 | 1.340 |
+| Base case  | CRP-guided       | EUR 58,203 | 1.377 |
+| Base case  | TMB/BRAF-guided  | EUR 66,916 | 1.339 |
+| Biosimilar | Standard of Care | EUR 25,764 | 1.340 |
+| Biosimilar | CRP-guided       | EUR 36,225 | 1.377 |
+| Biosimilar | TMB/BRAF-guided  | EUR 40,383 | 1.339 |
 
 Base case and biosimilar deterministic results: discounted cost and
 QALYs per patient
@@ -40,11 +40,11 @@ QALYs per patient
 | Scenario | Strategy | Incr. cost | Incr. QALYs | ICER | Pairwise status | Frontier |
 |:---|:---|---:|---:|---:|:---|:---|
 | Base case | Standard of Care | – | – | – | Reference | On frontier |
-| Base case | CRP-guided | EUR 32,720 | 0.038 | EUR 871,972 | Pairwise ICER vs SoC | On frontier |
-| Base case | TMB/BRAF-guided | EUR 41,416 | -0.001 | Dominated | Dominated by SoC | Dominated |
+| Base case | CRP-guided | EUR 32,439 | 0.038 | EUR 864,492 | Pairwise ICER vs SoC | On frontier |
+| Base case | TMB/BRAF-guided | EUR 41,152 | -0.001 | Dominated | Dominated by SoC | Dominated |
 | Biosimilar | Standard of Care | – | – | – | Reference | On frontier |
-| Biosimilar | CRP-guided | EUR 10,742 | 0.038 | EUR 286,259 | Pairwise ICER vs SoC | On frontier |
-| Biosimilar | TMB/BRAF-guided | EUR 14,883 | -0.001 | Dominated | Dominated by SoC | Dominated |
+| Biosimilar | CRP-guided | EUR 10,461 | 0.038 | EUR 278,778 | Pairwise ICER vs SoC | On frontier |
+| Biosimilar | TMB/BRAF-guided | EUR 14,619 | -0.001 | Dominated | Dominated by SoC | Dominated |
 
 Incremental results versus standard of care (pairwise convention) with
 the efficiency-frontier status
@@ -70,6 +70,6 @@ survival curves are unchanged.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.1

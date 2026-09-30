@@ -1,6 +1,6 @@
 # PFS \> OS Ordering Violations in the PSA
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Overview](#overview)
 - [Methods](#methods)
@@ -159,9 +159,9 @@ file is younger than the sampling-cache file.
 
 | Cache | Modified | Sampling fingerprint |
 |:---|:---|:---|
-| Sampling draws | 2026-09-24 17:19 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
-| PSA results | 2026-09-24 17:54 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
-| Violation diagnostics | 2026-09-24 19:27 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
+| Sampling draws | 2026-09-30 15:03 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
+| PSA results | 2026-09-30 16:51 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
+| Violation diagnostics | 2026-09-30 19:00 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
 
 Caches read by this report
 
@@ -435,7 +435,7 @@ attribution was too strong.
   `run_pfs_os_violation_diagnostics()` regenerates the cache on any
   fingerprint mismatch. The current cache was built from sampling cache
   09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8
-  (method mvn_joint_v2) in 465 seconds on 2026-09-24 19:27.
+  (method mvn_joint_v2) in 852 seconds on 2026-09-30 19:00.
 - Curves are computed in closed form from the gamma parameters of each
   draw; `validate_direct_curves()` checks them against the pipeline’s
   `predict()`-based helper before every regeneration and stops if they
@@ -448,6 +448,6 @@ attribution was too strong.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 2.1

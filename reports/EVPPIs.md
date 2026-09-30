@@ -1,6 +1,6 @@
 # Value of Information Analysis
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Overview](#overview)
 - [PSA Decision Uncertainty](#psa-decision-uncertainty)
@@ -28,9 +28,9 @@ obtained by adding single-parameter rows, because EVPPI is not additive.
 
 | Strategy         |  Mean Cost | Mean QALYs | Probability Cost-Effective |
 |:-----------------|-----------:|-----------:|---------------------------:|
-| Standard of Care | EUR 20,932 |      1.378 |                     100.0% |
-| CRP-guided       | EUR 53,228 |      1.401 |                       0.0% |
-| TMB/BRAF-guided  | EUR 61,752 |      1.370 |                       0.0% |
+| Standard of Care | EUR 25,732 |      1.378 |                     100.0% |
+| CRP-guided       | EUR 57,740 |      1.401 |                       0.0% |
+| TMB/BRAF-guided  | EUR 66,302 |      1.370 |                       0.0% |
 
 PSA summary at WTP = EUR 51,000
 
@@ -126,6 +126,6 @@ per-patient standard errors multiplied by the same factor.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.3

@@ -1,6 +1,6 @@
 # Biomarker Distributions
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Introduction](#introduction)
 - [Sample Characteristics](#sample-characteristics)
@@ -139,6 +139,6 @@ negligible.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.5

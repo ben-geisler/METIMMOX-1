@@ -1,6 +1,6 @@
 # Enriched Population Analysis
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -40,7 +40,7 @@ Economic biomarker-positive prevalences
 
 | Biomarker | Prevalence | Base ICER (vs SoC) | Base frontier | Enriched ICER (vs SoC) | Change |
 |:---|---:|---:|:---|---:|---:|
-| CRP | 33.8% | EUR 871,972 | On frontier | EUR 871,972 | +0.0% |
+| CRP | 33.8% | EUR 864,492 | On frontier | EUR 864,492 | +0.0% |
 | TMB/BRAF | 44.1% | Dominated | Dominated | Dominated | – |
 
 Base case and enriched-population ICERs (pairwise versus standard of
@@ -56,8 +56,8 @@ percentage change between such ICERs is not meaningful and is shown as
 
 | Biomarker | Experimental Cost | Experimental QALYs | Control Cost | Control QALYs | Screening cost per identified positive | Enriched ICER |
 |:---|---:|---:|---:|---:|---:|---:|
-| CRP | EUR 117,467 | 1.773 | EUR 20,730 | 1.662 | EUR 47 | EUR 871,972 |
-| TMB/BRAF | EUR 115,301 | 1.420 | EUR 21,426 | 1.422 | EUR 5,707 | Dominated |
+| CRP | EUR 122,662 | 1.773 | EUR 26,756 | 1.662 | EUR 47 | EUR 864,492 |
+| TMB/BRAF | EUR 119,643 | 1.420 | EUR 26,366 | 1.422 | EUR 5,707 | Dominated |
 
 Detailed enriched-population results (pairwise versus standard of care)
 
@@ -83,6 +83,6 @@ patients, and that screening cost is charged to the experimental arm.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.2

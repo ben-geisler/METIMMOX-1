@@ -1,6 +1,6 @@
 # Biomarker Effect Decomposition
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -70,6 +70,6 @@ economic strategy effect.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.0

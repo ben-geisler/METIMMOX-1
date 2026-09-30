@@ -1,6 +1,6 @@
 # Week-4 CRP Estimand
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Purpose](#purpose)
 - [Estimand](#estimand)
@@ -191,11 +191,11 @@ raises the rate and shortens survival. Standard errors are not shown.
 
 | Cohort          | Standard of Care | CRP-guided | TMB/BRAF-guided | Highest NMB      |
 |:----------------|-----------------:|-----------:|----------------:|:-----------------|
-| Base case       |           20,967 |     53,686 |          62,382 | Standard of Care |
-| CRP-, TMB/BRAF- |           20,811 |     51,936 |          61,344 | Standard of Care |
-| CRP-, TMB/BRAF+ |           20,818 |     52,308 |          61,226 | Standard of Care |
-| CRP+, TMB/BRAF- |           20,668 |     54,435 |          62,734 | Standard of Care |
-| CRP+, TMB/BRAF+ |           20,670 |     55,144 |          63,125 | Standard of Care |
+| Base case       |           25,764 |     58,203 |          66,916 | Standard of Care |
+| CRP-, TMB/BRAF- |           25,556 |     56,399 |          65,884 | Standard of Care |
+| CRP-, TMB/BRAF+ |           25,557 |     56,799 |          65,557 | Standard of Care |
+| CRP+, TMB/BRAF- |           25,273 |     58,836 |          67,318 | Standard of Care |
+| CRP+, TMB/BRAF+ |           25,264 |     59,567 |          67,488 | Standard of Care |
 
 Deterministic costs (EUR) by cohort
 
@@ -214,22 +214,22 @@ Deterministic QALYs by cohort
 
 | Cohort          | Inc. cost | Inc. QALYs |    ICER | Frontier             |
 |:----------------|----------:|-----------:|--------:|:---------------------|
-| Base case       |    32,720 |     0.0375 | 871,972 | On frontier          |
-| CRP-, TMB/BRAF- |    31,124 |     0.0378 | 823,085 | On frontier          |
-| CRP-, TMB/BRAF+ |    31,490 |     0.0490 | 642,793 | On frontier          |
-| CRP+, TMB/BRAF- |    33,767 |     0.0596 | 566,110 | Extendedly dominated |
-| CRP+, TMB/BRAF+ |    34,474 |     0.0732 | 471,086 | On frontier          |
+| Base case       |    32,439 |     0.0375 | 864,492 | On frontier          |
+| CRP-, TMB/BRAF- |    30,842 |     0.0378 | 815,624 | On frontier          |
+| CRP-, TMB/BRAF+ |    31,242 |     0.0490 | 637,725 | On frontier          |
+| CRP+, TMB/BRAF- |    33,563 |     0.0596 | 562,685 | Extendedly dominated |
+| CRP+, TMB/BRAF+ |    34,302 |     0.0732 | 468,730 | On frontier          |
 
 CRP-guided: increments and ICER pairwise versus standard of care (EUR,
 QALYs)
 
 | Cohort          | Inc. cost | Inc. QALYs |      ICER | Frontier    |
 |:----------------|----------:|-----------:|----------:|:------------|
-| Base case       |    41,416 |    -0.0011 | Dominated | Dominated   |
-| CRP-, TMB/BRAF- |    40,533 |     0.0232 | 1,744,687 | Dominated   |
-| CRP-, TMB/BRAF+ |    40,408 |    -0.0557 | Dominated | Dominated   |
-| CRP+, TMB/BRAF- |    42,065 |     0.0921 |   456,884 | On frontier |
-| CRP+, TMB/BRAF+ |    42,455 |     0.0154 | 2,754,342 | Dominated   |
+| Base case       |    41,152 |    -0.0011 | Dominated | Dominated   |
+| CRP-, TMB/BRAF- |    40,328 |     0.0232 | 1,735,873 | Dominated   |
+| CRP-, TMB/BRAF+ |    40,000 |    -0.0557 | Dominated | Dominated   |
+| CRP+, TMB/BRAF- |    42,045 |     0.0921 |   456,666 | On frontier |
+| CRP+, TMB/BRAF+ |    42,224 |     0.0154 | 2,739,306 | Dominated   |
 
 TMB/BRAF-guided: increments and ICER pairwise versus standard of care
 (EUR, QALYs)
@@ -243,11 +243,11 @@ strategies.
 
 **Range across the four scenarios.**
 
-- CRP-guided: pairwise ICERs from EUR 471,086 (CRP+, TMB/BRAF+) to EUR
-  823,085 (CRP-, TMB/BRAF-) in 4 scenarios (base case: a pairwise ICER
-  of EUR 871,972).
-- TMB/BRAF-guided: pairwise ICERs from EUR 456,884 (CRP+, TMB/BRAF-) to
-  EUR 2,754,342 (CRP+, TMB/BRAF+) in 3 scenarios; dominated by standard
+- CRP-guided: pairwise ICERs from EUR 468,730 (CRP+, TMB/BRAF+) to EUR
+  815,624 (CRP-, TMB/BRAF-) in 4 scenarios (base case: a pairwise ICER
+  of EUR 864,492).
+- TMB/BRAF-guided: pairwise ICERs from EUR 456,666 (CRP+, TMB/BRAF-) to
+  EUR 2,739,306 (CRP+, TMB/BRAF+) in 3 scenarios; dominated by standard
   of care in 1 (CRP-, TMB/BRAF+) (base case: dominated by standard of
   care).
 - CRP-guided was on the efficiency frontier in 3 of 4 scenarios;
@@ -311,9 +311,9 @@ survival-dependent part of the cost increment.
 |:-------------------------|-----------------:|-----------:|----------------:|
 | QALYs, weeks 0-4         |          0.05600 |    0.05601 |         0.05600 |
 | QALYs, full horizon      |           1.3400 |     1.3775 |          1.3389 |
-| Cost, weeks 0-4          |        EUR 1,862 |  EUR 1,879 |       EUR 4,381 |
+| Cost, weeks 0-4          |        EUR 1,906 |  EUR 1,923 |       EUR 4,426 |
 | of which diagnostic test |            EUR 0 |     EUR 16 |       EUR 2,518 |
-| Cost, full horizon       |       EUR 20,967 | EUR 53,686 |      EUR 62,382 |
+| Cost, full horizon       |       EUR 25,764 | EUR 58,203 |      EUR 66,916 |
 | OS at week 4             |           0.9991 |     0.9991 |          0.9990 |
 | PFS at week 4            |           0.9845 |     0.9878 |          0.9847 |
 
@@ -328,12 +328,12 @@ in the Methods. OS and PFS: population-averaged survival probabilities.
 | Inc. QALYs, weeks 0-4                |   0.000013 |     -0.00000065 |
 | Inc. QALYs, full horizon             |     0.0375 |         -0.0011 |
 | Share of full-horizon QALY increment |     0.035% |          0.061% |
-| Inc. cost, weeks 0-4                 |  EUR 16.50 |    EUR 2,519.36 |
+| Inc. cost, weeks 0-4                 |  EUR 16.46 |    EUR 2,519.35 |
 | of which diagnostic test             |  EUR 16.00 |    EUR 2,518.00 |
-| of which survival-dependent          |   EUR 0.50 |        EUR 1.36 |
-| Inc. cost, full horizon              | EUR 32,720 |      EUR 41,416 |
-| Share of full-horizon cost increment |     0.050% |          6.083% |
-| Share, survival-dependent part only  |     0.002% |          0.003% |
+| of which survival-dependent          |   EUR 0.46 |        EUR 1.35 |
+| Inc. cost, full horizon              | EUR 32,439 |      EUR 41,152 |
+| Share of full-horizon cost increment |     0.051% |          6.122% |
+| Share, survival-dependent part only  |     0.001% |          0.003% |
 
 Increments versus standard of care: before week 4 and full horizon
 
@@ -344,11 +344,11 @@ occupancy.
 Before week 4, the CRP-guided strategy accrues 0.000013 more QALYs than
 standard of care, which is 0.035% of its full-horizon QALY increment of
 0.0375. The survival-dependent part of its cost increment before week 4
-is EUR 0.50 (0.002% of the full-horizon cost increment). The CRP test
+is EUR 0.46 (0.001% of the full-horizon cost increment). The CRP test
 adds EUR 16.00.
 
 For the TMB/BRAF-guided strategy the corresponding values are
--0.00000065 QALYs (0.061% of -0.0011) and EUR 1.36. Its larger
+-0.00000065 QALYs (0.061% of -0.0011) and EUR 1.35. Its larger
 pre-decision cost increment is the NGS test (EUR 2,518.00), which the
 strategy genuinely incurs.
 
@@ -403,7 +403,7 @@ The reason is that none of them is expected to change the conclusion.
 Standard of Care has the highest net monetary benefit at WTP = EUR
 51,000 per QALY in the base case and in all 4 scenarios. The lowest
 pairwise ICER of any guided strategy, in the base case or any scenario,
-is EUR 456,884 per QALY, about 9 times the threshold. The three analyses
+is EUR 456,666 per QALY, about 9 times the threshold. The three analyses
 could shift the ICERs, but a guided strategy would need its ICER to fall
 roughly that many times to change the decision. Revisit it if a later
 model change brings a guided strategy’s ICER close to the threshold, or
@@ -411,6 +411,6 @@ if a reviewer or the manuscript (issue \#160) requires these analyses.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.1

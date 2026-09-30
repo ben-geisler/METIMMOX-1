@@ -1,6 +1,6 @@
 # Joint OS/PFS Coefficient Sampling
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Change and scope](#change-and-scope)
 - [Covariance construction](#covariance-construction)
@@ -130,20 +130,20 @@ recentering uncertain draws or relaxing the existing diagnostic.
 
 | Strategy | Outcome | Base   | PSA mean | MC SE  | Difference (SE) |
 |:---------|:--------|:-------|:---------|:-------|:----------------|
-| control  | Cost    | 20967  | 20932    | 36     | -0.96           |
+| control  | Cost    | 25764  | 25732    | 38     | -0.83           |
 | control  | QALYs   | 1.3400 | 1.3775   | 0.0042 | +8.97           |
-| crp      | Cost    | 53686  | 53228    | 88     | -5.20           |
+| crp      | Cost    | 58203  | 57740    | 90     | -5.16           |
 | crp      | QALYs   | 1.3775 | 1.4007   | 0.0038 | +6.11           |
-| tmb_braf | Cost    | 62382  | 61752    | 95     | -6.64           |
+| tmb_braf | Cost    | 66916  | 66302    | 97     | -6.34           |
 | tmb_braf | QALYs   | 1.3389 | 1.3696   | 0.0039 | +7.89           |
 
 PSA means versus fitted-parameter results
 
 | Strategy | Outcome | Base    | PSA mean | MC SE  | Difference (SE) |
 |:---------|:--------|:--------|:---------|:-------|:----------------|
-| crp      | Cost    | 32720   | 32296    | 81     | -5.21           |
+| crp      | Cost    | 32439   | 32008    | 81     | -5.30           |
 | crp      | QALYs   | 0.0375  | 0.0232   | 0.0027 | -5.39           |
-| tmb_braf | Cost    | 41416   | 40820    | 87     | -6.83           |
+| tmb_braf | Cost    | 41152   | 40570    | 88     | -6.62           |
 | tmb_braf | QALYs   | -0.0011 | -0.0079  | 0.0025 | -2.76           |
 
 Incremental PSA means versus fitted-parameter increments
@@ -162,6 +162,6 @@ conditioning alone guarantees ordered survival curves.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0

@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -78,9 +78,9 @@ without a week-4 CRP under 4 combinations of assigned CRP status and
 assigned TMB/BRAF status (for the patients whose TMB/BRAF status is
 unknown):
 
-- **CRP-guided:** pairwise ICERs from EUR 471,086 to EUR 823,085 in 4
-  scenarios (base case: EUR 871,972).
-- **TMB/BRAF-guided:** pairwise ICERs from EUR 456,884 to EUR 2,754,342
+- **CRP-guided:** pairwise ICERs from EUR 468,730 to EUR 815,624 in 4
+  scenarios (base case: EUR 864,492).
+- **TMB/BRAF-guided:** pairwise ICERs from EUR 456,666 to EUR 2,739,306
   in 3 scenarios; dominated by standard of care in 1 (base case:
   dominated by standard of care).
 - Standard of Care has the highest net monetary benefit at WTP = EUR
@@ -126,6 +126,38 @@ deterministic influence of the prices is undiminished: the nivolumab
 price is still the second-largest one-way driver for both guided
 strategies.
 
+**Outpatient visits** (issue \#36) are costed from the Norwegian DRG
+(ISF) system: an outpatient contact carries DRG weight 0.047, and the
+2023 unit price for somatic care is NOK 49,484 (EUR 4,541.60), giving
+NOK 2,325.75 = EUR 213.46 per visit. The weight does not differ between
+visit types, so the baseline visit (`c_other_baseline`), visits at
+administrations and surveillance scans (`c_other_visit`) and the
+quarterly follow-up visit in the progressed state (`c_other_follow`) all
+take this value; the three parameters are kept separate so that each can
+be varied on its own in the one-way analysis. The earlier values (EUR
+33, 530 and 33) had no documented source.
+
+**Monitoring and visits** (issue \#164). Progression-free patients have
+a CT scan at baseline and every 12 weeks, and a blood test at baseline
+and every 4 weeks, up to the horizon. A visit is charged at baseline, at
+every drug administration and at every CT scan; during treatment each
+scan already coincides with an administration, so the CT rule adds a
+surveillance visit every 12 weeks after the last administration (week
+38). Blood tests between scans carry no separate visit. Progressed
+patients accrue one follow-up visit and one CT scan per quarter,
+integrated over progressed-state occupancy.
+
+**Dispersion of sampled parameters** (issue \#56). The four resource-use
+costs are gamma distributed with a coefficient of variation (CV) of
+0.20, and `u_np` (beta) and `u_decrement` (gamma) with a CV of 0.15.
+Both CVs are **assumptions**: no study reports the dispersion of these
+costs, and the utility sources give no usable standard error, so
+conventional moderate values were chosen. They are neither estimated
+from data nor taken from the literature, and they are not varied in a
+scenario. A CV of 0.20 gives a gamma 95% interval of about 0.65 to 1.43
+times the mean; a CV of 0.15 gives a beta 95% interval for `u_np` = 0.73
+of about 0.49 to 0.91.
+
 The nivolumab price of EUR 13,923 per administration is an **assumption,
 not a citable tariff**: it represents an assumed Norwegian hospital
 acquisition price (about 40% below list). Norwegian hospital prices are
@@ -143,9 +175,9 @@ three in the biosimilar scenario.
 | Routine blood monitoring | c_test_blood | EUR 16 | EUR 13 | EUR 19 | Fixed |
 | CRP biomarker test | c_test_CRP | EUR 16 | EUR 13 | EUR 19 | Fixed |
 | NGS test | c_test_NGS | EUR 2,518 | EUR 2,014 | EUR 3,022 | Fixed |
-| Visit | c_other_visit | EUR 33 | EUR 26 | EUR 40 | Sampled (gamma) |
-| Baseline other cost | c_other_baseline | EUR 530 | EUR 424 | EUR 636 | Sampled (gamma) |
-| Follow-up other cost | c_other_follow | EUR 33 | EUR 26 | EUR 40 | Sampled (gamma) |
+| Outpatient visit | c_other_visit | EUR 213 | EUR 171 | EUR 256 | Sampled (gamma) |
+| Baseline visit | c_other_baseline | EUR 213 | EUR 171 | EUR 256 | Sampled (gamma) |
+| Follow-up visit, progressed (per quarter) | c_other_follow | EUR 213 | EUR 171 | EUR 256 | Sampled (gamma) |
 | Post-progression treatment (per quarter) | c_other_pp | EUR 0 | EUR 0 | EUR 0 | Fixed |
 | End-of-life cost | c_other_last | EUR 13,803 | EUR 11,042 | EUR 16,564 | Sampled (gamma) |
 
@@ -153,24 +185,27 @@ Cost inputs
 
 *Notes:* Fixed parameters are not sampled in the PSA and therefore carry
 no value-of-information; they are varied in the one-way analysis.
-c_other_pp is zero in the base case: post-progression treatment is
-outside the modeled scope (see below). Its deterministic range is
-degenerate, so it is tested as a structural scenario rather than in the
-one-way analysis.
+Sampled costs are gamma distributed with an assumed CV of 0.20 (no
+source; see text). Visit costs: DRG weight 0.047 times the 2023 ISF unit
+price (NOK 49,484). The CT scan price is also charged once per quarter
+in the progressed state. c_other_pp is zero in the base case:
+post-progression treatment is outside the modeled scope (see below). Its
+deterministic range is degenerate, so it is tested as a structural
+scenario rather than in the one-way analysis.
 
 ## Post-progression treatment costs
 
 The base case applies **no post-progression treatment cost**. Once a
 patient has progressed, the model charges only the quarterly follow-up
-contact (`c_other_follow`) and the one-time end-of-life cost
-(`c_other_last`); second-line systemic therapy, post-progression imaging
-and post-progression outpatient visits are not modeled. Because the
-strategies differ in the time patients spend in the progressed state,
-this omission is **differential** rather than a common offset, and its
-direction depends on which strategy accrues more progressed time. The
-parameter `c_other_pp` makes the omission explicit and is varied in a
-structural scenario (EUR 5,000 per quarter in the progressed state)
-reported in the one-way sensitivity analysis.
+visit (`c_other_follow`), a quarterly CT scan (`c_test_CT`, issue \#164)
+and the one-time end-of-life cost (`c_other_last`); second-line systemic
+therapy and any further post-progression visits are not modeled. Because
+the strategies differ in the time patients spend in the progressed
+state, this omission is **differential** rather than a common offset,
+and its direction depends on which strategy accrues more progressed
+time. The parameter `c_other_pp` makes the omission explicit and is
+varied in a structural scenario (EUR 5,000 per quarter in the progressed
+state) reported in the one-way sensitivity analysis.
 
 ## Second treatment sequence
 
@@ -200,6 +235,6 @@ Structural model parameters
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.5
+**Report version:** 4.6

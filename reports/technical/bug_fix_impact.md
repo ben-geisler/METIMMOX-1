@@ -1,9 +1,10 @@
 # Bug Fix Impact Analysis
 Ben Geisler
-2026-09-25
+2026-09-30
 
 - [Snapshot Inventory](#snapshot-inventory)
 - [Impact Comparisons](#impact-comparisons)
+  - [Issue 36: baseline vs fixed](#issue-36-baseline-vs-fixed)
   - [Issue 145: baseline vs fixed](#issue-145-baseline-vs-fixed)
   - [Issue 146: baseline vs fixed](#issue-146-baseline-vs-fixed)
   - [Issue 147: baseline vs fixed](#issue-147-baseline-vs-fixed)
@@ -18,11 +19,12 @@ Ben Geisler
   - [Issue 159: baseline vs fixed](#issue-159-baseline-vs-fixed)
   - [Issue 166: baseline vs fixed](#issue-166-baseline-vs-fixed)
   - [Issue 168: baseline vs fixed](#issue-168-baseline-vs-fixed)
+  - [Issue 172: baseline vs fixed](#issue-172-baseline-vs-fixed)
   - [Batch \#173 / \#171 / \#163: baseline vs
     fixed](#batch-173--171--163-baseline-vs-fixed)
   - [Issue 181: baseline vs fixed](#issue-181-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 181
-    fixed](#cumulative-issue-145-baseline-vs-issue-181-fixed)
+  - [Cumulative: issue 145 baseline vs issue 36
+    fixed](#cumulative-issue-145-baseline-vs-issue-36-fixed)
 - [Interpretation](#interpretation)
 
 Issue \#181 changes PFS ascertainment for deaths without recorded
@@ -65,10 +67,14 @@ after refitting and regenerating every downstream cache.
 | snapshot_166_fixed_96d0710.rds    | 166   | fixed    | 96d0710 | 2026-09-18 09:57:44 |
 | snapshot_168_baseline_b8e1b02.rds | 168   | baseline | b8e1b02 | 2026-09-22 11:25:26 |
 | snapshot_168_fixed_b8e1b02.rds    | 168   | fixed    | b8e1b02 | 2026-09-22 12:04:46 |
+| snapshot_172_baseline_15999f9.rds | 172   | baseline | 15999f9 | 2026-09-29 12:50:41 |
+| snapshot_172_fixed_15999f9.rds    | 172   | fixed    | 15999f9 | 2026-09-29 15:29:53 |
 | snapshot_173_baseline_1b50e8d.rds | 173   | baseline | 1b50e8d | 2026-09-21 15:09:17 |
 | snapshot_173_fixed_1b50e8d.rds    | 173   | fixed    | 1b50e8d | 2026-09-21 16:04:39 |
 | snapshot_181_baseline_2a48ae8.rds | 181   | baseline | 2a48ae8 | 2026-09-24 17:07:25 |
 | snapshot_181_fixed_791443e.rds    | 181   | fixed    | 791443e | 2026-09-24 19:19:42 |
+| snapshot_36_baseline_08ec4a9.rds  | 36    | baseline | 08ec4a9 | 2026-09-30 15:50:08 |
+| snapshot_36_fixed_e5ff9c1.rds     | 36    | fixed    | e5ff9c1 | 2026-09-30 20:03:23 |
 
 Available single-model snapshots
 
@@ -87,6 +93,7 @@ filenames carry the same pre-fix HEAD identifier.
 
 | Comparison | Before | After |
 |:---|:---|:---|
+| Issue 36: baseline vs fixed | snapshot_36_baseline_08ec4a9.rds | snapshot_36_fixed_e5ff9c1.rds |
 | Issue 145: baseline vs fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_145_fixed_ea4431f.rds |
 | Issue 146: baseline vs fixed | snapshot_146_baseline_a3befd2.rds | snapshot_146_fixed_7f76f9d.rds |
 | Issue 147: baseline vs fixed | snapshot_147_baseline_7f76f9d.rds | snapshot_147_fixed_d1f203f.rds |
@@ -101,9 +108,10 @@ filenames carry the same pre-fix HEAD identifier.
 | Issue 159: baseline vs fixed | snapshot_159_baseline_6ca19ab.rds | snapshot_159_fixed_6ca19ab.rds |
 | Issue 166: baseline vs fixed | snapshot_166_baseline_96d0710.rds | snapshot_166_fixed_96d0710.rds |
 | Issue 168: baseline vs fixed | snapshot_168_baseline_b8e1b02.rds | snapshot_168_fixed_b8e1b02.rds |
+| Issue 172: baseline vs fixed | snapshot_172_baseline_15999f9.rds | snapshot_172_fixed_15999f9.rds |
 | Batch \#173 / \#171 / \#163: baseline vs fixed | snapshot_173_baseline_1b50e8d.rds | snapshot_173_fixed_1b50e8d.rds |
 | Issue 181: baseline vs fixed | snapshot_181_baseline_2a48ae8.rds | snapshot_181_fixed_791443e.rds |
-| Cumulative: issue 145 baseline vs issue 181 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_181_fixed_791443e.rds |
+| Cumulative: issue 145 baseline vs issue 36 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_36_fixed_e5ff9c1.rds |
 
 Impact comparisons included in this report
 
@@ -118,6 +126,30 @@ modification time of the PSA cache it copied, and a *fixed* snapshot
 regenerates the PSA and EVPPI caches when they predate the fix commit;
 the provenance line under each comparison states whether the two PSA
 files are the same cache.
+
+## Issue 36: baseline vs fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,967 | 1.3400 | EUR 25,764 | 1.3400 | EUR 4,797 | 0.0000 |
+| CRP-guided | EUR 53,686 | 1.3775 | EUR 58,203 | 1.3775 | EUR 4,517 | 0.0000 |
+| TMB/BRAF-guided | EUR 62,382 | 1.3389 | EUR 66,916 | 1.3389 | EUR 4,534 | 0.0000 |
+
+Base case impact – Issue 36: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 47,371 | EUR 42,574 | -EUR 4,797 |
+| CRP-guided       | EUR 16,565 | EUR 12,048 | -EUR 4,517 |
+| TMB/BRAF-guided  |  EUR 5,901 |  EUR 1,368 | -EUR 4,534 |
+
+Net monetary benefit impact – Issue 36: baseline vs fixed
+
+PSA cache md5 before 5226285758db337ba15d5ad131d00649 (modified
+2026-09-30 15:50), after 7a04965187ff820c11f6d3ad0ccab9e8 (modified
+2026-09-30 16:51).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
 ## Issue 145: baseline vs fixed
 
@@ -578,6 +610,30 @@ because the cache predated the fix commit.
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
+## Issue 172: baseline vs fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 20,967 | 1.3400 | EUR 20,967 | 1.3400 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 53,686 | 1.3775 | EUR 53,686 | 1.3775 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 62,382 | 1.3389 | EUR 62,382 | 1.3389 | EUR 0 | 0.0000 |
+
+Base case impact – Issue 172: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 47,371 | EUR 47,371 |      EUR 0 |
+| CRP-guided       | EUR 16,565 | EUR 16,565 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 5,901 |  EUR 5,901 |      EUR 0 |
+
+Net monetary benefit impact – Issue 172: baseline vs fixed
+
+PSA cache md5 before 05d5d3170708cebb2432ec90648ff1f8 (modified
+2026-09-29 12:50), after cfeb0a0395569b646c13e0ce3d026c12 (modified
+2026-09-29 13:57).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
+
 ## Batch \#173 / \#171 / \#163: baseline vs fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
@@ -627,28 +683,28 @@ PSA cache md5 before ca7e7d9091880b1f5879fe9cd8a7f967 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
-## Cumulative: issue 145 baseline vs issue 181 fixed
+## Cumulative: issue 145 baseline vs issue 36 fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
 |:---|---:|---:|---:|---:|---:|---:|
-| Standard of Care | EUR 20,867 | 1.4141 | EUR 20,967 | 1.3400 | EUR 99 | -0.0742 |
-| CRP-guided | EUR 55,026 | 1.3842 | EUR 53,686 | 1.3775 | -EUR 1,340 | -0.0068 |
-| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 62,382 | 1.3389 | EUR 1,585 | -0.0141 |
+| Standard of Care | EUR 20,867 | 1.4141 | EUR 25,764 | 1.3400 | EUR 4,897 | -0.0742 |
+| CRP-guided | EUR 55,026 | 1.3842 | EUR 58,203 | 1.3775 | EUR 3,177 | -0.0068 |
+| TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 66,916 | 1.3389 | EUR 6,118 | -0.0141 |
 
-Base case impact – Cumulative: issue 145 baseline vs issue 181 fixed
+Base case impact – Cumulative: issue 145 baseline vs issue 36 fixed
 
 | Strategy         | NMB Before |  NMB After | NMB Change |
 |:-----------------|-----------:|-----------:|-----------:|
-| Standard of Care | EUR 51,254 | EUR 47,371 | -EUR 3,883 |
-| CRP-guided       | EUR 15,570 | EUR 16,565 |    EUR 995 |
-| TMB/BRAF-guided  |  EUR 8,207 |  EUR 5,901 | -EUR 2,306 |
+| Standard of Care | EUR 51,254 | EUR 42,574 | -EUR 8,680 |
+| CRP-guided       | EUR 15,570 | EUR 12,048 | -EUR 3,522 |
+| TMB/BRAF-guided  |  EUR 8,207 |  EUR 1,368 | -EUR 6,839 |
 
-Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
-181 fixed
+Net monetary benefit impact – Cumulative: issue 145 baseline vs issue 36
+fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 ace97153eb4660b2df5642cbc4348c60
-(modified 2026-09-24 17:54). Identity of the two PSA files cannot be
+the PSA cache md5; after PSA cache md5 7a04965187ff820c11f6d3ad0ccab9e8
+(modified 2026-09-30 16:51). Identity of the two PSA files cannot be
 established from metadata.
 
 # Interpretation
@@ -716,6 +772,6 @@ record](../../validation/issue168_2026-09-22/README.md).
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-25  
+**Report completed on:** 2026-09-30  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.7
