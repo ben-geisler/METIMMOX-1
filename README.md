@@ -1,357 +1,189 @@
 # METIMMOX-1
 
-Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy in Metastatic MSS/pMMR Colorectal Cancer
+Secondary analyses of the randomised METIMMOX trial ([NCT03388190](https://clinicaltrials.gov/study/NCT03388190)) in metastatic microsatellite-stable (MSS) / mismatch repair-proficient (pMMR) colorectal cancer.
 
-## Overview
+METIMMOX (*Colorectal Cancer METastasis: Shaping Anti-tumor IMMunity by OXaliplatin*) compared first-line alternating short-course oxaliplatin-based chemotherapy (Nordic FLOX) plus nivolumab with FLOX alone. This repository supports three papers that share one data pipeline:
 
-This repository contains the R code for a cost-effectiveness analysis comparing two pre-immunotherapy biomarker strategies that guide the addition of immunotherapy (PD1/PDL1 inhibitor) to standard of care treatment for metastatic microsatellite-stable (MSS)/mismatch repair-proficient (pMMR) colorectal cancer patients receiving first-line treatment.
+1. **Clinical effectiveness:** *Biomarker signals in MSS/pMMR mCRC are predominantly prognostic, not predictive* (working title). Do CRP, TMB/BRAF and target lesion reduction identify patients who benefit from nivolumab, or only patients with a better prognosis?
+2. **Cost-effectiveness:** is giving nivolumab only to biomarker-selected patients cost-effective in Norway?
+3. **Value of information:** what would further research to resolve the remaining uncertainty be worth (EVPI and EVPPI)?
 
-**METIMMOX** stands for: **Colorectal Cancer METastasis - Shaping Anti-tumor IMMunity by OXaliplatin**
+Papers 2 and 3 use the same economic model.
 
-### Biomarker Strategies Evaluated
+The code is written for clinical researchers, health economists and anyone building decision-analytic models in R. The trial data are confidential and not included, so the pipeline cannot be run from a fresh clone. The code, the rendered reports and the publication tables are provided for transparency and reuse.
 
-1. **CRP Strategy**: C-reactive protein <5 mg/L, measured at week 4 (cycle 3 day 1) after two FLOX cycles common to both arms and before the first nivolumab dose
-2. **TMB/BRAF Strategy**: Tumor mutation burden ≥9 mut/MB or presence of a BRAF mutation (baseline next-generation sequencing)
+## Biomarkers
 
-Both biomarkers are available before the decision to add immunotherapy is made. CRP is not a baseline (pre-randomization) measurement: the trial gives two cycles of FLOX to every patient before the first nivolumab dose, and the CRP used here is the value at that decision point (issue #150). The baseline (cycle 1 day 1) CRP is retained in the data as `CRP0` but is not used.
+| Biomarker | Definition | Used in |
+|---|---|---|
+| CRP | C-reactive protein < 5 mg/L at week 4 (cycle 3 day 1), measured after the two FLOX cycles that both arms receive and before the first nivolumab dose | All papers |
+| TMB/BRAF | Tumour mutational burden >= 9 mut/Mb or a BRAF mutation (baseline next-generation sequencing) | All papers |
+| TLR | Target lesion reduction: at least 10% shrinkage in the sum of target-lesion diameters at the first on-treatment CT | Paper 1 only |
 
-**Clinical-only TLR analysis**: Target lesion reduction (TLR; a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT) is retained in DAG, clinical effectiveness, and biomarker distribution reports, but is excluded from the economic model because it is a post-randomization mediator measured on treatment rather than a treatment-selection biomarker.
+Week-4 CRP is not a baseline measurement, but it is known before the decision to add nivolumab; see the [CRP estimand report](reports/technical/crp_week4_estimand.md). TLR is a post-randomisation mediator measured on treatment, so it cannot select patients for treatment and is excluded from every economic analysis. Its clinical analyses use landmark cohorts (week 9 primary; scan date and week 12 as sensitivity analyses) to limit guarantee-time bias.
 
-Each economic strategy is compared against standard of care alone (platinum-based Nordic FLOX regimen without immunotherapy).
+## Paper 1: Clinical effectiveness
 
-The deployed analysis uses one joint economic survival model (`Age + sex + Rx + crp*Rx + tmb_braf*Rx`) for both biomarker-guided strategies.
+**Methods.** Cox models of overall and progression-free survival with biomarker-by-treatment interactions (`Age + sex + Rx + crp + tmb_braf + crp:Rx + tmb_braf:Rx`) on the 68-patient complete-case cohort. Firth's penalised likelihood handles the small sample and few events; cross-validated ridge regression (`glmnet`) is a shrinkage sensitivity analysis. TLR is analysed on week-9 landmark cohorts. A directed acyclic graph (DAG) sets out the assumed causal structure, and every edge and implied conditional independence that can be tested against the trial data is tested. Sensitivity analyses cover the definition of the progression-free survival endpoint (how long after the last assessment a death still counts as an event).
 
-## Target Audience
+**Reports.**
 
-This repository is designed for **health economists** and researchers developing decision-analytic models in R. The code provides a framework that can be adopted and adapted for similar cost-effectiveness analyses.
+| Report | Content |
+|---|---|
+| [clinical_effectiveness.md](reports/clinical_effectiveness.md) | Baseline characteristics, Firth and ridge interaction models, proportional-hazards checks, TLR landmark analyses, endpoint sensitivity |
+| [dag.md](reports/dag.md) | Assumed causal structure |
+| [dag_associations.md](reports/dag_associations.md) | Tests of the DAG's edges and implied independencies, reconciled with the adjusted model |
+| [biomarker_distributions.md](reports/biomarker_distributions.md) | Biomarker prevalence and overlap by arm |
 
-## Repository Structure
+**Publication outputs.** Generated by the `outputs/vignettes/clin_effect_*.qmd` vignettes: the Kaplan-Meier grid (`clin_effect_figure1`), the full DAG (`clin_effect_figure_s1`) and the DAG association table (`clin_effect_table_s2`).
+
+**Pipeline.** Scripts 01-03 only; no caches are needed.
+
+## Paper 2: Cost-effectiveness
+
+Three strategies are compared: standard of care (FLOX alone for everyone), CRP-guided and TMB/BRAF-guided treatment (FLOX + nivolumab for biomarker-positive patients, FLOX alone for the rest).
+
+**Methods.**
+
+- **Structure.** Partitioned survival model with three states (progression-free, progressed, dead), weekly cycles, a 10-year horizon, Norwegian healthcare perspective, 4% discounting of costs and QALYs, willingness to pay EUR 51,000 per QALY.
+- **Survival.** One joint parametric model per endpoint on the 68-patient complete-case cohort:
+  ```r
+  Surv(OSwk,  Death)       ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+  Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+  ```
+  The distributions are chosen jointly from nine candidate families as the minimum-combined-AIC pair that keeps OS >= PFS in every modelled subgroup and week. Standard of care is the same model predicted with `Rx = control`. Curves are averaged over every patient's own covariates (population averaging), not evaluated for a reference patient.
+- **Uncertainty.** The PSA (5,000 draws) samples survival coefficients from a joint multivariate normal whose OS-PFS dependence comes from a paired patient bootstrap, samples the joint biomarker distribution from a Dirichlet, and samples utilities and resource-use costs. Drug and test unit prices are fixed in the PSA and varied in the one-way analysis. Results are reported as probabilistic means with percentile intervals and cost-effectiveness acceptability curves.
+- **Sensitivity and scenarios.** One-way DSA with tornado diagrams, structural scenarios (discount rate, horizon, post-progression cost, no second treatment sequence, alternative survival families), a biosimilar nivolumab price and an enriched biomarker-positive population.
+- **Scope.** Deliberately excluded, and documented in the reports: separate adverse-event costs or disutilities, post-progression therapy cost in the base case, and a general-population mortality floor on extrapolated hazards. The nivolumab price of EUR 13,923 per administration is an assumption, not a tendered price.
+
+**Reports.**
+
+| Report | Content |
+|---|---|
+| [para_models.md](reports/para_models.md) | Parametric survival fits and distribution selection |
+| [input_parameters.md](reports/input_parameters.md) | All model inputs, schedules, costs and utilities |
+| [CEA.md](reports/CEA.md) | Base case and probabilistic cost-effectiveness |
+| [OWSA.md](reports/OWSA.md) | One-way sensitivity analysis and structural scenarios |
+| [biosimilar_scenario.md](reports/biosimilar_scenario.md) | Biosimilar nivolumab pricing |
+| [enriched_population.md](reports/enriched_population.md) | Test-and-treat in biomarker-enriched populations |
+| [biomarker_decomposition.md](reports/biomarker_decomposition.md) | Prognostic versus predictive contributions to cost-effectiveness |
+
+Methods detail is in [reports/technical/](reports/technical/), for example the [survival model specification](reports/technical/survival_model_specification.md), [joint survival sampling](reports/technical/joint_survival_sampling.md), [PFS/OS ordering violations in the PSA](reports/technical/pfs_os_violations.md) and [extrapolation plausibility](reports/technical/psa_extrapolation_plausibility.md).
+
+**Publication outputs.** Generated by the `outputs/vignettes/figure*.qmd` and `table_*.qmd` vignettes: Figures 1-4 and S1-S5, Tables 1, 4-6, S1-S6 and S8.
+
+**Pipeline.** Scripts 01-10 (with 08b). Figure 4 (acceptability curves at list and biosimilar prices) also needs the scenario cache from script 12.
+
+## Paper 3: Value of information
+
+**Methods.** EVPI and EVPPI are estimated from the Paper 2 PSA. EVPPI uses nonparametric regression (Strong, Oakley and Brennan 2014, via `voi::evppi()`): the incremental net benefit of each strategy is regressed on single parameters and on parameter groups (biomarker-by-treatment interaction coefficients, joint biomarker prevalence, utilities, resource-use costs), each estimate with a Monte Carlo standard error. Group estimates are checked to be at least their largest member. Per-patient values are scaled to the Norwegian population (1,500 eligible patients per year, 10-year research horizon, 3.5% discounting). Scenario analyses repeat the PSA and EVPPI at willingness-to-pay thresholds of EUR 51,000, 100,000 and 150,000 per QALY, at list and biosimilar nivolumab prices.
+
+**Reports.**
+
+| Report | Content |
+|---|---|
+| [EVPPIs.md](reports/EVPPIs.md) | EVPI, single-parameter and group EVPPI, consistency checks, estimator description |
+| [scenario_effect.md](reports/scenario_effect.md) | PSA and EVPPI by willingness to pay and nivolumab price |
+
+**Publication outputs.** Figure 5 (population EVPPI by parameter group and scenario) and Table S7, generated by `outputs/vignettes/figure5.qmd` and `table_s7.qmd`.
+
+**Pipeline.** Scripts 01-12.
+
+## Repository layout
 
 ```
-METIMMOX-1/
-├── R/                     # Reusable model functions (sourced, not a package)
-├── analysis/              # Numbered analysis scripts (01-13)
-├── tests/                 # Validation and diagnostic scripts
-├── archive/               # Deprecated code (for reference)
-├── reports/               # Quarto reports -> .pdf + .md (technical/ for technical documentation)
-├── outputs/
-│   ├── vignettes/         # Figure and table generators (Figures 1-5, supplement, poster)
-│   ├── figs/              # Publication figures
-│   └── tables/            # Publication tables (CSV)
-├── data/                  # Data files (not included - confidential)
-│   ├── tidy/              # Processed data and caches
-│   └── output/snapshots/  # Bug-fix impact snapshots (tracked)
-├── docs/                  # manuscript/ and references/
-├── validation/            # External validation reports (validateHE)
-├── publish/               # publish_reports.R: render all reports, publish PDFs to GitHub Pages / releases
-└── METIMMOX-1.Rproj       # RStudio project file
+R/                   model and helper functions (sourced with here::here("R", ...), not a package)
+analysis/            numbered pipeline scripts 01-13
+tests/               executable regression tests
+reports/             Quarto reports, each rendered to .pdf and .md
+reports/technical/   technical documentation (survival specification, sampling, diagnostics, bug-fix impact)
+outputs/vignettes/   generators for every publication figure and table (clin_effect_* for the clinical paper)
+outputs/figs/        publication figures
+outputs/tables/      publication tables (CSV) and manifest.csv with their provenance
+validation/          external validation (validateHE) and per-issue verification records
+publish/             renders every report and publishes the PDFs
+data/                confidential trial data and caches (not tracked, except data/output/snapshots/)
+archive/             superseded code kept for reference
 ```
 
-Rendered Markdown reports are tracked in git and readable on GitHub; PDFs are published to the `gh-pages` branch (`Rscript publish/publish_reports.R --push`) or as release assets (`--release`).
+The rendered Markdown reports are tracked so they can be read on GitHub. PDFs are published with `Rscript publish/publish_reports.R --push` (gh-pages) or `--release`.
 
-### Key Files
+## Running the analysis
 
-- **Analysis scripts** (`analysis/`): Numbered R scripts (01-13) containing the core decision-analytic model workflow and optional extended analyses
-- **Functions** (`R/`): Reusable functions including `model_fun.R` (main model), `calculate_outcomes.R`, `cea_helpers.R` (single-model CEA execution and summary helpers), and sensitivity analysis utilities
-- **Quarto reports** (`reports/`): Publication-ready PDF reports covering cost-effectiveness, clinical effectiveness, sensitivity analyses, biomarker decomposition, and more
-- **Vignettes** (`outputs/vignettes/`): Publication figure generation scripts (Figures 1-4 and supplemental plots)
-- **Technical docs** (`reports/technical/`): Bug fix impact assessments and methodological analyses
-- **Tests** (`tests/`): Validation, diagnostic, and convergence testing scripts
-
-The shared report and clinical-analysis helper modules introduced in B2 are:
-
-- `assoc_tests.R`: association tests and result formatting used by DAG reports and vignettes
-- `cox_extract.R`: Firth-corrected Cox fitting and tidy coefficient extraction
-- `dag_helpers.R`: shared DAG specifications, preparation, and plotting
-- `report_format.R`: shared strategy/biomarker labels and economic-result number formatting
-
-## Installation
-
-### Prerequisites
-
-This project is built in R. The following packages are used throughout the analysis:
+Requires R 4.3 (package versions are pinned in `renv.lock`; the full dependency list is in `DESCRIPTION`), Quarto with a LaTeX installation for PDF output, and the trial export in `data/`.
 
 ```r
-# Core packages for survival analysis and modeling
-- survival
-- flexsurv
-- survminer
-- gems
-- mstate
+renv::restore()   # or: pacman::p_load(<packages in DESCRIPTION>)
 
-# Economic evaluation packages
-- dampack
-- darthtools
-
-# Data manipulation and visualization
-- dplyr
-- tidyverse
-- ggplot2
-- readxl
-- scales
-- gridExtra
-- reshape2
-
-# Report generation
-- knitr
-- kableExtra
-- flextable
-- officer
-
-# Other utilities
-- pacman (for package management)
-- mvtnorm
-- Matrix
-- here
-```
-
-### Setup
-
-```r
-# Clone the repository
-git clone https://github.com/ben-geisler/METIMMOX-1.git
-
-# Set working directory
-setwd("METIMMOX-1")
-
-# Install required packages using pacman
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
-               survival, survminer, gems, mstate, tidyverse, xtable,
-               darthtools, dampack, mvtnorm, Matrix, here, voi,
-               knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)
-```
-
-## Usage
-
-Run the numbered analysis scripts in the `analysis/` folder in sequential order:
-
-```r
-# Core setup
-source("analysis/01_data_prep.R")
-source("analysis/02_setup_and_global_variables.R")
+# Shared setup (enough for Paper 1)
+source("analysis/01_data_prep.R")                  # validates the raw export, writes data/tidy/METIMMOX.rds
+source("analysis/02_setup_and_global_variables.R") # global settings, PFS endpoint derivation
 source("analysis/03_biomarker_strategies.R")
 
-# Survival analysis
+# Paper 2
 source("analysis/04_parametric_survival_analysis.R")
 source("analysis/05_basecase_input_parameters.R")
-
-# Survival resampling (first run generates cache - takes time)
-source("analysis/06_sampling.R")
-
-# Model execution
+source("analysis/06_sampling.R")                   # joint coefficient draws; several minutes on first run
 source("analysis/07_traces.R")
 source("analysis/08_basecase_analysis.R")
+source("analysis/08b_enriched_population_analysis.R")
+source("analysis/09_DSA.R")
+source("analysis/10_PSA.R")                        # about 20 minutes
 
-# Sensitivity analyses
-source("analysis/09_DSA.R")   # Deterministic sensitivity analysis
-source("analysis/10_PSA.R")   # Probabilistic sensitivity analysis
-source("analysis/11_EVPPIs.R") # Expected value of perfect partial information
+# Paper 3
+source("analysis/11_EVPPIs.R")
+source("analysis/12_scenario_EVPPIs.R")            # about 40 minutes; needed for scenario report and Figures 4-5
 ```
 
-**Notes**:
-- The obsolete `04_baseline_characteristics.Rmd` and `05_QALYs.Rmd` exploratory notebooks are retained in `archive/`; their reusable EQ-5D-5L scoring functions are in `R/eq5d5l_utility.R`
-- The clinical trial dataset is confidential and not included in this repository
-- First runs of scripts 06 (sampling) and 10 (PSA) generate caches and may take significant time; subsequent runs are much faster
+Scripts 06, 10, 11 and 12 write caches to `data/tidy/`. Each cache carries a fingerprint of its inputs and code, and reports stop rather than render from a stale cache. When running non-interactively, attach the packages and source `R/model_fun.R`, `R/calculate_outcomes.R` and `R/prediction_functions.R` before script 07.
 
-### Treatment-Schedule Semantics
-
-Treatment schedule vectors are aligned to the zero-origin weekly grid `time_points <- seq(0, time_horizon, by = 1)`. R vector position `i` therefore represents modeled week `i - 1`; the numeric subscripts used to construct a schedule are vector positions, not week labels.
-
-- Nivolumab in the experimental arm: modeled weeks 4, 6, 12, 14, 28, 30, 36, and 38 (R positions 5, 7, 13, 15, 29, 31, 37, and 39)
-- FLOX in the experimental arm: modeled weeks 0, 2, 8, 10, 24, 26, 32, and 34 (R positions 1, 3, 9, 11, 25, 27, 33, and 35)
-- FLOX in the control arm: modeled weeks 0, 2, 4, 6, 8, 10, 12, 14, 24, 26, 28, 30, 32, 34, 36, and 38
-
-### Optional and Extended Analyses
-
-Additional analysis scripts provide extended functionality:
-
-```r
-# Extended analyses (optional)
-source("analysis/12_scenario_EVPPIs.R")  # Scenario-based EVPPI analysis
-
-# Standalone snapshot utility (run from a terminal, not with source())
-# Rscript analysis/13_save_snapshot.R <issue_number> <baseline|fixed>
-```
-
-**When to use**:
-- `12_scenario_EVPPIs.R`: For scenario-specific value of information analysis
-- `13_save_snapshot.R`: For documenting model state before/after bug fixes or methodological changes
-
-### Retired Files
-
-The B1 cleanup deleted these obsolete or superseded files:
-
-- `analysis/14b_scenario_preview.R`
-- `R/para_model_fit_table.R`
-- `tests/diagnose_prediction_failures.R`
-- `tests/test_psa_error_rate.R`
-- `tests/test_sampling_convergence_rate.R`
-- `tests/test_sex_variable_fix.R`
-- `tests/tlr.R`
-
-The full scenario cache produced by `12_scenario_EVPPIs.R` is the only supported scenario output. The former `tests/fit_independent_biomarker_models.R` was moved to `archive/fit_independent_biomarker_models.R` rather than deleted.
-
-### Generating Reports
-
-The Quarto reports in `reports/` render to PDF and to GitHub-flavoured Markdown:
+Render the reports and publication outputs:
 
 ```bash
-# All reports, both formats, plus a _site/ folder with the PDFs (from project root)
-Rscript publish/publish_reports.R
-Rscript publish/publish_reports.R --push      # publish the PDFs to the gh-pages branch
-Rscript publish/publish_reports.R --release   # attach the PDFs to a GitHub release
-
-# A single report: PDF first, then Markdown (the PDF pass deletes the figure directory)
-quarto render reports/CEA.qmd --to pdf && quarto render reports/CEA.qmd --to gfm
+Rscript publish/publish_reports.R                                  # every report, PDF then Markdown
+Rscript publish/publish_reports.R --only clinical_effectiveness    # a subset
+quarto render outputs/vignettes/clin_effect_figure1.qmd            # one publication figure or table
 ```
 
-Tables go through the `tbl_*` wrappers in `R/report_tables.R`, which apply kableExtra styling under LaTeX only, so every report renders cleanly to Markdown.
+Render a single report PDF first and Markdown second (`--to pdf`, then `--to gfm`): the PDF pass deletes the figure directory. Render vignettes one at a time, because they share one provenance manifest.
 
-**Report Descriptions**:
-1. **para_models.qmd** - Parametric survival model fits and diagnostics
-2. **input_parameters.qmd** - Model input parameters summary
-3. **clinical_effectiveness.qmd** - Survival outcomes and life-years gained
-4. **CEA.qmd** - Cost-effectiveness analysis with ICERs
-5. **OWSA.qmd** - One-way deterministic sensitivity analysis (tornado diagrams)
-6. **EVPPIs.qmd** - Value of information analysis
-7. **scenario_effect.qmd** - Scenario analysis results
-8. **biomarker_decomposition.qmd** - Biomarker effect decomposition analysis
-9. **biomarker_distributions.qmd** - Biomarker distribution and prevalence sensitivity
+## Tests
 
-**Prerequisites**: Run the scripts required by each report; the full core analysis runs scripts 02-11 in sequence, while scenario outputs additionally require script 12.
+Tests run from the repository root and exit non-zero on failure:
 
-## Key Features
-
-### Core Modeling
-- **Partitioned survival model** for cost-effectiveness analysis
-- **Biomarker-guided treatment strategies** comparing two pre-immunotherapy biomarkers (week-4 CRP and baseline TMB/BRAF) against standard of care
-- **Microsatellite-stable (MSS) colorectal cancer** focus
-- **Parametric survival modeling** using multiple distributions (Weibull, exponential, gamma, etc.)
-
-### Sensitivity and Uncertainty Analysis
-- **Deterministic sensitivity analysis (DSA)** with tornado diagrams
-- **Probabilistic sensitivity analysis (PSA)** with second-order Monte Carlo simulation
-- **Expected Value of Perfect Partial Information (EVPPI)** analysis
-- **Cost-effectiveness acceptability curves** and analysis
-- **Scenario analysis framework** for alternative assumptions
-
-### Advanced Analytical Features
-- **Biomarker effect decomposition** - quantifying direct biomarker effects vs. treatment interactions
-- **Biomarker distribution and prevalence sensitivity** analysis
-- **Age effect analysis** - investigating age as prognostic factor
-- **Correlated survival resampling** - maintaining PFS/OS correlation in PSA
-
-### Quality Assurance and Reporting
-- **Snapshot system** for bug fix impact assessment and model validation
-- **Quarto-based report generation** - publication-ready PDFs with embedded R code
-- **Comprehensive test suite** - validation, diagnostic, and convergence tests
-- **Based on real-world clinical trial data** (METIMMOX trial, NCT03388190)
-
-## Model Structure
-
-The analysis implements a **partitioned survival model (PSM)** with three health states:
-- **Progression-free (PF)**: Patients alive without disease progression
-- **Progressed (P)**: Patients alive with disease progression
-- **Dead (D)**: Absorbing state
-
-State occupancy is derived from parametric survival curves:
-- PF state = PFS curve
-- P state = OS - PFS (bounded at 0)
-- D state = 1 - OS
-
-### Adverse-event scope
-
-Adverse-event/toxicity costs and disutilities are not modeled separately. This is a deliberate scope choice based on the intended tolerability of the alternating short-course FLOX-nivolumab regimen and the lack of sufficiently robust treatment-specific trial data on adverse-event incidence, resource use, and utility decrements for economic parameterization.
-
-### Cost and scope decisions
-
-- **No post-progression treatment cost.** After progression the model charges only the quarterly follow-up contact and the one-time end-of-life cost. Second-line systemic therapy, post-progression imaging and post-progression visits are outside the modeled scope. Because the strategies differ in time spent in the progressed state, the omission is differential rather than a common offset. The parameter `c_other_pp` makes it explicit (base case 0) and is varied in a structural scenario at EUR 5,000 per quarter.
-- **Second treatment sequence given to every progression-free patient.** Both arms receive a second eight-cycle sequence at modeled weeks 24-38, applied to everyone still progression-free at that point; METIMMOX re-treated on progression during the treatment break. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model. A structural scenario removes the second sequence, with survival held at the trial estimate, giving a cost-side bound.
-- **Unit prices are fixed in the probabilistic analysis.** Drug and test unit costs are published tariffs or assumed list prices, so they are varied deterministically only and carry no value of information. Visit, baseline, follow-up and end-of-life costs remain probabilistic because they bundle genuine resource-use uncertainty.
-- **The nivolumab price is an assumption.** EUR 13,923 per administration is an assumed Norwegian hospital acquisition cost (roughly 40% below list), not a citable tariff: Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver, bounded by the one-way analysis and the biosimilar scenario.
-- **Health-state utilities are sampled jointly.** The PSA draws the progression-free utility and a non-negative decrement, deriving the progressed utility as the difference, so no draw places the progressed utility above the progression-free utility.
-
-## Publication Figures
-
-The repository includes Quarto vignettes (`outputs/vignettes/`) for generating publication-ready figures:
-
-- **figure1.qmd** - Figure 1 (model structure/patient flow)
-- **figure2.qmd** - Figure 2 (survival curves)
-- **figure3.qmd** - Figure 3 (cost-effectiveness results)
-- **figure4.qmd** - Figure 4 (sensitivity analysis)
-- **suppl_figure_pfs_plots.qmd** - Supplemental PFS plots
-
-Render individual figures or all at once:
 ```bash
-quarto render outputs/vignettes/figure1.qmd
-# Or render all figures
-quarto render outputs/vignettes/
+Rscript tests/test_dag_landmark_contracts.R
+Rscript tests/test_survival_ordering.R
+Rscript tests/test_report_contracts.R
 ```
 
-## Technical Documentation
+Most tests use synthetic data and run without the trial export; the rest skip or use temporary caches. [AGENTS.md](AGENTS.md) lists every test with its pass criterion and last recorded result, and documents the model, caches and conventions in full.
 
-The `reports/technical/` directory contains methodological documentation:
+## Related publications
 
-- **bug_fix_impact.qmd** - Template for documenting bug fix impacts on model results
-- **age_effect_analysis.qmd** - Analysis of age as prognostic factor in survival models
-- **all_parametric_survival_models.qmd** - Comparison of all candidate parametric model fits
-- **[psa_extrapolation_plausibility.md](reports/technical/psa_extrapolation_plausibility.md)** - All-draw survival ribbons, Norwegian population reference, RMST tails and their relationship to ordering violations (reads existing caches only)
+1. Ree AH, Šaltytė Benth J, Hamre HM, et al. First-line oxaliplatin-based chemotherapy and nivolumab for metastatic microsatellite-stable colorectal cancer: the randomised METIMMOX trial. *Br J Cancer*. 2024;130(12):1921-1928. [doi:10.1038/s41416-024-02696-6](https://doi.org/10.1038/s41416-024-02696-6)
+2. Meltzer S, Negård A, Bakke KM, et al. Early radiologic signal of responsiveness to immune checkpoint blockade in microsatellite-stable/mismatch repair-proficient metastatic colorectal cancer. *Br J Cancer*. 2022;127(12):2227-2233. [doi:10.1038/s41416-022-02004-0](https://doi.org/10.1038/s41416-022-02004-0)
+3. Meltzer S, Berg JP, Hamre HM, et al. 632P Predictive value of C-reactive protein (CRP) in microsatellite-stable (MSS) metastatic colorectal cancer (mCRC) patients given first-line alternating short-course oxaliplatin-based chemotherapy (FLOX) and nivolumab. *Ann Oncol*. 2023;34:S449. [doi:10.1016/j.annonc.2023.09.1822](https://doi.org/10.1016/j.annonc.2023.09.1822)
+4. Ree AH, Bousquet PA, Nilsen HL, et al. 543P Tumor mutational burden (TMB), BRAF status, and C-reactive protein (CRP) predict response to first-line alternating oxaliplatin-based chemotherapy and nivolumab in metastatic microsatellite-stable (MSS) colorectal cancer (CRC). *Ann Oncol*. 2024;35:S453. [doi:10.1016/j.annonc.2024.08.612](https://doi.org/10.1016/j.annonc.2024.08.612)
 
-These reports support model validation and document methodological decisions. For comprehensive guidance on using this codebase, see [CLAUDE.md](CLAUDE.md).
-
-## Related Publications
-
-This work is based on and related to the METIMMOX clinical trial (ClinicalTrials.gov Identifier: NCT03388190). Please cite the following publications:
-
-1. **Primary Trial Results**:  
-   Ree AH, Šaltytė Benth J, Hamre HM, et al. First-line oxaliplatin-based chemotherapy and nivolumab for metastatic microsatellite-stable colorectal cancer-the randomised METIMMOX trial. *Br J Cancer*. 2024;130(12):1921-1928. [doi:10.1038/s41416-024-02696-6](https://doi.org/10.1038/s41416-024-02696-6)
-
-2. **Radiologic Response**:  
-   Meltzer S, Negård A, Bakke KM, et al. Early radiologic signal of responsiveness to immune checkpoint blockade in microsatellite-stable/mismatch repair-proficient metastatic colorectal cancer. *Br J Cancer*. 2022;127(12):2227-2233. [doi:10.1038/s41416-022-02004-0](https://doi.org/10.1038/s41416-022-02004-0)
-
-3. **CRP Predictive Value**:  
-   Meltzer S, Berg JP, Hamre HM, et al. 632P Predictive value of C-reactive protein (CRP) in microsatellite-stable (MSS) metastatic colorectal cancer (mCRC) patients given first-line alternating short-course oxaliplatin-based chemotherapy (FLOX) and nivolumab. *Annals of Oncology*. 2023;34:S449. [doi:10.1016/j.annonc.2023.09.1822](https://doi.org/10.1016/j.annonc.2023.09.1822)
-
-4. **TMB, BRAF, and CRP Biomarkers**:  
-   Ree AH, Bousquet PA, Nilsen HL, et al. 543P Tumor mutational burden (TMB), BRAF status, and C-reactive protein (CRP) predict response to first-line alternating oxaliplatin-based chemotherapy and nivolumab in metastatic microsatellite-stable (MSS) colorectal cancer (CRC). *Annals of Oncology*. 2024;35:S453. [doi:10.1016/j.annonc.2024.08.612](https://doi.org/10.1016/j.annonc.2024.08.612)
+Manuscripts for all three papers are in preparation.
 
 ## Citation
 
-If you use this code or adapt it for your own research, please cite:
-
 ```bibtex
-@software{metimmox_cea,
-  author = {Geisler, Ben and [Co-authors]},
-  title = {METIMMOX-1: Cost-Effectiveness Analysis of Biomarker-Guided Immunotherapy},
-  year = {2025},
-  url = {https://github.com/ben-geisler/METIMMOX-1}
+@software{metimmox_1,
+  author = {Geisler, Benjamin P.},
+  title  = {METIMMOX-1: Clinical Effectiveness, Cost-Effectiveness and Value of Information
+            of Biomarker-Guided Immunotherapy in Metastatic MSS/pMMR Colorectal Cancer},
+  year   = {2026},
+  url    = {https://github.com/ben-geisler/METIMMOX-1}
 }
 ```
 
-*Note: A research paper describing this analysis is currently in preparation. This citation will be updated once published.*
+## License and acknowledgements
 
-## License
+MIT License; see [LICENSE](LICENSE). The license covers the code only; the trial data are confidential.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+We thank the patients who took part in METIMMOX, the trial investigators and clinical staff, and Frederick Thielen for contributions to the survival modelling code.
 
-## Contributing
-
-This repository contains research code for a specific clinical trial analysis. If you have suggestions or find issues, please open an issue in the repository.
-
-## Contact
-
-- **Repository Owner**: [ben-geisler](https://github.com/ben-geisler)
-- **Clinical Trial**: METIMMOX (ClinicalTrials.gov: NCT03388190)
-
-## Acknowledgments
-
-This work is based on the METIMMOX clinical trial data and related research. We gratefully acknowledge:
-
-- All investigators and clinical staff involved in the METIMMOX trial
-- The patients who participated in the trial
-- **Frederick Thielen** for contributions to the survival modeling code
-
----
-
-**Disclaimer**: This repository contains research code for academic purposes. The clinical trial data is confidential and not included in this repository.
+Questions and suggestions: open an issue or contact [ben-geisler](https://github.com/ben-geisler).
