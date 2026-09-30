@@ -203,7 +203,7 @@ Families whose OS and PFS pair violates the OS >= PFS ordering at some modeled t
 
 The discount rate (applied to costs and QALYs together), the model time horizon, the post-progression treatment cost and the second treatment sequence are not sampled in the PSA. They are varied here as deterministic structural scenarios (issues #153 and #154); these are the ranges reported for those parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
 
-Two of the scenarios test scope assumptions rather than parameter values. The base case applies **no post-progression treatment cost**: second-line systemic therapy, imaging and visits after progression are outside the modeled scope, so the progressed state accrues only the quarterly follow-up contact and the end-of-life cost. Because the strategies differ in time spent progressed, this omission is differential, and the scenario charges EUR 5,000 per quarter in the progressed state as an illustrative upper bound. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
+Two of the scenarios test scope assumptions rather than parameter values. The base case applies **no post-progression treatment cost**: second-line systemic therapy is outside the modeled scope, so the progressed state accrues only a quarterly follow-up visit, a quarterly CT scan and the end-of-life cost. Because the strategies differ in time spent progressed, this omission is differential, and the scenario charges EUR 5,000 per quarter in the progressed state as an illustrative upper bound. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
 
 Unit drug and test costs are fixed in the PSA (issue #154) because they are published tariffs or assumed list prices rather than quantities a study could resolve; their influence is quantified in the one-way analysis above, not in the value-of-information results.
 
@@ -273,4 +273,4 @@ The tornado plots and rankings show which parameters drive uncertainty in NMB fo
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.3
+**Report version:** 4.4

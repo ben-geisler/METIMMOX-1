@@ -21,7 +21,8 @@ time_points_length <- length(time_points)
 # scenario: nivolumab at modeled weeks 4, 6, 12, 14, 28, 30, 36, 38; FLOX
 # (experimental) at weeks 0, 2, 8, 10, 24, 26, 32, 34; FLOX (control) at the
 # union; CT at baseline and every 12 weeks; blood tests at baseline and every
-# 4 weeks; visits at baseline and every administration. Positions beyond the
+# 4 weeks; visits at baseline, every administration and every CT scan (issue
+# #164: a surveillance visit with each post-treatment CT). Positions beyond the
 # horizon are dropped, so every vector has exactly time_points_length points.
 schedules <- build_treatment_schedules(time_points_length)
 l_nivo <- schedules$l_nivo
@@ -88,14 +89,21 @@ l_params_base <- list(
   c_test_NGS = c_test_NGS, # cost of next-generation sequencing (for TMB/BRAF), now updated to reflect Pia's paper
   
   # Other costs
-  c_other_visit = 33,     # cost of standard outpatient visit
-  c_other_baseline = 530,  # cost of comprehensive baseline visit
-  c_other_follow = 33,    # cost of follow-up visits (quarterly)
+  # Outpatient visits (issue #36): Norwegian DRG (ISF) weight 0.047 for an
+  # outpatient contact times the 2023 somatic-care unit price of NOK 49,484
+  # (EUR 4,541.60), i.e. NOK 2,325.75 = EUR 213.46 per visit. The weight is the
+  # same for every visit type, so the baseline, treatment/surveillance and
+  # quarterly follow-up visits share one value; the three parameters are kept
+  # separate so that each can be varied on its own. (Before #36: EUR 33, 530
+  # and 33 without a source.)
+  c_other_visit = 213.46,    # outpatient visit (DRG weight 0.047)
+  c_other_baseline = 213.46, # baseline visit (DRG weight 0.047)
+  c_other_follow = 213.46,   # follow-up visit in the progressed state (per quarter)
   # Post-progression treatment cost per quarter in the progressed state
   # (issue #154). Zero in the base case: second-line systemic therapy, imaging
   # and visits after progression are outside the modeled scope, so the
-  # progressed state accrues only the quarterly follow-up contact and the
-  # end-of-life cost. The strategies differ in time spent progressed, so the
+  # progressed state accrues only the quarterly follow-up visit, the quarterly
+  # CT scan (issue #164) and the end-of-life cost. The strategies differ in time spent progressed, so the
   # omission is differential; the parameter makes it explicit and is varied in
   # the Post_progression_cost structural scenario in 09_DSA.R.
   c_other_pp = 0,

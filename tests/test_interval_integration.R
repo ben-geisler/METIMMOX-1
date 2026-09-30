@@ -23,9 +23,12 @@ for (years in c(1, 10, 20)) {
   p <- params
   p$c_other_follow <- 33
   p$c_other_pp <- 5000
+  p$c_test_CT <- 386
   out <- run(p, rep(0, n))
   equal(sum(out$follow_up_costs), 33 * 4 * years)
   equal(sum(out$post_progression_costs), 5000 * 4 * years)
+  # Quarterly CT in the progressed state (issue #164).
+  equal(sum(out$progressed_imaging_costs), 386 * 4 * years)
 }
 equal(run(params, 1)$qalys_total, 0)
 equal(run(params, rep(1, 5), cl = 1 / 4)$qalys_total, 1)
@@ -43,6 +46,10 @@ area <- function(y) sum(diff(0:3 / 52) * (head(y, -1) + tail(y, -1)) / 2)
 out <- run(p, pf, pp, 1 - pf - pp, dw)
 equal(out$qalys_total, area((pf * p$u_np + pp * p$u_p) * dw))
 equal(out$costs_total, 4 * (33 + 5000) * area(pp * dw))
+# With a CT price and no l_CT scan, progressed imaging is the only CT charge.
+p$c_test_CT <- 386
+out <- run(p, pf, pp, 1 - pf - pp, dw)
+equal(out$costs_total, 4 * (33 + 386 + 5000) * area(pp * dw))
 
 # Full scheduled costs at BOTH horizon endpoints, even for a one-point grid.
 p <- params

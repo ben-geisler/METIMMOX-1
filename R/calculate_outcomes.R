@@ -171,11 +171,15 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   # Integrate occupancy and discounting over intervals, just as for utilities.
   progressed_quarters <- p_p * (4 * cl) * occupancy_weights
   follow_up_costs <- params$c_other_follow * progressed_quarters
+  # Progressed patients are imaged once per quarter (issue #164), charged at the
+  # CT unit price as a rate over progressed occupancy like the follow-up visit.
+  # Progression-free patients receive their CT scans from the l_CT schedule.
+  progressed_imaging_costs <- params$c_test_CT * progressed_quarters
 
-  # Post-progression treatment costs (issue #154). Second-line systemic therapy,
-  # imaging and visits after progression are NOT costed in the base case, where
-  # c_other_pp = 0 and the progressed state accrues only the quarterly follow-up
-  # contact and the end-of-life cost. The omission is differential because the
+  # Post-progression treatment costs (issue #154). Second-line systemic therapy
+  # is NOT costed in the base case, where c_other_pp = 0 and the progressed
+  # state accrues only the quarterly follow-up visit, the quarterly CT and the
+  # end-of-life cost. The omission is differential because the
   # strategies differ in time spent progressed, so the parameter is explicit and
   # is varied in a deterministic structural scenario, as a quarterly rate.
   c_other_pp <- if (is.null(params$c_other_pp)) 0 else params$c_other_pp
@@ -191,7 +195,8 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   
   # Total costs
   total_costs_undiscounted <- drug_costs + test_costs + visit_costs +
-    follow_up_costs + post_progression_costs + end_life_costs
+    follow_up_costs + progressed_imaging_costs + post_progression_costs +
+    end_life_costs
   total_costs_discounted <- total_costs_undiscounted * v_dw_c
   costs_total <- sum(total_costs_discounted)
   
@@ -205,6 +210,7 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
     test_costs = test_costs,
     visit_costs = visit_costs,
     follow_up_costs = follow_up_costs,
+    progressed_imaging_costs = progressed_imaging_costs,
     post_progression_costs = post_progression_costs,
     end_life_costs = end_life_costs,
     total_costs_undiscounted = total_costs_undiscounted,

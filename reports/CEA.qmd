@@ -317,7 +317,7 @@ Control and both guided strategies are evaluated in the same complete-case trial
 
 Three scope decisions bound the interpretation of these results (issue #154).
 
-**No post-progression treatment costs.** After progression the model charges only the quarterly follow-up contact and the one-time end-of-life cost. Second-line systemic therapy, post-progression imaging and post-progression visits are not modeled. The strategies differ in time spent in the progressed state, so this omission is differential rather than a common offset. A structural scenario charging EUR 5,000 per quarter in the progressed state is reported in the one-way sensitivity analysis.
+**No post-progression treatment costs.** After progression the model charges only a quarterly follow-up visit, a quarterly CT scan and the one-time end-of-life cost. Second-line systemic therapy and any further post-progression visits are not modeled. The strategies differ in time spent in the progressed state, so this omission is differential rather than a common offset. A structural scenario charging EUR 5,000 per quarter in the progressed state is reported in the one-way sensitivity analysis.
 
 **Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption.
 
@@ -329,4 +329,4 @@ Adverse-event costs and disutilities remain outside the modeled scope, as descri
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.6
+**Report version:** 4.7

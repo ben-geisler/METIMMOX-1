@@ -295,7 +295,8 @@ pre_decision_outcomes <- function(params, decision_week = 4,
                             weights$effect, cl)
     diagnostic <- if (is.null(biomarker)) 0 else params[[biomarker_cost_key(biomarker)[[1]]]]
     scheduled <- (o$drug_costs + o$test_costs + o$visit_costs) * weights$cost
-    flows <- (o$follow_up_costs + o$post_progression_costs) * weights$cost
+    flows <- (o$follow_up_costs + o$progressed_imaging_costs +
+               o$post_progression_costs) * weights$cost
     events_cost <- o$end_life_costs * weights$cost
     c(qalys_pre = sum(o$qalys_discounted * flow_share),
       cost_pre = sum(scheduled[before]) + sum(flows * flow_share) + sum(events_cost[events]),

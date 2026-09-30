@@ -39,6 +39,10 @@ parameter_distribution_spec <- function() {
   # Visit, baseline, follow-up and end-of-life costs bundle genuine resource-use
   # uncertainty (contact frequency, terminal-care intensity), so they remain
   # probabilistic.
+  # CV 0.20 is an ASSUMPTION (issue #56), not an estimate: no source reports
+  # the dispersion of these resource-use costs, so a conventional moderate CV
+  # is used (gamma 95% interval about 0.65-1.43 times the mean). It is not
+  # derived from data or cited literature and is not varied in any scenario.
   other_costs <- data.frame(
     parameter = c("c_other_visit", "c_other_baseline", "c_other_follow",
                   "c_other_last"),
@@ -54,6 +58,11 @@ parameter_distribution_spec <- function() {
   # u_p > u_np. Sampling a non-negative decrement instead makes u_p <= u_np hold
   # by construction, and E[u_decrement] = u_np - u_p leaves the marginal mean of
   # u_p unchanged.
+  # CV 0.15 for u_np and u_decrement is an ASSUMPTION (issue #56): neither the
+  # CORRECT utilities nor the IPD values come with a usable standard error, so
+  # a conventional CV is used (beta 95% interval for u_np = 0.73 about
+  # 0.49-0.91). It is not derived from data or cited literature and is not
+  # varied in any scenario.
   utilities <- data.frame(
     parameter = c("u_np", "u_decrement", "u_p"),
     distribution = c("beta", "gamma", "derived"),
@@ -328,7 +337,8 @@ recurring_positions <- function(first, by, n_points) {
 #'   the grid are dropped.
 #' @return Named list l_nivo, l_FLOX_exp, l_FLOX_control, l_CT (baseline, then
 #'   every 12 weeks from position 13), l_blood (baseline, then every 4 weeks
-#'   from position 5) and l_visit (baseline plus every administration).
+#'   from position 5) and l_visit (baseline, every administration and every
+#'   CT scan; issue #164).
 build_treatment_schedules <- function(n_points,
                                       nivo = TREATMENT_SCHEDULE_POSITIONS$nivo,
                                       FLOX_exp = TREATMENT_SCHEDULE_POSITIONS$FLOX_exp,
@@ -345,16 +355,30 @@ build_treatment_schedules <- function(n_points,
   l_nivo <- indicator(nivo)
   l_FLOX_exp <- indicator(FLOX_exp)
   l_FLOX_control <- indicator(FLOX_control)
-  l_visit <- as.numeric(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)
-  l_visit[1] <- 1
+  l_CT <- indicator(c(1, recurring_positions(13, 12, n_points)))
   list(
     l_nivo = l_nivo,
     l_FLOX_exp = l_FLOX_exp,
     l_FLOX_control = l_FLOX_control,
-    l_CT = indicator(c(1, recurring_positions(13, 12, n_points))),
+    l_CT = l_CT,
     l_blood = indicator(c(1, recurring_positions(5, 4, n_points))),
-    l_visit = l_visit
+    l_visit = visit_schedule(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT)
   )
+}
+
+#' Outpatient visit schedule (issue #164)
+#'
+#' A visit is charged at baseline, at every drug administration and at every
+#' CT scan. During treatment every CT position (13, 25, 37) already coincides
+#' with an administration, so the CT rule adds a surveillance visit only after
+#' the last administration: progression-free patients are seen with each
+#' 12-weekly scan up to the horizon. Blood tests between scans are drawn
+#' without a separate visit.
+visit_schedule <- function(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT) {
+  l_visit <- as.numeric(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1 |
+                          l_CT == 1)
+  l_visit[1] <- 1
+  l_visit
 }
 
 # ---------------------------------------------------------------------------
@@ -423,7 +447,8 @@ build_horizon_params <- function(base_params, horizon_weeks, models,
 #' Remove the second treatment sequence
 #'
 #' Zero every administration from the given schedule position onwards and
-#' rebuild the visit schedule from the remaining administrations. Monitoring
+#' rebuild the visit schedule from the remaining administrations and the
+#' unchanged CT scans (visit_schedule()). Monitoring
 #' (CT, blood tests) is unchanged, and so is survival, so the scenario bounds
 #' the cost of the assumption only.
 #'
@@ -438,8 +463,7 @@ drop_second_sequence <- function(p, first_position = 25L) {
   p$l_nivo         <- zap(p$l_nivo)
   p$l_FLOX_exp     <- zap(p$l_FLOX_exp)
   p$l_FLOX_control <- zap(p$l_FLOX_control)
-  p$l_visit <- as.numeric(p$l_nivo == 1 | p$l_FLOX_exp == 1 | p$l_FLOX_control == 1)
-  p$l_visit[1] <- 1
+  p$l_visit <- visit_schedule(p$l_nivo, p$l_FLOX_exp, p$l_FLOX_control, p$l_CT)
   p
 }
 

@@ -111,10 +111,18 @@ legacy <- local({
   l_blood <- rep(0, n); l_blood[1] <- 1; l_blood[seq(5, n, by = 4)] <- 1
   l_visit <- rep(0, n); l_visit[1] <- 1
   l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
+  l_visit[l_CT == 1] <- 1  # surveillance visit with every CT (issue #164)
   list(l_nivo = l_nivo, l_FLOX_exp = l_FLOX_exp, l_FLOX_control = l_FLOX_control,
        l_CT = l_CT, l_blood = l_blood, l_visit = l_visit)
 })
 stopifnot(identical(build_treatment_schedules(521), legacy))
+# Issue #164: the CT rule adds visits only after the last administration
+# (position 39); every in-treatment CT already falls on an administration.
+s521 <- build_treatment_schedules(521)
+added <- which(s521$l_visit == 1 & !(s521$l_nivo == 1 | s521$l_FLOX_exp == 1 |
+                                        s521$l_FLOX_control == 1))
+stopifnot(identical(added, seq(49L, 521L, by = 12L)),
+          all(s521$l_visit[s521$l_CT == 1] == 1))
 
 # A 30-point horizon keeps 30 points (script 05 used to lengthen it to 39).
 stopifnot(all(vapply(build_treatment_schedules(30), length, integer(1)) == 30L))
