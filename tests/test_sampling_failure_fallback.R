@@ -8,28 +8,32 @@
 # Evaluate only the sampler so this focused test does not run the
 # cache-generation side effects in 06_sampling.R.
 sampling_expressions <- parse("analysis/06_sampling.R")
+#' The single top-level `name <- ...` expression of analysis/06_sampling.R, so a
+#' production helper can be evaluated without running the script.
 extract_assignment <- function(name) {
-  matches <- vapply(sampling_expressions, function(expr) {
+  v_matches <- vapply(sampling_expressions, function(expr) {
     is.call(expr) &&
       identical(expr[[1]], as.name("<-")) &&
       identical(expr[[2]], as.name(name))
   }, logical(1))
-  stopifnot(sum(matches) == 1L)
-  sampling_expressions[[which(matches)]]
+  stopifnot(sum(v_matches) == 1L)
+  sampling_expressions[[which(v_matches)]]
 }
 
 test_env <- new.env(parent = globalenv())
 eval(extract_assignment("SAMPLING_METHOD"), envir = test_env)
 eval(extract_assignment("sample_survival_coefficients"), envir = test_env)
 
+#' Stand-in for flexsurvreg(): a three-parameter fit (shape, rate, predictor)
+#' carrying the covariance matrix `cov`.
 mock_fit <- function(cov) {
-  par_names <- c("shape", "rate", "predictor")
-  est <- c(0.1, -3, 0.2)
-  res <- matrix(est, ncol = 4, nrow = 3,
-                dimnames = list(par_names, c("est", "L95%", "U95%", "se")))
+  v_par_names <- c("shape", "rate", "predictor")
+  v_est <- c(0.1, -3, 0.2)
+  m_res <- matrix(v_est, ncol = 4, nrow = 3,
+                dimnames = list(v_par_names, c("est", "L95%", "U95%", "se")))
   list(
-    res = res, res.t = res, coefficients = setNames(est, par_names),
-    opt = list(par = est), cov = cov,
+    res = m_res, res.t = m_res, coefficients = setNames(v_est, v_par_names),
+    opt = list(par = v_est), cov = cov,
     optpars = 1:3, fixedpars = integer(0),
     dlist = list(pars = c("shape", "rate"), inv.transforms = list(exp, exp))
   )

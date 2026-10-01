@@ -20,20 +20,20 @@ config <- configure_parameter_distributions(base_values)
 # Unit prices are fixed in the PSA and varied in the DSA only (issue #154), so
 # the PSA parameter set is the resource-use costs, the utilities and the
 # prevalences. u_p is a derived column, not a draw.
-expected_psa <- c(
+v_expected_psa <- c(
   "c_other_visit", "c_other_baseline", "c_other_follow", "c_other_last",
   "u_np", "u_decrement", "u_p", "p_joint_00", "p_joint_01", "p_joint_10", "p_joint_11", "p_crp", "p_tmb_braf"
 )
-fixed_prices <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+v_fixed_prices <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
                   "c_test_CRP", "c_test_NGS")
 stopifnot(
-  identical(names(config$distributions), expected_psa),
-  !any(fixed_prices %in% names(config$distributions)),
+  identical(names(config$distributions), v_expected_psa),
+  !any(v_fixed_prices %in% names(config$distributions)),
   identical(config$distributions$u_p$dist, "derived"),
   # Groups describe what is sampled: derived columns are excluded because they
   # are collinear with the parameters they come from.
   setequal(unlist(config$groups, use.names = FALSE),
-           setdiff(expected_psa, c("u_p", "p_joint_11", "p_crp", "p_tmb_braf"))),
+           setdiff(v_expected_psa, c("u_p", "p_joint_11", "p_crp", "p_tmb_braf"))),
   identical(config$groups$utilities, c("u_np", "u_decrement")),
   # Only one cost group is still sampled, so "all_costs" would duplicate it.
   is.null(config$groups$all_costs),
@@ -42,27 +42,27 @@ stopifnot(
 )
 
 # The DSA still varies the fixed prices, and never the PSA-only decrement.
-dsa <- build_dsa_ranges(base_values, config$spec, mult = 0.2)
+df_dsa <- build_dsa_ranges(base_values, config$spec, mult = 0.2)
 stopifnot(
-  all(fixed_prices %in% dsa$pars),
-  all(c("u_np", "u_p") %in% dsa$pars),
-  !("u_decrement" %in% dsa$pars),
-  isTRUE(all.equal(dsa$min[dsa$pars == "c_drug_nivo"], 80)),
-  isTRUE(all.equal(dsa$max[dsa$pars == "c_drug_nivo"], 120)),
+  all(v_fixed_prices %in% df_dsa$pars),
+  all(c("u_np", "u_p") %in% df_dsa$pars),
+  !("u_decrement" %in% df_dsa$pars),
+  isTRUE(all.equal(df_dsa$min[df_dsa$pars == "c_drug_nivo"], 80)),
+  isTRUE(all.equal(df_dsa$max[df_dsa$pars == "c_drug_nivo"], 120)),
   # Utilities stay inside [0, 1].
-  dsa$max[dsa$pars == "u_np"] <= 1
+  df_dsa$max[df_dsa$pars == "u_np"] <= 1
 )
 
 # The derived utility can never exceed the progression-free utility, including
 # when the decrement draw is larger than u_np itself.
-derived <- apply_derived_psa_parameters(data.frame(
+df_derived <- apply_derived_psa_parameters(data.frame(
   u_np = c(0.73, 0.50, 0.10),
   u_decrement = c(0.14, 0.60, 0.00)
 ))
 stopifnot(
-  all(derived$u_p <= derived$u_np),
-  all(derived$u_p >= 0),
-  isTRUE(all.equal(derived$u_p, c(0.59, 0.00, 0.10)))
+  all(df_derived$u_p <= df_derived$u_np),
+  all(df_derived$u_p >= 0),
+  isTRUE(all.equal(df_derived$u_p, c(0.59, 0.00, 0.10)))
 )
 
 # One-sided structural scenarios declare only the endpoint that differs.
@@ -76,13 +76,15 @@ stopifnot(
 )
 
 sampling_expressions <- parse("analysis/06_sampling.R")
+#' The single top-level `name <- ...` expression of analysis/06_sampling.R, so a
+#' production helper can be evaluated without running the script.
 extract_assignment <- function(name) {
-  matches <- vapply(sampling_expressions, function(expr) {
+  v_matches <- vapply(sampling_expressions, function(expr) {
     is.call(expr) && identical(expr[[1]], as.name("<-")) &&
       identical(expr[[2]], as.name(name))
   }, logical(1))
-  stopifnot(sum(matches) == 1L)
-  sampling_expressions[[which(matches)]]
+  stopifnot(sum(v_matches) == 1L)
+  sampling_expressions[[which(v_matches)]]
 }
 
 test_env <- new.env(parent = baseenv())
@@ -109,8 +111,8 @@ test_env$extract_all_survival_probabilities <- function(prediction) {
 # accessor; a legacy-shaped sample list is returned as-is here.
 test_env$sampled_survival_models <- function(component, idx) component$samples[[idx]]
 test_env$predict <- function(object, newdata, type, times) {
-  rx_effect <- as.numeric(newdata$Rx == "experimental") * 10
-  curves <- lapply(newdata$Age + rx_effect, function(value) {
+  v_rx_effect <- as.numeric(newdata$Rx == "experimental") * 10
+  curves <- lapply(newdata$Age + v_rx_effect, function(value) {
     data.frame(.pred_survival = rep(value, length(times)))
   })
   data.frame(.pred = I(curves))
@@ -120,25 +122,25 @@ eval(
   envir = test_env
 )
 
-patient_data <- data.frame(
+df_patient_data <- data.frame(
   Age = 1:4,
   Rx = factor(c("control", "experimental", "control", "experimental"),
               levels = c("control", "experimental")),
   crp = c(1, 1, 0, 0)
 )
 sampled_models <- list(samples = list(list(os = list(model = list()))))
-control <- test_env$generate_psa_population_averaged_predictions(
-  sampled_models, outcome = "os", data_original = patient_data,
+v_control <- test_env$generate_psa_population_averaged_predictions(
+  sampled_models, outcome = "os", data_original = df_patient_data,
   time_points = 0:2
 )
 subgroups <- test_env$generate_psa_population_averaged_predictions(
   sampled_models, biomarker_name = "crp", outcome = "os",
-  data_original = patient_data, time_points = 0:2
+  data_original = df_patient_data, time_points = 0:2
 )
 # Control curve: every patient predicted with Rx = control (issue #151), so the
 # mock's +10 experimental effect must NOT appear: mean(Age) = 2.5, not 7.5.
 stopifnot(
-  identical(control, rep(2.5, 3)),
+  identical(v_control, rep(2.5, 3)),
   identical(subgroups$positive, rep(11.5, 3)),
   identical(subgroups$negative, rep(3.5, 3))
 )

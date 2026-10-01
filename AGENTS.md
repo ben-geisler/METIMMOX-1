@@ -177,6 +177,8 @@ pacman::p_load(devtools, readxl, dplyr, tableone, ggplot2, flexsurv,
 pacman::p_load(knitr, kableExtra, flextable, officer, scales, gridExtra, reshape2)
 ```
 
+**Pinned versions (issue #165).** `renv.lock` records the package versions behind the published results. renv is deliberately not activated: there is no `.Rprofile` or `renv/` project library (user decision, 1 October 2026), so the scripts run against the installed library. To reproduce, run `renv::restore(lockfile = "renv.lock")` and then `renv::status(lockfile = "renv.lock")`, which should report no inconsistencies. After adding a package to the code, run `renv::snapshot(lockfile = "renv.lock")`; the lockfile lacked 9 used packages (voi among them) until #165. The cache fingerprints record the R version and the calculating packages (`calculation_identity()`: flexsurv, survival, mvtnorm and dampack for sampling/PSA; voi, mgcv and dampack for EVPPI), so a restore that changes one of these invalidates the corresponding caches.
+
 ### Rendering Quarto Reports
 
 Every report and technical doc declares `format:` with both `pdf:` and `gfm:` and renders to a `.pdf` (people) and a `.md` (LLMs, GitHub). Render PDF first and GFM second: the PDF pass deletes the `<name>_files/` image directory, so the reverse order leaves the `.md` with dangling links.
@@ -638,6 +640,14 @@ v_dw_e <- 1 / (1 + dr_effects)^(seq(0, time_horizon) / 52)
 - **Technical docs** (`reports/technical/`): Bug fix impact reports and technical documentation
 - **Vignettes and outputs** (`outputs/vignettes/`, `outputs/figs/`, `outputs/tables/`): figure and table generators and their products
 - **Validation and publishing** (`validation/`, `publish/`): external validation reports; the render-and-publish script (see "Repository Layout")
+- **[CHANGELOG.md](CHANGELOG.md)**: one line per issue from #145 onwards with the caches regenerated and the headline numbers; add a line with every issue-numbered change
+
+### Naming and documentation conventions (issue #165)
+
+- **DARTH prefixes.** Domain objects carry their DARTH prefix (`l_params_base`, `p_os`, `c_drug_nivo`, `u_np`, `v_dw_c`, `l_nivo`, ...). Function-local vectors, matrices, arrays and data frames carry `v_`, `m_`, `a_` and `df_` (`m_cost`, `v_strategy_rows`, `df_results`). Scalars, lists, model objects, loop indices and short mathematical symbols are not prefixed, and constants stay in SCREAMING_SNAKE_CASE (`ALL_STRATEGIES`, `SURVIVAL_CURVE_TOL`).
+- **Interfaces keep their names.** Formal arguments, list and column names, objects written to caches, and script-level objects that reports, vignettes or other scripts read (`data`, `data_complete`, `strategies`, `strategies_df`, `time_points`, `models`, `predictions`, `dsa_results`, `psa_obj`, ...) were not renamed in #165, so that callers, caches and reports stay valid. A few locals are deliberately unprefixed because their name ends up in a returned or cached object, for example `errors` in `estimate_joint_survival_covariance()` (it becomes the dimnames of the cached `failure_reasons`) and `base`/`prog`/`td` in `build_time_dependent_progression()` (stored in the `tmerge` call).
+- **Renames change fingerprints.** `calculation_identity()` hashes the parsed source of the calculation files, so renaming identifiers (unlike editing comments) invalidates the sampling, PSA, EVPPI and scenario caches even when no result changes; #165 regenerated them and the snapshot pair `165` confirms identical results.
+- **Roxygen.** Every function in `R/` and every top-level helper in `analysis/` has a roxygen block (`@param`, `@return`); test helpers in `tests/` have a short `#'` description.
 
 ### Retired Files
 
@@ -687,7 +697,7 @@ Each report has specific dependencies:
 
 **[input_parameters.qmd](reports/input_parameters.qmd)** - Input Parameters Summary
 - **Sources**: 02, 03, 04, 05
-- **Shows**: All model input parameters (costs, utilities, prevalence rates, treatment schedules), which costs are sampled versus fixed in the PSA, the nivolumab price provenance, and the post-progression-cost and second-sequence scope limitations (issue #154)
+- **Shows**: All model input parameters (costs, utilities, prevalence rates, treatment schedules), which costs are sampled versus fixed in the PSA, the nivolumab price provenance, and the post-progression-cost and second-sequence scope limitations (issue #154), and (issue #165) the input-to-output traceability table: every `l_params_base` field with the function and step that consumes it, built from the field names so that rendering stops if a field is unmapped
 
 **[CEA.qmd](reports/CEA.qmd)** - Cost-Effectiveness Analysis Report
 - **Sources**: 02, 03, 04, 05; runs the base case through shared helpers
@@ -1055,7 +1065,7 @@ Focused executable regression tests live in [`tests/`](tests/). The durable reco
 | Artifact lifecycle and provenance | Each declared publication file is freshly written or removed; empty and failed setup paths leave no obsolete predecessor; manifest owners, fingerprints and output hashes match, with CSV object checks recorded | [`publication_artifacts.R`](R/publication_artifacts.R), [`test_publication_artifacts.R`](tests/test_publication_artifacts.R), [`test_report_contracts.R`](tests/test_report_contracts.R) | Pass (#168): 26 vignettes rendered; manifest covers 37 artifacts (17 verified CSVs and 20 figure files). Synthetic tests confirm stale CSV/PNG removal, empty-state figure creation, failed-setup cleanup and undeclared-path rejection. |
 | Publication-only snapshot invariance | Identical deterministic costs/QALYs; all 5,000 before/after PSA rows agree within EUR 1e-7 and 1e-11 QALYs; unchanged sampling indices/input fingerprint and zero EVPI | [`check_snapshots.R`](validation/issue168_2026-09-22/check_snapshots.R), [`snapshot_comparison.json`](validation/issue168_2026-09-22/snapshot_comparison.json) | Pass (#168): deterministic differences exactly zero; maximum PSA differences EUR 2.91e-11 and 8.88e-16 QALYs. The fixed snapshot regenerated PSA and EVPPI under the usual timestamp rule. |
 
-Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.
+Run the whole suite with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" tests/run_all.R` (issue #165; `--only a,b` for a subset, `--no-data` to skip the tests that need the trial export). It runs every `tests/test_*.R` in its own process against a temporary copy of `data/tidy/` (`metimmox.cache_dir` set through a temporary `R_PROFILE_USER`), skips `REQUIRES_TRIAL_DATA` tests when `data/tidy/METIMMOX.rds` is absent, reports documented known failures (`KNOWN_FAILURES`; currently only `test_sampling_failure_fallback.R`, whose mock cannot intercept the namespaced `flexsurv::flexsurvreg()` of the #159 covariance bootstrap and whose assertions predate #159, so it fails on every commit since #159; the sampler is covered by `test_joint_survival_sampling.R`) as XFAIL and an unexpected pass as XPASS, writes `data/output/test_run_all.csv`, and exits 1 on any FAIL or XPASS or if a live cache's md5 changed during the run. Run focused tests from the repository root with `"C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" tests/<test-file>.R`. A test passes only if it exits with status 0 and all documented assertions succeed. Update the recorded result whenever model logic or the corresponding acceptance criterion changes; do not overwrite a known failure with a looser criterion.
 
 ## Clinical Context
 

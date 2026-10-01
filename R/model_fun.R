@@ -44,36 +44,36 @@
 # ===============================================================================
 
 validate_model_params <- function(params, n_points = NULL) {
-  biomarkers <- get_biomarkers()
-  biomarker_cost_params <- unique(unname(biomarker_cost_key(biomarkers)))
-  prevalence_params <- unname(biomarker_prevalence_key(biomarkers))
+  v_biomarkers <- get_biomarkers()
+  v_biomarker_cost_params <- unique(unname(biomarker_cost_key(v_biomarkers)))
+  v_prevalence_params <- unname(biomarker_prevalence_key(v_biomarkers))
 
   # Required scalar parameters - economic biomarker prevalence values
-  required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
+  v_required_scalars <- c("dr_costs", "dr_effects", "u_np", "u_p",
                         "c_drug_nivo", "c_drug_FLOX", "c_test_CT",
-                        "c_test_blood", biomarker_cost_params, "c_other_visit",
+                        "c_test_blood", v_biomarker_cost_params, "c_other_visit",
                         "c_other_baseline", "c_other_follow", "c_other_last",
-                        prevalence_params)
+                        v_prevalence_params)
 
   # Required list parameters
-  required_lists <- c("p_os", "p_pfs")
+  v_required_lists <- c("p_os", "p_pfs")
 
   # Required schedule vectors
-  required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
+  v_required_vectors <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control",
                         "l_CT", "l_blood", "l_visit")
 
   # Check all required params exist
-  all_required <- c(required_scalars, required_lists, required_vectors)
-  missing <- setdiff(all_required, names(params))
-  if (length(missing) > 0) {
-    stop("Missing required parameters: ", paste(missing, collapse = ", "))
+  v_all_required <- c(v_required_scalars, v_required_lists, v_required_vectors)
+  v_missing <- setdiff(v_all_required, names(params))
+  if (length(v_missing) > 0) {
+    stop("Missing required parameters: ", paste(v_missing, collapse = ", "))
   }
 
   # Validate cost parameters are non-negative
-  cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                   biomarker_cost_params, "c_other_visit", "c_other_baseline",
+  v_cost_params <- c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+                   v_biomarker_cost_params, "c_other_visit", "c_other_baseline",
                    "c_other_follow", "c_other_last")
-  for (p in cost_params) {
+  for (p in v_cost_params) {
     if (!is.numeric(params[[p]]) || length(params[[p]]) != 1L || !is.finite(params[[p]])) {
       stop("Cost parameter '", p, "' must be a finite numeric scalar.")
     }
@@ -99,7 +99,7 @@ validate_model_params <- function(params, n_points = NULL) {
   }
 
   # Validate prevalence parameters are in [0, 1]
-  for (p in prevalence_params) {
+  for (p in v_prevalence_params) {
     require_finite_scalar(p)
     if (params[[p]] < 0 || params[[p]] > 1) {
       stop("Prevalence '", p, "' must be in [0,1]. Got: ", params[[p]])
@@ -117,7 +117,7 @@ validate_model_params <- function(params, n_points = NULL) {
   # Schedules are 0/1 indicators on the model grid (issues #49, #172). A
   # schedule of another length means it was built for a different horizon.
   if (!is.null(n_points)) {
-    for (p in required_vectors) {
+    for (p in v_required_vectors) {
       v <- params[[p]]
       if (!is.numeric(v) || length(v) != n_points) {
         stop("Schedule '", p, "' has length ", length(v), " but expected ", n_points,
@@ -188,9 +188,9 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # These must exist in the global environment before calling model_fun in PSA mode.
 
   # Get economic strategies and biomarkers from central config.
-  strat_names <- get_strategies()
+  v_strat_names <- get_strategies()
   control_strategy <- get_control_strategy()
-  biomarkers_to_run <- get_biomarkers()
+  v_biomarkers_to_run <- get_biomarkers()
 
   # Validate input parameters (Issue #47)
   validate_model_params(params, n_points = time_horizon + 1)
@@ -198,13 +198,13 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
 
-  population_weights <- NULL
+  v_population_weights <- NULL
   if (!is.null(prediction_population)) {
-    population_weights <- model_population_weights(params, prediction_population)
-    if (!isTRUE(all.equal(population_weights, params$population_weights, tolerance = 1e-12))) {
+    v_population_weights <- model_population_weights(params, prediction_population)
+    if (!isTRUE(all.equal(v_population_weights, params$population_weights, tolerance = 1e-12))) {
       if (is.null(params$population_curves)) stop("Population changes require patient-level prediction curves.")
       params <- set_population_predictions(params, standardize_population_curves(
-        params$population_curves, prediction_population, population_weights))
+        params$population_curves, prediction_population, v_population_weights))
     }
   }
 
@@ -273,34 +273,34 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     # (issue #151).
 
     tryCatch({
-      os_control <- generate_psa_population_averaged_predictions(
+      v_os_control <- generate_psa_population_averaged_predictions(
         sampling_model_list = joint_sampling_models,
         outcome = "os",
         sample_idx = sim_idx,
         data_original = prediction_population,
-        weights = population_weights,
+        weights = v_population_weights,
         time_points = seq(0, time_horizon)
       )
 
-      pfs_control <- generate_psa_population_averaged_predictions(
+      v_pfs_control <- generate_psa_population_averaged_predictions(
         sampling_model_list = joint_sampling_models,
         outcome = "pfs",
         sample_idx = sim_idx,
         data_original = prediction_population,
-        weights = population_weights,
+        weights = v_population_weights,
         time_points = seq(0, time_horizon)
       )
 
       # A missing or invalid prediction (issue #60: not finite, outside
       # [0, 1], not starting at 1, or increasing) is a failed draw.
-      if (!valid_psa_curves(os_control, pfs_control)) {
+      if (!valid_psa_curves(v_os_control, v_pfs_control)) {
         warning("Missing or invalid control survival curves for sim ", sim_idx,
                 " - using base case curves")
         fallback_used <- TRUE  # Issue #79: Track fallback
       } else {
         # Update params with population-averaged predictions
-        params$p_os[[paste0(control_strategy, "_OS")]] <- os_control
-        params$p_pfs[[paste0(control_strategy, "_PFS")]] <- pfs_control
+        params$p_os[[paste0(control_strategy, "_OS")]] <- v_os_control
+        params$p_pfs[[paste0(control_strategy, "_PFS")]] <- v_pfs_control
       }
 
     }, error = function(e) {
@@ -317,7 +317,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     #   - Biomarker- subgroup: ALL biomarker- patients with control Rx
     # Weighted combination uses the marginals of the common target population
 
-    for(biomarker in biomarkers_to_run) {
+    for(biomarker in v_biomarkers_to_run) {
       tryCatch({
         # Get population-averaged predictions for BOTH subgroups
         preds_os <- generate_psa_population_averaged_predictions(
@@ -326,7 +326,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
           outcome = "os",
           sample_idx = sim_idx,
           data_original = prediction_population,
-          weights = population_weights,
+          weights = v_population_weights,
           time_points = seq(0, time_horizon)
         )
 
@@ -336,7 +336,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
           outcome = "pfs",
           sample_idx = sim_idx,
           data_original = prediction_population,
-          weights = population_weights,
+          weights = v_population_weights,
           time_points = seq(0, time_horizon)
         )
 
@@ -371,16 +371,16 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # INITIALIZE RESULTS STORAGE
   # =========================================================================
   
-  results <- data.frame(
-    Strategy = as.character(strat_names),
-    Cost = numeric(length(strat_names)),
-    Effect = numeric(length(strat_names)),
+  df_results <- data.frame(
+    Strategy = as.character(v_strat_names),
+    Cost = numeric(length(v_strat_names)),
+    Effect = numeric(length(v_strat_names)),
     stringsAsFactors = FALSE
   )
   
   traces <- list()
   if(return_traces) {
-    for(strat in strat_names) {
+    for(strat in v_strat_names) {
       traces[[strat]] <- list()
     }
   }
@@ -408,8 +408,8 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # clamp for PSA and explicitly supplied curves, and emit a structured warning
   # that psa_functions.R can aggregate.
   enforce_survival_ordering <- function(pfs, os, strategy, subgroup) {
-    violation_idx <- which(pfs > os)
-    if (length(violation_idx) == 0) {
+    v_violation_idx <- which(pfs > os)
+    if (length(v_violation_idx) == 0) {
       return(pfs)
     }
 
@@ -423,15 +423,15 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     if (determpsa == "det") {
       stop(
         "Base-case survival ordering invariant failed for ", curve_label,
-        ": PFS exceeded OS at ", length(violation_idx), " time points. ",
+        ": PFS exceeded OS at ", length(v_violation_idx), " time points. ",
         "Refit using ordering-constrained distribution selection."
       )
     }
 
-    max_excess <- max(pfs[violation_idx] - os[violation_idx])
+    max_excess <- max(pfs[v_violation_idx] - os[v_violation_idx])
     warning(warningCondition(
       paste0(
-        "PFS > OS constraint enforced at ", length(violation_idx),
+        "PFS > OS constraint enforced at ", length(v_violation_idx),
         " time points (", curve_label, ")",
         if (!is.null(sim_idx)) paste0(" [sim ", sim_idx, "]") else "",
         "; max excess=", signif(max_excess, 4)
@@ -439,7 +439,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
       class = "survival_ordering_warning",
       strategy = strategy,
       subgroup = subgroup,
-      n_violations = length(violation_idx),
+      n_violations = length(v_violation_idx),
       max_excess = max_excess,
       sim_idx = sim_idx
     ))
@@ -453,16 +453,16 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # Get control survival curves (either base case or from resampling)
   control_os_key <- paste0(control_strategy, "_OS")
   control_pfs_key <- paste0(control_strategy, "_PFS")
-  os_control <- params$p_os[[control_os_key]]
-  pfs_control <- params$p_pfs[[control_pfs_key]]
-  validate_curve(os_control, control_os_key)
-  validate_curve(pfs_control, control_pfs_key)
+  v_os_control <- params$p_os[[control_os_key]]
+  v_pfs_control <- params$p_pfs[[control_pfs_key]]
+  validate_curve(v_os_control, control_os_key)
+  validate_curve(v_pfs_control, control_pfs_key)
 
-  pfs_control <- enforce_survival_ordering(
-    pfs_control, os_control, control_strategy, "control"
+  v_pfs_control <- enforce_survival_ordering(
+    v_pfs_control, v_os_control, control_strategy, "control"
   )
 
-  control_states <- partitioned_survival_states(os_control, pfs_control)
+  control_states <- partitioned_survival_states(v_os_control, v_pfs_control)
   p_pf_control <- control_states$p_pf
   p_p_control <- control_states$p_p
   p_d_control <- control_states$p_d
@@ -481,8 +481,8 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   )
   
   # Store results for control
-  results$Cost[results$Strategy == control_strategy] <- control_results$costs_total
-  results$Effect[results$Strategy == control_strategy] <- control_results$qalys_total
+  df_results$Cost[df_results$Strategy == control_strategy] <- control_results$costs_total
+  df_results$Effect[df_results$Strategy == control_strategy] <- control_results$qalys_total
   
   # Store traces for control if requested
   if(return_traces) {
@@ -501,7 +501,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # =========================================================================
   
   # Loop through each biomarker strategy
-  for(biomarker in biomarkers_to_run) {
+  for(biomarker in v_biomarkers_to_run) {
     # Get biomarker prevalence directly from params
     biomarker_prev <- params[[paste0("p_", biomarker)]]
     
@@ -510,16 +510,16 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     # -----------------------------------------------------------------------
     
     # Get biomarker positive survival curves
-    os_pos <- params$p_os[[paste0(biomarker, "_pos_OS")]]
-    pfs_pos <- params$p_pfs[[paste0(biomarker, "_pos_PFS")]]
-    validate_curve(os_pos, paste0(biomarker, "_pos_OS"))
-    validate_curve(pfs_pos, paste0(biomarker, "_pos_PFS"))
+    v_os_pos <- params$p_os[[paste0(biomarker, "_pos_OS")]]
+    v_pfs_pos <- params$p_pfs[[paste0(biomarker, "_pos_PFS")]]
+    validate_curve(v_os_pos, paste0(biomarker, "_pos_OS"))
+    validate_curve(v_pfs_pos, paste0(biomarker, "_pos_PFS"))
 
-    pfs_pos <- enforce_survival_ordering(
-      pfs_pos, os_pos, biomarker, "positive"
+    v_pfs_pos <- enforce_survival_ordering(
+      v_pfs_pos, v_os_pos, biomarker, "positive"
     )
 
-    pos_states <- partitioned_survival_states(os_pos, pfs_pos)
+    pos_states <- partitioned_survival_states(v_os_pos, v_pfs_pos)
     p_pf_pos <- pos_states$p_pf
     p_p_pos <- pos_states$p_p
     p_d_pos <- pos_states$p_d
@@ -529,16 +529,16 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     # -----------------------------------------------------------------------
     
     # Get biomarker negative survival curves
-    os_neg <- params$p_os[[paste0(biomarker, "_neg_OS")]]
-    pfs_neg <- params$p_pfs[[paste0(biomarker, "_neg_PFS")]]
-    validate_curve(os_neg, paste0(biomarker, "_neg_OS"))
-    validate_curve(pfs_neg, paste0(biomarker, "_neg_PFS"))
+    v_os_neg <- params$p_os[[paste0(biomarker, "_neg_OS")]]
+    v_pfs_neg <- params$p_pfs[[paste0(biomarker, "_neg_PFS")]]
+    validate_curve(v_os_neg, paste0(biomarker, "_neg_OS"))
+    validate_curve(v_pfs_neg, paste0(biomarker, "_neg_PFS"))
 
-    pfs_neg <- enforce_survival_ordering(
-      pfs_neg, os_neg, biomarker, "negative"
+    v_pfs_neg <- enforce_survival_ordering(
+      v_pfs_neg, v_os_neg, biomarker, "negative"
     )
 
-    neg_states <- partitioned_survival_states(os_neg, pfs_neg)
+    neg_states <- partitioned_survival_states(v_os_neg, v_pfs_neg)
     p_pf_neg <- neg_states$p_pf
     p_p_neg <- neg_states$p_p
     p_d_neg <- neg_states$p_d
@@ -584,8 +584,8 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
       (1 - biomarker_prev) * neg_results$qalys_total
     
     # Store results for this biomarker strategy
-    results$Cost[results$Strategy == biomarker] <- total_cost
-    results$Effect[results$Strategy == biomarker] <- total_effect
+    df_results$Cost[df_results$Strategy == biomarker] <- total_cost
+    df_results$Effect[df_results$Strategy == biomarker] <- total_effect
     
     # Store traces if requested
     if(return_traces) {
@@ -624,11 +624,11 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # Attach fallback_used attribute for PSA loop to detect failures (Issue #79)
   if(return_traces) {
     result <- list(
-      results = results,
+      results = df_results,
       traces = traces
     )
   } else {
-    result <- results
+    result <- df_results
   }
 
   # Add fallback_used attribute so PSA loop can detect and replace failed iterations

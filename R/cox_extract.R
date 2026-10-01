@@ -12,7 +12,7 @@ FIRTH_COX_MAXIT <- 500
 #' attribute of the returned fit for coxphf_convergence() (issue #176). The
 #' iteration limit is kept in the "maxit" attribute.
 fit_firth_cox <- function(formula, data, label = "model") {
-  fit_warnings <- character()
+  v_fit_warnings <- character()
   fit <- tryCatch(
     withCallingHandlers(
       coxphf::coxphf(
@@ -23,7 +23,7 @@ fit_firth_cox <- function(formula, data, label = "model") {
         maxit = FIRTH_COX_MAXIT,
         maxstep = 0.1
       ),
-      warning = function(w) fit_warnings <<- c(fit_warnings, conditionMessage(w))
+      warning = function(w) v_fit_warnings <<- c(v_fit_warnings, conditionMessage(w))
     ),
     error = function(e) {
       warning(paste("coxphf failed for", label, ":", e$message))
@@ -31,7 +31,7 @@ fit_firth_cox <- function(formula, data, label = "model") {
     }
   )
   if (!is.null(fit)) {
-    attr(fit, "fit_warnings") <- fit_warnings
+    attr(fit, "fit_warnings") <- v_fit_warnings
     attr(fit, "maxit") <- FIRTH_COX_MAXIT
   }
   fit
@@ -66,18 +66,18 @@ coxphf_convergence <- function(model, maxit = NULL) {
   if (!is.numeric(maxit) || length(maxit) != 1L) {
     stop("coxphf_convergence(): cannot determine the iteration limit; pass maxit.")
   }
-  iter_ci <- model$iter.ci
-  reached <- model$iter >= maxit || (!is.null(iter_ci) && any(iter_ci >= maxit))
-  pl_error <- !is.null(iter_ci) && any(iter_ci == -9)
-  warns <- attr(model, "fit_warnings")
-  if (is.null(warns)) warns <- character()
+  m_iter_ci <- model$iter.ci
+  reached <- model$iter >= maxit || (!is.null(m_iter_ci) && any(m_iter_ci >= maxit))
+  pl_error <- !is.null(m_iter_ci) && any(m_iter_ci == -9)
+  v_warns <- attr(model, "fit_warnings")
+  if (is.null(v_warns)) v_warns <- character()
   status <- if (reached) "Reached maxit" else
-    if (pl_error || length(warns) > 0) "Numerical warning" else "Converged"
+    if (pl_error || length(v_warns) > 0) "Numerical warning" else "Converged"
   y <- model$y
   data.frame(N = nrow(y), Events = as.integer(sum(y[, "status"])),
              Iterations = model$iter,
-             Max_PL_iterations = if (is.null(iter_ci)) NA_real_ else max(iter_ci),
-             Maxit = maxit, Warnings = length(warns), Status = status,
+             Max_PL_iterations = if (is.null(m_iter_ci)) NA_real_ else max(m_iter_ci),
+             Maxit = maxit, Warnings = length(v_warns), Status = status,
              stringsAsFactors = FALSE)
 }
 
@@ -87,7 +87,7 @@ coxphf_convergence <- function(model, maxit = NULL) {
 extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
   if (is.null(model)) return(NULL)
 
-  results <- data.frame(
+  df_results <- data.frame(
     Term = names(model$coefficients),
     HR = exp(model$coefficients),
     CI_Lower = model$ci.lower,
@@ -97,12 +97,12 @@ extract_coxphf_results <- function(model, reorder_interactions = TRUE) {
   )
 
   if (isTRUE(reorder_interactions)) {
-    is_interaction <- grepl(":", results$Term)
-    results <- rbind(results[is_interaction, ], results[!is_interaction, ])
+    v_is_interaction <- grepl(":", df_results$Term)
+    df_results <- rbind(df_results[v_is_interaction, ], df_results[!v_is_interaction, ])
   }
 
-  rownames(results) <- NULL
-  results
+  rownames(df_results) <- NULL
+  df_results
 }
 
 #' Extract the first matching interaction HR and profile-likelihood interval

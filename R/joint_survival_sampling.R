@@ -18,25 +18,25 @@ calibrate_joint_covariance <- function(bootstrap_os, bootstrap_pfs, cov_os, cov_
     stop("Too few paired bootstrap fits for joint covariance estimation")
   if (ncol(bootstrap_os) != nrow(cov_os) || ncol(bootstrap_pfs) != nrow(cov_pfs))
     stop("Bootstrap and fitted covariance dimensions differ")
-  bootstrap_cov <- stats::cov(cbind(bootstrap_os, bootstrap_pfs))
+  m_bootstrap_cov <- stats::cov(cbind(bootstrap_os, bootstrap_pfs))
   ios <- seq_len(ncol(bootstrap_os))
   ipfs <- length(ios) + seq_len(ncol(bootstrap_pfs))
   # If B is the paired bootstrap covariance, the cross-block is
   # V_os^(1/2) B_os^(-1/2) B_os,pfs B_pfs^(-1/2) V_pfs^(1/2).
   # Congruence with a block-diagonal transform preserves positive
   # semidefiniteness; no clipping of correlations or marginal variances.
-  cross <- covariance_root(cov_os) %*%
-    covariance_root(bootstrap_cov[ios, ios, drop = FALSE], inverse = TRUE) %*%
-    bootstrap_cov[ios, ipfs, drop = FALSE] %*%
-    covariance_root(bootstrap_cov[ipfs, ipfs, drop = FALSE], inverse = TRUE) %*%
+  m_cross <- covariance_root(cov_os) %*%
+    covariance_root(m_bootstrap_cov[ios, ios, drop = FALSE], inverse = TRUE) %*%
+    m_bootstrap_cov[ios, ipfs, drop = FALSE] %*%
+    covariance_root(m_bootstrap_cov[ipfs, ipfs, drop = FALSE], inverse = TRUE) %*%
     covariance_root(cov_pfs)
-  joint <- rbind(cbind(cov_os, cross), cbind(t(cross), cov_pfs))
+  m_joint <- rbind(cbind(cov_os, m_cross), cbind(t(m_cross), cov_pfs))
   nm <- c(paste0("os::", colnames(bootstrap_os)),
           paste0("pfs::", colnames(bootstrap_pfs)))
-  dimnames(joint) <- list(nm, nm)
-  if (min(eigen(joint, symmetric = TRUE, only.values = TRUE)$values) < -1e-10)
+  dimnames(m_joint) <- list(nm, nm)
+  if (min(eigen(m_joint, symmetric = TRUE, only.values = TRUE)$values) < -1e-10)
     stop("Estimated joint covariance is not positive semidefinite")
-  list(covariance = joint, bootstrap_covariance = bootstrap_cov)
+  list(covariance = m_joint, bootstrap_covariance = m_bootstrap_cov)
 }
 
 estimate_joint_survival_covariance <- function(formula_os, formula_pfs, data,
@@ -60,10 +60,10 @@ estimate_joint_survival_covariance <- function(formula_os, formula_pfs, data,
   for (b in seq_len(n_bootstrap)) {
     # One patient index vector serves BOTH endpoints; endpoint resampling
     # separately would erase the cross-covariance this procedure estimates.
-    rows <- sample.int(nrow(data), nrow(data), replace = TRUE)
+    v_rows <- sample.int(nrow(data), nrow(data), replace = TRUE)
     pair <- tryCatch({
-      os <- suppressWarnings(flexsurv::flexsurvreg(formula_os, data = data[rows, ], dist = dist_os))
-      pfs <- suppressWarnings(flexsurv::flexsurvreg(formula_pfs, data = data[rows, ], dist = dist_pfs))
+      os <- suppressWarnings(flexsurv::flexsurvreg(formula_os, data = data[v_rows, ], dist = dist_os))
+      pfs <- suppressWarnings(flexsurv::flexsurvreg(formula_pfs, data = data[v_rows, ], dist = dist_pfs))
       candidate <- list(os = os, pfs = pfs)
       for (outcome in names(candidate)) {
         fit <- candidate[[outcome]]
@@ -82,14 +82,14 @@ estimate_joint_survival_covariance <- function(formula_os, formula_pfs, data,
       cat(sprintf("  Paired covariance bootstrap: %d/%d attempted; %d failed pairs\n",
                   b, n_bootstrap, sum(!is.na(errors[seq_len(b)]))))
   }
-  valid <- is.na(errors)
-  if (mean(!valid) > max_failure_rate)
+  v_valid <- is.na(errors)
+  if (mean(!v_valid) > max_failure_rate)
     stop(sprintf("Paired covariance bootstrap failed for %d/%d pairs (limit %.0f%%)",
-                 sum(!valid), n_bootstrap, 100 * max_failure_rate))
-  boot <- lapply(boot, function(x) x[valid, , drop = FALSE])
+                 sum(!v_valid), n_bootstrap, 100 * max_failure_rate))
+  boot <- lapply(boot, function(x) x[v_valid, , drop = FALSE])
   estimate <- calibrate_joint_covariance(boot$os, boot$pfs, original_os$cov, original_pfs$cov)
   c(estimate, list(bootstrap_draws = boot, n_attempted = n_bootstrap,
-                  n_successful = sum(valid), n_failed = sum(!valid),
+                  n_successful = sum(v_valid), n_failed = sum(!v_valid),
                   failure_reasons = table(errors, useNA = "no"),
                   seed = seed, resampling = "paired patients, unstratified",
                   calibration = "block whitening; fitted marginal covariances"))
@@ -98,21 +98,21 @@ estimate_joint_survival_covariance <- function(formula_os, formula_pfs, data,
 draw_joint_survival_coefficients <- function(original_os, original_pfs, covariance,
                                               n_samples, seed) {
   fits <- list(os = original_os, pfs = original_pfs)
-  mean <- unlist(lapply(fits, function(fit) fit$opt$par), use.names = FALSE)
-  if (!identical(dim(covariance), c(length(mean), length(mean))) ||
+  v_mean <- unlist(lapply(fits, function(fit) fit$opt$par), use.names = FALSE)
+  if (!identical(dim(covariance), c(length(v_mean), length(v_mean))) ||
       any(!is.finite(covariance))) stop("Invalid joint coefficient covariance")
   # Separate reproducible draw stream: bootstrap RNG consumption never alters
   # the normal variates. A zero covariance returns the fitted coefficients.
   set.seed(seed)
-  joint <- mvtnorm::rmvnorm(n_samples, mean, covariance)
+  m_joint <- mvtnorm::rmvnorm(n_samples, v_mean, covariance)
   offset <- 0L
   lapply(fits, function(fit) {
     nm <- rownames(fit$res)
-    draws <- matrix(rep(fit$res.t[, "est"], each = n_samples), nrow = n_samples,
+    m_draws <- matrix(rep(fit$res.t[, "est"], each = n_samples), nrow = n_samples,
                     dimnames = list(NULL, nm))
     idx <- offset + seq_along(fit$optpars)
-    draws[, fit$optpars] <- joint[, idx, drop = FALSE]
+    m_draws[, fit$optpars] <- m_joint[, idx, drop = FALSE]
     offset <<- offset + length(fit$optpars)
-    draws
+    m_draws
   })
 }

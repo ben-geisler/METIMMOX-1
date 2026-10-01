@@ -28,14 +28,14 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
   warning("sampling_models not available - interaction EVPPI will be skipped")
   interaction_params_available <- FALSE
 } else {
-  interaction_coefs_all <- extract_interaction_coefficients(
+  df_interaction_coefs_all <- extract_interaction_coefficients(
     sampling_models = sampling_models,
     n_sim = n_sim
   )
 
   # Index by the cached model that produced each retained row, not by the draw
   # number: replaced draws were run with another cached model (issue #156).
-  retained_sim_ids <- if ("model_idx" %in% names(psa_params)) {
+  v_retained_sim_ids <- if ("model_idx" %in% names(psa_params)) {
     psa_params$model_idx
   } else if ("sim" %in% names(psa_params)) {
     warning("psa_params has no model_idx column; indexing interaction ",
@@ -45,15 +45,15 @@ if (!exists("sampling_models") || is.null(sampling_models)) {
     seq_len(nrow(psa_params))
   }
   valid_sim_ids <-
-    length(retained_sim_ids) == nrow(psa_params) &&
-    all(is.finite(retained_sim_ids)) &&
-    all(retained_sim_ids == as.integer(retained_sim_ids)) &&
-    all(retained_sim_ids >= 1L & retained_sim_ids <= n_sim)
+    length(v_retained_sim_ids) == nrow(psa_params) &&
+    all(is.finite(v_retained_sim_ids)) &&
+    all(v_retained_sim_ids == as.integer(v_retained_sim_ids)) &&
+    all(v_retained_sim_ids >= 1L & v_retained_sim_ids <= n_sim)
 
-  if (!is.null(interaction_coefs_all) &&
-      nrow(interaction_coefs_all) == n_sim && valid_sim_ids) {
-    interaction_coefs <- interaction_coefs_all[retained_sim_ids, , drop = FALSE]
-    psa_params <- cbind(psa_params, interaction_coefs)
+  if (!is.null(df_interaction_coefs_all) &&
+      nrow(df_interaction_coefs_all) == n_sim && valid_sim_ids) {
+    df_interaction_coefs <- df_interaction_coefs_all[v_retained_sim_ids, , drop = FALSE]
+    psa_params <- cbind(psa_params, df_interaction_coefs)
     attr(psa_params, "seed") <- analysis_seed
     cat("Interaction coefficients appended to psa_params\n")
     cat("psa_params now has", ncol(psa_params), "columns\n")
@@ -80,19 +80,19 @@ cat("  - Number of strategies:", psa_obj$n_strategies, "\n")
 cat("  - Strategy names:", paste(psa_obj$strategies, collapse = ", "), "\n")
 
 # Check cost and effect matrices
-cost_matrix <- as.matrix(psa_obj$cost)
-effect_matrix <- as.matrix(psa_obj$effect)
+m_cost <- as.matrix(psa_obj$cost)
+m_effect <- as.matrix(psa_obj$effect)
 
 cat("\nCost matrix summary:\n")
-print(summary(cost_matrix))
+print(summary(m_cost))
 cat("\nEffect matrix summary:\n")
-print(summary(effect_matrix))
+print(summary(m_effect))
 
 # Calculate NMB and check for variation
 cat("\n=== NMB ANALYSIS ===\n")
-nmb_matrix <- effect_matrix * WTP - cost_matrix
+m_nmb <- m_effect * WTP - m_cost
 cat("NMB matrix summary:\n")
-print(summary(nmb_matrix))
+print(summary(m_nmb))
 
 # Total EVPI via dampack. This equals the population-NMB definition used above
 # (mean(max NMB per draw) - max(mean NMB per strategy)); verified equal to the
@@ -118,10 +118,10 @@ evppi_config <- configure_evppi_analysis(
   include_interactions = interaction_params_available,
   available_params = colnames(psa_params)
 )
-evppi_params <- evppi_config$params
+v_evppi_params <- evppi_config$params
 param_groups <- evppi_config$groups
 rm(evppi_config)
-cat("EVPPI parameters:", length(evppi_params),
+cat("EVPPI parameters:", length(v_evppi_params),
     "| parameter groups:", length(param_groups), "\n")
 
 # Run EVPPI analysis: regression estimator (voi::evppi, GAM) with Monte Carlo
@@ -131,7 +131,7 @@ evppi_results <- run_evppi_analysis(
   psa_obj = psa_obj,
   psa_params = psa_params,
   wtp = WTP,
-  evppi_params = evppi_params,
+  evppi_params = v_evppi_params,
   param_groups = param_groups,
   seed = analysis_seed
 )
@@ -201,26 +201,26 @@ if (nrow(evppi_results) > 0) {
 
   # Identify high-priority parameters
   high_priority_threshold <- 0.01  # 1% of EVPI
-  high_priority_params <- evppi_results[
+  df_high_priority_params <- evppi_results[
     which(evppi_results$evppi_percent_of_evpi > high_priority_threshold * 100), ]
 
-  if (nrow(high_priority_params) > 0) {
+  if (nrow(df_high_priority_params) > 0) {
     cat("\nHigh-priority parameters for future research (>", high_priority_threshold * 100, "% of EVPI):\n")
-    for (i in seq_len(nrow(high_priority_params))) {
-      cat("  ", high_priority_params$parameter[i], ": €",
-          round(high_priority_params$evppi[i], 4),
-          "(SE", round(high_priority_params$evppi_se[i], 4), ")\n")
+    for (i in seq_len(nrow(df_high_priority_params))) {
+      cat("  ", df_high_priority_params$parameter[i], ": €",
+          round(df_high_priority_params$evppi[i], 4),
+          "(SE", round(df_high_priority_params$evppi_se[i], 4), ")\n")
     }
   } else {
     cat("\nNo parameters exceed the high-priority threshold\n")
   }
 
   # Create visualization if we have meaningful results
-  meaningful_results <- evppi_results[which(evppi_results$evppi > 0), ]
-  if (nrow(meaningful_results) > 0) {
+  df_meaningful_results <- evppi_results[which(evppi_results$evppi > 0), ]
+  if (nrow(df_meaningful_results) > 0) {
     par(mar = c(5, 8, 4, 2))
-    barplot(meaningful_results$evppi, 
-            names.arg = meaningful_results$parameter,
+    barplot(df_meaningful_results$evppi, 
+            names.arg = df_meaningful_results$parameter,
             horiz = TRUE,
             las = 1,
             main = "Expected Value of Partially Perfect Information (EVPPI)",
@@ -237,7 +237,7 @@ evppi_cache_file <- evppi_path()
 # Provenance: the PSA cache fingerprint this EVPPI run consumed (issue #156).
 evppi_psa_fingerprint <- psa_obj$fingerprint
 evppi_identity <- evppi_cache_fingerprint(
-  psa_obj, WTP, list(params = evppi_params, groups = param_groups),
+  psa_obj, WTP, list(params = v_evppi_params, groups = param_groups),
   analysis_seed, current_population_inputs())
 evppi_fingerprint <- evppi_identity$fingerprint
 evppi_fingerprint_inputs <- evppi_identity$inputs

@@ -56,12 +56,12 @@ for (biomarker in get_biomarkers()) {
 
 # Remove rows with missing values required for economic survival modeling.
 # TLR is intentionally not part of this complete-case filter.
-required_model_vars <- c(
+v_required_model_vars <- c(
   "Age", "sex", "Rx", get_biomarkers(),
   "OSwk", "Death", "PFSwk", "Progression"
 )
 data_complete <- economic_prediction_population(data)
-rm(required_model_vars)
+rm(v_required_model_vars)
 
 # ===============================================================================
 # MODEL FORMULA DEFINITIONS
@@ -89,7 +89,7 @@ cat("Economic biomarkers:", paste(model_config$biomarkers, collapse = ", "), "\n
 cat("Formula sets to be fitted:", paste(names(model_formulas), collapse = ", "), "\n")
 
 # Define parametric distributions to test
-distributions_to_test <- c(
+v_distributions_to_test <- c(
   "exponential", "weibull", "weibullph", "llogis",
   "lognormal", "gamma", "gompertz", "gengamma", "genf"
 )
@@ -118,14 +118,14 @@ for (formula_set in names(model_formulas)) {
   os_results <- fit_all_direct(
     fit_data = data_complete,
     fit_formula = model_formulas[[formula_set]]$os,
-    fit_dists = distributions_to_test
+    fit_dists = v_distributions_to_test
   )
 
   # Fit PFS models using fit_all_direct function
   pfs_results <- fit_all_direct(
     fit_data = data_complete,
     fit_formula = model_formulas[[formula_set]]$pfs,
-    fit_dists = distributions_to_test
+    fit_dists = v_distributions_to_test
   )
 
   # Store fitted models in organized structure
@@ -163,16 +163,25 @@ for (formula_set in names(model_formulas)) {
 # ORDERING-CONSTRAINED JOINT MODEL SELECTION
 # ===============================================================================
 
+#' Collect the information-criteria tables of one outcome across formula sets
+#'
+#' Reads `models[[formula_set]][[paste0(outcome, "_ic")]]` from the script-level
+#' `models` object for every formula set in `model_formulas` and stacks them.
+#'
+#' @param outcome Outcome prefix, "os" or "pfs".
+#' @return Data frame with a `formula_set` column followed by the columns of
+#'   `extract_ic_single()` (one row per fitted distribution), or NULL when no
+#'   formula set has an information-criteria table for `outcome`.
 collect_ic <- function(outcome) {
   pieces <- lapply(names(model_formulas), function(formula_set) {
     ic_name <- paste0(outcome, "_ic")
-    ic <- models[[formula_set]][[ic_name]]
+    df_ic <- models[[formula_set]][[ic_name]]
 
-    if (is.null(ic)) {
+    if (is.null(df_ic)) {
       return(NULL)
     }
 
-    data.frame(formula_set = formula_set, ic, stringsAsFactors = FALSE)
+    data.frame(formula_set = formula_set, df_ic, stringsAsFactors = FALSE)
   })
 
   pieces <- Filter(Negate(is.null), pieces)
@@ -184,9 +193,24 @@ collect_ic <- function(outcome) {
   do.call(rbind, pieces)
 }
 
-all_os_aic <- collect_ic("os")
-all_pfs_aic <- collect_ic("pfs")
+df_all_os_aic <- collect_ic("os")
+df_all_pfs_aic <- collect_ic("pfs")
 
+#' Build the candidate table for ordering-constrained joint model selection
+#'
+#' Drops candidates without an AIC, looks up each fitted model in the
+#' script-level `models` object and predicts its population-averaged endpoint
+#' curves for `data_complete` on `time_points` (control and every economic
+#' biomarker subgroup). A prediction error is stored as the condition object
+#' rather than raised, so `ordering_check()` can report it per pair.
+#'
+#' @param ic_data Output of `collect_ic()` for one outcome (columns
+#'   `formula_set`, `Distribution`, `AIC`, ...).
+#' @param outcome Outcome name in `models[[formula_set]]`, "os" or "pfs".
+#' @return Data frame with columns `formula_set`, `distribution`, `AIC` and the
+#'   list column `ordering_data` (curves from
+#'   `generate_population_averaged_endpoint_curves()` or an error condition),
+#'   as expected by `find_best_ordered_model_pair()`.
 make_candidates <- function(ic_data, outcome) {
   ic_data <- ic_data[!is.na(ic_data$AIC), , drop = FALSE]
   candidate_models <- Map(
@@ -216,14 +240,24 @@ make_candidates <- function(ic_data, outcome) {
   )
 }
 
-if (!is.null(all_os_aic) && !is.null(all_pfs_aic)) {
-  os_candidates <- make_candidates(all_os_aic, "os")
-  pfs_candidates <- make_candidates(all_pfs_aic, "pfs")
+if (!is.null(df_all_os_aic) && !is.null(df_all_pfs_aic)) {
+  os_candidates <- make_candidates(df_all_os_aic, "os")
+  pfs_candidates <- make_candidates(df_all_pfs_aic, "pfs")
 
   if (nrow(os_candidates) == 0 || nrow(pfs_candidates) == 0) {
     stop("No valid fitted OS or PFS candidates are available for joint selection.")
   }
 
+  #' Check OS >= PFS for one candidate OS/PFS pair
+  #'
+  #' Re-raises a prediction error stored by `make_candidates()`, otherwise
+  #' compares the two sets of population-averaged curves.
+  #'
+  #' @param os_curves `ordering_data` entry of an OS candidate (curves or an
+  #'   error condition).
+  #' @param pfs_curves `ordering_data` entry of a PFS candidate (curves or an
+  #'   error condition).
+  #' @return Result of `check_endpoint_curve_ordering()` for the pair.
   ordering_check <- function(os_curves, pfs_curves) {
     if (inherits(os_curves, "condition")) stop(conditionMessage(os_curves))
     if (inherits(pfs_curves, "condition")) stop(conditionMessage(pfs_curves))
@@ -248,30 +282,30 @@ if (!is.null(all_os_aic) && !is.null(all_pfs_aic)) {
     )
   }
 
-  selected <- ordered_selection$selected[1, ]
-  models$best_fit$os <- models[[selected$os_formula_set]]$os[[selected$os_distribution]]
-  models$best_fit$pfs <- models[[selected$pfs_formula_set]]$pfs[[selected$pfs_distribution]]
-  models$best_fit$os_structure <- selected$os_formula_set
-  models$best_fit$pfs_structure <- selected$pfs_formula_set
-  models$best_fit$os_distribution <- selected$os_distribution
-  models$best_fit$pfs_distribution <- selected$pfs_distribution
-  models$best_fit$os_aic <- selected$os_ic
-  models$best_fit$pfs_aic <- selected$pfs_ic
-  models$best_fit$combined_aic <- selected$combined_ic
+  df_selected <- ordered_selection$selected[1, ]
+  models$best_fit$os <- models[[df_selected$os_formula_set]]$os[[df_selected$os_distribution]]
+  models$best_fit$pfs <- models[[df_selected$pfs_formula_set]]$pfs[[df_selected$pfs_distribution]]
+  models$best_fit$os_structure <- df_selected$os_formula_set
+  models$best_fit$pfs_structure <- df_selected$pfs_formula_set
+  models$best_fit$os_distribution <- df_selected$os_distribution
+  models$best_fit$pfs_distribution <- df_selected$pfs_distribution
+  models$best_fit$os_aic <- df_selected$os_ic
+  models$best_fit$pfs_aic <- df_selected$pfs_ic
+  models$best_fit$combined_aic <- df_selected$combined_ic
   models$best_fit$ordering_aic_penalty <- ordered_selection$ic_penalty
 
   # Candidate-fit warnings are recorded, not raised; a warning from a selected
   # family still reaches the caller.
-  selected_fit_warnings <- c(
-    models[[selected$os_formula_set]]$os_fit_warnings[[selected$os_distribution]],
-    models[[selected$pfs_formula_set]]$pfs_fit_warnings[[selected$pfs_distribution]])
-  for (msg in unique(selected_fit_warnings)) {
+  v_selected_fit_warnings <- c(
+    models[[df_selected$os_formula_set]]$os_fit_warnings[[df_selected$os_distribution]],
+    models[[df_selected$pfs_formula_set]]$pfs_fit_warnings[[df_selected$pfs_distribution]])
+  for (msg in unique(v_selected_fit_warnings)) {
     warning("Selected survival model fit: ", msg, call. = FALSE)
   }
 
-  cat("Ordering-constrained model pair:", selected$os_distribution, "(OS),",
-      selected$pfs_distribution, "(PFS); combined AIC:",
-      round(selected$combined_ic, 2), "; constraint penalty:",
+  cat("Ordering-constrained model pair:", df_selected$os_distribution, "(OS),",
+      df_selected$pfs_distribution, "(PFS); combined AIC:",
+      round(df_selected$combined_ic, 2), "; constraint penalty:",
       round(ordered_selection$ic_penalty, 2), "\n")
 }
 

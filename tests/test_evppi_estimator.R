@@ -33,6 +33,7 @@ if (!requireNamespace("voi", quietly = TRUE)) {
 }
 source(here::here("R", "evppi_functions.R"))
 
+#' Evaluate `expr` with its printed output suppressed and return its value.
 quiet <- function(expr) {
   out <- NULL
   utils::capture.output(out <- expr)
@@ -47,8 +48,8 @@ sigma <- 1000
 noise_sd <- 300
 
 theta <- rnorm(n, mu, sigma)
-inc_nmb <- theta + rnorm(n, 0, noise_sd)  # incremental NMB, strategy two vs one
-psa_params <- data.frame(
+v_inc_nmb <- theta + rnorm(n, 0, noise_sd)  # incremental NMB, strategy two vs one
+df_psa_params <- data.frame(
   theta = theta,
   noise = rnorm(n),
   n2 = rnorm(n), n3 = rnorm(n), n4 = rnorm(n)
@@ -56,7 +57,7 @@ psa_params <- data.frame(
 # With wtp = 1 and zero costs, effect equals NMB.
 psa_obj <- list(
   cost = cbind(control = rep(0, n), experimental = rep(0, n)),
-  effect = cbind(control = rep(0, n), experimental = inc_nmb)
+  effect = cbind(control = rep(0, n), experimental = v_inc_nmb)
 )
 
 analytic_evppi <- mu * pnorm(mu / sigma) + sigma * dnorm(mu / sigma) - max(mu, 0)
@@ -66,7 +67,7 @@ sample_evppi <- mean(pmax(theta, 0)) - max(mean(theta), 0)
 
 # ---- 1. Analytic case ------------------------------------------------------
 res_theta <- quiet(calculate_evppi_regression(
-  psa_obj, psa_params, "theta", wtp = 1, B = 500, seed = 123L
+  psa_obj, df_psa_params, "theta", wtp = 1, B = 500, seed = 123L
 ))
 stopifnot(
   is.null(res_theta$error),
@@ -84,7 +85,7 @@ stopifnot(
 
 # ---- 2. Pure noise ---------------------------------------------------------
 res_noise <- quiet(calculate_evppi_regression(
-  psa_obj, psa_params, "noise", wtp = 1, B = 500, seed = 123L
+  psa_obj, df_psa_params, "noise", wtp = 1, B = 500, seed = 123L
 ))
 stopifnot(
   is.null(res_noise$error),
@@ -94,7 +95,7 @@ stopifnot(
 
 # ---- 3. Groups -------------------------------------------------------------
 res_group <- quiet(calculate_evppi_regression(
-  psa_obj, psa_params, c("theta", "noise"), wtp = 1, B = 500, seed = 123L
+  psa_obj, df_psa_params, c("theta", "noise"), wtp = 1, B = 500, seed = 123L
 ))
 stopifnot(
   is.null(res_group$error),
@@ -112,7 +113,7 @@ stopifnot(
   )
 )
 res_five <- quiet(calculate_evppi_regression(
-  psa_obj, psa_params, names(psa_params), wtp = 1, B = 500, seed = 123L
+  psa_obj, df_psa_params, names(df_psa_params), wtp = 1, B = 500, seed = 123L
 ))
 stopifnot(
   is.null(res_five$error),
@@ -121,41 +122,41 @@ stopifnot(
     4 * sqrt(res_five$evppi_se^2 + res_theta$evppi_se^2) + 0.02 * res_theta$evpi
 )
 
-groups <- list(both = c("theta", "noise"), all_five = names(psa_params))
-results <- quiet(run_evppi_analysis(
-  psa_obj, psa_params, wtp = 1,
-  evppi_params = names(psa_params), param_groups = groups,
+groups <- list(both = c("theta", "noise"), all_five = names(df_psa_params))
+df_results <- quiet(run_evppi_analysis(
+  psa_obj, df_psa_params, wtp = 1,
+  evppi_params = names(df_psa_params), param_groups = groups,
   seed = 123L, B = 200
 ))
-expected_cols <- c("parameter", "evppi", "evppi_se", "evpi",
+v_expected_cols <- c("parameter", "evppi", "evppi_se", "evpi",
                    "evppi_percent_of_evpi", "method", "n_params", "n_sim", "error")
 stopifnot(
-  nrow(results) == length(psa_params) + length(groups),
-  all(expected_cols %in% names(results)),
-  all(is.finite(results$evppi)),
-  all(is.finite(results$evppi_se)),
-  all(!nzchar(results$error)),
-  all(paste0("[GROUP] ", names(groups)) %in% results$parameter),
-  results$parameter[1] == "theta"  # ranked first
+  nrow(df_results) == length(df_psa_params) + length(groups),
+  all(v_expected_cols %in% names(df_results)),
+  all(is.finite(df_results$evppi)),
+  all(is.finite(df_results$evppi_se)),
+  all(!nzchar(df_results$error)),
+  all(paste0("[GROUP] ", names(groups)) %in% df_results$parameter),
+  df_results$parameter[1] == "theta"  # ranked first
 )
-consistency <- attr(results, "group_consistency")
+df_consistency <- attr(df_results, "group_consistency")
 stopifnot(
-  is.data.frame(consistency),
-  nrow(consistency) == length(groups),
-  all(consistency$max_member == "theta"),
-  !any(consistency$violation)
+  is.data.frame(df_consistency),
+  nrow(df_consistency) == length(groups),
+  all(df_consistency$max_member == "theta"),
+  !any(df_consistency$violation)
 )
 
 # A group reported below its largest member beyond tolerance must be rejected.
-bad <- results
-bad$evppi[bad$parameter == "[GROUP] both"] <-
-  bad$evppi[bad$parameter == "theta"] - 0.5 * bad$evpi[1]
-violations <- check_evppi_group_consistency(bad, groups)
+df_bad <- df_results
+df_bad$evppi[df_bad$parameter == "[GROUP] both"] <-
+  df_bad$evppi[df_bad$parameter == "theta"] - 0.5 * df_bad$evpi[1]
+df_violations <- check_evppi_group_consistency(df_bad, groups)
 stopifnot(
-  violations$violation[violations$group == "both"],
-  !violations$violation[violations$group == "all_five"]
+  df_violations$violation[df_violations$group == "both"],
+  !df_violations$violation[df_violations$group == "all_five"]
 )
-assertion <- tryCatch(assert_evppi_group_consistency(bad, groups),
+assertion <- tryCatch(assert_evppi_group_consistency(df_bad, groups),
                       error = function(e) e)
 stopifnot(
   inherits(assertion, "error"),
@@ -163,7 +164,7 @@ stopifnot(
 )
 warned <- tryCatch(
   quiet(run_evppi_analysis(
-    psa_obj, psa_params, wtp = 1, evppi_params = "theta",
+    psa_obj, df_psa_params, wtp = 1, evppi_params = "theta",
     param_groups = list(both = c("theta", "noise")), seed = 123L, B = 50,
     assert_groups = FALSE
   )),
@@ -172,9 +173,11 @@ warned <- tryCatch(
 stopifnot(!inherits(warned, "warning"))  # consistent groups do not warn
 
 # ---- 4. Seeds --------------------------------------------------------------
+#' EVPPI of theta (B = 100) with the given seed after unrelated RNG use; returns
+#' the calculate_evppi_regression() result list.
 seed_run <- function(seed) {
   invisible(runif(20))  # unrelated RNG use must not matter
-  quiet(calculate_evppi_regression(psa_obj, psa_params, "theta", wtp = 1,
+  quiet(calculate_evppi_regression(psa_obj, df_psa_params, "theta", wtp = 1,
                                    B = 100, seed = seed))
 }
 run_a <- seed_run(7L)
@@ -189,19 +192,19 @@ stopifnot(
 
 # ---- 5. Failures are NA, never zero ----------------------------------------
 res_missing <- quiet(calculate_evppi_regression(
-  psa_obj, psa_params, "not_a_parameter", wtp = 1
+  psa_obj, df_psa_params, "not_a_parameter", wtp = 1
 ))
 stopifnot(!is.null(res_missing$error), is.na(res_missing$evppi))
 
-psa_const <- psa_params
-psa_const$const <- 1
-res_const <- quiet(calculate_evppi_regression(psa_obj, psa_const, "const", wtp = 1))
+df_psa_const <- df_psa_params
+df_psa_const$const <- 1
+res_const <- quiet(calculate_evppi_regression(psa_obj, df_psa_const, "const", wtp = 1))
 stopifnot(!is.null(res_const$error), is.na(res_const$evppi))
 
 # A dampack-style object stores effects as `effectiveness`.
 psa_dampack <- list(cost = psa_obj$cost, effectiveness = psa_obj$effect)
 res_dampack <- quiet(calculate_evppi_regression(
-  psa_dampack, psa_params, "theta", wtp = 1, B = 50, seed = 123L
+  psa_dampack, df_psa_params, "theta", wtp = 1, B = 50, seed = 123L
 ))
 stopifnot(identical(res_dampack$evppi, res_theta$evppi))
 

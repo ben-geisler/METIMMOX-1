@@ -148,12 +148,12 @@ get_biomarkers <- function() {
 #' @return Data frame ordered to match `strategies`.
 #' @export
 get_strategy_metadata <- function(strategies = get_strategies()) {
-  metadata <- get_current_model_config()$strategy_metadata
-  unknown <- setdiff(strategies, metadata$id)
-  if (length(unknown) > 0L) {
-    stop("Missing strategy metadata for: ", paste(unknown, collapse = ", "))
+  df_metadata <- get_current_model_config()$strategy_metadata
+  v_unknown <- setdiff(strategies, df_metadata$id)
+  if (length(v_unknown) > 0L) {
+    stop("Missing strategy metadata for: ", paste(v_unknown, collapse = ", "))
   }
-  metadata[match(strategies, metadata$id), , drop = FALSE]
+  df_metadata[match(strategies, df_metadata$id), , drop = FALSE]
 }
 
 #' Get short display names for economic strategies
@@ -162,8 +162,8 @@ get_strategy_metadata <- function(strategies = get_strategies()) {
 #' @return Named character vector.
 #' @export
 strategy_display_name <- function(strategies = get_strategies()) {
-  metadata <- get_strategy_metadata(strategies)
-  setNames(metadata$short_name, metadata$id)
+  df_metadata <- get_strategy_metadata(strategies)
+  setNames(df_metadata$short_name, df_metadata$id)
 }
 
 #' Get scalar diagnostic-test parameter keys for biomarkers
@@ -172,13 +172,13 @@ strategy_display_name <- function(strategies = get_strategies()) {
 #' @return Named character vector mapping biomarker IDs to parameter keys.
 #' @export
 biomarker_cost_key <- function(biomarkers = get_biomarkers()) {
-  metadata <- get_current_model_config()$biomarker_metadata
-  unknown <- setdiff(biomarkers, metadata$id)
-  if (length(unknown) > 0L) {
+  df_metadata <- get_current_model_config()$biomarker_metadata
+  v_unknown <- setdiff(biomarkers, df_metadata$id)
+  if (length(v_unknown) > 0L) {
     stop("Missing diagnostic-test cost key for biomarkers: ",
-         paste(unknown, collapse = ", "))
+         paste(v_unknown, collapse = ", "))
   }
-  setNames(metadata$cost_key[match(biomarkers, metadata$id)], biomarkers)
+  setNames(df_metadata$cost_key[match(biomarkers, df_metadata$id)], biomarkers)
 }
 
 #' Get prevalence parameter keys for biomarkers
@@ -187,9 +187,9 @@ biomarker_cost_key <- function(biomarkers = get_biomarkers()) {
 #' @return Named character vector mapping biomarker IDs to parameter keys.
 #' @export
 biomarker_prevalence_key <- function(biomarkers = get_biomarkers()) {
-  unknown <- setdiff(biomarkers, get_biomarkers())
-  if (length(unknown) > 0L) {
-    stop("Unknown economic biomarkers: ", paste(unknown, collapse = ", "))
+  v_unknown <- setdiff(biomarkers, get_biomarkers())
+  if (length(v_unknown) > 0L) {
+    stop("Unknown economic biomarkers: ", paste(v_unknown, collapse = ", "))
   }
   setNames(paste0("p_", biomarkers), biomarkers)
 }
@@ -200,18 +200,18 @@ biomarker_prevalence_key <- function(biomarkers = get_biomarkers()) {
 #' @return Updated parameter list.
 #' @export
 sync_biomarker_test_costs <- function(params) {
-  biomarkers <- get_biomarkers()
-  cost_keys <- biomarker_cost_key(biomarkers)
-  missing <- setdiff(unname(cost_keys), names(params))
-  if (length(missing) > 0L) {
+  v_biomarkers <- get_biomarkers()
+  v_cost_keys <- biomarker_cost_key(v_biomarkers)
+  v_missing <- setdiff(unname(v_cost_keys), names(params))
+  if (length(v_missing) > 0L) {
     stop("Missing scalar diagnostic-test cost parameters: ",
-         paste(missing, collapse = ", "))
+         paste(v_missing, collapse = ", "))
   }
   if (is.null(params$c_test_biomarker)) {
     params$c_test_biomarker <- list()
   }
-  for (biomarker in biomarkers) {
-    params$c_test_biomarker[[biomarker]] <- params[[cost_keys[[biomarker]]]]
+  for (biomarker in v_biomarkers) {
+    params$c_test_biomarker[[biomarker]] <- params[[v_cost_keys[[biomarker]]]]
   }
   params
 }

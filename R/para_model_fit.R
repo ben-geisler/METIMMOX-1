@@ -44,13 +44,13 @@ fit_all_direct <- function(fit_data,
   # Fit KM with strata - but remove interaction terms first
   # Extract main effects only for survfit
   formula_terms <- terms(fit_formula)
-  main_effects <- attr(formula_terms, "term.labels")
+  v_main_effects <- attr(formula_terms, "term.labels")
   # Remove interaction terms (those containing ":")
-  main_effects <- main_effects[!grepl(":", main_effects)]
+  v_main_effects <- v_main_effects[!grepl(":", v_main_effects)]
   
-  if(length(main_effects) > 0) {
+  if(length(v_main_effects) > 0) {
     # Create formula with main effects only
-    km_formula <- as.formula(paste(deparse(fit_formula[[2]]), "~", paste(main_effects, collapse = " + ")))
+    km_formula <- as.formula(paste(deparse(fit_formula[[2]]), "~", paste(v_main_effects, collapse = " + ")))
     km_std <- eval(as.call(list(quote(survival::survfit),
                                 formula = km_formula,
                                 data = quote(fit_data))))
@@ -97,7 +97,7 @@ fit_all_direct <- function(fit_data,
 # Extract AIC and BIC from fitted models
 # Returns a data frame with model fit statistics
 extract_ic_single <- function(fit_results) {
-  ic_data <- data.frame(
+  df_ic <- data.frame(
     Distribution = character(),
     AIC = numeric(),
     BIC = numeric(),
@@ -131,7 +131,7 @@ extract_ic_single <- function(fit_results) {
       }, error = function(e) NULL)
     }
     
-    ic_data <- rbind(ic_data, data.frame(
+    df_ic <- rbind(df_ic, data.frame(
       Distribution = dist_name,
       AIC = aic_val,
       BIC = bic_val,
@@ -139,20 +139,20 @@ extract_ic_single <- function(fit_results) {
     ))
   }
   
-  return(ic_data)
+  return(df_ic)
 }
 
 # Find best fitting model based on information criterion / returns list with best distribution and IC
 find_best_model <- function(ic_data, criterion = "AIC") {
-  valid_data <- ic_data[!is.na(ic_data[[criterion]]), ]
-  if (nrow(valid_data) == 0) {
+  df_valid <- ic_data[!is.na(ic_data[[criterion]]), ]
+  if (nrow(df_valid) == 0) {
     return(NULL)
   }
   
-  best_idx <- which.min(valid_data[[criterion]])
+  best_idx <- which.min(df_valid[[criterion]])
   return(list(
-    distribution = valid_data$Distribution[best_idx],
-    criterion_value = valid_data[[criterion]][best_idx],
+    distribution = df_valid$Distribution[best_idx],
+    criterion_value = df_valid[[criterion]][best_idx],
     criterion = criterion
   ))
 }
@@ -172,12 +172,12 @@ get_modal_category <- function(x) {
 find_best_ordered_model_pair <- function(os_candidates, pfs_candidates,
                                          ordering_check,
                                          criterion = "AIC") {
-  required_columns <- c("formula_set", "distribution", criterion,
+  v_required_columns <- c("formula_set", "distribution", criterion,
                         "ordering_data")
-  if (!all(required_columns %in% names(os_candidates)) ||
-      !all(required_columns %in% names(pfs_candidates))) {
+  if (!all(v_required_columns %in% names(os_candidates)) ||
+      !all(v_required_columns %in% names(pfs_candidates))) {
     stop("Candidate tables must contain: ",
-         paste(required_columns, collapse = ", "))
+         paste(v_required_columns, collapse = ", "))
   }
 
   rows <- vector("list", nrow(os_candidates) * nrow(pfs_candidates))
@@ -217,27 +217,27 @@ find_best_ordered_model_pair <- function(os_candidates, pfs_candidates,
     }
   }
 
-  pair_table <- do.call(rbind, rows)
-  pair_table <- pair_table[order(pair_table$combined_ic), ]
-  rownames(pair_table) <- NULL
-  feasible <- pair_table[pair_table$ordered, ]
+  df_pairs <- do.call(rbind, rows)
+  df_pairs <- df_pairs[order(df_pairs$combined_ic), ]
+  rownames(df_pairs) <- NULL
+  df_feasible <- df_pairs[df_pairs$ordered, ]
 
-  if (nrow(feasible) == 0) {
+  if (nrow(df_feasible) == 0) {
     return(list(
       selected = NULL,
-      pairs = pair_table,
-      unconstrained_combined_ic = min(pair_table$combined_ic),
+      pairs = df_pairs,
+      unconstrained_combined_ic = min(df_pairs$combined_ic),
       ic_penalty = Inf,
       criterion = criterion
     ))
   }
 
-  selected <- feasible[which.min(feasible$combined_ic), , drop = FALSE]
+  df_selected <- df_feasible[which.min(df_feasible$combined_ic), , drop = FALSE]
   list(
-    selected = selected,
-    pairs = pair_table,
-    unconstrained_combined_ic = min(pair_table$combined_ic),
-    ic_penalty = selected$combined_ic[[1]] - min(pair_table$combined_ic),
+    selected = df_selected,
+    pairs = df_pairs,
+    unconstrained_combined_ic = min(df_pairs$combined_ic),
+    ic_penalty = df_selected$combined_ic[[1]] - min(df_pairs$combined_ic),
     criterion = criterion
   )
 }

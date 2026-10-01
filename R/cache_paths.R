@@ -149,12 +149,12 @@ cache_fingerprint <- function(x) {
 sampling_cache_fingerprint <- function(formulas, data, distributions,
                                        n_samples, seed, method) {
   # Radix (C-order) sorting: default collation depends on LC_COLLATE (#185).
-  columns <- sort(method = "radix", unique(c(intersect("ID", names(data)),
+  v_columns <- sort(method = "radix", unique(c(intersect("ID", names(data)),
                            unlist(lapply(formulas, all.vars)))))
-  missing <- setdiff(columns, names(data))
-  if (length(missing)) stop("Missing sampling columns: ", paste(missing, collapse = ", "))
+  v_missing <- setdiff(v_columns, names(data))
+  if (length(v_missing)) stop("Missing sampling columns: ", paste(v_missing, collapse = ", "))
   n_rows <- nrow(data)
-  data <- canonical_sampling_data(data[, columns, drop = FALSE])
+  data <- canonical_sampling_data(data[, v_columns, drop = FALSE])
   inputs <- list(
     schema = "sampling_v2",
     formulas = lapply(formulas, function(f) paste(deparse(f), collapse = " ")),

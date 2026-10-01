@@ -50,10 +50,10 @@ if (!exists("param_distributions") || !exists("param_groups")) {
 
 # Assemble full EVPPI parameters and groups using the same configuration as script 11.
 evppi_config <- configure_evppi_analysis(param_distributions, param_groups)
-evppi_params <- evppi_config$params
+v_evppi_params <- evppi_config$params
 scenario_param_groups <- evppi_config$groups
 rm(evppi_config)
-cat("Scenario EVPPI parameters:", length(evppi_params),
+cat("Scenario EVPPI parameters:", length(v_evppi_params),
     "| parameter groups:", length(scenario_param_groups), "\n")
 
 cat("\n=== RUNNING ALL SCENARIOS FOR THE JOINT ECONOMIC MODEL ===\n\n")
@@ -69,7 +69,7 @@ all_scenario_results <- run_all_scenarios(
   time_horizon = time_horizon,
   cl = cl,
   n_sim = n_sim,
-  evppi_params = evppi_params,
+  evppi_params = v_evppi_params,
   param_groups = scenario_param_groups,
   seed = analysis_seed
 )
@@ -114,16 +114,16 @@ if (nrow(evppi_all_scenarios) > 0) {
 
   for (scen in unique(evppi_all_scenarios$scenario_name)) {
     cat(sprintf("%s:\n", scen))
-    scen_data <- evppi_all_scenarios %>%
+    df_scen_data <- evppi_all_scenarios %>%
       filter(scenario_name == scen) %>%
       arrange(desc(evppi_population_millions)) %>%
       head(3)
 
-    if (nrow(scen_data) > 0) {
-      for (i in seq_len(nrow(scen_data))) {
+    if (nrow(df_scen_data) > 0) {
+      for (i in seq_len(nrow(df_scen_data))) {
         cat(sprintf("  %s: €%.2fM\n",
-                    scen_data$parameter[i],
-                    scen_data$evppi_population_millions[i]))
+                    df_scen_data$parameter[i],
+                    df_scen_data$evppi_population_millions[i]))
       }
     }
     cat("\n")
@@ -133,7 +133,7 @@ if (nrow(evppi_all_scenarios) > 0) {
 # Summary statistics
 cat("\nEVPPI Results Summary:\n")
 if (nrow(evppi_all_scenarios) > 0) {
-  summary_table <- evppi_all_scenarios %>%
+  df_summary_table <- evppi_all_scenarios %>%
     group_by(scenario_name, wtp) %>%
     summarise(
       n_parameters = n(),
@@ -144,26 +144,26 @@ if (nrow(evppi_all_scenarios) > 0) {
       .groups = "drop"
     )
 
-  print(summary_table)
+  print(df_summary_table)
 
   # Detailed results by scenario
   cat("\n=== DETAILED EVPPI RESULTS BY SCENARIO ===\n")
 
   for (scenario_id in scenarios$scenario_id) {
-    scenario_data <- evppi_all_scenarios %>%
+    df_scenario_data <- evppi_all_scenarios %>%
       filter(scenario_id == !!scenario_id) %>%
       arrange(desc(evppi))
 
-    if (nrow(scenario_data) > 0) {
-      cat("\n  ", scenario_data$scenario_name[1], "\n")
-      cat("  WTP: EUR", format(scenario_data$wtp[1], big.mark = ","), "\n")
-      cat("  EVPI: EUR", round(scenario_data$evpi[1], 2), "\n")
+    if (nrow(df_scenario_data) > 0) {
+      cat("\n  ", df_scenario_data$scenario_name[1], "\n")
+      cat("  WTP: EUR", format(df_scenario_data$wtp[1], big.mark = ","), "\n")
+      cat("  EVPI: EUR", round(df_scenario_data$evpi[1], 2), "\n")
       cat("\n  Top 3 Parameters:\n")
-      top3 <- scenario_data[1:min(3, nrow(scenario_data)),
+      df_top3 <- df_scenario_data[1:min(3, nrow(df_scenario_data)),
                             c("parameter", "evppi", "evppi_percent_of_evpi")]
-      for (i in seq_len(nrow(top3))) {
-        cat("    ", i, ". ", top3$parameter[i], ": EUR",
-            round(top3$evppi[i], 2), " (", round(top3$evppi_percent_of_evpi[i], 1), "%)\n", sep = "")
+      for (i in seq_len(nrow(df_top3))) {
+        cat("    ", i, ". ", df_top3$parameter[i], ": EUR",
+            round(df_top3$evppi[i], 2), " (", round(df_top3$evppi_percent_of_evpi[i], 1), "%)\n", sep = "")
       }
     }
   }

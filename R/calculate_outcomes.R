@@ -24,9 +24,9 @@ survival_curve_problem <- function(curve, tol = SURVIVAL_CURVE_TOL) {
   if (abs(curve[1] - 1) > tol) {
     return(paste0("starts at ", signif(curve[1], 6), ", not 1"))
   }
-  rises <- diff(curve) > tol
-  if (any(rises)) {
-    return(paste0("increases at ", sum(rises), " time points (largest rise ",
+  v_rises <- diff(curve) > tol
+  if (any(v_rises)) {
+    return(paste0("increases at ", sum(v_rises), " time points (largest rise ",
                   signif(max(diff(curve)), 6), ")"))
   }
   NULL
@@ -62,13 +62,13 @@ partitioned_survival_states <- function(os, pfs, curve_label = NULL) {
     stop("OS and PFS curves differ in length (", length(os), " vs ", length(pfs), ").")
   }
   if (!is.null(curve_label)) {
-    violation_idx <- which(pfs > os)
-    if (length(violation_idx) > 0) {
+    v_violation_idx <- which(pfs > os)
+    if (length(v_violation_idx) > 0) {
       stop(
         "Survival ordering invariant failed for ", curve_label,
-        ": PFS exceeded OS at ", length(violation_idx), " time points",
+        ": PFS exceeded OS at ", length(v_violation_idx), " time points",
         "; max excess=",
-        signif(max(pfs[violation_idx] - os[violation_idx]), 4),
+        signif(max(pfs[v_violation_idx] - os[v_violation_idx]), 4),
         ". Refit using ordering-constrained distribution selection."
       )
     }
@@ -94,18 +94,18 @@ discount_weights <- function(params, n_cycles, cl = params$cl) {
     stop("discount_weights() requires a positive numeric cycle length 'cl'; ",
          "pass it explicitly or set params$cl.")
   }
-  years <- (seq_len(n_cycles) - 1) * cl
-  list(cost = 1 / (1 + params$dr_costs)^years,
-       effect = 1 / (1 + params$dr_effects)^years)
+  v_years <- (seq_len(n_cycles) - 1) * cl
+  list(cost = 1 / (1 + params$dr_costs)^v_years,
+       effect = 1 / (1 + params$dr_effects)^v_years)
 }
 
 # Trapezoidal integration over intervals between the supplied grid points.
 # A single point spans no time. Scheduled/event costs do not use these weights.
 interval_weights <- function(n_points) {
   if (n_points < 2L) return(rep(0, n_points))
-  weights <- rep(1, n_points)
-  weights[c(1L, n_points)] <- 0.5
-  weights
+  v_weights <- rep(1, n_points)
+  v_weights[c(1L, n_points)] <- 0.5
+  v_weights
 }
 
 # Helper function to calculate costs and QALYs based on state occupancy
@@ -116,8 +116,8 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   # Extend treatment schedules to match time horizon
   extend_schedule <- function(schedule, length_needed) {
     if (length(schedule) < length_needed) {
-      extended <- c(schedule, rep(0, length_needed - length(schedule)))
-      return(extended)
+      v_extended <- c(schedule, rep(0, length_needed - length(schedule)))
+      return(v_extended)
     }
     return(schedule[1:length_needed])
   }
@@ -130,26 +130,26 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   l_blood <- extend_schedule(params$l_blood, n_cycles)
   l_visit <- extend_schedule(params$l_visit, n_cycles)
   
-  occupancy_weights <- interval_weights(n_cycles)
+  v_occupancy_weights <- interval_weights(n_cycles)
   
   # Calculate QALYs
-  qalys_pf <- p_pf * params$u_np * cl * occupancy_weights
-  qalys_p <- p_p * params$u_p * cl * occupancy_weights
-  qalys_undiscounted <- qalys_pf + qalys_p
-  qalys_discounted <- qalys_undiscounted * v_dw_e
-  qalys_total <- sum(qalys_discounted)
+  v_qalys_pf <- p_pf * params$u_np * cl * v_occupancy_weights
+  v_qalys_p <- p_p * params$u_p * cl * v_occupancy_weights
+  v_qalys_undiscounted <- v_qalys_pf + v_qalys_p
+  v_qalys_discounted <- v_qalys_undiscounted * v_dw_e
+  qalys_total <- sum(v_qalys_discounted)
   
   # Calculate costs based on treatment type
   if(treatment_type == "experimental") {
     # For biomarker positive: nivolumab + FLOX experimental regimen
-    drug_costs <- (l_nivo * params$c_drug_nivo + l_FLOX_exp * params$c_drug_FLOX) * p_pf
+    v_drug_costs <- (l_nivo * params$c_drug_nivo + l_FLOX_exp * params$c_drug_FLOX) * p_pf
   } else {
     # For control and biomarker negative: standard FLOX regimen
-    drug_costs <- l_FLOX_control * params$c_drug_FLOX * p_pf
+    v_drug_costs <- l_FLOX_control * params$c_drug_FLOX * p_pf
   }
   
   # Test costs (standard for all patients)
-  test_costs <- l_CT * params$c_test_CT * p_pf + l_blood * params$c_test_blood * p_pf
+  v_test_costs <- l_CT * params$c_test_CT * p_pf + l_blood * params$c_test_blood * p_pf
   
   # Add biomarker test cost if applicable
   if(!is.null(biomarker)) {
@@ -160,21 +160,21 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
         !is.finite(biomarker_test_cost) || biomarker_test_cost < 0) {
       stop("No diagnostic-test cost configured for biomarker '", biomarker, "'")
     }
-    test_costs[1] <- test_costs[1] + biomarker_test_cost
+    v_test_costs[1] <- v_test_costs[1] + biomarker_test_cost
   }
   
   # Visit costs
-  visit_costs <- l_visit * params$c_other_visit * p_pf
-  visit_costs[1] <- visit_costs[1] + params$c_other_baseline
+  v_visit_costs <- l_visit * params$c_other_visit * p_pf
+  v_visit_costs[1] <- v_visit_costs[1] + params$c_other_baseline
   
   # Ongoing progressed-state costs are rates per quarter (four per year).
   # Integrate occupancy and discounting over intervals, just as for utilities.
-  progressed_quarters <- p_p * (4 * cl) * occupancy_weights
-  follow_up_costs <- params$c_other_follow * progressed_quarters
+  v_progressed_quarters <- p_p * (4 * cl) * v_occupancy_weights
+  v_follow_up_costs <- params$c_other_follow * v_progressed_quarters
   # Progressed patients are imaged once per quarter (issue #164), charged at the
   # CT unit price as a rate over progressed occupancy like the follow-up visit.
   # Progression-free patients receive their CT scans from the l_CT schedule.
-  progressed_imaging_costs <- params$c_test_CT * progressed_quarters
+  v_progressed_imaging_costs <- params$c_test_CT * v_progressed_quarters
 
   # Post-progression treatment costs (issue #154). Second-line systemic therapy
   # is NOT costed in the base case, where c_other_pp = 0 and the progressed
@@ -183,38 +183,38 @@ calculate_outcomes <- function(params, p_pf, p_p, p_d, treatment_type, biomarker
   # strategies differ in time spent progressed, so the parameter is explicit and
   # is varied in a deterministic structural scenario, as a quarterly rate.
   c_other_pp <- if (is.null(params$c_other_pp)) 0 else params$c_other_pp
-  post_progression_costs <- c_other_pp * progressed_quarters
+  v_post_progression_costs <- c_other_pp * v_progressed_quarters
 
   # End-of-life costs: one-time cost applied when patients transition to death
   # At t=0: no deaths yet (everyone starts alive)
   # At t>0: incremental deaths from previous time point
   # pmax ensures non-negative values for numerical stability in PSA runs
-  death_transitions <- c(0, diff(p_d))
-  death_transitions <- pmax(death_transitions, 0)
-  end_life_costs <- death_transitions * params$c_other_last
+  v_death_transitions <- c(0, diff(p_d))
+  v_death_transitions <- pmax(v_death_transitions, 0)
+  v_end_life_costs <- v_death_transitions * params$c_other_last
   
   # Total costs
-  total_costs_undiscounted <- drug_costs + test_costs + visit_costs +
-    follow_up_costs + progressed_imaging_costs + post_progression_costs +
-    end_life_costs
-  total_costs_discounted <- total_costs_undiscounted * v_dw_c
-  costs_total <- sum(total_costs_discounted)
+  v_total_costs_undiscounted <- v_drug_costs + v_test_costs + v_visit_costs +
+    v_follow_up_costs + v_progressed_imaging_costs + v_post_progression_costs +
+    v_end_life_costs
+  v_total_costs_discounted <- v_total_costs_undiscounted * v_dw_c
+  costs_total <- sum(v_total_costs_discounted)
   
   return(list(
-    qalys_pf = qalys_pf,
-    qalys_p = qalys_p,
-    qalys_undiscounted = qalys_undiscounted,
-    qalys_discounted = qalys_discounted,
+    qalys_pf = v_qalys_pf,
+    qalys_p = v_qalys_p,
+    qalys_undiscounted = v_qalys_undiscounted,
+    qalys_discounted = v_qalys_discounted,
     qalys_total = qalys_total,
-    drug_costs = drug_costs,
-    test_costs = test_costs,
-    visit_costs = visit_costs,
-    follow_up_costs = follow_up_costs,
-    progressed_imaging_costs = progressed_imaging_costs,
-    post_progression_costs = post_progression_costs,
-    end_life_costs = end_life_costs,
-    total_costs_undiscounted = total_costs_undiscounted,
-    total_costs_discounted = total_costs_discounted,
+    drug_costs = v_drug_costs,
+    test_costs = v_test_costs,
+    visit_costs = v_visit_costs,
+    follow_up_costs = v_follow_up_costs,
+    progressed_imaging_costs = v_progressed_imaging_costs,
+    post_progression_costs = v_post_progression_costs,
+    end_life_costs = v_end_life_costs,
+    total_costs_undiscounted = v_total_costs_undiscounted,
+    total_costs_discounted = v_total_costs_discounted,
     costs_total = costs_total
   ))
 }

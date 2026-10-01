@@ -20,53 +20,53 @@ SURVIVAL_BENCHMARK_COLUMNS <- c(
 #' @param path Path to the benchmark CSV (relative to the repository root).
 #' @return Data frame with one row per benchmark.
 read_survival_benchmarks <- function(path = here::here(SURVIVAL_BENCHMARK_PATH)) {
-  b <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
-  problems <- check_survival_benchmarks(b)
-  if (length(problems) > 0) {
+  df_benchmarks <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  v_problems <- check_survival_benchmarks(df_benchmarks)
+  if (length(v_problems) > 0) {
     stop("Invalid survival benchmark file ", path, ":\n  ",
-         paste(problems, collapse = "\n  "))
+         paste(v_problems, collapse = "\n  "))
   }
-  b
+  df_benchmarks
 }
 
 #' Contract of the benchmark table; returns a character vector of problems
 check_survival_benchmarks <- function(b) {
-  problems <- character(0)
-  missing_cols <- setdiff(SURVIVAL_BENCHMARK_COLUMNS, names(b))
-  if (length(missing_cols) > 0) {
-    return(paste("missing columns:", paste(missing_cols, collapse = ", ")))
+  v_problems <- character(0)
+  v_missing_cols <- setdiff(SURVIVAL_BENCHMARK_COLUMNS, names(b))
+  if (length(v_missing_cols) > 0) {
+    return(paste("missing columns:", paste(v_missing_cols, collapse = ", ")))
   }
-  if (anyDuplicated(b$id)) problems <- c(problems, "duplicate id")
-  if (any(!nzchar(b$doi) | is.na(b$doi))) problems <- c(problems, "row without DOI")
-  if (!all(b$endpoint %in% c("OS", "PFS"))) problems <- c(problems, "endpoint not OS/PFS")
+  if (anyDuplicated(b$id)) v_problems <- c(v_problems, "duplicate id")
+  if (any(!nzchar(b$doi) | is.na(b$doi))) v_problems <- c(v_problems, "row without DOI")
+  if (!all(b$endpoint %in% c("OS", "PFS"))) v_problems <- c(v_problems, "endpoint not OS/PFS")
   if (!all(b$measure %in% c("median_months", "survival"))) {
-    problems <- c(problems, "measure not median_months/survival")
+    v_problems <- c(v_problems, "measure not median_months/survival")
   }
   if (!all(b$role %in% c("comparable", "lower_bound"))) {
-    problems <- c(problems, "role not comparable/lower_bound")
+    v_problems <- c(v_problems, "role not comparable/lower_bound")
   }
   if (!all(b$ci_method %in% c("reported", "none"))) {
-    problems <- c(problems, "ci_method not reported/none")
+    v_problems <- c(v_problems, "ci_method not reported/none")
   }
-  if (any(!is.finite(b$estimate))) problems <- c(problems, "non-finite estimate")
-  surv <- b$measure == "survival"
-  if (any(surv & (!is.finite(b$time_years) | b$time_years <= 0))) {
-    problems <- c(problems, "survival row without a positive time_years")
+  if (any(!is.finite(b$estimate))) v_problems <- c(v_problems, "non-finite estimate")
+  v_is_survival <- b$measure == "survival"
+  if (any(v_is_survival & (!is.finite(b$time_years) | b$time_years <= 0))) {
+    v_problems <- c(v_problems, "survival row without a positive time_years")
   }
-  if (any(surv & (b$estimate < 0 | b$estimate > 1))) {
-    problems <- c(problems, "survival estimate outside [0, 1]")
+  if (any(v_is_survival & (b$estimate < 0 | b$estimate > 1))) {
+    v_problems <- c(v_problems, "survival estimate outside [0, 1]")
   }
-  has_ci <- is.finite(b$lower) & is.finite(b$upper)
-  if (any(has_ci != (b$ci_method == "reported"))) {
-    problems <- c(problems, "ci_method disagrees with the presence of lower/upper")
+  v_has_ci <- is.finite(b$lower) & is.finite(b$upper)
+  if (any(v_has_ci != (b$ci_method == "reported"))) {
+    v_problems <- c(v_problems, "ci_method disagrees with the presence of lower/upper")
   }
-  if (any(has_ci & !(b$lower <= b$estimate & b$estimate <= b$upper))) {
-    problems <- c(problems, "estimate outside its own interval")
+  if (any(v_has_ci & !(b$lower <= b$estimate & b$estimate <= b$upper))) {
+    v_problems <- c(v_problems, "estimate outside its own interval")
   }
-  if (any(b$role == "comparable" & !has_ci)) {
-    problems <- c(problems, "comparable row without a reported CI")
+  if (any(b$role == "comparable" & !v_has_ci)) {
+    v_problems <- c(v_problems, "comparable row without a reported CI")
   }
-  problems
+  v_problems
 }
 
 #' The pre-specified tolerance, as printed in the report
@@ -123,38 +123,38 @@ KM_FEW_AT_RISK <- 5
 #' @return Data frame: years, surv, lower, upper, n_risk, status.
 km_landmarks <- function(time, event, years = c(1, 2, 3, 5)) {
   fit <- survival::survfit(survival::Surv(time, event) ~ 1, conf.type = "log-log")
-  weeks <- years * WEEKS_PER_YEAR
-  s <- summary(fit, times = weeks, extend = TRUE)
-  out <- data.frame(years = years, surv = s$surv, lower = s$lower,
+  v_weeks <- years * WEEKS_PER_YEAR
+  s <- summary(fit, times = v_weeks, extend = TRUE)
+  df_out <- data.frame(years = years, surv = s$surv, lower = s$lower,
                     upper = s$upper, n_risk = s$n.risk, status = "Estimated",
                     stringsAsFactors = FALSE)
   last_time <- max(time)
   last_surv <- utils::tail(fit$surv, 1)
-  beyond <- weeks > last_time
+  v_beyond <- v_weeks > last_time
   if (last_surv == 0) {
-    out$status[beyond] <- "All events before landmark"
-    out$surv[beyond] <- 0
-    out$lower[beyond] <- NA
-    out$upper[beyond] <- NA
+    df_out$status[v_beyond] <- "All events before landmark"
+    df_out$surv[v_beyond] <- 0
+    df_out$lower[v_beyond] <- NA
+    df_out$upper[v_beyond] <- NA
   } else {
-    out$status[beyond] <- "NE (beyond follow-up)"
-    out[beyond, c("surv", "lower", "upper")] <- NA
+    df_out$status[v_beyond] <- "NE (beyond follow-up)"
+    df_out[v_beyond, c("surv", "lower", "upper")] <- NA
   }
   # Before the first event the estimate is 1 and the CI degenerate (1 to 1)
-  no_event <- !beyond & out$surv == 1
-  out$status[no_event] <- "No events before landmark"
-  out[no_event, c("lower", "upper")] <- NA
-  few <- !beyond & !no_event & out$n_risk < KM_FEW_AT_RISK
-  out$status[few] <- paste0("Fewer than ", KM_FEW_AT_RISK, " at risk")
-  out
+  v_no_event <- !v_beyond & df_out$surv == 1
+  df_out$status[v_no_event] <- "No events before landmark"
+  df_out[v_no_event, c("lower", "upper")] <- NA
+  v_few <- !v_beyond & !v_no_event & df_out$n_risk < KM_FEW_AT_RISK
+  df_out$status[v_few] <- paste0("Fewer than ", KM_FEW_AT_RISK, " at risk")
+  df_out
 }
 
 #' Kaplan-Meier median with 95% CI, in months
 km_median_months <- function(time, event) {
   fit <- survival::survfit(survival::Surv(time, event) ~ 1, conf.type = "log-log")
-  tab <- summary(fit)$table
-  c(median = unname(tab["median"]), lower = unname(tab["0.95LCL"]),
-    upper = unname(tab["0.95UCL"])) * MONTHS_PER_WEEK
+  v_km_table <- summary(fit)$table
+  c(median = unname(v_km_table["median"]), lower = unname(v_km_table["0.95LCL"]),
+    upper = unname(v_km_table["0.95UCL"])) * MONTHS_PER_WEEK
 }
 
 #' Value of a weekly curve (index 1 = week 0) at landmark years; NA beyond it
@@ -188,10 +188,10 @@ curve_median_months <- function(curve) {
 #' @return Matrix, one row per draw and one column per time.
 draw_curves <- function(component, endpoint, newdata, idx, times) {
   fit <- component[[paste0("original_", endpoint)]]
-  draws <- component$draws[[endpoint]]
+  m_draws <- component$draws[[endpoint]]
   if (identical(fit$dlist$name, "gamma")) {
     rows <- lapply(idx, function(i) {
-      direct_gamma_pop_avg(fit, draws[i, ], newdata, times)
+      direct_gamma_pop_avg(fit, m_draws[i, ], newdata, times)
     })
   } else {
     rows <- lapply(idx, function(i) {
@@ -210,11 +210,11 @@ draw_curves <- function(component, endpoint, newdata, idx, times) {
 #'   (`years = NA`, values in months).
 draw_landmark_intervals <- function(mat, years) {
   q <- function(x) stats::quantile(x, c(0.025, 0.975), na.rm = TRUE, names = FALSE)
-  land <- t(vapply(years, function(y) q(apply(mat, 1, curve_at_years, years = y)),
+  m_landmarks <- t(vapply(years, function(y) q(apply(mat, 1, curve_at_years, years = y)),
                    numeric(2)))
-  med <- q(apply(mat, 1, curve_median_months))
-  data.frame(years = c(years, NA), lower = c(land[, 1], med[1]),
-             upper = c(land[, 2], med[2]),
+  v_median <- q(apply(mat, 1, curve_median_months))
+  data.frame(years = c(years, NA), lower = c(m_landmarks[, 1], v_median[1]),
+             upper = c(m_landmarks[, 2], v_median[2]),
              measure = c(rep("survival", length(years)), "median_months"))
 }
 
@@ -260,8 +260,8 @@ benchmark_consistent <- function(model_lower, model_upper, row) {
 
 #' Short display label for a pre-specified point-estimate verdict
 point_estimate_label <- function(verdict) {
-  labels <- c("Within CI" = "Within CI", "Outside CI" = "Outside CI",
+  v_labels <- c("Within CI" = "Within CI", "Outside CI" = "Outside CI",
               "Above lower bound" = "At or above bound",
               "Below lower bound" = "Below bound", "Not evaluable" = "--")
-  unname(labels[verdict])
+  unname(v_labels[verdict])
 }

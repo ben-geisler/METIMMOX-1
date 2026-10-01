@@ -25,16 +25,16 @@ n_cycles <- 521L   # time_horizon 520 + 1
 # ---------------------------------------------------------------------------
 # 1. Weekly weights match the legacy /52 form within the documented tolerance
 # ---------------------------------------------------------------------------
-legacy_years <- (seq_len(n_cycles) - 1) / 52
-legacy_cost <- 1 / (1 + params$dr_costs)^legacy_years
-legacy_effect <- 1 / (1 + params$dr_effects)^legacy_years
+v_legacy_years <- (seq_len(n_cycles) - 1) / 52
+v_legacy_cost <- 1 / (1 + params$dr_costs)^v_legacy_years
+v_legacy_effect <- 1 / (1 + params$dr_effects)^v_legacy_years
 
 w <- discount_weights(params, n_cycles)
 stopifnot(
   length(w$cost) == n_cycles,
   length(w$effect) == n_cycles,
-  max(abs(w$cost - legacy_cost)) < TOL,
-  max(abs(w$effect - legacy_effect)) < TOL
+  max(abs(w$cost - v_legacy_cost)) < TOL,
+  max(abs(w$effect - v_legacy_effect)) < TOL
 )
 
 # ---------------------------------------------------------------------------

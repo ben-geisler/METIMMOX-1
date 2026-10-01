@@ -21,7 +21,7 @@ cache_runtime_info <- function() {
 # change calculations. Include loaded definitions to detect interactive edits.
 calculation_identity <- function(stage = c("psa", "sampling", "evppi", "scenario")) {
   stage <- match.arg(stage)
-  files <- switch(stage,
+  v_files <- switch(stage,
     sampling = c("analysis/06_sampling.R", "R/model_configs.R", "R/joint_survival_sampling.R"),
     psa = c("R/model_fun.R", "R/calculate_outcomes.R", "R/prediction_functions.R",
             "R/psa_functions.R", "R/parameter_distributions.R", "R/model_configs.R",
@@ -29,7 +29,7 @@ calculation_identity <- function(stage = c("psa", "sampling", "evppi", "scenario
             "analysis/06_sampling.R", "R/joint_survival_sampling.R"),
     evppi = "R/evppi_functions.R",
     scenario = c("R/scenario_analysis.R", "R/evppi_functions.R"))
-  code <- lapply(files, function(file) {
+  code <- lapply(v_files, function(file) {
     exprs <- parse(here::here(file), keep.source = FALSE)
     definitions <- list()
     for (expr in exprs) {
@@ -45,13 +45,13 @@ calculation_identity <- function(stage = c("psa", "sampling", "evppi", "scenario
     }
     list(source = paste(deparse(exprs), collapse = "\n"), definitions = definitions)
   })
-  names(code) <- files
-  packages <- switch(stage, sampling = c("flexsurv", "survival", "mvtnorm"),
+  names(code) <- v_files
+  v_packages <- switch(stage, sampling = c("flexsurv", "survival", "mvtnorm"),
     psa = c("flexsurv", "survival", "dampack", "mvtnorm"),
     evppi = c("voi", "mgcv", "dampack"), scenario = c("voi", "mgcv", "dampack"))
   list(code = vapply(code, cache_fingerprint, character(1)),
-       packages = setNames(vapply(packages, function(p)
-         as.character(utils::packageVersion(p)), character(1)), packages),
+       packages = setNames(vapply(v_packages, function(p)
+         as.character(utils::packageVersion(p)), character(1)), v_packages),
        R = paste(R.version$major, R.version$minor, sep = "."),
        contrasts = getOption("contrasts"), rng = RNGkind())
 }
@@ -136,13 +136,13 @@ scenario_cache_fingerprint <- function(psa_fingerprint, scenarios, config, seed,
 # explicit prediction population, curve basis and target weights. Unused
 # clinical-only columns stay outside this identity.
 prediction_population_identity <- function() {
-  variables <- unique(c("ID", unlist(lapply(c("os", "pfs"), function(outcome)
+  v_variables <- unique(c("ID", unlist(lapply(c("os", "pfs"), function(outcome)
     all.vars(get_strategy_formula(get_biomarkers()[1], outcome))))))
   setNames(lapply(c("data_complete"), function(name) {
-    population <- get0(name, envir = .GlobalEnv, inherits = FALSE)
-    if (!is.data.frame(population)) return(NULL)
-    columns <- sort(intersect(variables, names(population)), method = "radix")
-    cache_fingerprint(canonical_sampling_data(population[, columns, drop = FALSE]))
+    df_population <- get0(name, envir = .GlobalEnv, inherits = FALSE)
+    if (!is.data.frame(df_population)) return(NULL)
+    v_columns <- sort(intersect(v_variables, names(df_population)), method = "radix")
+    cache_fingerprint(canonical_sampling_data(df_population[, v_columns, drop = FALSE]))
   }), c("data_complete"))
 }
 
@@ -173,8 +173,8 @@ load_evppi_cache <- function(psa_obj, expected, wtp, path = evppi_path()) {
   load(path, envir = e)
   if (!identical(e$evppi_fingerprint, expected$fingerprint))
     stop("Stale EVPPI cache: input fingerprint mismatch. Run analysis/11_EVPPIs.R.")
-  nmb <- as.matrix(psa_obj$effect) * wtp - as.matrix(psa_obj$cost)
-  evpi <- mean(apply(nmb, 1, max)) - max(colMeans(nmb))
+  m_nmb <- as.matrix(psa_obj$effect) * wtp - as.matrix(psa_obj$cost)
+  evpi <- mean(apply(m_nmb, 1, max)) - max(colMeans(m_nmb))
   if (!isTRUE(all.equal(e$evpi_manual, evpi, tolerance = 1e-8)))
     stop("Cached EVPI disagrees with the current PSA and WTP. Run analysis/11_EVPPIs.R.")
   as.list(e)

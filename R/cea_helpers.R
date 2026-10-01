@@ -59,21 +59,21 @@ run_basecase <- function(params = NULL, verbose = TRUE) {
     cat("Strategies:", paste(get_strategies(), collapse = ", "), "\n")
   }
 
-  base_results <- model_fun(params)
+  df_base_results <- model_fun(params)
 
   icer_obj <- dampack::calculate_icers(
-    cost = base_results$Cost,
-    effect = base_results$Effect,
-    strategies = base_results$Strategy
+    cost = df_base_results$Cost,
+    effect = df_base_results$Effect,
+    strategies = df_base_results$Strategy
   )
 
   if (verbose) {
     cat("Base case complete. Strategies:",
-        paste(base_results$Strategy, collapse = ", "), "\n")
+        paste(df_base_results$Strategy, collapse = ", "), "\n")
   }
 
   list(
-    base_results = base_results,
+    base_results = df_base_results,
     icer_obj = icer_obj,
     model_config = get_current_model_config()
   )
@@ -95,21 +95,21 @@ run_basecase <- function(params = NULL, verbose = TRUE) {
 #'   the pairwise `Status` ("Reference", "Pairwise ICER vs SoC", "Dominated by
 #'   SoC", "Cost-saving vs SoC"), and the dampack `Frontier_Status`.
 calculate_pairwise_icers <- function(results) {
-  control <- results[results$Strategy == get_control_strategy(), ]
-  if (nrow(control) != 1) stop("Control strategy must appear exactly once.")
-  out <- transform(
+  df_control <- results[results$Strategy == get_control_strategy(), ]
+  if (nrow(df_control) != 1) stop("Control strategy must appear exactly once.")
+  df_out <- transform(
     results,
-    Inc_Cost = Cost - control$Cost,
-    Inc_Effect = Effect - control$Effect
+    Inc_Cost = Cost - df_control$Cost,
+    Inc_Effect = Effect - df_control$Effect
   )
-  out$ICER <- out$Inc_Cost / out$Inc_Effect
-  out$ICER[out$Strategy == get_control_strategy()] <- NA_real_
-  out$Status <- "Pairwise ICER vs SoC"
-  out$Status[out$Inc_Cost > 0 & out$Inc_Effect <= 0] <- "Dominated by SoC"
-  out$Status[out$Inc_Cost < 0 & out$Inc_Effect > 0] <- "Cost-saving vs SoC"
-  out$Status[out$Strategy == get_control_strategy()] <- "Reference"
-  out$Frontier_Status <- frontier_status(out)
-  out
+  df_out$ICER <- df_out$Inc_Cost / df_out$Inc_Effect
+  df_out$ICER[df_out$Strategy == get_control_strategy()] <- NA_real_
+  df_out$Status <- "Pairwise ICER vs SoC"
+  df_out$Status[df_out$Inc_Cost > 0 & df_out$Inc_Effect <= 0] <- "Dominated by SoC"
+  df_out$Status[df_out$Inc_Cost < 0 & df_out$Inc_Effect > 0] <- "Cost-saving vs SoC"
+  df_out$Status[df_out$Strategy == get_control_strategy()] <- "Reference"
+  df_out$Frontier_Status <- frontier_status(df_out)
+  df_out
 }
 
 #' dampack efficiency-frontier status for a set of strategies
@@ -117,20 +117,20 @@ calculate_pairwise_icers <- function(results) {
 #' @param results Data frame with Strategy, Cost, and Effect columns
 #' @return Character vector aligned with `results$Strategy`: "ND", "D", or "ED"
 frontier_status <- function(results) {
-  icers <- dampack::calculate_icers(
+  df_icers <- dampack::calculate_icers(
     cost = results$Cost,
     effect = results$Effect,
     strategies = results$Strategy
   )
-  as.character(icers$Status)[match(results$Strategy, icers$Strategy)]
+  as.character(df_icers$Status)[match(results$Strategy, df_icers$Strategy)]
 }
 
 #' Human-readable frontier label for tables
 frontier_label <- function(status) {
-  labels <- c(ND = "On frontier", D = "Dominated", ED = "Extendedly dominated")
-  out <- unname(labels[as.character(status)])
-  out[is.na(out)] <- "--"
-  out
+  v_labels <- c(ND = "On frontier", D = "Dominated", ED = "Extendedly dominated")
+  v_out <- unname(v_labels[as.character(status)])
+  v_out[is.na(v_out)] <- "--"
+  v_out
 }
 
 #' Validate a cached PSA object against what the current session expects
@@ -200,17 +200,17 @@ validate_psa_cache <- function(psa_obj,
       expected_fingerprint
     }
     if (!identical(psa_obj$fingerprint, expected_string)) {
-      differing <- character(0)
+      v_differing <- character(0)
       if (is.list(expected_fingerprint) && !is.null(psa_obj$fingerprint_inputs)) {
         for (key in names(expected_fingerprint$inputs)) {
           if (!identical(psa_obj$fingerprint_inputs[[key]],
                          expected_fingerprint$inputs[[key]])) {
-            differing <- c(differing, key)
+            v_differing <- c(v_differing, key)
           }
         }
       }
-      detail <- if (length(differing) > 0) {
-        paste0(" (differing inputs: ", paste(differing, collapse = ", "), ")")
+      detail <- if (length(v_differing) > 0) {
+        paste0(" (differing inputs: ", paste(v_differing, collapse = ", "), ")")
       } else {
         ""
       }
@@ -264,8 +264,8 @@ load_psa_cache <- function(util_label = NULL,
     stop("PSA parameter cache missing: ", paired_path,
          ". Rerun analysis/10_PSA.R.", call. = FALSE)
   }
-  paired_params <- readRDS(paired_path)
-  validate_psa_pair(psa_obj, paired_params)
+  df_paired_params <- readRDS(paired_path)
+  validate_psa_pair(psa_obj, df_paired_params)
   validate_psa_cache(
     psa_obj,
     expected_fingerprint = expected_fingerprint,
@@ -315,22 +315,22 @@ load_psa_params_cache <- function(util_label = NULL,
     return(NULL)
   }
 
-  psa_params <- readRDS(cache_file)
+  df_psa_params <- readRDS(cache_file)
   paired_path <- psa_obj_path(util_label, directory)
   if (!file.exists(paired_path)) {
     stop("PSA outcome cache missing: ", paired_path,
          ". Rerun analysis/10_PSA.R.", call. = FALSE)
   }
   paired_obj <- readRDS(paired_path)
-  validate_psa_pair(paired_obj, psa_params)
+  validate_psa_pair(paired_obj, df_psa_params)
 
   rerun <- "Rerun analysis/10_PSA.R before rendering."
   if (!is.null(seed)) {
     seed_ok <- if (exists("psa_samples_seed_matches", mode = "function",
                           inherits = TRUE)) {
-      psa_samples_seed_matches(psa_params, seed)
+      psa_samples_seed_matches(df_psa_params, seed)
     } else {
-      identical(attr(psa_params, "seed"), seed)
+      identical(attr(df_psa_params, "seed"), seed)
     }
     if (!isTRUE(seed_ok)) {
       stop("Stale PSA parameter cache ", cache_file,
@@ -338,8 +338,8 @@ load_psa_params_cache <- function(util_label = NULL,
            rerun, call. = FALSE)
     }
   }
-  if (!is.null(n_sim) && nrow(psa_params) != n_sim) {
-    stop("Stale PSA parameter cache ", cache_file, ": ", nrow(psa_params),
+  if (!is.null(n_sim) && nrow(df_psa_params) != n_sim) {
+    stop("Stale PSA parameter cache ", cache_file, ": ", nrow(df_psa_params),
          " rows but the PSA object has ", n_sim, " draws. ", rerun,
          call. = FALSE)
   }
@@ -348,7 +348,7 @@ load_psa_params_cache <- function(util_label = NULL,
     cat("Loaded PSA parameter cache:", cache_file, "\n")
   }
 
-  psa_params
+  df_psa_params
 }
 
 #' Create a single-model CEAC plot
@@ -372,10 +372,10 @@ create_ceac_plot <- function(psa_obj,
              theme_void())
   }
 
-  ceac_data <- dampack::ceac(wtp = wtp_range, psa = psa_obj)
-  names(ceac_data)[names(ceac_data) == "Proportion"] <- "Probability"
+  df_ceac <- dampack::ceac(wtp = wtp_range, psa = psa_obj)
+  names(df_ceac)[names(df_ceac) == "Proportion"] <- "Probability"
 
-  ggplot(ceac_data, aes(x = WTP, y = Probability, color = Strategy)) +
+  ggplot(df_ceac, aes(x = WTP, y = Probability, color = Strategy)) +
     geom_line(linewidth = 0.8) +
     geom_vline(xintercept = wtp_line, linetype = "dotted",
                color = "gray40", linewidth = 0.5) +
@@ -423,35 +423,35 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
     ))
   }
 
-  cost_matrix <- as.matrix(psa_obj$cost)
-  effect_matrix <- if (!is.null(psa_obj$effect)) {
+  m_cost <- as.matrix(psa_obj$cost)
+  m_effect <- if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
   } else {
     as.matrix(psa_obj$effectiveness)
   }
   control <- which(psa_obj$strategies == get_control_strategy())
   if (length(control) != 1L) stop("Control strategy must appear exactly once.")
-  if (!identical(dim(cost_matrix), dim(effect_matrix)) ||
-      ncol(cost_matrix) != length(psa_obj$strategies) || nrow(cost_matrix) < 1L ||
+  if (!identical(dim(m_cost), dim(m_effect)) ||
+      ncol(m_cost) != length(psa_obj$strategies) || nrow(m_cost) < 1L ||
       anyDuplicated(psa_obj$strategies) ||
-      any(!is.finite(cost_matrix)) || any(!is.finite(effect_matrix))) {
+      any(!is.finite(m_cost)) || any(!is.finite(m_effect))) {
     stop("PSA summary requires aligned, finite cost/effect draws for every strategy.")
   }
-  ceac_obj <- dampack::ceac(wtp = c(wtp - 1, wtp, wtp + 1), psa = psa_obj)
+  df_ceac <- dampack::ceac(wtp = c(wtp - 1, wtp, wtp + 1), psa = psa_obj)
 
   summary_list <- lapply(seq_along(psa_obj$strategies), function(i) {
     strategy <- psa_obj$strategies[i]
-    ceac_row <- ceac_obj[ceac_obj$WTP == wtp & ceac_obj$Strategy == strategy, ]
-    prob_ce <- if (nrow(ceac_row) > 0) ceac_row$Proportion[1] else NA_real_
-    inc_cost <- cost_matrix[, i] - cost_matrix[, control]
-    inc_qaly <- effect_matrix[, i] - effect_matrix[, control]
-    dc <- mean(inc_cost)
-    de <- mean(inc_qaly)
+    df_ceac_row <- df_ceac[df_ceac$WTP == wtp & df_ceac$Strategy == strategy, ]
+    prob_ce <- if (nrow(df_ceac_row) > 0) df_ceac_row$Proportion[1] else NA_real_
+    v_inc_cost <- m_cost[, i] - m_cost[, control]
+    v_inc_qaly <- m_effect[, i] - m_effect[, control]
+    dc <- mean(v_inc_cost)
+    de <- mean(v_inc_qaly)
     interval <- function(x) unname(quantile(x, c(0.025, 0.975), type = 7))
-    cost_ci <- interval(cost_matrix[, i])
-    qaly_ci <- interval(effect_matrix[, i])
-    dc_ci <- interval(inc_cost)
-    de_ci <- interval(inc_qaly)
+    v_cost_ci <- interval(m_cost[, i])
+    v_qaly_ci <- interval(m_effect[, i])
+    v_dc_ci <- interval(v_inc_cost)
+    v_de_ci <- interval(v_inc_qaly)
     status <- if (i == control) "Reference" else if (dc >= 0 && de <= 0 && (dc > 0 || de < 0)) {
       "Dominated by SoC"
     } else if (dc <= 0 && de >= 0 && (dc < 0 || de > 0)) {
@@ -460,13 +460,13 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
 
     data.frame(
       Strategy = strategy,
-      Mean_Cost = mean(cost_matrix[, i]),
-      Mean_QALY = mean(effect_matrix[, i]),
-      Cost_Lower = cost_ci[1], Cost_Upper = cost_ci[2],
-      QALY_Lower = qaly_ci[1], QALY_Upper = qaly_ci[2],
+      Mean_Cost = mean(m_cost[, i]),
+      Mean_QALY = mean(m_effect[, i]),
+      Cost_Lower = v_cost_ci[1], Cost_Upper = v_cost_ci[2],
+      QALY_Lower = v_qaly_ci[1], QALY_Upper = v_qaly_ci[2],
       Mean_Inc_Cost = dc, Mean_Inc_QALY = de,
-      Inc_Cost_Lower = dc_ci[1], Inc_Cost_Upper = dc_ci[2],
-      Inc_QALY_Lower = de_ci[1], Inc_QALY_Upper = de_ci[2],
+      Inc_Cost_Lower = v_dc_ci[1], Inc_Cost_Upper = v_dc_ci[2],
+      Inc_QALY_Lower = v_de_ci[1], Inc_QALY_Upper = v_de_ci[2],
       ICER = if (i == control || de == 0) NA_real_ else dc / de,
       Status = status,
       Prob_CE = prob_ce,
@@ -518,31 +518,31 @@ create_psa_basecase_comparison <- function(psa_obj, base_results) {
     ))
   }
 
-  cost_matrix <- as.matrix(psa_obj$cost)
-  effect_matrix <- if (!is.null(psa_obj$effect)) {
+  m_cost <- as.matrix(psa_obj$cost)
+  m_effect <- if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
   } else {
     as.matrix(psa_obj$effectiveness)
   }
-  psa_strategies <- psa_obj$strategies
-  missing <- setdiff(psa_strategies, base_results$Strategy)
-  if (length(missing) > 0L) {
+  v_psa_strategies <- psa_obj$strategies
+  v_missing <- setdiff(v_psa_strategies, base_results$Strategy)
+  if (length(v_missing) > 0L) {
     stop("Base-case results lack strategies present in the PSA: ",
-         paste(missing, collapse = ", "))
+         paste(v_missing, collapse = ", "))
   }
 
-  rows <- lapply(seq_along(psa_strategies), function(i) {
-    strategy <- psa_strategies[i]
-    base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
+  rows <- lapply(seq_along(v_psa_strategies), function(i) {
+    strategy <- v_psa_strategies[i]
+    df_base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
     outcome_values <- list(
-      Cost = list(base = base_row$Cost[1], draws = cost_matrix[, i]),
-      QALYs = list(base = base_row$Effect[1], draws = effect_matrix[, i])
+      Cost = list(base = df_base_row$Cost[1], draws = m_cost[, i]),
+      QALYs = list(base = df_base_row$Effect[1], draws = m_effect[, i])
     )
     do.call(rbind, lapply(names(outcome_values), function(outcome) {
-      draws <- outcome_values[[outcome]]$draws
-      draws <- draws[is.finite(draws)]
-      psa_mean <- mean(draws)
-      psa_se <- stats::sd(draws) / sqrt(length(draws))
+      v_draws <- outcome_values[[outcome]]$draws
+      v_draws <- v_draws[is.finite(v_draws)]
+      psa_mean <- mean(v_draws)
+      psa_se <- stats::sd(v_draws) / sqrt(length(v_draws))
       diff <- psa_mean - outcome_values[[outcome]]$base
       data.frame(
         Strategy = strategy,
@@ -557,9 +557,9 @@ create_psa_basecase_comparison <- function(psa_obj, base_results) {
     }))
   })
 
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
-  out
+  df_out <- do.call(rbind, rows)
+  rownames(df_out) <- NULL
+  df_out
 }
 
 #' Compare PSA incremental means (versus control) with base-case increments
@@ -586,36 +586,36 @@ create_psa_incremental_comparison <- function(psa_obj, base_results) {
     ))
   }
 
-  cost_matrix <- as.matrix(psa_obj$cost)
-  effect_matrix <- if (!is.null(psa_obj$effect)) {
+  m_cost <- as.matrix(psa_obj$cost)
+  m_effect <- if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
   } else {
     as.matrix(psa_obj$effectiveness)
   }
-  colnames(cost_matrix) <- colnames(effect_matrix) <- psa_obj$strategies
+  colnames(m_cost) <- colnames(m_effect) <- psa_obj$strategies
   if (!control %in% psa_obj$strategies) {
     stop("PSA object has no control strategy '", control, "'")
   }
-  base_control <- base_results[base_results$Strategy == control, , drop = FALSE]
+  df_base_control <- base_results[base_results$Strategy == control, , drop = FALSE]
 
-  comparators <- setdiff(psa_obj$strategies, control)
-  rows <- lapply(comparators, function(strategy) {
-    base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
+  v_comparators <- setdiff(psa_obj$strategies, control)
+  rows <- lapply(v_comparators, function(strategy) {
+    df_base_row <- base_results[base_results$Strategy == strategy, , drop = FALSE]
     outcome_values <- list(
       Cost = list(
-        base = base_row$Cost[1] - base_control$Cost[1],
-        draws = cost_matrix[, strategy] - cost_matrix[, control]
+        base = df_base_row$Cost[1] - df_base_control$Cost[1],
+        draws = m_cost[, strategy] - m_cost[, control]
       ),
       QALYs = list(
-        base = base_row$Effect[1] - base_control$Effect[1],
-        draws = effect_matrix[, strategy] - effect_matrix[, control]
+        base = df_base_row$Effect[1] - df_base_control$Effect[1],
+        draws = m_effect[, strategy] - m_effect[, control]
       )
     )
     do.call(rbind, lapply(names(outcome_values), function(outcome) {
-      draws <- outcome_values[[outcome]]$draws
-      draws <- draws[is.finite(draws)]
-      psa_mean <- mean(draws)
-      psa_se <- stats::sd(draws) / sqrt(length(draws))
+      v_draws <- outcome_values[[outcome]]$draws
+      v_draws <- v_draws[is.finite(v_draws)]
+      psa_mean <- mean(v_draws)
+      psa_se <- stats::sd(v_draws) / sqrt(length(v_draws))
       diff <- psa_mean - outcome_values[[outcome]]$base
       data.frame(
         Comparator = strategy,
@@ -630,9 +630,9 @@ create_psa_incremental_comparison <- function(psa_obj, base_results) {
     }))
   })
 
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
-  out
+  df_out <- do.call(rbind, rows)
+  rownames(df_out) <- NULL
+  df_out
 }
 
 message("Single-model CEA helper functions loaded successfully.")

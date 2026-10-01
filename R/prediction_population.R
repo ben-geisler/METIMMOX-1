@@ -1,25 +1,25 @@
 # One economic target population and common standardisation weights (#166).
 # Clinical-only variables, including TLR and scan dates, do not select this cohort.
 economic_prediction_population <- function(data, biomarkers = get_biomarkers()) {
-  required <- c("Age", "sex", "Rx", biomarkers, "OSwk", "Death", "PFSwk", "Progression")
-  missing <- setdiff(required, names(data))
-  if (length(missing)) stop("Missing prediction-population columns: ", paste(missing, collapse = ", "))
-  population <- data[complete.cases(data[, required, drop = FALSE]), , drop = FALSE]
-  if (!nrow(population)) stop("The economic prediction population is empty.")
-  population
+  v_required <- c("Age", "sex", "Rx", biomarkers, "OSwk", "Death", "PFSwk", "Progression")
+  v_missing <- setdiff(v_required, names(data))
+  if (length(v_missing)) stop("Missing prediction-population columns: ", paste(v_missing, collapse = ", "))
+  df_population <- data[complete.cases(data[, v_required, drop = FALSE]), , drop = FALSE]
+  if (!nrow(df_population)) stop("The economic prediction population is empty.")
+  df_population
 }
 
 joint_biomarker_population <- function(population, biomarkers = get_biomarkers()) {
-  status <- as.data.frame(lapply(population[biomarkers], function(x) as.numeric(as.character(x))))
-  if (!nrow(status) || anyNA(status) || any(!as.matrix(status) %in% 0:1))
+  df_status <- as.data.frame(lapply(population[biomarkers], function(x) as.numeric(as.character(x))))
+  if (!nrow(df_status) || anyNA(df_status) || any(!as.matrix(df_status) %in% 0:1))
     stop("Prediction population must have complete binary biomarkers.")
-  cells <- expand.grid(setNames(rep(list(0:1), length(biomarkers)), biomarkers))
+  df_cells <- expand.grid(setNames(rep(list(0:1), length(biomarkers)), biomarkers))
   key <- function(x) apply(x, 1, paste0, collapse = "")
-  cells <- cells[order(key(cells)), , drop = FALSE]
-  rownames(cells) <- key(cells)
-  index <- match(key(status), rownames(cells))
-  counts <- setNames(tabulate(index, nrow(cells)), rownames(cells))
-  list(cells = cells, index = index, counts = counts, probabilities = counts / sum(counts))
+  df_cells <- df_cells[order(key(df_cells)), , drop = FALSE]
+  rownames(df_cells) <- key(df_cells)
+  v_index <- match(key(df_status), rownames(df_cells))
+  v_counts <- setNames(tabulate(v_index, nrow(df_cells)), rownames(df_cells))
+  list(cells = df_cells, index = v_index, counts = v_counts, probabilities = v_counts / sum(v_counts))
 }
 
 # Marginal DSA changes rake the *joint* distribution, retaining its odds ratios.
@@ -29,45 +29,45 @@ target_population_weights <- function(population, prevalences = NULL,
                                       joint_probabilities = NULL,
                                       biomarkers = get_biomarkers()) {
   joint <- joint_biomarker_population(population, biomarkers)
-  mass <- joint$probabilities
+  v_mass <- joint$probabilities
   if (!is.null(joint_probabilities)) {
-    if (!setequal(names(joint_probabilities), names(mass))) stop("Joint probabilities must name every biomarker cell.")
-    mass <- joint_probabilities[names(mass)]
-    if (any(!is.finite(mass)) || any(mass < 0) || abs(sum(mass) - 1) > 1e-10)
+    if (!setequal(names(joint_probabilities), names(v_mass))) stop("Joint probabilities must name every biomarker cell.")
+    v_mass <- joint_probabilities[names(v_mass)]
+    if (any(!is.finite(v_mass)) || any(v_mass < 0) || abs(sum(v_mass) - 1) > 1e-10)
       stop("Joint probabilities must be non-negative and sum to one.")
-    if (any(mass[joint$counts == 0] > 0)) stop("Cannot assign mass to an unobserved biomarker cell.")
+    if (any(v_mass[joint$counts == 0] > 0)) stop("Cannot assign mass to an unobserved biomarker cell.")
   }
   if (!is.null(prevalences)) {
     if (is.null(names(prevalences)) || !all(biomarkers %in% names(prevalences)))
       stop("prevalences must be a named vector containing: ", paste(biomarkers, collapse = ", "))
-    targets <- prevalences[biomarkers]
-    if (any(!is.finite(targets)) || any(targets < 0 | targets > 1))
+    v_targets <- prevalences[biomarkers]
+    if (any(!is.finite(v_targets)) || any(v_targets < 0 | v_targets > 1))
       stop("Prevalences must be finite probabilities between zero and one.")
     for (iteration in seq_len(10000L)) {
-      if (max(abs(colSums(as.matrix(joint$cells) * mass) - targets)) < 1e-12) break
+      if (max(abs(colSums(as.matrix(joint$cells) * v_mass) - v_targets)) < 1e-12) break
       for (biomarker in biomarkers) {
         for (value in 0:1) {
-          rows <- joint$cells[[biomarker]] == value
-          wanted <- if (value == 1) targets[[biomarker]] else 1 - targets[[biomarker]]
-          current <- sum(mass[rows])
+          v_rows <- joint$cells[[biomarker]] == value
+          wanted <- if (value == 1) v_targets[[biomarker]] else 1 - v_targets[[biomarker]]
+          current <- sum(v_mass[v_rows])
           if (wanted > 0 && current == 0) stop("Requested prevalences are incompatible with observed joint support.")
-          mass[rows] <- if (current == 0) 0 else mass[rows] * wanted / current
+          v_mass[v_rows] <- if (current == 0) 0 else v_mass[v_rows] * wanted / current
         }
       }
     }
-    if (max(abs(colSums(as.matrix(joint$cells) * mass) - targets)) >= 1e-10)
+    if (max(abs(colSums(as.matrix(joint$cells) * v_mass) - v_targets)) >= 1e-10)
       stop("Joint prevalence standardisation did not converge.")
   }
-  unname(mass[joint$index] / joint$counts[joint$index])
+  unname(v_mass[joint$index] / joint$counts[joint$index])
 }
 
 model_population_weights <- function(params, population) {
-  biomarkers <- get_biomarkers()
-  keys <- paste0("p_joint_", c("00", "01", "10", "11"))
-  joint <- if (identical(biomarkers, c("crp", "tmb_braf")) && all(keys %in% names(params)))
-    setNames(unlist(params[keys], use.names = FALSE), c("00", "01", "10", "11")) else NULL
+  v_biomarkers <- get_biomarkers()
+  v_keys <- paste0("p_joint_", c("00", "01", "10", "11"))
+  v_joint <- if (identical(v_biomarkers, c("crp", "tmb_braf")) && all(v_keys %in% names(params)))
+    setNames(unlist(params[v_keys], use.names = FALSE), c("00", "01", "10", "11")) else NULL
   target_population_weights(population,
-    setNames(vapply(biomarkers, function(b) params[[paste0("p_", b)]], numeric(1)), biomarkers), joint)
+    setNames(vapply(v_biomarkers, function(b) params[[paste0("p_", b)]], numeric(1)), v_biomarkers), v_joint)
 }
 
 weighted_survival_average <- function(curves, weights) {
@@ -112,9 +112,9 @@ set_population_predictions <- function(params, predictions) {
     }
   }
   params$population_curves <- attr(predictions, "population_curves")
-  population <- attr(predictions, "prediction_population")
-  columns <- c("ID", "Age", "sex", "Rx", get_biomarkers(), "OSwk", "Death", "PFSwk", "Progression")
-  params$prediction_population <- population[, intersect(columns, names(population)), drop = FALSE]
+  df_population <- attr(predictions, "prediction_population")
+  v_columns <- c("ID", "Age", "sex", "Rx", get_biomarkers(), "OSwk", "Death", "PFSwk", "Progression")
+  params$prediction_population <- df_population[, intersect(v_columns, names(df_population)), drop = FALSE]
   params$population_weights <- attr(predictions, "population_weights")
   params
 }

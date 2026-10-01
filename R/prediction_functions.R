@@ -30,9 +30,9 @@ extract_all_survival_probabilities <- function(pred_object) {
   all_surv_probs <- lapply(pred_object$.pred, function(x) x$.pred_survival)
 
   # Convert to matrix: rows = time points, columns = patients
-  surv_matrix <- do.call(cbind, all_surv_probs)
+  m_surv <- do.call(cbind, all_surv_probs)
 
-  return(surv_matrix)
+  return(m_surv)
 }
 
 # Generate a population-average survival curve from a fitted flexsurv model.
@@ -45,8 +45,8 @@ predict_pop_avg <- function(model, newdata, time_pts) {
     )
     if (".pred" %in% names(pred)) {
       surv_probs <- lapply(pred$.pred, function(x) x$.pred_survival)
-      surv_matrix <- do.call(cbind, surv_probs)
-      return(rowMeans(surv_matrix, na.rm = TRUE))
+      m_surv <- do.call(cbind, surv_probs)
+      return(rowMeans(m_surv, na.rm = TRUE))
     }
     if (is.list(pred) && length(pred) > 0 && is.data.frame(pred[[1]])) {
       surv_probs <- sapply(pred, function(x) x$est)
@@ -76,13 +76,13 @@ extract_km_data <- function(km_fit) {
 # older objects (and test fixtures) still resolve.
 get_joint_sampling_models <- function(sampling_models) {
   if (!is.null(sampling_models$joint)) return(sampling_models$joint)
-  biomarkers <- get_biomarkers()
-  present <- intersect(biomarkers, names(sampling_models))
-  if (length(present) == 0L) {
+  v_biomarkers <- get_biomarkers()
+  v_present <- intersect(v_biomarkers, names(sampling_models))
+  if (length(v_present) == 0L) {
     stop("sampling_models has no joint-model component; expected `joint` or one of: ",
-         paste(biomarkers, collapse = ", "))
+         paste(v_biomarkers, collapse = ", "))
   }
-  sampling_models[[present[1]]]
+  sampling_models[[v_present[1]]]
 }
 
 # Build a flexsurvreg object whose estimates are one sampled coefficient vector
@@ -93,10 +93,10 @@ get_joint_sampling_models <- function(sampling_models) {
 # `res.t` and the covariate effects from `res`, so both tables, the
 # coefficient vector and the optimiser output are replaced consistently.
 build_sampled_flexsurv_model <- function(model, draw) {
-  par_names <- rownames(model$res)
-  if (is.null(names(draw))) names(draw) <- par_names
-  if (!identical(names(draw), par_names)) {
-    draw <- draw[par_names]
+  v_par_names <- rownames(model$res)
+  if (is.null(names(draw))) names(draw) <- v_par_names
+  if (!identical(names(draw), v_par_names)) {
+    draw <- draw[v_par_names]
   }
   if (anyNA(draw)) stop("Sampled coefficient vector does not cover every model parameter")
   sampled <- model
@@ -135,10 +135,10 @@ sampled_survival_models <- function(component, idx) {
   originals <- list(os = component$original_os, pfs = component$original_pfs)
   dists <- list(os = component$dist_os, pfs = component$dist_pfs)
   out <- lapply(c(os = "os", pfs = "pfs"), function(outcome) {
-    draw <- component$draws[[outcome]][idx, ]
+    v_draw <- component$draws[[outcome]][idx, ]
     list(
-      model = build_sampled_flexsurv_model(originals[[outcome]], draw),
-      coefficients = draw,
+      model = build_sampled_flexsurv_model(originals[[outcome]], v_draw),
+      coefficients = v_draw,
       dist = dists[[outcome]]
     )
   })
@@ -155,29 +155,29 @@ generate_population_averaged_predictions <- function(models, strategies_df,
                                                      quiet = FALSE,
                                                      weights = NULL) {
   # The explicit population is shared by every counterfactual treatment path.
-  population <- data_complete
-  if (is.null(weights)) weights <- target_population_weights(population, prevalences)
-  if (length(weights) != nrow(population)) stop("Population weights have the wrong length.")
+  df_population <- data_complete
+  if (is.null(weights)) weights <- target_population_weights(df_population, prevalences)
+  if (length(weights) != nrow(df_population)) stop("Population weights have the wrong length.")
   control <- get_control_strategy()
-  levels_rx <- levels(population$Rx)
+  v_levels_rx <- levels(df_population$Rx)
   predict_part <- function(rows, rx) {
     if (!length(rows)) stop("Both biomarker subgroups are required for prediction.")
-    newdata <- population[rows, , drop = FALSE]
-    newdata$Rx <- factor(rx, levels = levels_rx)
+    df_newdata <- df_population[rows, , drop = FALSE]
+    df_newdata$Rx <- factor(rx, levels = v_levels_rx)
     list(rows = rows,
-      os = extract_all_survival_probabilities(predict(models$os, newdata = newdata,
+      os = extract_all_survival_probabilities(predict(models$os, newdata = df_newdata,
         type = "survival", times = time_points)),
-      pfs = extract_all_survival_probabilities(predict(models$pfs, newdata = newdata,
+      pfs = extract_all_survival_probabilities(predict(models$pfs, newdata = df_newdata,
         type = "survival", times = time_points)))
   }
-  curves <- setNames(list(predict_part(seq_len(nrow(population)), levels_rx[1])), control)
+  curves <- setNames(list(predict_part(seq_len(nrow(df_population)), v_levels_rx[1])), control)
   for (biomarker in get_biomarkers()) {
-    status <- as.numeric(as.character(population[[biomarker]]))
-    curves[[biomarker]] <- list(positive = predict_part(which(status == 1), levels_rx[2]),
-                                negative = predict_part(which(status == 0), levels_rx[1]))
+    v_status <- as.numeric(as.character(df_population[[biomarker]]))
+    curves[[biomarker]] <- list(positive = predict_part(which(v_status == 1), v_levels_rx[2]),
+                                negative = predict_part(which(v_status == 0), v_levels_rx[1]))
   }
-  if (!quiet) cat("Predicted every strategy in one target population (n =", nrow(population), ").\n")
-  standardize_population_curves(curves, population, weights)
+  if (!quiet) cat("Predicted every strategy in one target population (n =", nrow(df_population), ").\n")
+  standardize_population_curves(curves, df_population, weights)
 }
 
 
@@ -188,46 +188,46 @@ generate_population_averaged_endpoint_curves <- function(model, data_complete,
                                                           time_points) {
   exp_rx <- levels(data_complete$Rx)[2]
   ctrl_rx <- levels(data_complete$Rx)[1]
-  biomarkers <- get_biomarkers()
+  v_biomarkers <- get_biomarkers()
 
   average_prediction <- function(newdata, rx_level) {
     newdata$Rx <- factor(rx_level, levels = levels(data_complete$Rx))
-    prediction <- predict(
+    df_prediction <- predict(
       model, newdata = newdata, type = "survival", times = time_points
     )
-    rowMeans(extract_all_survival_probabilities(prediction), na.rm = TRUE)
+    rowMeans(extract_all_survival_probabilities(df_prediction), na.rm = TRUE)
   }
 
   curves <- setNames(
     list(average_prediction(data_complete, ctrl_rx)),
     get_control_strategy()
   )
-  for (biomarker in biomarkers) {
-    status <- as.numeric(as.character(data_complete[[biomarker]]))
-    positive_data <- data_complete[status == 1, , drop = FALSE]
-    negative_data <- data_complete[status == 0, , drop = FALSE]
+  for (biomarker in v_biomarkers) {
+    v_status <- as.numeric(as.character(data_complete[[biomarker]]))
+    df_positive <- data_complete[v_status == 1, , drop = FALSE]
+    df_negative <- data_complete[v_status == 0, , drop = FALSE]
 
-    if (nrow(positive_data) == 0 || nrow(negative_data) == 0) {
+    if (nrow(df_positive) == 0 || nrow(df_negative) == 0) {
       stop("Both biomarker subgroups are required for ordering selection: ",
            biomarker)
     }
 
     curves[[paste0(biomarker, "_positive")]] <-
-      average_prediction(positive_data, exp_rx)
+      average_prediction(df_positive, exp_rx)
     curves[[paste0(biomarker, "_negative")]] <-
-      average_prediction(negative_data, ctrl_rx)
+      average_prediction(df_negative, ctrl_rx)
   }
   curves
 }
 
 check_endpoint_curve_ordering <- function(os_curves, pfs_curves,
                                           tolerance = 0) {
-  curve_names <- union(names(os_curves), names(pfs_curves))
-  details <- lapply(curve_names, function(curve_name) {
-    os <- os_curves[[curve_name]]
-    pfs <- pfs_curves[[curve_name]]
-    if (is.null(os) || is.null(pfs) || length(os) != length(pfs) ||
-        any(!is.finite(os)) || any(!is.finite(pfs))) {
+  v_curve_names <- union(names(os_curves), names(pfs_curves))
+  details <- lapply(v_curve_names, function(curve_name) {
+    v_os <- os_curves[[curve_name]]
+    v_pfs <- pfs_curves[[curve_name]]
+    if (is.null(v_os) || is.null(v_pfs) || length(v_os) != length(v_pfs) ||
+        any(!is.finite(v_os)) || any(!is.finite(v_pfs))) {
       return(data.frame(
         curve = curve_name, n_violations = NA_integer_,
         max_pfs_minus_os = Inf, ordered = FALSE,
@@ -235,12 +235,12 @@ check_endpoint_curve_ordering <- function(os_curves, pfs_curves,
       ))
     }
 
-    gaps <- pfs - os
+    v_gaps <- v_pfs - v_os
     data.frame(
       curve = curve_name,
-      n_violations = sum(gaps > tolerance),
-      max_pfs_minus_os = max(gaps),
-      ordered = all(gaps <= tolerance),
+      n_violations = sum(v_gaps > tolerance),
+      max_pfs_minus_os = max(v_gaps),
+      ordered = all(v_gaps <= tolerance),
       stringsAsFactors = FALSE
     )
   })
@@ -262,8 +262,8 @@ check_population_survival_ordering <- function(predictions, tolerance = 0) {
   control_strategy <- get_control_strategy()
   curve_sets <- setNames(list(predictions[[control_strategy]]), control_strategy)
 
-  strategy_names <- setdiff(names(predictions), control_strategy)
-  for (strategy_name in strategy_names) {
+  v_strategy_names <- setdiff(names(predictions), control_strategy)
+  for (strategy_name in v_strategy_names) {
     strategy <- predictions[[strategy_name]]
     curve_sets[[paste0(strategy_name, "_positive")]] <- strategy$biomarker_positive
     curve_sets[[paste0(strategy_name, "_negative")]] <- strategy$biomarker_negative

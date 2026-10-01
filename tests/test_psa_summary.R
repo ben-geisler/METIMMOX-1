@@ -1,15 +1,16 @@
 # Independent arithmetic examples for primary probabilistic reporting (#180).
 source("R/cea_helpers.R")
 source("R/report_format.R")
+#' dampack PSA object from draw-by-strategy cost and effect matrices.
 make_psa <- function(cost, effect, strategies) {
   dampack::make_psa_obj(cost = as.data.frame(cost),
     effectiveness = as.data.frame(effect), strategies = strategies)
 }
 # Put control second to exercise lookup; strongly correlated levels make
 # subtracting marginal interval endpoints visibly wrong for paired increments.
-cost <- cbind(c(110, 130, 150, 170), c(100, 110, 120, 130), c(120, 130, 140, 150))
-effect <- cbind(c(2, 4, 6, 8), c(1, 2, 3, 4), c(0.5, 1.5, 2.5, 3.5))
-p <- make_psa(cost, effect, c("crp", "control", "tmb_braf"))
+m_cost <- cbind(c(110, 130, 150, 170), c(100, 110, 120, 130), c(120, 130, 140, 150))
+m_effect <- cbind(c(2, 4, 6, 8), c(1, 2, 3, 4), c(0.5, 1.5, 2.5, 3.5))
+p <- make_psa(m_cost, m_effect, c("crp", "control", "tmb_braf"))
 x <- create_psa_summary_table(p, wtp = 100)
 stopifnot(x$Mean_Cost[1] == 140, x$Mean_QALY[1] == 5,
   x$Mean_Inc_Cost[1] == 25, x$Mean_Inc_QALY[1] == 2.5,

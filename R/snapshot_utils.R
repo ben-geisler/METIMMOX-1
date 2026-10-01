@@ -90,13 +90,13 @@ describe_psa_provenance <- function(before, after) {
 #'
 #' @return Named list of package versions.
 get_package_versions <- function() {
-  key_packages <- c(
+  v_key_packages <- c(
     "dampack", "flexsurv", "survival", "dplyr", "ggplot2",
     "here", "mvtnorm", "Matrix", "darthtools", "gems"
   )
 
   versions <- list()
-  for (pkg in key_packages) {
+  for (pkg in v_key_packages) {
     versions[[pkg]] <- if (requireNamespace(pkg, quietly = TRUE)) {
       as.character(packageVersion(pkg))
     } else {
@@ -188,9 +188,9 @@ generate_snapshot_filename <- function(type, issue_number, status,
 parse_snapshot_filename <- function(filename) {
   base <- basename(filename)
   no_ext <- sub("\\.rds$", "", base)
-  parts <- strsplit(no_ext, "_")[[1]]
+  v_parts <- strsplit(no_ext, "_")[[1]]
 
-  empty <- data.frame(
+  df_empty <- data.frame(
     filename = base,
     type = NA_character_,
     issue = NA_character_,
@@ -200,26 +200,26 @@ parse_snapshot_filename <- function(filename) {
     stringsAsFactors = FALSE
   )
 
-  if (length(parts) < 4 || !parts[1] %in% c("snapshot", "psa")) {
-    return(empty)
+  if (length(v_parts) < 4 || !v_parts[1] %in% c("snapshot", "psa")) {
+    return(df_empty)
   }
 
-  type <- parts[1]
-  issue <- parts[2]
-  token <- parts[3]
+  type <- v_parts[1]
+  issue <- v_parts[2]
+  token <- v_parts[3]
 
   if (token %in% c("baseline", "fixed")) {
     status <- token
     timestamp <- NA_character_
-    commit <- paste(parts[4:length(parts)], collapse = "_")
-  } else if (length(parts) >= 5) {
+    commit <- paste(v_parts[4:length(v_parts)], collapse = "_")
+  } else if (length(v_parts) >= 5) {
     status <- NA_character_
-    timestamp <- paste(parts[3], parts[4], sep = "_")
-    commit <- paste(parts[5:length(parts)], collapse = "_")
+    timestamp <- paste(v_parts[3], v_parts[4], sep = "_")
+    commit <- paste(v_parts[5:length(v_parts)], collapse = "_")
   } else {
     status <- NA_character_
     timestamp <- NA_character_
-    commit <- paste(parts[4:length(parts)], collapse = "_")
+    commit <- paste(v_parts[4:length(v_parts)], collapse = "_")
   }
 
   data.frame(
@@ -256,9 +256,9 @@ list_snapshots <- function(issue_number,
   }
 
   pattern <- paste0("^(snapshot|psa)_", issue_number, "_.*\\.rds$")
-  files <- list.files(snapshots_dir, pattern = pattern, full.names = FALSE)
+  v_files <- list.files(snapshots_dir, pattern = pattern, full.names = FALSE)
 
-  if (length(files) == 0) {
+  if (length(v_files) == 0) {
     message("No snapshots found for issue #", issue_number)
     return(data.frame(
       filename = character(0),
@@ -271,12 +271,12 @@ list_snapshots <- function(issue_number,
     ))
   }
 
-  snapshot_info <- do.call(rbind, lapply(files, parse_snapshot_filename))
-  snapshot_info$mtime <- file.info(file.path(snapshots_dir, snapshot_info$filename))$mtime
-  snapshot_info <- snapshot_info[order(snapshot_info$mtime), ]
-  rownames(snapshot_info) <- NULL
+  df_snapshot_info <- do.call(rbind, lapply(v_files, parse_snapshot_filename))
+  df_snapshot_info$mtime <- file.info(file.path(snapshots_dir, df_snapshot_info$filename))$mtime
+  df_snapshot_info <- df_snapshot_info[order(df_snapshot_info$mtime), ]
+  rownames(df_snapshot_info) <- NULL
 
-  snapshot_info
+  df_snapshot_info
 }
 
 #' Load Snapshot
@@ -297,11 +297,11 @@ load_snapshot <- function(filename,
   snapshot <- readRDS(filepath)
 
   if (grepl("^snapshot_", filename)) {
-    required_components <- c("metadata", "base_results", "icer_obj",
-                             "nmb_at_wtp", "psa_summary")
-    missing <- setdiff(required_components, names(snapshot))
-    if (length(missing) > 0) {
-      warning("Snapshot missing components: ", paste(missing, collapse = ", "))
+    v_required_components <- c("metadata", "base_results", "icer_obj",
+                               "nmb_at_wtp", "psa_summary")
+    v_missing <- setdiff(v_required_components, names(snapshot))
+    if (length(v_missing) > 0) {
+      warning("Snapshot missing components: ", paste(v_missing, collapse = ", "))
     }
     if ("models" %in% names(snapshot)) {
       warning("Snapshot contains obsolete multi-model 'models' component.")
@@ -355,33 +355,33 @@ find_snapshot_pair <- function(snapshot_file,
 #' @return List with before and after snapshot pairs.
 select_snapshots_for_comparison <- function(issue_number,
                                             snapshots_dir = snapshot_path()) {
-  snapshot_info <- list_snapshots(issue_number, snapshots_dir)
-  snapshot_files <- snapshot_info[snapshot_info$type == "snapshot", ]
+  df_snapshot_info <- list_snapshots(issue_number, snapshots_dir)
+  df_snapshot_files <- df_snapshot_info[df_snapshot_info$type == "snapshot", ]
 
-  if (nrow(snapshot_files) == 0) {
+  if (nrow(df_snapshot_files) == 0) {
     stop("No snapshots found for issue #", issue_number)
   }
 
-  has_status_pair <- any(snapshot_files$status == "baseline", na.rm = TRUE) &&
-    any(snapshot_files$status == "fixed", na.rm = TRUE)
+  has_status_pair <- any(df_snapshot_files$status == "baseline", na.rm = TRUE) &&
+    any(df_snapshot_files$status == "fixed", na.rm = TRUE)
 
   if (has_status_pair) {
-    baseline_files <- snapshot_files[snapshot_files$status == "baseline", ]
-    fixed_files <- snapshot_files[snapshot_files$status == "fixed", ]
+    df_baseline_files <- df_snapshot_files[df_snapshot_files$status == "baseline", ]
+    df_fixed_files <- df_snapshot_files[df_snapshot_files$status == "fixed", ]
 
-    before_file <- baseline_files$filename[which.max(baseline_files$mtime)]
-    after_file <- fixed_files$filename[which.max(fixed_files$mtime)]
+    before_file <- df_baseline_files$filename[which.max(df_baseline_files$mtime)]
+    after_file <- df_fixed_files$filename[which.max(df_fixed_files$mtime)]
     message("Selected latest baseline and fixed snapshots for issue #", issue_number)
   } else {
-    if (nrow(snapshot_files) == 1) {
+    if (nrow(df_snapshot_files) == 1) {
       stop("Only one snapshot found for issue #", issue_number,
            ". Need at least two snapshots to compare.")
     }
 
     message("No baseline/fixed status pair found; defaulting to earliest vs latest snapshot.")
-    snapshot_files <- snapshot_files[order(snapshot_files$mtime), ]
-    before_file <- snapshot_files$filename[1]
-    after_file <- snapshot_files$filename[nrow(snapshot_files)]
+    df_snapshot_files <- df_snapshot_files[order(df_snapshot_files$mtime), ]
+    before_file <- df_snapshot_files$filename[1]
+    after_file <- df_snapshot_files$filename[nrow(df_snapshot_files)]
   }
 
   before_pair <- find_snapshot_pair(before_file, snapshots_dir)

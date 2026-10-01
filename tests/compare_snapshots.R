@@ -10,8 +10,8 @@ source(here::here("R/snapshot_utils.R"))
 cat("\n=== Compare Analysis Snapshots ===\n\n")
 cat("This script compares two snapshots to assess the impact of bug fixes.\n\n")
 
-args <- commandArgs(trailingOnly = TRUE)
-issue_number <- if (length(args)) args[1] else readline(prompt = "Enter GitHub issue number: ")
+v_args <- commandArgs(trailingOnly = TRUE)
+issue_number <- if (length(v_args)) v_args[1] else readline(prompt = "Enter GitHub issue number: ")
 
 if (issue_number == "" || is.na(as.numeric(issue_number))) {
   stop("Invalid issue number. Please provide a numeric issue number.")
@@ -44,51 +44,51 @@ cat("\n=== Comparison Analysis ===\n\n")
 cat("1. Base Case Results Comparison\n")
 cat("--------------------------------\n")
 
-before_icer <- before_snapshot$icer_obj
-after_icer <- after_snapshot$icer_obj
+df_icer_before <- before_snapshot$icer_obj
+df_icer_after <- after_snapshot$icer_obj
 
-comparison_base <- merge(
-  before_icer[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
-  after_icer[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+df_comparison_base <- merge(
+  df_icer_before[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
+  df_icer_after[, c("Strategy", "Cost", "Effect", "Inc_Cost", "Inc_Effect", "ICER")],
   by = "Strategy",
   suffixes = c("_before", "_after")
 )
 
-comparison_base$Cost_diff <- comparison_base$Cost_after - comparison_base$Cost_before
-comparison_base$Effect_diff <- comparison_base$Effect_after - comparison_base$Effect_before
-comparison_base$Inc_Cost_diff <- comparison_base$Inc_Cost_after - comparison_base$Inc_Cost_before
-comparison_base$Inc_Effect_diff <- comparison_base$Inc_Effect_after - comparison_base$Inc_Effect_before
-comparison_base$Cost_pct_change <- (comparison_base$Cost_diff / comparison_base$Cost_before) * 100
-comparison_base$Effect_pct_change <- (comparison_base$Effect_diff / comparison_base$Effect_before) * 100
-comparison_base$ICER_diff <- ifelse(
-  is.na(comparison_base$ICER_before) | is.na(comparison_base$ICER_after),
+df_comparison_base$Cost_diff <- df_comparison_base$Cost_after - df_comparison_base$Cost_before
+df_comparison_base$Effect_diff <- df_comparison_base$Effect_after - df_comparison_base$Effect_before
+df_comparison_base$Inc_Cost_diff <- df_comparison_base$Inc_Cost_after - df_comparison_base$Inc_Cost_before
+df_comparison_base$Inc_Effect_diff <- df_comparison_base$Inc_Effect_after - df_comparison_base$Inc_Effect_before
+df_comparison_base$Cost_pct_change <- (df_comparison_base$Cost_diff / df_comparison_base$Cost_before) * 100
+df_comparison_base$Effect_pct_change <- (df_comparison_base$Effect_diff / df_comparison_base$Effect_before) * 100
+df_comparison_base$ICER_diff <- ifelse(
+  is.na(df_comparison_base$ICER_before) | is.na(df_comparison_base$ICER_after),
   NA,
-  comparison_base$ICER_after - comparison_base$ICER_before
+  df_comparison_base$ICER_after - df_comparison_base$ICER_before
 )
 
-print(comparison_base)
+print(df_comparison_base)
 
 # 2. Compare NMB and optimal strategy
 cat("\n2. Net Monetary Benefit Comparison\n")
 cat("-----------------------------------\n")
 
-before_nmb <- before_snapshot$nmb_at_wtp
-after_nmb <- after_snapshot$nmb_at_wtp
+df_nmb_before <- before_snapshot$nmb_at_wtp
+df_nmb_after <- after_snapshot$nmb_at_wtp
 
-comparison_nmb <- merge(
-  before_nmb[, c("Strategy", "NMB")],
-  after_nmb[, c("Strategy", "NMB")],
+df_comparison_nmb <- merge(
+  df_nmb_before[, c("Strategy", "NMB")],
+  df_nmb_after[, c("Strategy", "NMB")],
   by = "Strategy",
   suffixes = c("_before", "_after")
 )
 
-comparison_nmb$NMB_diff <- comparison_nmb$NMB_after - comparison_nmb$NMB_before
-comparison_nmb <- comparison_nmb[order(-comparison_nmb$NMB_after), ]
+df_comparison_nmb$NMB_diff <- df_comparison_nmb$NMB_after - df_comparison_nmb$NMB_before
+df_comparison_nmb <- df_comparison_nmb[order(-df_comparison_nmb$NMB_after), ]
 
-print(comparison_nmb)
+print(df_comparison_nmb)
 
-optimal_before <- before_nmb$Strategy[which.max(before_nmb$NMB)]
-optimal_after <- after_nmb$Strategy[which.max(after_nmb$NMB)]
+optimal_before <- df_nmb_before$Strategy[which.max(df_nmb_before$NMB)]
+optimal_after <- df_nmb_after$Strategy[which.max(df_nmb_after$NMB)]
 
 cat("\nOptimal strategy (before):", optimal_before, "\n")
 cat("Optimal strategy (after): ", optimal_after, "\n")
@@ -100,31 +100,31 @@ if (optimal_before != optimal_after) {
 cat("\n3. PSA Summary Statistics Comparison\n")
 cat("-------------------------------------\n")
 
-before_psa_sum <- before_snapshot$psa_summary
-after_psa_sum <- after_snapshot$psa_summary
+df_psa_sum_before <- before_snapshot$psa_summary
+df_psa_sum_after <- after_snapshot$psa_summary
 
 # Provenance (issue #156): say whether the two PSA files are the same cache.
 cat(describe_psa_provenance(before_snapshot, after_snapshot), "\n\n")
 
-if (is.null(before_psa_sum) || is.null(after_psa_sum)) {
+if (is.null(df_psa_sum_before) || is.null(df_psa_sum_after)) {
   cat("PSA summary unavailable in one or both snapshots.\n")
-  comparison_psa <- data.frame()
+  df_comparison_psa <- data.frame()
 } else {
-  comparison_psa <- merge(
-    before_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
+  df_comparison_psa <- merge(
+    df_psa_sum_before[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
                        "Cost_2.5_percent", "Cost_97.5_percent",
                        "Effect_2.5_percent", "Effect_97.5_percent")],
-    after_psa_sum[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
+    df_psa_sum_after[, c("Strategy", "meanCost", "sdCost", "meanEffect", "sdEffect",
                       "Cost_2.5_percent", "Cost_97.5_percent",
                       "Effect_2.5_percent", "Effect_97.5_percent")],
     by = "Strategy",
     suffixes = c("_before", "_after")
   )
 
-  comparison_psa$meanCost_diff <- comparison_psa$meanCost_after - comparison_psa$meanCost_before
-  comparison_psa$meanEffect_diff <- comparison_psa$meanEffect_after - comparison_psa$meanEffect_before
+  df_comparison_psa$meanCost_diff <- df_comparison_psa$meanCost_after - df_comparison_psa$meanCost_before
+  df_comparison_psa$meanEffect_diff <- df_comparison_psa$meanEffect_after - df_comparison_psa$meanEffect_before
 
-  print(comparison_psa[, c("Strategy", "meanCost_before", "meanCost_after", "meanCost_diff",
+  print(df_comparison_psa[, c("Strategy", "meanCost_before", "meanCost_after", "meanCost_diff",
                            "meanEffect_before", "meanEffect_after", "meanEffect_diff")])
 }
 
@@ -146,20 +146,20 @@ cat("  After: ", after_snapshot$metadata$r_version, "\n")
 
 before_params <- before_snapshot$metadata$parameters
 after_params <- after_snapshot$metadata$parameters
-param_names <- union(names(before_params), names(after_params))
-param_changes <- c()
+v_param_names <- union(names(before_params), names(after_params))
+v_param_changes <- c()
 
-for (param in param_names) {
+for (param in v_param_names) {
   before_val <- before_params[[param]]
   after_val <- after_params[[param]]
   if (!identical(before_val, after_val)) {
-    param_changes <- c(param_changes, param)
+    v_param_changes <- c(v_param_changes, param)
   }
 }
 
-if (length(param_changes) > 0) {
+if (length(v_param_changes) > 0) {
   cat("\nParameters that changed:\n")
-  for (param in param_changes) {
+  for (param in v_param_changes) {
     cat("  ", param, ": ",
         before_params[[param]], " -> ",
         after_params[[param]], "\n", sep = "")
@@ -172,6 +172,8 @@ if (length(param_changes) > 0) {
 cat("\n5. Creating PSA Scatter Plots\n")
 cat("------------------------------\n")
 
+#' Effect matrix of a dampack PSA object, reading `$effect` or the legacy
+#' `$effectiveness` element. Returns a numeric matrix (draws x strategies).
 get_psa_effect_matrix <- function(psa_obj) {
   if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
@@ -180,40 +182,40 @@ get_psa_effect_matrix <- function(psa_obj) {
   }
 }
 
-before_cost_matrix <- as.matrix(before_psa$cost)
-before_effect_matrix <- get_psa_effect_matrix(before_psa)
-after_cost_matrix <- as.matrix(after_psa$cost)
-after_effect_matrix <- get_psa_effect_matrix(after_psa)
+m_cost_before <- as.matrix(before_psa$cost)
+m_effect_before <- get_psa_effect_matrix(before_psa)
+m_cost_after <- as.matrix(after_psa$cost)
+m_effect_after <- get_psa_effect_matrix(after_psa)
 
-before_psa_data <- data.frame(
-  Strategy = rep(before_psa$strategies, each = nrow(before_cost_matrix)),
-  Cost = as.vector(before_cost_matrix),
-  Effect = as.vector(before_effect_matrix),
+df_psa_before <- data.frame(
+  Strategy = rep(before_psa$strategies, each = nrow(m_cost_before)),
+  Cost = as.vector(m_cost_before),
+  Effect = as.vector(m_effect_before),
   Snapshot = "Before"
 )
 
-after_psa_data <- data.frame(
-  Strategy = rep(after_psa$strategies, each = nrow(after_cost_matrix)),
-  Cost = as.vector(after_cost_matrix),
-  Effect = as.vector(after_effect_matrix),
+df_psa_after <- data.frame(
+  Strategy = rep(after_psa$strategies, each = nrow(m_cost_after)),
+  Cost = as.vector(m_cost_after),
+  Effect = as.vector(m_effect_after),
   Snapshot = "After"
 )
 
-combined_psa_data <- rbind(before_psa_data, after_psa_data)
+df_psa_combined <- rbind(df_psa_before, df_psa_after)
 
-plot_before <- ggplot(before_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
+plot_before <- ggplot(df_psa_before, aes(x = Effect, y = Cost, color = Strategy)) +
   geom_point(alpha = 0.3, size = 1) +
   labs(title = "Before", x = "Effect (QALYs)", y = "Cost (EUR)") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
-plot_after <- ggplot(after_psa_data, aes(x = Effect, y = Cost, color = Strategy)) +
+plot_after <- ggplot(df_psa_after, aes(x = Effect, y = Cost, color = Strategy)) +
   geom_point(alpha = 0.3, size = 1) +
   labs(title = "After", x = "Effect (QALYs)", y = "Cost (EUR)") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
-plot_overlaid <- ggplot(combined_psa_data,
+plot_overlaid <- ggplot(df_psa_combined,
                         aes(x = Effect, y = Cost, color = Strategy, shape = Snapshot)) +
   geom_point(alpha = 0.3, size = 1.5) +
   scale_shape_manual(values = c("Before" = 1, "After" = 16)) +
@@ -253,12 +255,12 @@ comparison_results <- list(
   issue_number = issue_number,
   before_metadata = before_snapshot$metadata,
   after_metadata = after_snapshot$metadata,
-  base_case_comparison = comparison_base,
-  nmb_comparison = comparison_nmb,
-  psa_comparison = comparison_psa,
+  base_case_comparison = df_comparison_base,
+  nmb_comparison = df_comparison_nmb,
+  psa_comparison = df_comparison_psa,
   optimal_strategy_before = optimal_before,
   optimal_strategy_after = optimal_after,
-  parameter_changes = param_changes
+  parameter_changes = v_param_changes
 )
 
 comparison_filename <- paste0("comparison_issue", issue_number, "_",

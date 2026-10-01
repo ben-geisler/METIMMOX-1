@@ -68,16 +68,16 @@ export_contract <- function() {
 parse_export_numeric <- function(x, name, na_tokens = character()) {
   if (is.numeric(x)) return(as.numeric(x))
   x <- trimws(as.character(x))
-  missing <- is.na(x) | x %in% na_tokens
-  out <- suppressWarnings(as.numeric(x))
-  bad <- !missing & is.na(out)
-  if (any(bad)) {
-    stop("Export contract: ", name, " has ", sum(bad), " non-numeric entr",
-         if (sum(bad) == 1) "y" else "ies", " other than ",
+  v_missing <- is.na(x) | x %in% na_tokens
+  v_out <- suppressWarnings(as.numeric(x))
+  v_bad <- !v_missing & is.na(v_out)
+  if (any(v_bad)) {
+    stop("Export contract: ", name, " has ", sum(v_bad), " non-numeric entr",
+         if (sum(v_bad) == 1) "y" else "ies", " other than ",
          paste(dQuote(na_tokens, FALSE), collapse = "/"), ".", call. = FALSE)
   }
-  out[missing] <- NA_real_
-  out
+  v_out[v_missing] <- NA_real_
+  v_out
 }
 
 #' Check headers, types, ranges, dates, identifiers and row count
@@ -87,23 +87,23 @@ parse_export_numeric <- function(x, name, na_tokens = character()) {
 #' @param contract export_contract().
 #' @return data, invisibly; stops listing every violation.
 check_export_contract <- function(data, top_header, contract = export_contract()) {
-  problems <- character()
-  flag <- function(...) problems <<- c(problems, paste0(...))
+  v_problems <- character()
+  flag <- function(...) v_problems <<- c(v_problems, paste0(...))
 
-  pos <- as.integer(names(contract$headers))
-  found <- names(data)[pos]
-  wrong <- is.na(found) | found != contract$headers
-  for (i in which(wrong)) flag("column ", pos[i], " is '", found[i], "', expected '",
-                               contract$headers[i], "'")
-  tpos <- as.integer(names(contract$top_labels))
-  tfound <- top_header[tpos]
-  twrong <- is.na(tfound) | tfound != contract$top_labels
-  for (i in which(twrong)) flag("top header at column ", tpos[i], " is '", tfound[i],
-                                "', expected '", contract$top_labels[i], "'")
+  v_pos <- as.integer(names(contract$headers))
+  v_found <- names(data)[v_pos]
+  v_wrong <- is.na(v_found) | v_found != contract$headers
+  for (i in which(v_wrong)) flag("column ", v_pos[i], " is '", v_found[i], "', expected '",
+                                 contract$headers[i], "'")
+  v_tpos <- as.integer(names(contract$top_labels))
+  v_tfound <- top_header[v_tpos]
+  v_twrong <- is.na(v_tfound) | v_tfound != contract$top_labels
+  for (i in which(v_twrong)) flag("top header at column ", v_tpos[i], " is '", v_tfound[i],
+                                  "', expected '", contract$top_labels[i], "'")
   # Values are meaningless under a shifted layout; report the layout first.
-  if (length(problems)) {
+  if (length(v_problems)) {
     stop("Export contract (layout) violated:\n  - ",
-         paste(problems, collapse = "\n  - "), call. = FALSE)
+         paste(v_problems, collapse = "\n  - "), call. = FALSE)
   }
 
   if (nrow(data) != contract$n_rows)
@@ -114,9 +114,9 @@ check_export_contract <- function(data, top_header, contract = export_contract()
   if (!all(data$`Study1/control0` %in% contract$arms)) flag("Study1/control0 must be 0/1")
 
   # Endpoints (issue #181).
-  endpoints <- c("Days until last evaluation", "Days until progression",
-                 "Progression exit", "Days until death/last follow up", "Death")
-  for (nm in endpoints) {
+  v_endpoints <- c("Days until last evaluation", "Days until progression",
+                   "Progression exit", "Days until death/last follow up", "Death")
+  for (nm in v_endpoints) {
     x <- data[[nm]]
     if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
       flag(nm, ": expected nonnegative finite numeric values")
@@ -124,7 +124,7 @@ check_export_contract <- function(data, top_header, contract = export_contract()
       flag(nm, ": expected 0/1")
     }
   }
-  if (all(vapply(data[endpoints], is.numeric, logical(1))) &&
+  if (all(vapply(data[v_endpoints], is.numeric, logical(1))) &&
       any(data$`Days until last evaluation` > data$`Days until death/last follow up`,
           na.rm = TRUE)) {
     flag("last evaluation exceeds death/last follow-up time")
@@ -132,50 +132,50 @@ check_export_contract <- function(data, top_header, contract = export_contract()
 
   # Dates.
   is_date <- function(x) inherits(x, c("POSIXct", "Date"))
-  date_cols <- c("Date of inclusion", "Date...114", "Date...122",
-                 names(contract$lab_median_days))
-  for (nm in date_cols) if (!is_date(data[[nm]])) flag(nm, " is not a date column")
-  if (length(problems)) {
-    stop("Export contract violated:\n  - ", paste(problems, collapse = "\n  - "),
+  v_date_cols <- c("Date of inclusion", "Date...114", "Date...122",
+                   names(contract$lab_median_days))
+  for (nm in v_date_cols) if (!is_date(data[[nm]])) flag(nm, " is not a date column")
+  if (length(v_problems)) {
+    stop("Export contract violated:\n  - ", paste(v_problems, collapse = "\n  - "),
          call. = FALSE)
   }
-  inclusion <- as.Date(data$`Date of inclusion`)
-  if (anyNA(inclusion)) flag("Date of inclusion has missing values")
-  for (nm in date_cols) {
+  v_inclusion <- as.Date(data$`Date of inclusion`)
+  if (anyNA(v_inclusion)) flag("Date of inclusion has missing values")
+  for (nm in v_date_cols) {
     d <- as.Date(data[[nm]])
-    out <- !is.na(d) & (d < contract$trial_period[1] | d > contract$trial_period[2])
-    if (any(out)) flag(nm, ": ", sum(out), " date(s) outside ",
-                       paste(format(contract$trial_period), collapse = " to "))
+    v_out <- !is.na(d) & (d < contract$trial_period[1] | d > contract$trial_period[2])
+    if (any(v_out)) flag(nm, ": ", sum(v_out), " date(s) outside ",
+                         paste(format(contract$trial_period), collapse = " to "))
   }
-  days <- function(nm) as.numeric(as.Date(data[[nm]]) - inclusion)
-  base_days <- days("Date...114")
-  if (anyNA(base_days) || any(base_days < contract$baseline_scan_days[1] |
-                              base_days > contract$baseline_scan_days[2], na.rm = TRUE))
+  days <- function(nm) as.numeric(as.Date(data[[nm]]) - v_inclusion)
+  v_base_days <- days("Date...114")
+  if (anyNA(v_base_days) || any(v_base_days < contract$baseline_scan_days[1] |
+                                v_base_days > contract$baseline_scan_days[2], na.rm = TRUE))
     flag("baseline scan (Date...114) missing or outside ",
          paste(contract$baseline_scan_days, collapse = " to "), " days of inclusion")
-  ct1_weeks <- days("Date...122") / 7
-  if (any(ct1_weeks <= contract$first_ct_weeks[1] |
-          ct1_weeks > contract$first_ct_weeks[2], na.rm = TRUE))
+  v_ct1_weeks <- days("Date...122") / 7
+  if (any(v_ct1_weeks <= contract$first_ct_weeks[1] |
+          v_ct1_weeks > contract$first_ct_weeks[2], na.rm = TRUE))
     flag("first on-treatment CT (Date...122) outside (",
          paste(contract$first_ct_weeks, collapse = ", "), "] weeks after inclusion")
   for (nm in names(contract$lab_median_days)) {
     med <- stats::median(days(nm), na.rm = TRUE)
-    win <- contract$lab_median_days[[nm]]
-    if (is.na(med) || med < win[1] || med > win[2])
+    v_win <- contract$lab_median_days[[nm]]
+    if (is.na(med) || med < v_win[1] || med > v_win[2])
       flag(nm, ": median ", med, " days from inclusion, expected ",
-           win[1], " to ", win[2], " (wrong visit block?)")
+           v_win[1], " to ", v_win[2], " (wrong visit block?)")
   }
 
   # Target-lesion sums (TLR) and CRP.
-  tl_base <- data$`TL LD...121`
-  if (!is.numeric(tl_base) || anyNA(tl_base) || any(tl_base <= 0))
+  v_tl_base <- data$`TL LD...121`
+  if (!is.numeric(v_tl_base) || anyNA(v_tl_base) || any(v_tl_base <= 0))
     flag("TL LD...121 (baseline target-lesion sum) must be positive and complete")
-  tl_ct1 <- tryCatch(parse_export_numeric(data$`TL LD...130`, "TL LD...130",
-                                          contract$na_tokens$`TL LD...130`),
-                     error = function(e) { flag(conditionMessage(e)); NULL })
-  if (!is.null(tl_ct1)) {
-    if (any(tl_ct1 < 0, na.rm = TRUE)) flag("TL LD...130 has negative values")
-    if (!identical(is.na(tl_ct1), is.na(data$`Date...122`)))
+  v_tl_ct1 <- tryCatch(parse_export_numeric(data$`TL LD...130`, "TL LD...130",
+                                            contract$na_tokens$`TL LD...130`),
+                       error = function(e) { flag(conditionMessage(e)); NULL })
+  if (!is.null(v_tl_ct1)) {
+    if (any(v_tl_ct1 < 0, na.rm = TRUE)) flag("TL LD...130 has negative values")
+    if (!identical(is.na(v_tl_ct1), is.na(data$`Date...122`)))
       flag("TL LD...130 and Date...122 (first on-treatment CT) are not missing together")
   }
   for (nm in c("CRP...478", "CRP...540")) {
@@ -185,14 +185,14 @@ check_export_contract <- function(data, top_header, contract = export_contract()
   }
 
   # TMB/BRAF.
-  tmb <- tryCatch(parse_export_numeric(data$TMB, "TMB", contract$na_tokens$TMB),
-                  error = function(e) { flag(conditionMessage(e)); NULL })
-  if (!is.null(tmb) && any(tmb < 0, na.rm = TRUE)) flag("TMB has negative values")
+  v_tmb <- tryCatch(parse_export_numeric(data$TMB, "TMB", contract$na_tokens$TMB),
+                    error = function(e) { flag(conditionMessage(e)); NULL })
+  if (!is.null(v_tmb) && any(v_tmb < 0, na.rm = TRUE)) flag("TMB has negative values")
   if (anyNA(data$Mutation) || !all(data$Mutation %in% contract$mutations))
     flag("Mutation must be one of ", paste(contract$mutations, collapse = ", "))
 
-  if (length(problems)) {
-    stop("Export contract violated:\n  - ", paste(problems, collapse = "\n  - "),
+  if (length(v_problems)) {
+    stop("Export contract violated:\n  - ", paste(v_problems, collapse = "\n  - "),
          call. = FALSE)
   }
   invisible(data)
@@ -204,26 +204,26 @@ check_export_contract <- function(data, top_header, contract = export_contract()
 #' @param contract export_contract().
 #' @return data, invisibly; stops listing every mismatch.
 check_export_counts <- function(data, contract = export_contract()) {
-  arm <- as.integer(data$Rx) - 1L  # 0 = control, 1 = experimental
-  by_arm <- function(x) list(pos = vapply(0:1, function(a) sum(x[arm == a] == 1, na.rm = TRUE), numeric(1)),
-                             n = vapply(0:1, function(a) sum(!is.na(x[arm == a])), numeric(1)))
+  v_arm <- as.integer(data$Rx) - 1L  # 0 = control, 1 = experimental
+  by_arm <- function(x) list(pos = vapply(0:1, function(a) sum(x[v_arm == a] == 1, na.rm = TRUE), numeric(1)),
+                             n = vapply(0:1, function(a) sum(!is.na(x[v_arm == a])), numeric(1)))
   overall <- function(x) list(pos = sum(x == 1, na.rm = TRUE), n = sum(!is.na(x)))
-  tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
+  v_tmb_braf <- as.numeric((data$TMBcat == 1) | (data$Mutation == "BRAF"))
   observed <- list(
     crp_week4 = by_arm(as.numeric(as.character(data$CRP1cat))),
     crp_baseline = by_arm(as.numeric(as.character(data$CRP0cat))),
-    tmb_braf = overall(tmb_braf),
+    tmb_braf = overall(v_tmb_braf),
     tlr = overall(as.numeric(as.character(data$TLRcat))))
   fmt <- function(x) paste0(x$pos, "/", x$n, collapse = " vs ")
-  problems <- character()
+  v_problems <- character()
   for (nm in names(contract$counts)) {
     if (!identical(as.numeric(unlist(observed[[nm]])), as.numeric(unlist(contract$counts[[nm]]))))
-      problems <- c(problems, paste0(nm, " positives ", fmt(observed[[nm]]),
-                                     ", expected ", fmt(contract$counts[[nm]])))
+      v_problems <- c(v_problems, paste0(nm, " positives ", fmt(observed[[nm]]),
+                                         ", expected ", fmt(contract$counts[[nm]])))
   }
-  if (length(problems)) {
+  if (length(v_problems)) {
     stop("Export contract (biomarker counts) violated:\n  - ",
-         paste(problems, collapse = "\n  - "), call. = FALSE)
+         paste(v_problems, collapse = "\n  - "), call. = FALSE)
   }
   invisible(data)
 }

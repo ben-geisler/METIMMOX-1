@@ -3,6 +3,8 @@
 
 library(here)
 
+#' Source scripts 02-05 into a local environment and check base-case OS >= PFS
+#' ordering, the deterministic error, the PSA clamp warning and the OS > 1 guard.
 run_survival_ordering_test <- function() {
   caller_owned_value <- "preserved"
   source("analysis/02_setup_and_global_variables.R", local = environment())
@@ -22,11 +24,11 @@ run_survival_ordering_test <- function() {
   source("R/model_fun.R", local = environment())
   source("R/calculate_outcomes.R", local = environment())
 
-  basecase_result <- model_fun(l_params_base, determpsa = "det")
+  df_basecase_result <- model_fun(l_params_base, determpsa = "det")
   stopifnot(
-    nrow(basecase_result) == 3L,
-    all(is.finite(basecase_result$Cost)),
-    all(is.finite(basecase_result$Effect))
+    nrow(df_basecase_result) == 3L,
+    all(is.finite(df_basecase_result$Cost)),
+    all(is.finite(df_basecase_result$Effect))
   )
 
   # The clamp is forbidden in deterministic mode; supplied curves opt in explicitly.
@@ -51,7 +53,7 @@ run_survival_ordering_test <- function() {
   )
 
   psa_warning <- NULL
-  psa_result <- withCallingHandlers(
+  df_psa_result <- withCallingHandlers(
     model_fun(crossed_params, determpsa = "curves"),
     warning = function(w) {
       if (grepl("PFS > OS constraint enforced", conditionMessage(w),
@@ -67,8 +69,8 @@ run_survival_ordering_test <- function() {
     identical(psa_warning$strategy, get_control_strategy()),
     identical(psa_warning$subgroup, "control"),
     grepl("max excess=", conditionMessage(psa_warning), fixed = TRUE),
-    all(is.finite(psa_result$Cost)),
-    all(is.finite(psa_result$Effect))
+    all(is.finite(df_psa_result$Cost)),
+    all(is.finite(df_psa_result$Effect))
   )
 
   # An OS value above 1 used to pass (dead occupancy -0.1, finite QALYs); the

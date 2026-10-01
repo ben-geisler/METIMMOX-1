@@ -29,63 +29,63 @@ fmt_or <- function(or, lower, upper) {
 
 run_wilcox_test <- function(df, group_var, value_var, item, test_label,
                             group_labels) {
-  dat <- complete_data(df, c(group_var, value_var))
-  dat[[group_var]] <- factor(dat[[group_var]])
-  wt <- stats::wilcox.test(dat[[value_var]] ~ dat[[group_var]], exact = FALSE)
-  medians <- tapply(dat[[value_var]], dat[[group_var]], median, na.rm = TRUE)
+  df_complete <- complete_data(df, c(group_var, value_var))
+  df_complete[[group_var]] <- factor(df_complete[[group_var]])
+  wt <- stats::wilcox.test(df_complete[[value_var]] ~ df_complete[[group_var]], exact = FALSE)
+  v_medians <- tapply(df_complete[[value_var]], df_complete[[group_var]], median, na.rm = TRUE)
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = paste0(
       "Median ", value_var, ": ",
-      group_labels[1], "=", fmt_num(unname(medians[1]), 1),
-      ", ", group_labels[2], "=", fmt_num(unname(medians[2]), 1)
+      group_labels[1], "=", fmt_num(unname(v_medians[1]), 1),
+      ", ", group_labels[2], "=", fmt_num(unname(v_medians[2]), 1)
     ),
     p_value = unname(wt$p.value)
   )
 }
 
 run_fisher_test <- function(df, x_var, y_var, item, test_label) {
-  dat <- complete_data(df, c(x_var, y_var))
-  ft <- stats::fisher.test(table(dat[[x_var]], dat[[y_var]]))
+  df_complete <- complete_data(df, c(x_var, y_var))
+  ft <- stats::fisher.test(table(df_complete[[x_var]], df_complete[[y_var]]))
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = fmt_or(unname(ft$estimate), ft$conf.int[1], ft$conf.int[2]),
     p_value = unname(ft$p.value)
   )
 }
 
 run_mh_test <- function(df, x_var, y_var, strata_var, item, test_label) {
-  dat <- complete_data(df, c(x_var, y_var, strata_var))
+  df_complete <- complete_data(df, c(x_var, y_var, strata_var))
   mh <- stats::mantelhaen.test(
-    table(dat[[x_var]], dat[[y_var]], dat[[strata_var]])
+    table(df_complete[[x_var]], df_complete[[y_var]], df_complete[[strata_var]])
   )
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = fmt_or(unname(mh$estimate), mh$conf.int[1], mh$conf.int[2]),
     p_value = unname(mh$p.value)
   )
 }
 
 run_firth_cox_test <- function(df, formula, term, item, test_label) {
-  dat <- complete_data(df, all.vars(formula))
+  df_complete <- complete_data(df, all.vars(formula))
   fit <- coxphf::coxphf(
-    formula = formula, data = dat, firth = TRUE, pl = TRUE,
+    formula = formula, data = df_complete, firth = TRUE, pl = TRUE,
     maxit = 100, maxstep = 0.1
   )
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = fmt_hr(
       exp(unname(fit$coefficients[term])),
       unname(fit$ci.lower[term]),
@@ -96,15 +96,15 @@ run_firth_cox_test <- function(df, formula, term, item, test_label) {
 }
 
 run_firth_logistic_test <- function(df, formula, term, item, test_label) {
-  dat <- complete_data(df, all.vars(formula))
+  df_complete <- complete_data(df, all.vars(formula))
   fit <- logistf::logistf(
-    formula = formula, data = dat, firth = TRUE, pl = TRUE
+    formula = formula, data = df_complete, firth = TRUE, pl = TRUE
   )
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = fmt_or(
       exp(unname(fit$coefficients[term])),
       exp(unname(fit$ci.lower[term])),
@@ -115,18 +115,18 @@ run_firth_logistic_test <- function(df, formula, term, item, test_label) {
 }
 
 run_permutation_test <- function(df, formula, item, test_label, seed = 123L) {
-  dat <- complete_data(df, all.vars(formula))
+  df_complete <- complete_data(df, all.vars(formula))
   set.seed(seed)
   perm <- coin::independence_test(
     formula,
-    data = dat,
+    data = df_complete,
     distribution = coin::approximate(nresample = 9999)
   )
 
   tibble::tibble(
     Item = item,
     Test = test_label,
-    N = nrow(dat),
+    N = nrow(df_complete),
     Effect = paste0(
       "Standardized Z = ",
       fmt_num(as.numeric(coin::statistic(perm, type = "standardized")), 2)

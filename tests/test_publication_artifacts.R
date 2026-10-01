@@ -3,6 +3,8 @@ source(here::here("R/scenario_analysis.R"))
 source(here::here("R/evppi_functions.R"))
 source(here::here("R/publication_artifacts.R"))
 
+#' Synthetic scenario result (scenario info, PSA object with zero costs and the
+#' given effect matrix, EVPPI rows) for compile_evppi_results().
 fixture <- function(id, effect, estimates = data.frame()) list(
   scenario_info = data.frame(scenario_id = id, scenario_name = id, wtp = 1),
   psa_obj = list(effect = effect, cost = matrix(0, nrow(effect), ncol(effect))),
@@ -13,15 +15,15 @@ small <- fixture("small", cbind(c(1, 1), c(1.01, .99)))
 failed <- fixture("failed", cbind(c(1, 1), c(2, 0)), data.frame(
   parameter = "[GROUP] utilities", evppi = NA_real_, evppi_se = NA_real_,
   error = "Regression failed"))
-result <- compile_evppi_results(list(zero, small, failed), groups)
-stopifnot(setequal(result$scenario_id, c("zero", "small", "failed")),
-  sum(result$parameter == "[EVPI]") == 3L)
-zr <- subset(result, scenario_id == "zero" & parameter != "[EVPI]")
-sr <- subset(result, scenario_id == "small" & parameter != "[EVPI]")
-fr <- subset(result, scenario_id == "failed" & parameter != "[EVPI]")
-stopifnot(zr$evppi == 0, zr$evppi_se == 0, zr$error == "",
-  is.na(zr$evppi_percent_of_evpi), is.na(sr$evppi), nzchar(sr$error),
-  is.na(fr$evppi), fr$error == "Regression failed")
+df_result <- compile_evppi_results(list(zero, small, failed), groups)
+stopifnot(setequal(df_result$scenario_id, c("zero", "small", "failed")),
+  sum(df_result$parameter == "[EVPI]") == 3L)
+df_zr <- subset(df_result, scenario_id == "zero" & parameter != "[EVPI]")
+df_sr <- subset(df_result, scenario_id == "small" & parameter != "[EVPI]")
+df_fr <- subset(df_result, scenario_id == "failed" & parameter != "[EVPI]")
+stopifnot(df_zr$evppi == 0, df_zr$evppi_se == 0, df_zr$error == "",
+  is.na(df_zr$evppi_percent_of_evpi), is.na(df_sr$evppi), nzchar(df_sr$error),
+  is.na(df_fr$evppi), df_fr$error == "Regression failed")
 stopifnot(nrow(compile_evppi_results(list(zero), list())) == 1L,
   nrow(compile_evppi_results(list(), groups)) == 0L)
 
@@ -31,35 +33,35 @@ path <- file.path(root, "outputs/tables/table_5.csv")
 writeLines("obsolete", path)
 begin_artifact_render("table_5", root)
 stopifnot(!file.exists(path))
-value <- data.frame(label = c("comma, quote\"", "plain"), value = c(pi, NA_real_))
-write_artifact_csv(value, path, row.names = FALSE)
+df_value <- data.frame(label = c("comma, quote\"", "plain"), value = c(pi, NA_real_))
+write_artifact_csv(df_value, path, row.names = FALSE)
 env <- new.env(parent = emptyenv())
 env$psa_obj <- list(fingerprint = "synthetic-psa")
 finish_artifact_render(env)
-m <- read.csv(artifact_manifest_path(root), stringsAsFactors = FALSE)
-stopifnot(m$status == "csv_verified", m$comparison_with_predecessor == "changed",
-  m$source_cache_fingerprints == "psa_obj=synthetic-psa",
-  m$artifact_md5 == unname(tools::md5sum(path)))
+df_manifest <- read.csv(artifact_manifest_path(root), stringsAsFactors = FALSE)
+stopifnot(df_manifest$status == "csv_verified", df_manifest$comparison_with_predecessor == "changed",
+  df_manifest$source_cache_fingerprints == "psa_obj=synthetic-psa",
+  df_manifest$artifact_md5 == unname(tools::md5sum(path)))
 # Empty successful render must remove both the predecessor and its old claim.
 begin_artifact_render("table_5", root)
 stopifnot(!file.exists(path), nrow(read.csv(artifact_manifest_path(root))) == 0L)
 finish_artifact_render(env)
-m <- read.csv(artifact_manifest_path(root))
-stopifnot(m$status == "deleted_empty", !file.exists(path))
+df_manifest <- read.csv(artifact_manifest_path(root))
+stopifnot(df_manifest$status == "deleted_empty", !file.exists(path))
 # A failed setup also cannot leave a previous output or provenance row behind.
 begin_artifact_render("table_5", root)
 stopifnot(nrow(read.csv(artifact_manifest_path(root))) == 0L,
-  inherits(try(write_artifact_csv(value, file.path(root, "undeclared.csv")), silent = TRUE), "try-error"))
+  inherits(try(write_artifact_csv(df_value, file.path(root, "undeclared.csv")), silent = TRUE), "try-error"))
 options(metimmox.artifact_context = NULL)
 
 # Execute the real Figure 5 plotting chunk under all-zero, failed and entirely
 # empty fixtures. This catches successful data compilation followed by a plot
 # failure or a missing replacement image without needing confidential caches.
 suppressPackageStartupMessages({library(ggplot2); library(dplyr)})
-src <- readLines(here::here("outputs/vignettes/figure5.qmd"), warn = FALSE)
-start <- grep("^```\\{r figure,", src) + 1L
-end <- start + which(src[start:length(src)] == "```")[1] - 2L
-plot_code <- parse(text = src[start:end])
+v_src <- readLines(here::here("outputs/vignettes/figure5.qmd"), warn = FALSE)
+start <- grep("^```\\{r figure,", v_src) + 1L
+end <- start + which(v_src[start:length(v_src)] == "```")[1] - 2L
+plot_code <- parse(text = v_src[start:end])
 plot_env <- new.env(parent = .GlobalEnv)
 plot_env$evppi_grouped <- expand.grid(param_group = c("Costs", "Utilities"),
   Scenario = c("Base case", "Biosimilar", "Higher WTP"), stringsAsFactors = FALSE)

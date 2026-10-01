@@ -59,11 +59,11 @@ setup_report <- function(sources = character(0),
     ""
   })
   knitr::knit_hooks$set(document = function(x) {
-    items <- unique(report_warnings$items)
-    summary <- if (length(items)) {
+    v_items <- unique(report_warnings$items)
+    summary <- if (length(v_items)) {
       paste0("Warnings recorded during rendering: ", length(report_warnings$items),
-             " (", length(items), " distinct).\n\n",
-             paste0("- ", gsub("[\r\n]+", " ", items), collapse = "\n"))
+             " (", length(v_items), " distinct).\n\n",
+             paste0("- ", gsub("[\r\n]+", " ", v_items), collapse = "\n"))
     } else "No warnings recorded during rendering."
     c(x, "\n\n## Validation warnings\n\n", summary, "\n")
   })
@@ -117,12 +117,12 @@ setup_report <- function(sources = character(0),
 
   withCallingHandlers(suppressMessages({
     for (num in sources) {
-      matches <- list.files(analysis_dir, pattern = paste0("^", num, "_.*\\.R$"),
-                            full.names = TRUE)
-      if (length(matches) == 0) {
+      v_matches <- list.files(analysis_dir, pattern = paste0("^", num, "_.*\\.R$"),
+                              full.names = TRUE)
+      if (length(v_matches) == 0) {
         stop("No analysis script found for prefix '", num, "' in ", analysis_dir)
       }
-      source_report_file(matches[1])
+      source_report_file(v_matches[1])
     }
     for (fn in funs) {
       fn_path <- file.path(fun_dir, paste0(fn, ".R"))

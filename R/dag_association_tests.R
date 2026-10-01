@@ -71,8 +71,8 @@ DAG_NODE_LABELS <- c(TMB_BRAF = "TMB/BRAF", CRP = "CRP")
 #' @param z Character vector of conditioning-set node names.
 #' @return Names of the interaction nodes determined by `z`.
 dag_determined_nodes <- function(z) {
-  nodes <- names(DAG_INTERACTION_NODES)
-  nodes[vapply(nodes, function(node) {
+  v_nodes <- names(DAG_INTERACTION_NODES)
+  v_nodes[vapply(v_nodes, function(node) {
     all(c(DAG_TREATMENT_NODE, DAG_INTERACTION_NODES[[node]]) %in% z)
   }, logical(1))]
 }
@@ -91,14 +91,14 @@ dag_edge_labels <- function(dag_obj) {
 dag_edge_coverage <- function(dag_obj) {
   e <- dagitty::edges(dag_obj)
   e <- e[e$e == "->", , drop = FALSE]
-  labels <- paste(as.character(e$v), "->", as.character(e$w))
-  latent <- as.character(e$v) %in% DAG_LATENT_NODES
-  definitional <- as.character(e$w) %in% names(DAG_INTERACTION_NODES)
+  v_labels <- paste(as.character(e$v), "->", as.character(e$w))
+  v_latent <- as.character(e$v) %in% DAG_LATENT_NODES
+  v_definitional <- as.character(e$w) %in% names(DAG_INTERACTION_NODES)
   list(
-    all = labels,
-    testable = labels[!latent & !definitional],
-    latent = labels[latent],
-    definitional = labels[definitional]
+    all = v_labels,
+    testable = v_labels[!v_latent & !v_definitional],
+    latent = v_labels[v_latent],
+    definitional = v_labels[v_definitional]
   )
 }
 
@@ -116,43 +116,43 @@ dag_edge_coverage <- function(dag_obj) {
 dag_ci_coverage <- function(dag_obj) {
   ci <- dagitty::impliedConditionalIndependencies(dag_obj)
   if (length(ci) == 0) {
-    out <- data.frame(statement = character(0), X = character(0),
+    df_out <- data.frame(statement = character(0), X = character(0),
                       Y = character(0), arm_balance = logical(0),
                       stratum_arm_balance = logical(0),
                       balance_stratum = character(0), determined = character(0),
                       definitional = logical(0), stringsAsFactors = FALSE)
-    out$Z <- list()
-    return(out)
+    df_out$Z <- list()
+    return(df_out)
   }
-  out <- data.frame(
+  df_out <- data.frame(
     statement = vapply(ci, format_ci_statement, character(1)),
     X = vapply(ci, function(s) s$X, character(1)),
     Y = vapply(ci, function(s) s$Y, character(1)),
     stringsAsFactors = FALSE
   )
-  out$Z <- lapply(ci, function(s) sort(as.character(s$Z)))
-  out$arm_balance <- vapply(seq_len(nrow(out)), function(i) {
-    length(out$Z[[i]]) == 0 && DAG_TREATMENT_NODE %in% c(out$X[i], out$Y[i])
+  df_out$Z <- lapply(ci, function(s) sort(as.character(s$Z)))
+  df_out$arm_balance <- vapply(seq_len(nrow(df_out)), function(i) {
+    length(df_out$Z[[i]]) == 0 && DAG_TREATMENT_NODE %in% c(df_out$X[i], df_out$Y[i])
   }, logical(1))
-  out$balance_stratum <- vapply(seq_len(nrow(out)), function(i) {
-    xy <- c(out$X[i], out$Y[i])
-    z <- out$Z[[i]]
-    nodes <- intersect(xy, names(DAG_INTERACTION_NODES))
-    other <- setdiff(xy, nodes)
-    if (length(nodes) != 1 || length(other) != 1 ||
-        other == DAG_TREATMENT_NODE || DAG_TREATMENT_NODE %in% z ||
-        !DAG_INTERACTION_NODES[[nodes]] %in% z) {
+  df_out$balance_stratum <- vapply(seq_len(nrow(df_out)), function(i) {
+    v_xy <- c(df_out$X[i], df_out$Y[i])
+    z <- df_out$Z[[i]]
+    v_nodes <- intersect(v_xy, names(DAG_INTERACTION_NODES))
+    v_other <- setdiff(v_xy, v_nodes)
+    if (length(v_nodes) != 1 || length(v_other) != 1 ||
+        v_other == DAG_TREATMENT_NODE || DAG_TREATMENT_NODE %in% z ||
+        !DAG_INTERACTION_NODES[[v_nodes]] %in% z) {
       return(NA_character_)
     }
-    unname(DAG_INTERACTION_NODES[[nodes]])
+    unname(DAG_INTERACTION_NODES[[v_nodes]])
   }, character(1))
-  out$stratum_arm_balance <- !is.na(out$balance_stratum)
-  out$determined <- vapply(seq_len(nrow(out)), function(i) {
-    paste(intersect(c(out$X[i], out$Y[i]), dag_determined_nodes(out$Z[[i]])),
+  df_out$stratum_arm_balance <- !is.na(df_out$balance_stratum)
+  df_out$determined <- vapply(seq_len(nrow(df_out)), function(i) {
+    paste(intersect(c(df_out$X[i], df_out$Y[i]), dag_determined_nodes(df_out$Z[[i]])),
           collapse = ", ")
   }, character(1))
-  out$definitional <- nzchar(out$determined)
-  out
+  df_out$definitional <- nzchar(df_out$determined)
+  df_out
 }
 
 #' Omitted edges from an interaction node into a child of T
@@ -171,24 +171,24 @@ dag_ci_coverage <- function(dag_obj) {
 dag_effect_modification_coverage <- function(dag_obj) {
   e <- dagitty::edges(dag_obj)
   e <- e[e$e == "->", , drop = FALSE]
-  from <- as.character(e$v)
-  to <- as.character(e$w)
-  t_children <- setdiff(to[from == DAG_TREATMENT_NODE], names(DAG_INTERACTION_NODES))
+  v_from <- as.character(e$v)
+  v_to <- as.character(e$w)
+  v_t_children <- setdiff(v_to[v_from == DAG_TREATMENT_NODE], names(DAG_INTERACTION_NODES))
   rows <- lapply(names(DAG_INTERACTION_NODES), function(node) {
-    if (!node %in% c(from, to)) return(NULL)
-    omitted <- setdiff(t_children, to[from == node])
-    if (length(omitted) == 0) return(NULL)
-    data.frame(item = paste(node, "->", omitted), interaction = node,
-               biomarker = unname(DAG_INTERACTION_NODES[[node]]), child = omitted,
+    if (!node %in% c(v_from, v_to)) return(NULL)
+    v_omitted <- setdiff(v_t_children, v_to[v_from == node])
+    if (length(v_omitted) == 0) return(NULL)
+    data.frame(item = paste(node, "->", v_omitted), interaction = node,
+               biomarker = unname(DAG_INTERACTION_NODES[[node]]), child = v_omitted,
                stringsAsFactors = FALSE)
   })
-  out <- do.call(rbind, rows)
-  if (is.null(out)) {
-    out <- data.frame(item = character(0), interaction = character(0),
+  df_out <- do.call(rbind, rows)
+  if (is.null(df_out)) {
+    df_out <- data.frame(item = character(0), interaction = character(0),
                       biomarker = character(0), child = character(0),
                       stringsAsFactors = FALSE)
   }
-  out
+  df_out
 }
 
 #' Prepare the analysis datasets used by the DAG association tests
@@ -214,26 +214,26 @@ prepare_dag_data <- function(data, landmark = "week9") {
   data$T_fac <- factor(data$T_num)
   data$sex_fac <- factor(data$sex_num)
 
-  data_tlr <- data[!is.na(data$tlr), , drop = FALSE]
-  main_vars <- c("Age", "sex", "Rx", "crp", "tmb_braf", "T_num", "TxTMB", "TxCRP",
+  df_tlr <- data[!is.na(data$tlr), , drop = FALSE]
+  v_main_vars <- c("Age", "sex", "Rx", "crp", "tmb_braf", "T_num", "TxTMB", "TxCRP",
                  "OSwk", "Death", "PFSwk", "Progression")
-  data_main <- data[stats::complete.cases(data[, main_vars]), , drop = FALSE]
+  df_main <- data[stats::complete.cases(data[, v_main_vars]), , drop = FALSE]
 
   # TLR landmark cohorts start from the TLR-classified patients within the
   # complete-case cohort (issue #184), as in clinical_effectiveness.qmd and
   # clin_effect_figure1.qmd; data_tlr keeps every observed TLR for the
   # non-landmark logistic tests.
-  data_tlr_landmark <- tlr_landmark_base_cohort(data)
-  lm <- build_tlr_landmark_cohorts(data_tlr_landmark, landmark = landmark)
+  df_tlr_landmark <- tlr_landmark_base_cohort(data)
+  lm <- build_tlr_landmark_cohorts(df_tlr_landmark, landmark = landmark)
 
   list(
     data = data,
-    data_main = data_main,
-    data_tlr = data_tlr,
-    data_tlr_landmark = data_tlr_landmark,
+    data_main = df_main,
+    data_tlr = df_tlr,
+    data_tlr_landmark = df_tlr_landmark,
     landmark = lm,
     data_lm_pfs = lm$pfs,
-    data_td = build_time_dependent_progression(data_main)
+    data_td = build_time_dependent_progression(df_main)
   )
 }
 
@@ -244,14 +244,14 @@ prepare_dag_data <- function(data, landmark = "week9") {
 #'
 #' @param df Data frame with `ID`, `OSwk`, `Death`, `TTPwk`, `ProgressionExit`.
 build_time_dependent_progression <- function(df) {
-  required <- c("ID", "OSwk", "Death", "TTPwk", "ProgressionExit")
-  missing <- setdiff(required, names(df))
-  if (length(missing) > 0) {
+  v_required <- c("ID", "OSwk", "Death", "TTPwk", "ProgressionExit")
+  v_missing <- setdiff(v_required, names(df))
+  if (length(v_missing) > 0) {
     stop("build_time_dependent_progression(): missing column(s): ",
-         paste(missing, collapse = ", "),
+         paste(v_missing, collapse = ", "),
          " (ProgressionExit/TTPwk are kept by 03_biomarker_strategies.R).")
   }
-  base <- df[, required, drop = FALSE]
+  base <- df[, v_required, drop = FALSE]
   base$ID <- as.character(base$ID)
   prog <- base[base$ProgressionExit == 1, c("ID", "TTPwk"), drop = FALSE]
   td <- survival::tmerge(base, base, id = ID,
@@ -289,15 +289,15 @@ run_time_dependent_cox_test <- function(td, item, test_label) {
 #' @param determined Interaction node(s) fixed by the conditioning set, as in
 #'   `dag_ci_coverage()$determined`.
 definitional_ci_row <- function(item, determined) {
-  nodes <- strsplit(determined, ", ", fixed = TRUE)[[1]]
-  fixed_by <- vapply(nodes, function(node) {
+  v_nodes <- strsplit(determined, ", ", fixed = TRUE)[[1]]
+  v_fixed_by <- vapply(v_nodes, function(node) {
     sprintf("%s is fixed by {%s}", node,
             paste(sort(c(DAG_TREATMENT_NODE, DAG_INTERACTION_NODES[[node]])),
                   collapse = ", "))
   }, character(1))
   tibble::tibble(
     Item = item,
-    Test = paste0("Definitional (", paste(fixed_by, collapse = "; "), ")"),
+    Test = paste0("Definitional (", paste(v_fixed_by, collapse = "; "), ")"),
     N = NA_integer_,
     Effect = "--",
     p_value = NA_real_
@@ -305,15 +305,15 @@ definitional_ci_row <- function(item, determined) {
 }
 
 assert_spec_coverage <- function(spec_names, derived, what) {
-  missing <- setdiff(derived, spec_names)
-  extra <- setdiff(spec_names, derived)
-  if (length(missing) > 0 || length(extra) > 0) {
+  v_missing <- setdiff(derived, spec_names)
+  v_extra <- setdiff(spec_names, derived)
+  if (length(v_missing) > 0 || length(v_extra) > 0) {
     stop(
       "DAG ", what, " and the prespecified tests disagree.",
-      if (length(missing) > 0) paste0("\n  Implied by the DAG but untested: ",
-                                      paste(missing, collapse = "; ")),
-      if (length(extra) > 0) paste0("\n  Tested but not implied by the DAG: ",
-                                    paste(extra, collapse = "; "))
+      if (length(v_missing) > 0) paste0("\n  Implied by the DAG but untested: ",
+                                      paste(v_missing, collapse = "; ")),
+      if (length(v_extra) > 0) paste0("\n  Tested but not implied by the DAG: ",
+                                    paste(v_extra, collapse = "; "))
     )
   }
   invisible(TRUE)
@@ -401,10 +401,10 @@ run_dag_edge_tests <- function(dag_obj, dd) {
   )
 
   assert_spec_coverage(names(specs), cov$testable, "edges")
-  res <- dplyr::bind_rows(lapply(cov$testable, function(e) specs[[e]]()))
-  res$Conclusion <- edge_support_label(res$p_value)
-  attr(res, "coverage") <- cov
-  res
+  df_res <- dplyr::bind_rows(lapply(cov$testable, function(e) specs[[e]]()))
+  df_res$Conclusion <- edge_support_label(df_res$p_value)
+  attr(df_res, "coverage") <- cov
+  df_res
 }
 
 #' Run every conditional-independence test implied by the DAG
@@ -470,11 +470,11 @@ run_dag_ci_tests <- function(dag_obj, dd, seed = 123L) {
   # a definitional statement is an error: it would test something else (the
   # TLR x interaction-node statements tested effect modification of T -> TLR,
   # now run_dag_effect_modification_tests(); issue #170).
-  defn <- cov$statement[cov$definitional]
-  tested_defn <- intersect(names(specs), defn)
-  if (length(tested_defn) > 0) {
+  v_defn <- cov$statement[cov$definitional]
+  v_tested_defn <- intersect(names(specs), v_defn)
+  if (length(v_tested_defn) > 0) {
     stop("Definitional conditional independencies have an empirical test: ",
-         paste(tested_defn, collapse = "; "))
+         paste(v_tested_defn, collapse = "; "))
   }
   for (i in which(cov$definitional)) {
     specs[[cov$statement[i]]] <- local({
@@ -485,25 +485,25 @@ run_dag_ci_tests <- function(dag_obj, dd, seed = 123L) {
   }
 
   assert_spec_coverage(names(specs), cov$statement, "conditional independencies")
-  res <- dplyr::bind_rows(lapply(cov$statement, function(s) specs[[s]]()))
-  idx <- match(res$Item, cov$statement)
-  res$Randomization_Check <- cov$arm_balance[idx]
-  res$Stratum_Balance <- cov$stratum_arm_balance[idx]
-  res$Balance_Stratum <- cov$balance_stratum[idx]
-  res$Definitional <- cov$definitional[idx]
-  stratum_note <- ifelse(
-    res$Stratum_Balance,
-    paste0(" (within ", DAG_NODE_LABELS[res$Balance_Stratum], "-positive patients)"),
+  df_res <- dplyr::bind_rows(lapply(cov$statement, function(s) specs[[s]]()))
+  idx <- match(df_res$Item, cov$statement)
+  df_res$Randomization_Check <- cov$arm_balance[idx]
+  df_res$Stratum_Balance <- cov$stratum_arm_balance[idx]
+  df_res$Balance_Stratum <- cov$balance_stratum[idx]
+  df_res$Definitional <- cov$definitional[idx]
+  v_stratum_note <- ifelse(
+    df_res$Stratum_Balance,
+    paste0(" (within ", DAG_NODE_LABELS[df_res$Balance_Stratum], "-positive patients)"),
     ""
   )
-  res$Conclusion <- ifelse(
-    res$Definitional, "Holds by construction",
-    paste0(ci_support_label(res$p_value,
-                            res$Randomization_Check | res$Stratum_Balance),
-           stratum_note)
+  df_res$Conclusion <- ifelse(
+    df_res$Definitional, "Holds by construction",
+    paste0(ci_support_label(df_res$p_value,
+                            df_res$Randomization_Check | df_res$Stratum_Balance),
+           v_stratum_note)
   )
-  attr(res, "coverage") <- cov
-  res
+  attr(df_res, "coverage") <- cov
+  df_res
 }
 
 #' Test the omitted interaction-to-child edges (effect modification of T -> C)
@@ -533,20 +533,20 @@ run_dag_effect_modification_tests <- function(dag_obj, dd) {
   )
   assert_spec_coverage(names(specs), cov$item, "omitted interaction edges")
   if (nrow(cov) == 0) {
-    res <- tibble::tibble(Item = character(0), Test = character(0),
+    df_res <- tibble::tibble(Item = character(0), Test = character(0),
                           N = integer(0), Effect = character(0),
                           p_value = numeric(0), Conclusion = character(0))
   } else {
-    res <- dplyr::bind_rows(lapply(cov$item, function(s) specs[[s]]()))
-    res$Conclusion <- ifelse(
-      is.na(res$p_value), "Not estimable",
-      ifelse(res$p_value < 0.05,
+    df_res <- dplyr::bind_rows(lapply(cov$item, function(s) specs[[s]]()))
+    df_res$Conclusion <- ifelse(
+      is.na(df_res$p_value), "Not estimable",
+      ifelse(df_res$p_value < 0.05,
              "Effect modification detected (p < 0.05)",
              "No effect modification detected (p >= 0.05)")
     )
   }
-  attr(res, "coverage") <- cov
-  res
+  attr(df_res, "coverage") <- cov
+  df_res
 }
 
 #' Adjusted primary-model interaction estimates (reconciliation, issue #184)
@@ -572,18 +572,18 @@ run_adjusted_interaction_models <- function(dd) {
     PFS = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp + tmb_braf +
       crp:Rx + tmb_braf:Rx
   )
-  terms <- c(TxCRP = "crp", TxTMB = "tmb_braf")
+  v_terms <- c(TxCRP = "crp", TxTMB = "tmb_braf")
   rows <- list()
   for (endpoint in names(formulas)) {
     fit <- fit_firth_cox(formulas[[endpoint]], d,
                          paste("adjusted primary model", endpoint))
     if (is.null(fit)) stop("Adjusted primary model failed for ", endpoint)
-    coefs <- names(fit$coefficients)
-    for (node in names(terms)) {
-      idx <- which(grepl(":", coefs, fixed = TRUE) &
-                     grepl(paste0("(^|:)", terms[[node]], "($|:)"), coefs))
+    v_coefs <- names(fit$coefficients)
+    for (node in names(v_terms)) {
+      idx <- which(grepl(":", v_coefs, fixed = TRUE) &
+                     grepl(paste0("(^|:)", v_terms[[node]], "($|:)"), v_coefs))
       if (length(idx) != 1) {
-        stop("Expected one ", terms[[node]], " x Rx coefficient in the adjusted ",
+        stop("Expected one ", v_terms[[node]], " x Rx coefficient in the adjusted ",
              endpoint, " model; found ", length(idx))
       }
       hr <- exp(unname(fit$coefficients[idx]))

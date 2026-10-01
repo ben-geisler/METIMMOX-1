@@ -2,13 +2,13 @@
 # setup, remove predecessors, verify CSVs against their generating objects, and
 # finish with an inventory. Render vignettes sequentially (one manifest writer).
 publication_outputs <- function() {
-  figs <- c("figure1", "figure2", "figure3", "figure4", "figure5", "figure_s1",
+  v_figs <- c("figure1", "figure2", "figure3", "figure4", "figure5", "figure_s1",
     "figure_s2", "figure_s5", "clin_effect_figure1", "clin_effect_figure_s1",
     "clin_effect_figure_sensitivity_dag", "clin_effect_figure_simplified_dag")
-  tabs <- c("table_1", "table_4", "table_5", "table_6", paste0("table_s", 1:4),
+  v_tabs <- c("table_1", "table_4", "table_5", "table_6", paste0("table_s", 1:4),
     "table_s6", "table_s7", "table_s8", "clin_effect_table_s2")
-  registry <- c(setNames(lapply(figs, function(x) paste0("outputs/figs/", x, ".png")), figs),
-    setNames(lapply(tabs, function(x) paste0("outputs/tables/", x, ".csv")), tabs))
+  registry <- c(setNames(lapply(v_figs, function(x) paste0("outputs/figs/", x, ".png")), v_figs),
+    setNames(lapply(v_tabs, function(x) paste0("outputs/tables/", x, ".csv")), v_tabs))
   registry$figure3 <- c(registry$figure3, "outputs/figs/figure_s3.png")
   registry$figure4 <- c(registry$figure4, "outputs/figs/figure_s4.png")
   registry$clin_effect_figure1 <- c(registry$clin_effect_figure1, "outputs/figs/clin_effect_figure1.eps")
@@ -24,24 +24,24 @@ publication_outputs <- function() {
 artifact_manifest_path <- function(root) file.path(root, "outputs/manifest.csv")
 
 begin_artifact_render <- function(vignette, root = here::here()) {
-  files <- publication_outputs()[[vignette]]
-  if (is.null(files)) stop("No publication output contract for: ", vignette)
+  v_files <- publication_outputs()[[vignette]]
+  if (is.null(v_files)) stop("No publication output contract for: ", vignette)
   ctx <- new.env(parent = emptyenv())
   ctx$root <- normalizePath(root, winslash = "/", mustWork = TRUE)
   ctx$vignette <- paste0("outputs/vignettes/", vignette, ".qmd")
-  ctx$files <- files
+  ctx$files <- v_files
   ctx$written <- list()
-  ctx$previous <- lapply(file.path(ctx$root, files), function(f)
+  ctx$previous <- lapply(file.path(ctx$root, v_files), function(f)
     if (file.exists(f)) unname(tools::md5sum(f)) else NA_character_)
-  names(ctx$previous) <- files
+  names(ctx$previous) <- v_files
   # Every deletion is an exact, registered file beneath this repository root.
-  for (f in file.path(ctx$root, files)) {
+  for (f in file.path(ctx$root, v_files)) {
     if (file.exists(f) && !file.remove(f)) stop("Cannot remove predecessor: ", f)
   }
   manifest <- artifact_manifest_path(ctx$root)
   if (file.exists(manifest)) {
-    old <- read.csv(manifest, stringsAsFactors = FALSE)
-    utils::write.csv(old[!old$file %in% files, , drop = FALSE], manifest, row.names = FALSE)
+    df_old <- read.csv(manifest, stringsAsFactors = FALSE)
+    utils::write.csv(df_old[!df_old$file %in% v_files, , drop = FALSE], manifest, row.names = FALSE)
   }
   options(metimmox.artifact_context = ctx)
   invisible(ctx)
@@ -51,8 +51,8 @@ artifact_target <- function(file) {
   ctx <- getOption("metimmox.artifact_context")
   if (is.null(ctx)) stop("Call begin_artifact_render() before writing an artifact")
   path <- normalizePath(file, winslash = "/", mustWork = FALSE)
-  targets <- file.path(ctx$root, ctx$files)
-  idx <- match(path, targets)
+  v_targets <- file.path(ctx$root, ctx$files)
+  idx <- match(path, v_targets)
   if (is.na(idx)) stop("Undeclared publication output: ", file)
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   list(ctx = ctx, path = path, relative = ctx$files[idx])
@@ -83,28 +83,28 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
   ctx <- getOption("metimmox.artifact_context")
   if (is.null(ctx)) stop("No active publication render")
   # Record only cache objects actually brought into the vignette environment.
-  fingerprints <- character()
+  v_fingerprints <- character()
   for (name in c("sampling_models", "psa_obj", "base_psa", "pipeline_psa",
                  "scenario_cache", "evppi_cache")) {
     obj <- get0(name, envir = envir, inherits = FALSE)
     if (is.list(obj) && length(obj$fingerprint) == 1L)
-      fingerprints[name] <- obj$fingerprint
+      v_fingerprints[name] <- obj$fingerprint
   }
-  source_files <- c(list.files(file.path(ctx$root, "R"), "\\.R$", full.names = TRUE),
+  v_source_files <- c(list.files(file.path(ctx$root, "R"), "\\.R$", full.names = TRUE),
     list.files(file.path(ctx$root, "analysis"), "\\.R$", full.names = TRUE),
     file.path(ctx$root, ctx$vignette))
-  source_files <- source_files[file.exists(source_files)]
-  code_hash <- digest::digest(unname(tools::md5sum(sort(source_files, method = "radix"))), algo = "sha256")
+  v_source_files <- v_source_files[file.exists(v_source_files)]
+  code_hash <- digest::digest(unname(tools::md5sum(sort(v_source_files, method = "radix"))), algo = "sha256")
   trial <- file.path(ctx$root, "data/tidy/METIMMOX.rds")
-  rows <- lapply(ctx$files, function(f) {
+  df_rows <- lapply(ctx$files, function(f) {
     path <- file.path(ctx$root, f)
     exists <- file.exists(path)
     status <- ctx$written[[f]]
     if (exists && is.null(status)) stop("Output bypassed artifact writer: ", f)
     hash <- if (exists) unname(tools::md5sum(path)) else NA_character_
     data.frame(file = f, generating_vignette = ctx$vignette,
-      source_cache_fingerprints = if (length(fingerprints))
-        paste(names(fingerprints), fingerprints, sep = "=", collapse = ";") else "",
+      source_cache_fingerprints = if (length(v_fingerprints))
+        paste(names(v_fingerprints), v_fingerprints, sep = "=", collapse = ";") else "",
       render_time = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
       status = if (exists) status else "deleted_empty",
       artifact_md5 = hash, source_code_sha256 = code_hash,
@@ -113,15 +113,15 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
         "created" else if (identical(hash, ctx$previous[[f]])) "unchanged" else "changed",
       stringsAsFactors = FALSE)
   })
-  rows <- do.call(rbind, rows)
+  df_rows <- do.call(rbind, df_rows)
   manifest <- artifact_manifest_path(ctx$root)
   if (file.exists(manifest)) {
-    old <- read.csv(manifest, stringsAsFactors = FALSE)
-    rows <- rbind(old[!old$file %in% ctx$files, , drop = FALSE], rows)
+    df_old <- read.csv(manifest, stringsAsFactors = FALSE)
+    df_rows <- rbind(df_old[!df_old$file %in% ctx$files, , drop = FALSE], df_rows)
   }
   # Locale-independent row order, so the manifest diff is stable (#185).
-  rows <- rows[order(rows$file, method = "radix"), ]
-  utils::write.csv(rows, manifest, row.names = FALSE, na = "")
+  df_rows <- df_rows[order(df_rows$file, method = "radix"), ]
+  utils::write.csv(df_rows, manifest, row.names = FALSE, na = "")
   options(metimmox.artifact_context = NULL)
-  invisible(rows)
+  invisible(df_rows)
 }

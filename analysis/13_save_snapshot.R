@@ -108,27 +108,33 @@ source(here::here("R/snapshot_utils.R"))
 cat("\n=== Running Single-Model Analysis ===\n")
 
 # Helper: compute PSA summary with CIs from a psa object
+#' Summarise a PSA object for the snapshot
+#'
+#' @param psa_obj dampack PSA object with cost and effect (or legacy
+#'   effectiveness) matrices.
+#' @return Data frame with one row per strategy: Strategy, meanCost, sdCost,
+#'   meanEffect, sdEffect and the 2.5% and 97.5% percentiles of cost and effect.
 compute_psa_summary <- function(psa_obj) {
-  psa_summary_full <- summary(psa_obj, calc_sds = TRUE,
+  df_psa_summary_full <- summary(psa_obj, calc_sds = TRUE,
                               prob = c(0.025, 0.975))
-  cost_matrix <- as.matrix(psa_obj$cost)
-  effect_matrix <- if (!is.null(psa_obj$effect)) {
+  m_cost <- as.matrix(psa_obj$cost)
+  m_effect <- if (!is.null(psa_obj$effect)) {
     as.matrix(psa_obj$effect)
   } else {
     as.matrix(psa_obj$effectiveness)
   }
-  cost_q <- apply(cost_matrix, 2, quantile, probs = c(0.025, 0.975))
-  effect_q <- apply(effect_matrix, 2, quantile, probs = c(0.025, 0.975))
+  m_cost_q <- apply(m_cost, 2, quantile, probs = c(0.025, 0.975))
+  m_effect_q <- apply(m_effect, 2, quantile, probs = c(0.025, 0.975))
   data.frame(
-    Strategy = psa_summary_full$Strategy,
-    meanCost = psa_summary_full$meanCost,
-    sdCost = psa_summary_full$sdCost,
-    meanEffect = psa_summary_full$meanEffect,
-    sdEffect = psa_summary_full$sdEffect,
-    Cost_2.5_percent = cost_q[1, ],
-    Cost_97.5_percent = cost_q[2, ],
-    Effect_2.5_percent = effect_q[1, ],
-    Effect_97.5_percent = effect_q[2, ],
+    Strategy = df_psa_summary_full$Strategy,
+    meanCost = df_psa_summary_full$meanCost,
+    sdCost = df_psa_summary_full$sdCost,
+    meanEffect = df_psa_summary_full$meanEffect,
+    sdEffect = df_psa_summary_full$sdEffect,
+    Cost_2.5_percent = m_cost_q[1, ],
+    Cost_97.5_percent = m_cost_q[2, ],
+    Effect_2.5_percent = m_effect_q[1, ],
+    Effect_97.5_percent = m_effect_q[2, ],
     stringsAsFactors = FALSE
   )
 }
@@ -139,13 +145,13 @@ base_results <- base_result$base_results
 icer_obj <- base_result$icer_obj
 
 # Calculate NMB
-nmb_at_wtp <- data.frame(
+df_nmb_at_wtp <- data.frame(
   Strategy = base_results$Strategy,
   Cost = base_results$Cost,
   Effect = base_results$Effect,
   NMB = base_results$Effect * WTP - base_results$Cost
 )
-nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
+df_nmb_at_wtp <- df_nmb_at_wtp[order(-df_nmb_at_wtp$NMB), ]
 
 # Load PSA cache, or (re)generate it when absent or stale.
 cache_file_obj <- psa_obj_path(utility_source_label)
@@ -300,7 +306,7 @@ snapshot <- list(
   metadata = metadata,
   base_results = base_results,
   icer_obj = as.data.frame(icer_obj),
-  nmb_at_wtp = nmb_at_wtp,
+  nmb_at_wtp = df_nmb_at_wtp,
   psa_summary = psa_summary,
   evppi = evppi_snapshot
 )

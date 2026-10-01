@@ -10,16 +10,19 @@ params <- list(u_np = 1, u_p = 1, c_drug_nivo = 0, c_drug_FLOX = 0,
   c_other_pp = 0, c_other_last = 0,
   l_nivo = 0, l_FLOX_exp = 0, l_FLOX_control = 0,
   l_CT = 0, l_blood = 0, l_visit = 0)
+#' calculate_outcomes() for an experimental-arm, CRP-guided trace with the given
+#' state occupancies, discount weights and cycle length; returns its outcome list.
 run <- function(p, pf, progressed = 1 - pf, dead = rep(0, length(pf)),
                 dw = rep(1, length(pf)), cl = 1 / 52) {
   calculate_outcomes(p, pf, progressed, dead, "experimental", "crp", dw, dw, cl)
 }
+#' Assert that two numeric vectors agree within 1e-10.
 equal <- function(x, y) stopifnot(max(abs(x - y)) < 1e-10)
 for (years in c(1, 10, 20)) {
   n <- years * 52 + 1
-  pf <- rep(1, n)
-  equal(run(params, pf)$qalys_total, years)
-  equal(run(params, pf)$qalys_total, restricted_mean_survival(pf, 1 / 52))
+  v_pf <- rep(1, n)
+  equal(run(params, v_pf)$qalys_total, years)
+  equal(run(params, v_pf)$qalys_total, restricted_mean_survival(v_pf, 1 / 52))
   p <- params
   p$c_other_follow <- 33
   p$c_other_pp <- 5000
@@ -34,22 +37,23 @@ equal(run(params, 1)$qalys_total, 0)
 equal(run(params, rep(1, 5), cl = 1 / 4)$qalys_total, 1)
 
 # Discounted, nonconstant occupancy matches an independent interval sum.
-pf <- c(1, 0.7, 0.4, 0)
-pp <- c(0, 0.2, 0.4, 0.5)
-dw <- 1 / 1.04^(0:3 / 52)
+v_pf <- c(1, 0.7, 0.4, 0)
+v_pp <- c(0, 0.2, 0.4, 0.5)
+v_dw <- 1 / 1.04^(0:3 / 52)
 p <- params
 p$u_np <- 0.73
 p$u_p <- 0.59
 p$c_other_follow <- 33
 p$c_other_pp <- 5000
+#' Trapezoidal integral of a four-point weekly curve over weeks 0-3, in years.
 area <- function(y) sum(diff(0:3 / 52) * (head(y, -1) + tail(y, -1)) / 2)
-out <- run(p, pf, pp, 1 - pf - pp, dw)
-equal(out$qalys_total, area((pf * p$u_np + pp * p$u_p) * dw))
-equal(out$costs_total, 4 * (33 + 5000) * area(pp * dw))
+out <- run(p, v_pf, v_pp, 1 - v_pf - v_pp, v_dw)
+equal(out$qalys_total, area((v_pf * p$u_np + v_pp * p$u_p) * v_dw))
+equal(out$costs_total, 4 * (33 + 5000) * area(v_pp * v_dw))
 # With a CT price and no l_CT scan, progressed imaging is the only CT charge.
 p$c_test_CT <- 386
-out <- run(p, pf, pp, 1 - pf - pp, dw)
-equal(out$costs_total, 4 * (33 + 386 + 5000) * area(pp * dw))
+out <- run(p, v_pf, v_pp, 1 - v_pf - v_pp, v_dw)
+equal(out$costs_total, 4 * (33 + 386 + 5000) * area(v_pp * v_dw))
 
 # Full scheduled costs at BOTH horizon endpoints, even for a one-point grid.
 p <- params
@@ -68,12 +72,12 @@ p$c_other_last <- 1000
 equal(run(p, c(1, 0), c(0, 0), c(0, 1), c(1, 0.8))$costs_total, 800)
 
 # Diagnostic QALYs use exactly the same endpoint weights as the economic model.
-os <- c(1, 0.6, 0.3, 0.1)
-pfs <- c(1, 0.7, 0.2, 0.2)
+v_os <- c(1, 0.6, 0.3, 0.1)
+v_pfs <- c(1, 0.7, 0.2, 0.2)
 p <- params
 p$u_np <- 0.73
 p$u_p <- 0.59
-metrics <- pfs_os_violation_metrics(os, pfs, 0:3, 1 / 52, dw, p$u_np, p$u_p)
-equal(metrics$qaly_clamped, run(p, pmin(pfs, os), pmax(os - pfs, 0), 1 - os, dw)$qalys_total)
-equal(metrics$qaly_raw_minus_clamped, area(pmax(pfs - os, 0) * (p$u_np - p$u_p) * dw))
+metrics <- pfs_os_violation_metrics(v_os, v_pfs, 0:3, 1 / 52, v_dw, p$u_np, p$u_p)
+equal(metrics$qaly_clamped, run(p, pmin(v_pfs, v_os), pmax(v_os - v_pfs, 0), 1 - v_os, v_dw)$qalys_total)
+equal(metrics$qaly_raw_minus_clamped, area(pmax(v_pfs - v_os, 0) * (p$u_np - p$u_p) * v_dw))
 cat("Interval integration and scheduled-event tests passed.\n")

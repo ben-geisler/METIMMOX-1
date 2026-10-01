@@ -108,9 +108,9 @@ calculate_evppi_regression <- function(psa_obj, psa_params, param_names, wtp,
   cat("Calculating EVPPI for parameter(s):", paste(param_names, collapse = ", "), "\n")
 
   outcomes <- psa_outcome_matrices(psa_obj)
-  cost_matrix <- outcomes$cost
-  effect_matrix <- outcomes$effect
-  n_sim <- nrow(cost_matrix)
+  m_cost <- outcomes$cost
+  m_effect <- outcomes$effect
+  n_sim <- nrow(m_cost)
 
   result <- list(
     evppi = NA_real_,
@@ -133,43 +133,43 @@ calculate_evppi_regression <- function(psa_obj, psa_params, param_names, wtp,
                         nrow(psa_params), n_sim)))
   }
 
-  missing_params <- setdiff(param_names, colnames(psa_params))
-  if (length(missing_params) > 0) {
+  v_missing_params <- setdiff(param_names, colnames(psa_params))
+  if (length(v_missing_params) > 0) {
     return(fail(paste("Parameter(s) not found in psa_params:",
-                      paste(missing_params, collapse = ", "))))
+                      paste(v_missing_params, collapse = ", "))))
   }
 
-  inputs <- psa_params[, param_names, drop = FALSE]
+  df_inputs <- psa_params[, param_names, drop = FALSE]
   for (param_name in param_names) {
-    if (!is.numeric(inputs[[param_name]])) {
+    if (!is.numeric(df_inputs[[param_name]])) {
       return(fail(paste("Parameter", param_name, "is not numeric")))
     }
   }
 
   # Keep draws with complete outcomes and complete inputs so the regression
   # rows stay aligned with the PSA draws.
-  complete_rows <- complete.cases(cost_matrix) & complete.cases(effect_matrix) &
-    complete.cases(inputs)
-  if (sum(complete_rows) < n_sim) {
-    cat("  Note: using", sum(complete_rows), "of", n_sim,
+  v_complete_rows <- complete.cases(m_cost) & complete.cases(m_effect) &
+    complete.cases(df_inputs)
+  if (sum(v_complete_rows) < n_sim) {
+    cat("  Note: using", sum(v_complete_rows), "of", n_sim,
         "draws with complete outcomes and inputs\n")
-    cost_matrix <- cost_matrix[complete_rows, , drop = FALSE]
-    effect_matrix <- effect_matrix[complete_rows, , drop = FALSE]
-    inputs <- inputs[complete_rows, , drop = FALSE]
+    m_cost <- m_cost[v_complete_rows, , drop = FALSE]
+    m_effect <- m_effect[v_complete_rows, , drop = FALSE]
+    df_inputs <- df_inputs[v_complete_rows, , drop = FALSE]
   }
-  result$n_sim <- nrow(cost_matrix)
+  result$n_sim <- nrow(m_cost)
   if (result$n_sim < 50) {
     return(fail(paste("Too few complete draws for regression:", result$n_sim)))
   }
 
   for (param_name in param_names) {
-    if (length(unique(inputs[[param_name]])) < 5) {
+    if (length(unique(df_inputs[[param_name]])) < 5) {
       return(fail(paste("Parameter", param_name, "has fewer than 5 distinct values")))
     }
   }
 
-  nmb_matrix <- effect_matrix * wtp - cost_matrix
-  result$evpi <- calculate_evpi_from_nmb(nmb_matrix)
+  m_nmb <- m_effect * wtp - m_cost
+  result$evpi <- calculate_evpi_from_nmb(m_nmb)
 
   if (identical(method, "gam") && is.null(gam_formula)) {
     gam_formula <- evppi_gam_formula(param_names)
@@ -181,8 +181,8 @@ calculate_evppi_regression <- function(psa_obj, psa_params, param_names, wtp,
   }
 
   voi_args <- list(
-    outputs = nmb_matrix,
-    inputs = inputs,
+    outputs = m_nmb,
+    inputs = df_inputs,
     pars = param_names,
     method = method,
     se = se,
@@ -232,7 +232,7 @@ calculate_evppi_regression <- function(psa_obj, psa_params, param_names, wtp,
 #'   `member_se`, `shortfall` (member minus group), `tolerance`, `violation`
 check_evppi_group_consistency <- function(evppi_results, param_groups,
                                           tol_se = 2, tol_frac_evpi = 0.01) {
-  empty <- data.frame(
+  df_empty <- data.frame(
     group = character(), group_evppi = numeric(), group_se = numeric(),
     max_member = character(), member_evppi = numeric(), member_se = numeric(),
     shortfall = numeric(), tolerance = numeric(), violation = logical(),
@@ -240,40 +240,40 @@ check_evppi_group_consistency <- function(evppi_results, param_groups,
   )
   if (is.null(param_groups) || length(param_groups) == 0 ||
       is.null(evppi_results) || nrow(evppi_results) == 0) {
-    return(empty)
+    return(df_empty)
   }
 
   rows <- lapply(names(param_groups), function(group_name) {
-    group_row <- evppi_results[
+    df_group_row <- evppi_results[
       evppi_results$parameter == paste0("[GROUP] ", group_name), , drop = FALSE]
-    members <- intersect(param_groups[[group_name]], evppi_results$parameter)
-    if (nrow(group_row) == 0 || length(members) == 0) {
+    v_members <- intersect(param_groups[[group_name]], evppi_results$parameter)
+    if (nrow(df_group_row) == 0 || length(v_members) == 0) {
       return(NULL)
     }
-    member_rows <- evppi_results[match(members, evppi_results$parameter), , drop = FALSE]
-    member_evppi <- member_rows$evppi
-    if (all(is.na(member_evppi)) || is.na(group_row$evppi[1])) {
+    df_member_rows <- evppi_results[match(v_members, evppi_results$parameter), , drop = FALSE]
+    v_member_evppi <- df_member_rows$evppi
+    if (all(is.na(v_member_evppi)) || is.na(df_group_row$evppi[1])) {
       return(NULL)
     }
-    idx <- which.max(replace(member_evppi, is.na(member_evppi), -Inf))
+    idx <- which.max(replace(v_member_evppi, is.na(v_member_evppi), -Inf))
 
-    group_se <- group_row$evppi_se[1]
-    member_se <- member_rows$evppi_se[idx]
+    group_se <- df_group_row$evppi_se[1]
+    member_se <- df_member_rows$evppi_se[idx]
     se_tol <- if (is.finite(group_se) && is.finite(member_se)) {
       tol_se * sqrt(group_se^2 + member_se^2)
     } else {
       0
     }
-    evpi <- group_row$evpi[1]
+    evpi <- df_group_row$evpi[1]
     tolerance <- max(se_tol, tol_frac_evpi * if (is.finite(evpi)) evpi else 0)
-    shortfall <- member_evppi[idx] - group_row$evppi[1]
+    shortfall <- v_member_evppi[idx] - df_group_row$evppi[1]
 
     data.frame(
       group = group_name,
-      group_evppi = group_row$evppi[1],
+      group_evppi = df_group_row$evppi[1],
       group_se = group_se,
-      max_member = members[idx],
-      member_evppi = member_evppi[idx],
+      max_member = v_members[idx],
+      member_evppi = v_member_evppi[idx],
       member_se = member_se,
       shortfall = shortfall,
       tolerance = tolerance,
@@ -283,11 +283,11 @@ check_evppi_group_consistency <- function(evppi_results, param_groups,
   })
   rows <- Filter(Negate(is.null), rows)
   if (length(rows) == 0) {
-    return(empty)
+    return(df_empty)
   }
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
-  out
+  df_out <- do.call(rbind, rows)
+  rownames(df_out) <- NULL
+  df_out
 }
 
 #' Stop if any group EVPPI falls below its largest member beyond tolerance
@@ -296,21 +296,21 @@ check_evppi_group_consistency <- function(evppi_results, param_groups,
 #' @return The consistency table, invisibly
 assert_evppi_group_consistency <- function(evppi_results, param_groups,
                                            tol_se = 2, tol_frac_evpi = 0.01) {
-  consistency <- check_evppi_group_consistency(
+  df_consistency <- check_evppi_group_consistency(
     evppi_results, param_groups, tol_se = tol_se, tol_frac_evpi = tol_frac_evpi
   )
-  bad <- consistency[consistency$violation, , drop = FALSE]
-  if (nrow(bad) > 0) {
+  df_bad <- df_consistency[df_consistency$violation, , drop = FALSE]
+  if (nrow(df_bad) > 0) {
     stop(
       "Group EVPPI below its largest member beyond Monte Carlo tolerance:\n",
       paste(sprintf(
         "  [GROUP] %s = %.3f (SE %.3f) < %s = %.3f (SE %.3f); shortfall %.3f > tolerance %.3f",
-        bad$group, bad$group_evppi, bad$group_se, bad$max_member,
-        bad$member_evppi, bad$member_se, bad$shortfall, bad$tolerance
+        df_bad$group, df_bad$group_evppi, df_bad$group_se, df_bad$max_member,
+        df_bad$member_evppi, df_bad$member_se, df_bad$shortfall, df_bad$tolerance
       ), collapse = "\n")
     )
   }
-  invisible(consistency)
+  invisible(df_consistency)
 }
 
 #' Run complete EVPPI analysis for all parameters and parameter groups
@@ -334,15 +334,15 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
                                assert_groups = TRUE) {
 
   outcomes <- psa_outcome_matrices(psa_obj)
-  nmb_matrix <- outcomes$effect * wtp - outcomes$cost
-  evpi_manual <- calculate_evpi_from_nmb(nmb_matrix)
+  m_nmb <- outcomes$effect * wtp - outcomes$cost
+  evpi_manual <- calculate_evpi_from_nmb(m_nmb)
 
   cat("\n=== EVPPI Analysis at WTP =", wtp, "===\n")
   cat("Total EVPI:", round(evpi_manual, 4), "\n")
   cat("Estimator: voi::evppi() nonparametric regression (GAM);",
       "standard errors from B =", B, "coefficient draws\n\n")
 
-  empty_results <- data.frame(
+  df_empty_results <- data.frame(
     parameter = character(),
     evppi = numeric(),
     evppi_se = numeric(),
@@ -358,25 +358,25 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
   # Only proceed if we have meaningful EVPI
   if (evpi_manual <= 0.01) {
     cat("EVPI is too small (", round(evpi_manual, 4), ") - skipping EVPPI analysis\n")
-    return(empty_results)
+    return(df_empty_results)
   }
 
   # Filter to only include parameters that exist and have variation
-  available_params <- intersect(evppi_params, colnames(psa_params))
+  v_available_params <- intersect(evppi_params, colnames(psa_params))
 
-  params_with_variation <- character()
-  for (param in available_params) {
-    param_values <- psa_params[[param]]
-    if (is.numeric(param_values) && !all(is.na(param_values))) {
-      param_values <- param_values[!is.na(param_values)]
-      if (length(unique(param_values)) >= 5 && sd(param_values) > 0) {
-        params_with_variation <- c(params_with_variation, param)
+  v_params_with_variation <- character()
+  for (param in v_available_params) {
+    v_param_values <- psa_params[[param]]
+    if (is.numeric(v_param_values) && !all(is.na(v_param_values))) {
+      v_param_values <- v_param_values[!is.na(v_param_values)]
+      if (length(unique(v_param_values)) >= 5 && sd(v_param_values) > 0) {
+        v_params_with_variation <- c(v_params_with_variation, param)
       }
     }
   }
 
   cat("Parameters with sufficient variation:",
-      paste(params_with_variation, collapse = ", "), "\n\n")
+      paste(v_params_with_variation, collapse = ", "), "\n\n")
 
   result_row <- function(label, result) {
     evppi_percent <- if (is.finite(result$evpi) && result$evpi > 0) {
@@ -398,18 +398,18 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
     )
   }
 
-  evppi_results <- empty_results
+  df_evppi_results <- df_empty_results
 
   # Calculate EVPPI for each parameter individually
-  for (param in params_with_variation) {
+  for (param in v_params_with_variation) {
     result <- calculate_evppi_regression(psa_obj, psa_params, param,
                                          wtp = wtp, se = TRUE, B = B, seed = seed)
-    evppi_results <- rbind(evppi_results, result_row(param, result))
+    df_evppi_results <- rbind(df_evppi_results, result_row(param, result))
   }
 
   # Sort individual parameters by EVPPI value (descending, NA last)
-  if (nrow(evppi_results) > 0) {
-    evppi_results <- evppi_results[order(-evppi_results$evppi, na.last = TRUE), ]
+  if (nrow(df_evppi_results) > 0) {
+    df_evppi_results <- df_evppi_results[order(-df_evppi_results$evppi, na.last = TRUE), ]
   }
 
   # Calculate EVPPI for parameter groups (if provided)
@@ -417,42 +417,42 @@ run_evppi_analysis <- function(psa_obj, psa_params, wtp, evppi_params,
     cat("\n=== Grouped Parameter EVPPI ===\n")
 
     for (group_name in names(param_groups)) {
-      group_params <- intersect(param_groups[[group_name]], params_with_variation)
+      v_group_params <- intersect(param_groups[[group_name]], v_params_with_variation)
 
-      if (length(group_params) >= 2) {
+      if (length(v_group_params) >= 2) {
         cat("\nCalculating EVPPI for group:", group_name,
-            "(", paste(group_params, collapse = ", "), ")\n")
-        result <- calculate_evppi_regression(psa_obj, psa_params, group_params,
+            "(", paste(v_group_params, collapse = ", "), ")\n")
+        result <- calculate_evppi_regression(psa_obj, psa_params, v_group_params,
                                              wtp = wtp, se = TRUE, B = B, seed = seed)
-        evppi_results <- rbind(evppi_results,
+        df_evppi_results <- rbind(df_evppi_results,
                                result_row(paste0("[GROUP] ", group_name), result))
       }
     }
   }
-  rownames(evppi_results) <- NULL
+  rownames(df_evppi_results) <- NULL
 
-  failed <- evppi_results$parameter[nzchar(evppi_results$error)]
-  if (length(failed) > 0) {
-    warning("EVPPI could not be estimated for: ", paste(failed, collapse = ", "),
+  v_failed <- df_evppi_results$parameter[nzchar(df_evppi_results$error)]
+  if (length(v_failed) > 0) {
+    warning("EVPPI could not be estimated for: ", paste(v_failed, collapse = ", "),
             " (see the 'error' column; these rows are NA, not zero)")
   }
 
   # Perfect information on a group is worth at least as much as on any member.
-  consistency <- check_evppi_group_consistency(evppi_results, param_groups)
-  attr(evppi_results, "group_consistency") <- consistency
-  if (any(consistency$violation)) {
+  df_consistency <- check_evppi_group_consistency(df_evppi_results, param_groups)
+  attr(df_evppi_results, "group_consistency") <- df_consistency
+  if (any(df_consistency$violation)) {
     if (assert_groups) {
-      assert_evppi_group_consistency(evppi_results, param_groups)
+      assert_evppi_group_consistency(df_evppi_results, param_groups)
     } else {
       warning("Group EVPPI below its largest member for: ",
-              paste(consistency$group[consistency$violation], collapse = ", "))
+              paste(df_consistency$group[df_consistency$violation], collapse = ", "))
     }
-  } else if (nrow(consistency) > 0) {
-    cat("\nGroup consistency check passed for", nrow(consistency),
+  } else if (nrow(df_consistency) > 0) {
+    cat("\nGroup consistency check passed for", nrow(df_consistency),
         "group(s): every group EVPPI >= largest member within tolerance\n")
   }
 
-  evppi_results
+  df_evppi_results
 }
 
 #' Calculate Population-Level EVPPI
@@ -486,9 +486,9 @@ calculate_population_evppi <- function(evppi_per_patient,
                                        discount_rate = 0.035) {
   # Calculate sum of discount factors over research horizon
   # (Present value of an annuity of 1 unit per year for n years)
-  years <- 1:research_horizon
-  discount_factors <- 1 / (1 + discount_rate)^years
-  sum_discount_factors <- sum(discount_factors)
+  v_years <- 1:research_horizon
+  v_discount_factors <- 1 / (1 + discount_rate)^v_years
+  sum_discount_factors <- sum(v_discount_factors)
 
   # Scale per-patient value to population
   population_evppi_eur <- evppi_per_patient * annual_incidence * sum_discount_factors
@@ -517,10 +517,10 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
     return(NULL)
   }
 
-  biomarkers <- get_biomarkers()
-  outcomes <- c("os", "pfs")
+  v_biomarkers <- get_biomarkers()
+  v_outcomes <- c("os", "pfs")
 
-  result <- data.frame(row.names = seq_len(n_sim))
+  df_result <- data.frame(row.names = seq_len(n_sim))
 
   cat("\n=== Extracting interaction coefficients from sampling models ===\n")
 
@@ -546,25 +546,25 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
     sample_i[[outcome]]$coefficients
   }
 
-  for (biomarker in biomarkers) {
+  for (biomarker in v_biomarkers) {
     strategy_models <- component_for(biomarker)
     if (is.null(strategy_models)) {
       cat("  Warning:", biomarker, "not found in sampling_models - skipping\n")
       next
     }
 
-    for (outcome in outcomes) {
+    for (outcome in v_outcomes) {
       col_name <- paste0("b_", biomarker, "_rx_", outcome)
-      values <- numeric(n_sim)
+      v_values <- numeric(n_sim)
       n_extracted <- 0
       n_failed <- 0
       n_missing <- 0
 
       for (i in seq_len(n_sim)) {
-        coefs <- draw_coefficients(strategy_models, outcome, i)
+        v_coefs <- draw_coefficients(strategy_models, outcome, i)
 
-        if (is.null(coefs)) {
-          values[i] <- NA
+        if (is.null(v_coefs)) {
+          v_values[i] <- NA
           n_failed <- n_failed + 1
           next
         }
@@ -583,23 +583,23 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
         # Match structurally instead: an interaction term (contains ":")
         # mentioning both Rx and the biomarker, each at a term boundary so
         # one biomarker ID cannot match another's as a substring.
-        coef_names <- names(coefs)
-        matching_names <- coef_names[
-          grepl(":", coef_names, fixed = TRUE) &
-            grepl(paste0("(^|:)", biomarker), coef_names) &
-            grepl("(^|:)Rx", coef_names)
+        v_coef_names <- names(v_coefs)
+        v_matching_names <- v_coef_names[
+          grepl(":", v_coef_names, fixed = TRUE) &
+            grepl(paste0("(^|:)", biomarker), v_coef_names) &
+            grepl("(^|:)Rx", v_coef_names)
         ]
 
-        if (length(matching_names) > 0) {
-          values[i] <- coefs[matching_names[1]]
+        if (length(v_matching_names) > 0) {
+          v_values[i] <- v_coefs[v_matching_names[1]]
           n_extracted <- n_extracted + 1
         } else {
-          values[i] <- NA
+          v_values[i] <- NA
           n_missing <- n_missing + 1
         }
       }
 
-      result[[col_name]] <- values
+      df_result[[col_name]] <- v_values
 
       cat(sprintf("  %s: extracted=%d, failed=%d, missing=%d\n",
                   col_name, n_extracted, n_failed, n_missing))
@@ -612,31 +612,31 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
   }
 
   # Remove columns that are entirely NA (coefficient not in model formula)
-  all_na_cols <- vapply(result, function(x) all(is.na(x)), logical(1))
-  if (any(all_na_cols)) {
+  v_all_na_cols <- vapply(df_result, function(x) all(is.na(x)), logical(1))
+  if (any(v_all_na_cols)) {
     cat("  Removing all-NA columns:",
-        paste(names(result)[all_na_cols], collapse = ", "), "\n")
-    result <- result[, !all_na_cols, drop = FALSE]
+        paste(names(df_result)[v_all_na_cols], collapse = ", "), "\n")
+    df_result <- df_result[, !v_all_na_cols, drop = FALSE]
   }
 
   # Report summary statistics
   cat("\nExtracted coefficient summary:\n")
-  for (col in names(result)) {
-    vals <- result[[col]]
-    valid_vals <- vals[!is.na(vals)]
-    if (length(valid_vals) > 0) {
+  for (col in names(df_result)) {
+    v_vals <- df_result[[col]]
+    v_valid_vals <- v_vals[!is.na(v_vals)]
+    if (length(v_valid_vals) > 0) {
       cat(sprintf("  %s: mean=%.4f, sd=%.4f, range=[%.4f, %.4f], n_valid=%d\n",
-                  col, mean(valid_vals), sd(valid_vals),
-                  min(valid_vals), max(valid_vals), length(valid_vals)))
+                  col, mean(v_valid_vals), sd(v_valid_vals),
+                  min(v_valid_vals), max(v_valid_vals), length(v_valid_vals)))
     }
   }
 
-  if (ncol(result) == 0) {
+  if (ncol(df_result) == 0) {
     warning("No interaction coefficients could be extracted")
     return(NULL)
   }
 
-  return(result)
+  return(df_result)
 }
 
 
@@ -644,17 +644,17 @@ extract_interaction_coefficients <- function(sampling_models, n_sim) {
 #'
 #' @return Character vector of parameter names (e.g., "b_crp_rx_os")
 get_interaction_evppi_params <- function() {
-  biomarkers <- get_biomarkers()
-  outcomes <- c("os", "pfs")
+  v_biomarkers <- get_biomarkers()
+  v_outcomes <- c("os", "pfs")
 
-  params <- character(0)
-  for (biomarker in biomarkers) {
-    for (outcome in outcomes) {
-      params <- c(params, paste0("b_", biomarker, "_rx_", outcome))
+  v_params <- character(0)
+  for (biomarker in v_biomarkers) {
+    for (outcome in v_outcomes) {
+      v_params <- c(v_params, paste0("b_", biomarker, "_rx_", outcome))
     }
   }
 
-  return(params)
+  return(v_params)
 }
 
 
@@ -669,26 +669,26 @@ get_interaction_evppi_params <- function() {
 #' @param existing_groups Named list of existing parameter groups
 #' @return Updated named list with additional interaction groups
 add_interaction_param_groups <- function(existing_groups) {
-  interaction_params <- get_interaction_evppi_params()
+  v_interaction_params <- get_interaction_evppi_params()
 
-  if (length(interaction_params) == 0) {
+  if (length(v_interaction_params) == 0) {
     return(existing_groups)
   }
 
-  biomarkers <- get_biomarkers()
+  v_biomarkers <- get_biomarkers()
   n_biomarker_groups <- 0L
 
-  for (biomarker in biomarkers) {
-    bio_params <- grep(paste0("^b_", biomarker, "_rx_"),
-                       interaction_params, value = TRUE)
-    if (length(bio_params) >= 2) {
-      existing_groups[[paste0("interaction_", biomarker)]] <- bio_params
+  for (biomarker in v_biomarkers) {
+    v_bio_params <- grep(paste0("^b_", biomarker, "_rx_"),
+                       v_interaction_params, value = TRUE)
+    if (length(v_bio_params) >= 2) {
+      existing_groups[[paste0("interaction_", biomarker)]] <- v_bio_params
       n_biomarker_groups <- n_biomarker_groups + 1L
     }
   }
 
-  if (n_biomarker_groups > 1L && length(interaction_params) >= 2) {
-    existing_groups[["interaction_all"]] <- interaction_params
+  if (n_biomarker_groups > 1L && length(v_interaction_params) >= 2) {
+    existing_groups[["interaction_all"]] <- v_interaction_params
   }
 
   return(existing_groups)
@@ -705,17 +705,17 @@ add_interaction_param_groups <- function(existing_groups) {
 configure_evppi_analysis <- function(param_distributions, param_groups,
                                      include_interactions = TRUE,
                                      available_params = NULL) {
-  params <- names(param_distributions)
+  v_params <- names(param_distributions)
   groups <- param_groups
 
   if (include_interactions) {
-    interaction_params <- get_interaction_evppi_params()
+    v_interaction_params <- get_interaction_evppi_params()
     if (!is.null(available_params)) {
-      interaction_params <- intersect(interaction_params, available_params)
+      v_interaction_params <- intersect(v_interaction_params, available_params)
     }
-    params <- unique(c(params, interaction_params))
+    v_params <- unique(c(v_params, v_interaction_params))
     groups <- add_interaction_param_groups(groups)
   }
 
-  list(params = params, groups = groups)
+  list(params = v_params, groups = groups)
 }

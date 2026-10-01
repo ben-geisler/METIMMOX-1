@@ -22,12 +22,12 @@ draws <- draw_joint_survival_coefficients(os, pfs, matrix(0, p, p), 3L, 123L)
 sampling_models <- list(joint = list(method = "mvn_joint_v2", draws = draws,
   original_os = os, original_pfs = pfs, n_samples = 3L,
   dist_os = os$dlist$name, dist_pfs = pfs$dlist$name))
-base <- model_fun(l_params_base, determpsa = "det")
+df_base <- model_fun(l_params_base, determpsa = "det")
 for (i in 1:3) {
-  result <- model_fun(l_params_base, determpsa = "psa", sim_idx = i)
-  stopifnot(!isTRUE(attr(result, "fallback_used")),
-            identical(base$Strategy, result$Strategy),
-            max(abs(base$Cost - result$Cost)) < 1e-8,
-            max(abs(base$Effect - result$Effect)) < 1e-12)
+  df_result <- model_fun(l_params_base, determpsa = "psa", sim_idx = i)
+  stopifnot(!isTRUE(attr(df_result, "fallback_used")),
+            identical(df_base$Strategy, df_result$Strategy),
+            max(abs(df_base$Cost - df_result$Cost)) < 1e-8,
+            max(abs(df_base$Effect - df_result$Effect)) < 1e-12)
 }
 cat("PASS: zero covariance and fixed parameters/weights reproduce all deterministic costs and QALYs.\n")

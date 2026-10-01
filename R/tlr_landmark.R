@@ -86,11 +86,11 @@ tlr_landmark_time <- function(df, spec) {
 #'   `PFSwk_lm`), an `attrition` table and a `diagnostics` list.
 build_tlr_landmark_cohorts <- function(df, landmark = "week9") {
   spec <- tlr_landmark_spec(landmark)
-  required <- c("OSwk", "Death", "PFSwk", "Progression", "ProgressionExit")
-  missing <- setdiff(required, names(df))
-  if (length(missing) > 0) {
+  v_required <- c("OSwk", "Death", "PFSwk", "Progression", "ProgressionExit")
+  v_missing <- setdiff(v_required, names(df))
+  if (length(v_missing) > 0) {
     stop("build_tlr_landmark_cohorts(): missing column(s): ",
-         paste(missing, collapse = ", "))
+         paste(v_missing, collapse = ", "))
   }
   tlr_col <- if ("tlr_num" %in% names(df)) "tlr_num" else "tlr"
   if (!tlr_col %in% names(df) || anyNA(df[[tlr_col]])) {
@@ -98,71 +98,71 @@ build_tlr_landmark_cohorts <- function(df, landmark = "week9") {
          "(no NA in ", tlr_col, ").")
   }
 
-  lm_wk <- tlr_landmark_time(df, spec)
-  at_risk_os <- df$OSwk > lm_wk
-  at_risk_pfs <- df$PFSwk > lm_wk
+  v_lm_wk <- tlr_landmark_time(df, spec)
+  v_at_risk_os <- df$OSwk > v_lm_wk
+  v_at_risk_pfs <- df$PFSwk > v_lm_wk
 
-  os <- df[at_risk_os, , drop = FALSE]
-  os$lm_wk <- lm_wk[at_risk_os]
-  os$OSwk_lm <- os$OSwk - os$lm_wk
+  df_os <- df[v_at_risk_os, , drop = FALSE]
+  df_os$lm_wk <- v_lm_wk[v_at_risk_os]
+  df_os$OSwk_lm <- df_os$OSwk - df_os$lm_wk
 
-  pfs <- df[at_risk_pfs, , drop = FALSE]
-  pfs$lm_wk <- lm_wk[at_risk_pfs]
-  pfs$PFSwk_lm <- pfs$PFSwk - pfs$lm_wk
+  df_pfs <- df[v_at_risk_pfs, , drop = FALSE]
+  df_pfs$lm_wk <- v_lm_wk[v_at_risk_pfs]
+  df_pfs$PFSwk_lm <- df_pfs$PFSwk - df_pfs$lm_wk
 
   if (all(c("tlr_num", "Rx_num") %in% names(df))) {
-    os$tlr_x_rx <- os$tlr_num * os$Rx_num
-    pfs$tlr_x_rx <- pfs$tlr_num * pfs$Rx_num
+    df_os$tlr_x_rx <- df_os$tlr_num * df_os$Rx_num
+    df_pfs$tlr_x_rx <- df_pfs$tlr_num * df_pfs$Rx_num
   }
 
   # First-scan progressors: progression recorded at the first on-treatment CT
   # (PFS time equals the scan time). They are TLR-negative by construction
   # because progression and TLR are read from the same scan.
   has_scan <- "CT1wk" %in% names(df) && !anyNA(df$CT1wk)
-  first_scan_prog <- if (has_scan) {
+  v_first_scan_prog <- if (has_scan) {
     df$Progression == 1 & abs(df$PFSwk - df$CT1wk) < 1e-8
   } else {
     rep(NA, nrow(df))
   }
-  scan_after_lm <- if (has_scan) df$CT1wk > lm_wk else rep(NA, nrow(df))
+  v_scan_after_lm <- if (has_scan) df$CT1wk > v_lm_wk else rep(NA, nrow(df))
 
-  pfs_excl <- df[!at_risk_pfs, , drop = FALSE]
-  os_excl <- df[!at_risk_os, , drop = FALSE]
+  df_pfs_excl <- df[!v_at_risk_pfs, , drop = FALSE]
+  df_os_excl <- df[!v_at_risk_os, , drop = FALSE]
 
   diagnostics <- list(
     landmark = spec$id,
     n_total = nrow(df),
-    n_os = nrow(os),
-    n_pfs = nrow(pfs),
-    n_os_excluded = nrow(os_excl),
-    n_pfs_excluded = nrow(pfs_excl),
-    n_os_excl_deaths = sum(os_excl$Death == 1),
-    n_pfs_excl_progression_exit = sum(pfs_excl$ProgressionExit == 1),
-    n_pfs_excl_progression_exit_tlr_neg = sum(pfs_excl$ProgressionExit == 1 &
-                                          pfs_excl[[tlr_col]] == 0),
-    n_pfs_excl_death_pf = sum(pfs_excl$Progression == 1 & pfs_excl$ProgressionExit == 0),
-    n_pfs_excl_censored = sum(pfs_excl$Progression == 0),
-    n_first_scan_progressors = if (has_scan) sum(first_scan_prog) else NA_integer_,
+    n_os = nrow(df_os),
+    n_pfs = nrow(df_pfs),
+    n_os_excluded = nrow(df_os_excl),
+    n_pfs_excluded = nrow(df_pfs_excl),
+    n_os_excl_deaths = sum(df_os_excl$Death == 1),
+    n_pfs_excl_progression_exit = sum(df_pfs_excl$ProgressionExit == 1),
+    n_pfs_excl_progression_exit_tlr_neg = sum(df_pfs_excl$ProgressionExit == 1 &
+                                          df_pfs_excl[[tlr_col]] == 0),
+    n_pfs_excl_death_pf = sum(df_pfs_excl$Progression == 1 & df_pfs_excl$ProgressionExit == 0),
+    n_pfs_excl_censored = sum(df_pfs_excl$Progression == 0),
+    n_first_scan_progressors = if (has_scan) sum(v_first_scan_prog) else NA_integer_,
     n_first_scan_progressors_kept = if (has_scan) {
-      sum(first_scan_prog & at_risk_pfs)
+      sum(v_first_scan_prog & v_at_risk_pfs)
     } else NA_integer_,
     n_scan_after_landmark_kept = if (has_scan) {
-      sum(scan_after_lm & at_risk_pfs)
+      sum(v_scan_after_lm & v_at_risk_pfs)
     } else NA_integer_,
-    min_pfs_lm = if (nrow(pfs) > 0) min(pfs$PFSwk_lm) else NA_real_
+    min_pfs_lm = if (nrow(df_pfs) > 0) min(df_pfs$PFSwk_lm) else NA_real_
   )
 
-  attrition <- data.frame(
+  df_attrition <- data.frame(
     Endpoint = c("Overall survival", "Progression-free survival"),
     N_total = c(nrow(df), nrow(df)),
-    N_landmark = c(nrow(os), nrow(pfs)),
-    N_excluded = c(nrow(os_excl), nrow(pfs_excl)),
-    Events_landmark = c(sum(os$Death), sum(pfs$Progression)),
+    N_landmark = c(nrow(df_os), nrow(df_pfs)),
+    N_excluded = c(nrow(df_os_excl), nrow(df_pfs_excl)),
+    Events_landmark = c(sum(df_os$Death), sum(df_pfs$Progression)),
     stringsAsFactors = FALSE
   )
 
-  list(spec = spec, landmark_wk = lm_wk, os = os, pfs = pfs,
-       attrition = attrition, diagnostics = diagnostics)
+  list(spec = spec, landmark_wk = v_lm_wk, os = df_os, pfs = df_pfs,
+       attrition = df_attrition, diagnostics = diagnostics)
 }
 
 #' Build all three landmark cohorts
@@ -199,14 +199,14 @@ TLR_BASE_COHORT_VARS <- c("Age", "sex", "Rx", "crp", "tmb_braf",
 #'   have an observed TLR, in their original order; pass the result to
 #'   `build_tlr_landmark_cohorts()` or `build_all_tlr_landmark_cohorts()`.
 tlr_landmark_base_cohort <- function(data, tlr_col = "tlr") {
-  needed <- c(TLR_BASE_COHORT_VARS, tlr_col)
-  missing <- setdiff(needed, names(data))
-  if (length(missing) > 0) {
+  v_needed <- c(TLR_BASE_COHORT_VARS, tlr_col)
+  v_missing <- setdiff(v_needed, names(data))
+  if (length(v_missing) > 0) {
     stop("tlr_landmark_base_cohort(): missing column(s): ",
-         paste(missing, collapse = ", "))
+         paste(v_missing, collapse = ", "))
   }
-  complete <- stats::complete.cases(data[, TLR_BASE_COHORT_VARS, drop = FALSE])
-  data[complete & !is.na(data[[tlr_col]]), , drop = FALSE]
+  v_complete <- stats::complete.cases(data[, TLR_BASE_COHORT_VARS, drop = FALSE])
+  data[v_complete & !is.na(data[[tlr_col]]), , drop = FALSE]
 }
 
 # ===============================================================================
@@ -236,48 +236,48 @@ TLR_MISSING_EXIT_REASONS <- c("death after progression", "progression",
 #'   example "1 death after progression, 1 adverse event, 1 with no recorded
 #'   reason") and `arm_text` (for example "all in the control arm").
 tlr_missing_exit_summary <- function(cohort, raw = NULL, tlr_col = "tlr") {
-  needed <- c("ID", "Rx", "Death", "ProgressionExit", tlr_col)
-  missing <- setdiff(needed, names(cohort))
-  if (length(missing) > 0) {
+  v_needed <- c("ID", "Rx", "Death", "ProgressionExit", tlr_col)
+  v_missing <- setdiff(v_needed, names(cohort))
+  if (length(v_missing) > 0) {
     stop("tlr_missing_exit_summary(): missing column(s): ",
-         paste(missing, collapse = ", "))
+         paste(v_missing, collapse = ", "))
   }
   if (is.null(raw)) raw <- readRDS(here::here("data", "tidy", "METIMMOX.rds"))
   if (!all(c("ID", "AE exit") %in% names(raw))) {
     stop("tlr_missing_exit_summary(): raw data need ID and `AE exit`.")
   }
-  miss <- cohort[is.na(cohort[[tlr_col]]), , drop = FALSE]
-  ae <- raw[["AE exit"]][match(miss$ID, raw$ID)]
-  if (anyNA(ae) || !all(ae %in% c(0, 1))) {
+  df_miss <- cohort[is.na(cohort[[tlr_col]]), , drop = FALSE]
+  v_ae <- raw[["AE exit"]][match(df_miss$ID, raw$ID)]
+  if (anyNA(v_ae) || !all(v_ae %in% c(0, 1))) {
     stop("tlr_missing_exit_summary(): `AE exit` is missing or not 0/1 for ",
          "a patient without TLR.")
   }
-  reason <- ifelse(miss$ProgressionExit == 1,
-                   ifelse(miss$Death == 1, "death after progression", "progression"),
-                   ifelse(ae == 1, "adverse event", "no recorded reason"))
-  reasons <- table(factor(reason, levels = TLR_MISSING_EXIT_REASONS))
+  v_reason <- ifelse(df_miss$ProgressionExit == 1,
+                   ifelse(df_miss$Death == 1, "death after progression", "progression"),
+                   ifelse(v_ae == 1, "adverse event", "no recorded reason"))
+  reasons <- table(factor(v_reason, levels = TLR_MISSING_EXIT_REASONS))
   reasons <- reasons[reasons > 0]
-  plural <- c("death after progression" = "deaths after progression",
+  v_plural <- c("death after progression" = "deaths after progression",
               "progression" = "progression exits",
               "adverse event" = "adverse events",
               "no recorded reason" = "no recorded reason")
-  reason_phrase <- vapply(names(reasons), function(r) {
+  v_reason_phrase <- vapply(names(reasons), function(r) {
     n <- reasons[[r]]
     label <- if (r == "no recorded reason") "with no recorded reason" else
-      if (r == "progression") (if (n == 1) "progression exit" else plural[[r]]) else
-        if (n == 1) r else plural[[r]]
+      if (r == "progression") (if (n == 1) "progression exit" else v_plural[[r]]) else
+        if (n == 1) r else v_plural[[r]]
     paste(n, label)
   }, character(1))
-  by_arm <- table(droplevels(as.factor(miss$Rx)))
-  arm_names <- tolower(names(by_arm))
+  by_arm <- table(droplevels(as.factor(df_miss$Rx)))
+  v_arm_names <- tolower(names(by_arm))
   arm_text <- if (length(by_arm) == 1) {
-    paste("all in the", arm_names)
+    paste("all in the", v_arm_names)
   } else {
-    paste(paste(as.integer(by_arm), "in the", arm_names), collapse = " and ")
+    paste(paste(as.integer(by_arm), "in the", v_arm_names), collapse = " and ")
   }
-  list(n = nrow(miss), by_arm = stats::setNames(as.integer(by_arm), names(by_arm)),
+  list(n = nrow(df_miss), by_arm = stats::setNames(as.integer(by_arm), names(by_arm)),
        reasons = stats::setNames(as.integer(reasons), names(reasons)),
-       reason_text = paste(reason_phrase, collapse = ", "),
+       reason_text = paste(v_reason_phrase, collapse = ", "),
        arm_text = arm_text)
 }
 

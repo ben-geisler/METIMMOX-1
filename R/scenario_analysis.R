@@ -12,7 +12,7 @@ define_scenarios <- function(base_wtp = 51000,
                              base_c_drug_nivo = NULL,
                              decreased_c_drug_nivo = 4641) {
 
-  scenarios <- data.frame(
+  df_scenarios <- data.frame(
     scenario_id = c("base", "s1_decreased_nivo",
                     "s2_wtp100k", "s3_wtp100k_decreased",
                     "s4_wtp150k", "s5_wtp150k_decreased"),
@@ -31,7 +31,7 @@ define_scenarios <- function(base_wtp = 51000,
     stringsAsFactors = FALSE
   )
 
-  return(scenarios)
+  return(df_scenarios)
 }
 
 #' Run PSA for a unique cost configuration
@@ -74,15 +74,15 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
   }
 
   # Add draw-aligned interaction coefficients when sampling models are available.
-  interaction_coefs <- NULL
+  df_interaction_coefs <- NULL
   if (exists("extract_interaction_coefficients") &&
       exists("sampling_models") && !is.null(sampling_models)) {
-    interaction_coefs <- extract_interaction_coefficients(
+    df_interaction_coefs <- extract_interaction_coefficients(
       sampling_models = sampling_models,
       n_sim = n_sim
     )
-    if (!is.null(interaction_coefs) && nrow(interaction_coefs) != n_sim) {
-      interaction_coefs <- NULL
+    if (!is.null(df_interaction_coefs) && nrow(df_interaction_coefs) != n_sim) {
+      df_interaction_coefs <- NULL
     }
   }
 
@@ -94,24 +94,24 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
     cl = cl,
     n_sim = n_sim,
     seed = seed,
-    additional_params = interaction_coefs
+    additional_params = df_interaction_coefs
   )
   psa_obj <- psa_build$psa_obj
-  scenario_psa_params <- psa_build$psa_params
+  df_scenario_psa_params <- psa_build$psa_params
   identity <- psa_cache_fingerprint(sampling_models$fingerprint, scenario_params,
     scenario_param_dist, strategies, n_sim, seed, time_horizon, cl)
   psa_obj$fingerprint <- identity$fingerprint
   psa_obj$fingerprint_inputs <- identity$inputs
-  pair <- bind_psa_pair(psa_obj, scenario_psa_params)
+  pair <- bind_psa_pair(psa_obj, df_scenario_psa_params)
   psa_obj <- pair$psa_obj
-  scenario_psa_params <- pair$psa_params
+  df_scenario_psa_params <- pair$psa_params
 
   cat("  PSA Summary:\n")
   print(summary(psa_obj))
 
   return(list(
     psa_obj = psa_obj,
-    psa_params = scenario_psa_params
+    psa_params = df_scenario_psa_params
   ))
 }
 
@@ -139,7 +139,7 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
   validate_psa_pair(psa_obj, psa_params)
 
   # Run EVPPI analysis with this scenario's WTP
-  evppi_results <- run_evppi_analysis(
+  df_evppi_results <- run_evppi_analysis(
     psa_obj = psa_obj,
     psa_params = psa_params,
     wtp = scenario_row$wtp,
@@ -149,16 +149,16 @@ run_scenario_evppi <- function(scenario_row, psa_obj, psa_params,
   )
 
   # Add scenario information to results
-  if (nrow(evppi_results) > 0) {
-    evppi_results$scenario_id <- scenario_row$scenario_id
-    evppi_results$scenario_name <- scenario_row$scenario_name
-    evppi_results$wtp <- scenario_row$wtp
+  if (nrow(df_evppi_results) > 0) {
+    df_evppi_results$scenario_id <- scenario_row$scenario_id
+    df_evppi_results$scenario_name <- scenario_row$scenario_name
+    df_evppi_results$wtp <- scenario_row$wtp
   }
 
   return(list(
     psa_obj = psa_obj,
     psa_params = psa_params,
-    evppi_results = evppi_results,
+    evppi_results = df_evppi_results,
     scenario_info = scenario_row
   ))
 }
@@ -235,8 +235,8 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
   all_results <- list()
 
   # Identify unique cost configurations
-  unique_nivo_costs <- unique(scenarios$c_drug_nivo)
-  n_unique <- length(unique_nivo_costs)
+  v_unique_nivo_costs <- unique(scenarios$c_drug_nivo)
+  n_unique <- length(v_unique_nivo_costs)
   n_total <- nrow(scenarios)
 
   cat("Scenario optimization: ", n_total, " scenarios with ", n_unique,
@@ -245,13 +245,13 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
       n_total - n_unique, " redundant PSA runs)\n\n", sep = "")
 
   # Run PSA once per unique cost configuration, then EVPPI per scenario
-  for (nivo_cost in unique_nivo_costs) {
+  for (nivo_cost in v_unique_nivo_costs) {
 
     # Get all scenarios sharing this cost configuration
-    cost_group <- scenarios[scenarios$c_drug_nivo == nivo_cost, ]
+    df_cost_group <- scenarios[scenarios$c_drug_nivo == nivo_cost, ]
 
     cat("--- Cost group: c_drug_nivo =", nivo_cost, "---\n")
-    cat("Scenarios in this group:", paste(cost_group$scenario_id, collapse = ", "), "\n")
+    cat("Scenarios in this group:", paste(df_cost_group$scenario_id, collapse = ", "), "\n")
 
     # Run PSA once for this cost group
     psa_result <- run_scenario_psa(
@@ -266,9 +266,9 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
     )
 
     # Run EVPPI for each scenario in this cost group (varying WTP)
-    for (j in seq_len(nrow(cost_group))) {
+    for (j in seq_len(nrow(df_cost_group))) {
       scenario_results <- run_scenario_evppi(
-        scenario_row = cost_group[j, ],
+        scenario_row = df_cost_group[j, ],
         psa_obj = psa_result$psa_obj,
         psa_params = psa_result$psa_params,
         evppi_params = evppi_params,
@@ -276,7 +276,7 @@ run_all_scenarios <- function(scenarios, psa_params = NULL, l_params_base,
         seed = seed
       )
 
-      all_results[[cost_group$scenario_id[j]]] <- scenario_results
+      all_results[[df_cost_group$scenario_id[j]]] <- scenario_results
     }
   }
 
@@ -296,38 +296,38 @@ compile_evppi_results <- function(all_results, param_groups = NULL) {
   }
   rows <- lapply(all_results, function(result) {
     info <- result$scenario_info
-    nmb <- as.matrix(result$psa_obj$effect) * info$wtp -
+    m_nmb <- as.matrix(result$psa_obj$effect) * info$wtp -
       as.matrix(result$psa_obj$cost)
-    evpi <- calculate_evpi_from_nmb(nmb)
-    estimates <- result$evppi_results
-    expected <- if (length(param_groups)) paste0("[GROUP] ", names(param_groups)) else character()
-    missing <- setdiff(expected, estimates$parameter)
-    if (length(missing)) {
+    evpi <- calculate_evpi_from_nmb(m_nmb)
+    df_estimates <- result$evppi_results
+    v_expected <- if (length(param_groups)) paste0("[GROUP] ", names(param_groups)) else character()
+    v_missing <- setdiff(v_expected, df_estimates$parameter)
+    if (length(v_missing)) {
       zero <- isTRUE(evpi == 0)
-      absent <- data.frame(
-        parameter = missing, evppi = if (zero) 0 else NA_real_,
+      df_absent <- data.frame(
+        parameter = v_missing, evppi = if (zero) 0 else NA_real_,
         evppi_se = if (zero) 0 else NA_real_, evpi = evpi,
         evppi_percent_of_evpi = NA_real_,
         method = if (zero) "zero_evpi_bound" else "not_estimated",
-        n_params = lengths(param_groups)[sub("^\\[GROUP\\] ", "", missing)],
-        n_sim = nrow(nmb),
+        n_params = lengths(param_groups)[sub("^\\[GROUP\\] ", "", v_missing)],
+        n_sim = nrow(m_nmb),
         error = if (zero) "" else "No group estimate returned (EVPI is not zero)",
         stringsAsFactors = FALSE
       )
-      estimates <- dplyr::bind_rows(estimates, absent)
+      df_estimates <- dplyr::bind_rows(df_estimates, df_absent)
     }
     # Include the total even if there are no configured groups or estimates.
-    total <- data.frame(parameter = "[EVPI]", evppi = evpi,
+    df_total <- data.frame(parameter = "[EVPI]", evppi = evpi,
       evppi_se = NA_real_, evpi = evpi,
       evppi_percent_of_evpi = if (isTRUE(evpi > 0)) 100 else NA_real_,
-      method = "total_evpi", n_params = NA_integer_, n_sim = nrow(nmb),
+      method = "total_evpi", n_params = NA_integer_, n_sim = nrow(m_nmb),
       error = if (is.finite(evpi)) "" else "Non-finite scenario EVPI")
-    estimates <- dplyr::bind_rows(total, estimates)
-    estimates$scenario_id <- info$scenario_id
-    estimates$scenario_name <- info$scenario_name
-    estimates$wtp <- info$wtp
-    estimates$evpi <- evpi
-    estimates
+    df_estimates <- dplyr::bind_rows(df_total, df_estimates)
+    df_estimates$scenario_id <- info$scenario_id
+    df_estimates$scenario_name <- info$scenario_name
+    df_estimates$wtp <- info$wtp
+    df_estimates$evpi <- evpi
+    df_estimates
   })
   dplyr::bind_rows(rows)
 }

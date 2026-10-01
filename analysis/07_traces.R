@@ -31,7 +31,7 @@ cat("Traces generated successfully.\n")
 cat("Creating faceted plot for all strategies...\n")
 
 # Prepare data for all strategies
-all_strategies_df <- data.frame()
+df_all_strategies <- data.frame()
 
 for(strategy in strategies) {
   # Get the relevant traces
@@ -41,11 +41,11 @@ for(strategy in strategies) {
   
   # Extract data for plotting
   max_cycles <- min(10 * 52 + 1, time_points_length)
-  cycles <- 0:(time_points_length-1)
+  v_cycles <- 0:(time_points_length-1)
   
   # Create data frame
-  df <- data.frame(
-    Year = cycles[1:max_cycles] / 52,
+  df_strategy_trace <- data.frame(
+    Year = v_cycles[1:max_cycles] / 52,
     PF = p_pf[1:max_cycles],
     Progressed = p_p[1:max_cycles],
     Dead = p_d[1:max_cycles],
@@ -54,7 +54,7 @@ for(strategy in strategies) {
   
   # Convert to long format
   df_long <- reshape2::melt(
-    df,
+    df_strategy_trace,
     id.vars = c("Year", "Strategy"),
     measure.vars = c("PF", "Progressed", "Dead"),
     variable.name = "State",
@@ -62,17 +62,17 @@ for(strategy in strategies) {
   )
   
   # Append to all strategies dataframe
-  all_strategies_df <- rbind(all_strategies_df, df_long)
+  df_all_strategies <- rbind(df_all_strategies, df_long)
 }
 
 # Create strategy labels for faceting from keyed configuration metadata.
 strategy_labels <- get_strategy_metadata(strategies)$trace_label
-all_strategies_df$Strategy <- factor(all_strategies_df$Strategy,
+df_all_strategies$Strategy <- factor(df_all_strategies$Strategy,
                                      levels = strategies,
                                      labels = strategy_labels)
 
 # Create faceted plot
-all_strategies_plot <- ggplot(all_strategies_df, aes(x = Year, y = Proportion, fill = State)) +
+all_strategies_plot <- ggplot(df_all_strategies, aes(x = Year, y = Proportion, fill = State)) +
   geom_area() +
   facet_wrap(~ Strategy, ncol = 2) +
   scale_fill_manual(values = c("PF" = "green", "Progressed" = "orange", "Dead" = "red")) +
@@ -118,59 +118,59 @@ for(biomarker in biomarkers) {
   cat(paste0("Creating faceted plot for ", biomarker, " biomarker subgroups...\n"))
   
   # Prepare data for positive and negative subgroups
-  pos_neg_df <- data.frame()
+  df_pos_neg <- data.frame()
   
   # Add positive subgroup data
-  pos_pf <- traces[[biomarker]]$positive$p_pf
-  pos_p <- traces[[biomarker]]$positive$p_p
-  pos_d <- traces[[biomarker]]$positive$p_d
+  v_pos_pf <- traces[[biomarker]]$positive$p_pf
+  v_pos_p <- traces[[biomarker]]$positive$p_p
+  v_pos_d <- traces[[biomarker]]$positive$p_d
   
   max_cycles <- min(10 * 52 + 1, time_points_length)
-  cycles <- 0:(time_points_length-1)
+  v_cycles <- 0:(time_points_length-1)
   
-  pos_df <- data.frame(
-    Year = cycles[1:max_cycles] / 52,
-    PF = pos_pf[1:max_cycles],
-    Progressed = pos_p[1:max_cycles],
-    Dead = pos_d[1:max_cycles],
+  df_pos <- data.frame(
+    Year = v_cycles[1:max_cycles] / 52,
+    PF = v_pos_pf[1:max_cycles],
+    Progressed = v_pos_p[1:max_cycles],
+    Dead = v_pos_d[1:max_cycles],
     Status = "Positive"
   )
   
-  pos_df_long <- reshape2::melt(
-    pos_df,
+  df_pos_long <- reshape2::melt(
+    df_pos,
     id.vars = c("Year", "Status"),
     measure.vars = c("PF", "Progressed", "Dead"),
     variable.name = "State",
     value.name = "Proportion"
   )
   
-  pos_neg_df <- rbind(pos_neg_df, pos_df_long)
+  df_pos_neg <- rbind(df_pos_neg, df_pos_long)
   
   # Add negative subgroup data
-  neg_pf <- traces[[biomarker]]$negative$p_pf
-  neg_p <- traces[[biomarker]]$negative$p_p
-  neg_d <- traces[[biomarker]]$negative$p_d
+  v_neg_pf <- traces[[biomarker]]$negative$p_pf
+  v_neg_p <- traces[[biomarker]]$negative$p_p
+  v_neg_d <- traces[[biomarker]]$negative$p_d
   
   max_cycles <- min(10 * 52 + 1, time_points_length)
-  cycles <- 0:(time_points_length-1)
+  v_cycles <- 0:(time_points_length-1)
   
-  neg_df <- data.frame(
-    Year = cycles[1:max_cycles] / 52,
-    PF = neg_pf[1:max_cycles],
-    Progressed = neg_p[1:max_cycles],
-    Dead = neg_d[1:max_cycles],
+  df_neg <- data.frame(
+    Year = v_cycles[1:max_cycles] / 52,
+    PF = v_neg_pf[1:max_cycles],
+    Progressed = v_neg_p[1:max_cycles],
+    Dead = v_neg_d[1:max_cycles],
     Status = "Negative"
   )
   
-  neg_df_long <- reshape2::melt(
-    neg_df,
+  df_neg_long <- reshape2::melt(
+    df_neg,
     id.vars = c("Year", "Status"),
     measure.vars = c("PF", "Progressed", "Dead"),
     variable.name = "State",
     value.name = "Proportion"
   )
   
-  pos_neg_df <- rbind(pos_neg_df, neg_df_long)
+  df_pos_neg <- rbind(df_pos_neg, df_neg_long)
   
   # Create faceted plot for this biomarker
   biomarker_title <- switch(biomarker,
@@ -178,7 +178,7 @@ for(biomarker in biomarkers) {
                             "tlr" = "TLR",
                             "tmb_braf" = "TMB/BRAF")
   
-  pos_neg_plot <- ggplot(pos_neg_df, aes(x = Year, y = Proportion, fill = State)) +
+  pos_neg_plot <- ggplot(df_pos_neg, aes(x = Year, y = Proportion, fill = State)) +
     geom_area() +
     facet_wrap(~ Status, ncol = 2) +
     scale_fill_manual(values = c("PF" = "green", "Progressed" = "orange", "Dead" = "red")) +

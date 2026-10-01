@@ -21,7 +21,7 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
   
   # Create plotting data
   if (outcome_type == "OS") {
-    plot_data <- data.frame(
+    df_plot <- data.frame(
       time = rep(time_points, 3),
       survival = c(
         biomarker_pred$biomarker_positive$os,    # Biomarker+ (experimental treatment)
@@ -37,7 +37,7 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
     y_label <- "Overall Survival Probability"
     title_outcome <- "Overall Survival"
   } else {
-    plot_data <- data.frame(
+    df_plot <- data.frame(
       time = rep(time_points, 3),
       survival = c(
         biomarker_pred$biomarker_positive$pfs,   # Biomarker+ (experimental treatment)
@@ -58,18 +58,18 @@ plot_biomarker_survival <- function(predictions, biomarker_name, outcome_type = 
   pos_name <- paste0(toupper(biomarker_name), "+")
   neg_name <- paste0(toupper(biomarker_name), "-")
   
-  colors <- c("#E31A1C", "#1F78B4", "#33A02C")  # Red, Blue, Green
-  names(colors) <- c(pos_name, neg_name, "Population Average")
+  v_colors <- c("#E31A1C", "#1F78B4", "#33A02C")  # Red, Blue, Green
+  names(v_colors) <- c(pos_name, neg_name, "Population Average")
   
   # Define line types
-  linetypes <- c("solid", "solid", "dashed")
-  names(linetypes) <- c(pos_name, neg_name, "Population Average")
+  v_linetypes <- c("solid", "solid", "dashed")
+  names(v_linetypes) <- c(pos_name, neg_name, "Population Average")
   
   # Create the plot
-  p <- ggplot(plot_data, aes(x = time, y = survival, color = group, linetype = group)) +
+  p <- ggplot(df_plot, aes(x = time, y = survival, color = group, linetype = group)) +
     geom_line(linewidth = 1.2) +
-    scale_color_manual(values = colors) +
-    scale_linetype_manual(values = linetypes) +
+    scale_color_manual(values = v_colors) +
+    scale_linetype_manual(values = v_linetypes) +
     theme_minimal() +
     labs(
       title = paste(title_outcome, "by", toupper(biomarker_name), "Status"),
@@ -104,10 +104,10 @@ generate_biomarker_plots <- function(predictions, strategies_df, time_points) {
   survival_plots <- list()
   
   # Get economic biomarker names from the central configuration.
-  biomarkers <- get_biomarkers()
+  v_biomarkers <- get_biomarkers()
   
   # Generate plots for each biomarker and outcome
-  for (biomarker in biomarkers) {
+  for (biomarker in v_biomarkers) {
     
     # OS plot
     os_plot <- plot_biomarker_survival(

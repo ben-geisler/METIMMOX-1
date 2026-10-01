@@ -20,20 +20,20 @@
 #            collinear with the parameters they are derived from.
 
 parameter_distribution_spec <- function() {
-  biomarker_cost_parameters <- unique(unname(biomarker_cost_key()))
-  prevalence_parameters <- unname(biomarker_prevalence_key())
+  v_biomarker_cost_parameters <- unique(unname(biomarker_cost_key()))
+  v_prevalence_parameters <- unname(biomarker_prevalence_key())
 
   # Published list prices and laboratory/procedure tariffs: fixed in the PSA,
   # varied in the one-way DSA only.
-  fixed_costs <- data.frame(
+  df_fixed_costs <- data.frame(
     parameter = c("c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
-                  biomarker_cost_parameters),
+                  v_biomarker_cost_parameters),
     distribution = NA_character_,
     cv = NA_real_,
     group = c("drug_costs", "drug_costs", "test_costs", "test_costs",
-              rep("test_costs", length(biomarker_cost_parameters))),
+              rep("test_costs", length(v_biomarker_cost_parameters))),
     psa = FALSE,
-    order = c(10:11, 20:21, 22 + seq_along(biomarker_cost_parameters)),
+    order = c(10:11, 20:21, 22 + seq_along(v_biomarker_cost_parameters)),
     stringsAsFactors = FALSE
   )
   # Visit, baseline, follow-up and end-of-life costs bundle genuine resource-use
@@ -43,7 +43,7 @@ parameter_distribution_spec <- function() {
   # the dispersion of these resource-use costs, so a conventional moderate CV
   # is used (gamma 95% interval about 0.65-1.43 times the mean). It is not
   # derived from data or cited literature and is not varied in any scenario.
-  other_costs <- data.frame(
+  df_other_costs <- data.frame(
     parameter = c("c_other_visit", "c_other_baseline", "c_other_follow",
                   "c_other_last"),
     distribution = "gamma",
@@ -63,7 +63,7 @@ parameter_distribution_spec <- function() {
   # a conventional CV is used (beta 95% interval for u_np = 0.73 about
   # 0.49-0.91). It is not derived from data or cited literature and is not
   # varied in any scenario.
-  utilities <- data.frame(
+  df_utilities <- data.frame(
     parameter = c("u_np", "u_decrement", "u_p"),
     distribution = c("beta", "gamma", "derived"),
     cv = c(0.15, 0.15, NA_real_),
@@ -72,28 +72,28 @@ parameter_distribution_spec <- function() {
     order = 40:42,
     stringsAsFactors = FALSE
   )
-  prevalence <- data.frame(
-    parameter = c(paste0("p_joint_", c("00", "01", "10", "11")), prevalence_parameters),
-    distribution = c(rep("dirichlet", 3), rep("derived", 1 + length(prevalence_parameters))),
+  df_prevalence <- data.frame(
+    parameter = c(paste0("p_joint_", c("00", "01", "10", "11")), v_prevalence_parameters),
+    distribution = c(rep("dirichlet", 3), rep("derived", 1 + length(v_prevalence_parameters))),
     cv = NA_real_,
     group = "prevalence",
     psa = TRUE,
-    order = 50 + seq_len(4 + length(prevalence_parameters)),
+    order = 50 + seq_len(4 + length(v_prevalence_parameters)),
     stringsAsFactors = FALSE
   )
 
-  spec <- rbind(fixed_costs, other_costs, utilities, prevalence)
-  spec$derived <- spec$distribution %in% "derived"
+  df_spec <- rbind(df_fixed_costs, df_other_costs, df_utilities, df_prevalence)
+  df_spec$derived <- df_spec$distribution %in% "derived"
   # DSA varies marginal prevalences, not individual joint masses. The sampled
   # utility decrement is also excluded because DSA varies state utilities.
-  spec$dsa <- spec$parameter != "u_decrement" & !grepl("^p_joint_", spec$parameter)
-  spec <- spec[order(spec$order), , drop = FALSE]
-  spec$order <- NULL
-  rownames(spec) <- NULL
-  if (anyDuplicated(spec$parameter)) {
+  df_spec$dsa <- df_spec$parameter != "u_decrement" & !grepl("^p_joint_", df_spec$parameter)
+  df_spec <- df_spec[order(df_spec$order), , drop = FALSE]
+  df_spec$order <- NULL
+  rownames(df_spec) <- NULL
+  if (anyDuplicated(df_spec$parameter)) {
     stop("Parameter distribution specification contains duplicate names.")
   }
-  spec
+  df_spec
 }
 
 #' Look up the reporting group of any specified parameter
@@ -139,19 +139,19 @@ distribution_parameters <- function(mean_value, distribution, cv) {
 create_parameter_distributions <- function(params,
                                            spec = parameter_distribution_spec()) {
   spec <- spec[spec$psa, , drop = FALSE]
-  missing_parameters <- setdiff(spec$parameter, names(params))
-  if (length(missing_parameters) > 0) {
+  v_missing_parameters <- setdiff(spec$parameter, names(params))
+  if (length(v_missing_parameters) > 0) {
     stop("Missing base-case parameters: ",
-         paste(missing_parameters, collapse = ", "))
+         paste(v_missing_parameters, collapse = ", "))
   }
 
   distributions <- lapply(seq_len(nrow(spec)), function(i) {
     if (spec$distribution[i] == "dirichlet") {
-      counts <- params$joint_counts
-      if (is.null(counts) || !identical(names(counts), c("00", "01", "10", "11")) ||
-          any(!is.finite(counts)) || any(counts < 0) || sum(counts) <= 0)
+      v_counts <- params$joint_counts
+      if (is.null(v_counts) || !identical(names(v_counts), c("00", "01", "10", "11")) ||
+          any(!is.finite(v_counts)) || any(v_counts < 0) || sum(v_counts) <= 0)
         stop("Joint prevalence uncertainty requires complete-case joint cell counts.")
-      return(list(dist = "dirichlet", alpha = counts,
+      return(list(dist = "dirichlet", alpha = v_counts,
                   component = sub("^p_joint_", "", spec$parameter[i])))
     }
     distribution_parameters(
@@ -171,15 +171,15 @@ create_parameter_groups <- function(spec = parameter_distribution_spec()) {
   ))
   grouped <- grouped[lengths(grouped) > 0]
 
-  cost_group_names <- c("drug_costs", "test_costs", "other_costs")
-  sampled_cost_groups <- intersect(cost_group_names, names(grouped))
+  v_cost_group_names <- c("drug_costs", "test_costs", "other_costs")
+  v_sampled_cost_groups <- intersect(v_cost_group_names, names(grouped))
   # "all_costs" only earns a row when it spans more than one cost group;
   # otherwise it would duplicate that group in every EVPPI table.
-  if (length(sampled_cost_groups) > 1) {
+  if (length(v_sampled_cost_groups) > 1) {
     grouped <- append(
       grouped,
-      list(all_costs = spec$parameter[spec$group %in% cost_group_names]),
-      after = match(utils::tail(sampled_cost_groups, 1), names(grouped))
+      list(all_costs = spec$parameter[spec$group %in% v_cost_group_names]),
+      after = match(utils::tail(v_sampled_cost_groups, 1), names(grouped))
     )
   }
   grouped
@@ -193,9 +193,9 @@ create_parameter_groups <- function(spec = parameter_distribution_spec()) {
 #' @param samples Data frame of sampled PSA parameters.
 #' @return The data frame with derived columns added.
 apply_derived_psa_parameters <- function(samples) {
-  joint_keys <- paste0("p_joint_", c("00", "01", "10"))
-  if (all(joint_keys %in% names(samples))) {
-    samples$p_joint_11 <- pmax(0, 1 - rowSums(samples[joint_keys]))
+  v_joint_keys <- paste0("p_joint_", c("00", "01", "10"))
+  if (all(v_joint_keys %in% names(samples))) {
+    samples$p_joint_11 <- pmax(0, 1 - rowSums(samples[v_joint_keys]))
     samples$p_crp <- samples$p_joint_10 + samples$p_joint_11
     samples$p_tmb_braf <- samples$p_joint_01 + samples$p_joint_11
   }
@@ -207,11 +207,11 @@ apply_derived_psa_parameters <- function(samples) {
 }
 
 configure_parameter_distributions <- function(params) {
-  spec <- parameter_distribution_spec()
+  df_spec <- parameter_distribution_spec()
   list(
-    distributions = create_parameter_distributions(params, spec),
-    groups = create_parameter_groups(spec),
-    spec = spec
+    distributions = create_parameter_distributions(params, df_spec),
+    groups = create_parameter_groups(df_spec),
+    spec = df_spec
   )
 }
 
@@ -234,29 +234,29 @@ configure_parameter_distributions <- function(params) {
 build_dsa_ranges <- function(params, spec = parameter_distribution_spec(),
                              mult = DSA_mult) {
   spec <- spec[spec$dsa, , drop = FALSE]
-  pars <- spec$parameter
-  missing_parameters <- setdiff(pars, names(params))
-  if (length(missing_parameters) > 0) {
+  v_pars <- spec$parameter
+  v_missing_parameters <- setdiff(v_pars, names(params))
+  if (length(v_missing_parameters) > 0) {
     stop("Missing base-case parameters for the DSA: ",
-         paste(missing_parameters, collapse = ", "))
+         paste(v_missing_parameters, collapse = ", "))
   }
-  ranges <- data.frame(
-    pars = pars,
-    min = unlist(params[pars]) * (1 - mult),
-    max = unlist(params[pars]) * (1 + mult),
+  df_ranges <- data.frame(
+    pars = v_pars,
+    min = unlist(params[v_pars]) * (1 - mult),
+    max = unlist(params[v_pars]) * (1 + mult),
     stringsAsFactors = FALSE
   )
-  cost_groups <- c("drug_costs", "test_costs", "other_costs")
-  bounded_zero <- spec$group %in% c(cost_groups, "prevalence")
-  bounded_one  <- spec$group %in% c("utilities", "prevalence")
-  ranges$min[bounded_zero] <- pmax(ranges$min[bounded_zero], 0)
-  ranges$max[bounded_one]  <- pmin(ranges$max[bounded_one], 1)
-  if (any(ranges$min > ranges$max)) {
+  v_cost_groups <- c("drug_costs", "test_costs", "other_costs")
+  v_bounded_zero <- spec$group %in% c(v_cost_groups, "prevalence")
+  v_bounded_one  <- spec$group %in% c("utilities", "prevalence")
+  df_ranges$min[v_bounded_zero] <- pmax(df_ranges$min[v_bounded_zero], 0)
+  df_ranges$max[v_bounded_one]  <- pmin(df_ranges$max[v_bounded_one], 1)
+  if (any(df_ranges$min > df_ranges$max)) {
     stop("Invalid DSA ranges (min > max) for: ",
-         paste(ranges$pars[ranges$min > ranges$max], collapse = ", "))
+         paste(df_ranges$pars[df_ranges$min > df_ranges$max], collapse = ", "))
   }
-  rownames(ranges) <- NULL
-  ranges
+  rownames(df_ranges) <- NULL
+  df_ranges
 }
 
 #' Deterministic structural scenarios run alongside the one-way DSA
@@ -408,13 +408,13 @@ build_horizon_params <- function(base_params, horizon_weeks, models,
   if (is.null(models) || is.null(models$os) || is.null(models$pfs)) {
     stop("Fitted best-fit survival models are required for a time-horizon scenario.")
   }
-  tp <- seq(0, horizon_weeks)
-  n <- length(tp)
+  v_tp <- seq(0, horizon_weeks)
+  n <- length(v_tp)
   preds <- generate_population_averaged_predictions(
     models = list(os = models$os, pfs = models$pfs),
     strategies_df = strategies_df,
     data_complete = data_complete,
-    time_points = tp,
+    time_points = v_tp,
     prevalences = setNames(strategies_df$prevalence, strategies_df$id)
   )
 

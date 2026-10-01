@@ -6,11 +6,13 @@ source("R/model_fun.R")
 source("R/calculate_outcomes.R")
 source("R/parameter_distributions.R")
 source("R/psa_functions.R")
+#' Mock predict() method: exponential survival whose per-patient rate rises with
+#' age, CRP and TMB/BRAF; returns flexsurv-style nested `.pred` survival frames.
 predict.mock_survival_model <- function(object, newdata, type, times, ...) {
-  rate <- (0.01 + newdata$Age / 3000 + as.numeric(as.character(newdata$crp)) / 100 +
+  v_rate <- (0.01 + newdata$Age / 3000 + as.numeric(as.character(newdata$crp)) / 100 +
             as.numeric(as.character(newdata$tmb_braf)) / 50) * object$rate
-  structure(list(.pred = lapply(rate, function(r)
-    data.frame(.pred_survival = exp(-r * times)))), class = "data.frame", row.names = seq_along(rate))
+  structure(list(.pred = lapply(v_rate, function(r)
+    data.frame(.pred_survival = exp(-r * times)))), class = "data.frame", row.names = seq_along(v_rate))
 }
 data <- data.frame(ID = 1:9, Age = seq(45, 85, 5), sex = factor(rep(0:1, length.out = 9)),
   Rx = factor(rep(c("control", "experimental"), length.out = 9)),
@@ -41,6 +43,8 @@ for (expr in parse("analysis/06_sampling.R")) {
 n_samples <- 1L
 sampling_models <- list(joint = list(samples = list(list(os = list(model = models$os),
   pfs = list(model = models$pfs), failed = FALSE))))
+#' Assert that all strategies of a model_fun() result have identical cost and
+#' effect (to 1e-10) and that no PSA fallback was used.
 assert_equal_strategies <- function(result) {
   stopifnot(max(abs(result$Cost - result$Cost[1])) < 1e-10,
             max(abs(result$Effect - result$Effect[1])) < 1e-10,
@@ -48,37 +52,37 @@ assert_equal_strategies <- function(result) {
 }
 for (crp in c(0.4, 0.5, 0.6)) for (tmb in c(0.4, 0.5, 0.6)) {
   p <- params; p$p_crp <- crp; p$p_tmb_braf <- tmb
-  weights <- model_population_weights(p, data_complete)
-  stopifnot(abs(sum(weights) - 1) < 1e-12,
-    abs(sum(weights * data_complete$crp) - crp) < 1e-10,
-    abs(sum(weights * data_complete$tmb_braf) - tmb) < 1e-10)
-  deterministic <- model_fun(p, time_horizon = 52)
-  probabilistic <- model_fun(p, time_horizon = 52, determpsa = "psa", sim_idx = 1)
-  assert_equal_strategies(deterministic)
-  assert_equal_strategies(probabilistic)
-  stopifnot(isTRUE(all.equal(deterministic, probabilistic, tolerance = 1e-10)))
+  v_weights <- model_population_weights(p, data_complete)
+  stopifnot(abs(sum(v_weights) - 1) < 1e-12,
+    abs(sum(v_weights * data_complete$crp) - crp) < 1e-10,
+    abs(sum(v_weights * data_complete$tmb_braf) - tmb) < 1e-10)
+  df_deterministic <- model_fun(p, time_horizon = 52)
+  df_probabilistic <- model_fun(p, time_horizon = 52, determpsa = "psa", sim_idx = 1)
+  assert_equal_strategies(df_deterministic)
+  assert_equal_strategies(df_probabilistic)
+  stopifnot(isTRUE(all.equal(df_deterministic, df_probabilistic, tolerance = 1e-10)))
 }
 # Endpoint-missing patients cannot leak into the PSA through the full data.
-before <- model_fun(params, time_horizon = 52, determpsa = "psa", sim_idx = 1)
+df_before <- model_fun(params, time_horizon = 52, determpsa = "psa", sim_idx = 1)
 data$Age[9] <- 200
-after <- model_fun(params, time_horizon = 52, determpsa = "psa", sim_idx = 1)
-stopifnot(identical(before, after))
+df_after <- model_fun(params, time_horizon = 52, determpsa = "psa", sim_idx = 1)
+stopifnot(identical(df_before, df_after))
 p <- params; p$p_tmb_braf <- 0.6
-changed <- model_fun(p, time_horizon = 52)
-stopifnot(abs(changed$Effect[1] - before$Effect[1]) > 1e-4)
+df_changed <- model_fun(p, time_horizon = 52)
+stopifnot(abs(df_changed$Effect[1] - df_before$Effect[1]) > 1e-4)
 config <- configure_parameter_distributions(params)
-draws <- generate_psa_samples(config$distributions, 20000, seed = 166L)
-joint_keys <- paste0("p_joint_", c("00", "01", "10", "11"))
-stopifnot(max(abs(rowSums(draws[joint_keys]) - 1)) < 1e-12,
-  all(as.matrix(draws[joint_keys]) >= 0),
-  identical(draws$p_crp, draws$p_joint_10 + draws$p_joint_11),
-  identical(draws$p_tmb_braf, draws$p_joint_01 + draws$p_joint_11),
-  max(abs(colMeans(draws[joint_keys]) - joint$probabilities)) < 0.005,
-  abs(cov(draws$p_crp, draws$p_tmb_braf) - (0.375 - 0.25) / 9) < 0.001,
-  identical(config$groups$prevalence, joint_keys[1:3]))
+df_draws <- generate_psa_samples(config$distributions, 20000, seed = 166L)
+v_joint_keys <- paste0("p_joint_", c("00", "01", "10", "11"))
+stopifnot(max(abs(rowSums(df_draws[v_joint_keys]) - 1)) < 1e-12,
+  all(as.matrix(df_draws[v_joint_keys]) >= 0),
+  identical(df_draws$p_crp, df_draws$p_joint_10 + df_draws$p_joint_11),
+  identical(df_draws$p_tmb_braf, df_draws$p_joint_01 + df_draws$p_joint_11),
+  max(abs(colMeans(df_draws[v_joint_keys]) - joint$probabilities)) < 0.005,
+  abs(cov(df_draws$p_crp, df_draws$p_tmb_braf) - (0.375 - 0.25) / 9) < 0.001,
+  identical(config$groups$prevalence, v_joint_keys[1:3]))
 for (i in 1:10) {
   p <- params
-  for (name in names(config$distributions)) p[[name]] <- draws[[name]][i]
+  for (name in names(config$distributions)) p[[name]] <- df_draws[[name]][i]
   assert_equal_strategies(model_fun(p, time_horizon = 52))
   assert_equal_strategies(model_fun(p, time_horizon = 52, determpsa = "psa", sim_idx = 1))
 }

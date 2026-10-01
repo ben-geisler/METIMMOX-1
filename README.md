@@ -112,8 +112,16 @@ The rendered Markdown reports are tracked so they can be read on GitHub. PDFs ar
 
 Requires R 4.3 (package versions are pinned in `renv.lock`; the full dependency list is in `DESCRIPTION`), Quarto with a LaTeX installation for PDF output, and the trial export in `data/`.
 
+The project does not activate renv (there is no `.Rprofile` or `renv/` library), so the scripts run against whatever library is installed and `renv.lock` records the versions the published results were generated with. To reproduce them, install exactly those versions into your library and check that nothing differs:
+
 ```r
-renv::restore()   # or: pacman::p_load(<packages in DESCRIPTION>)
+renv::restore(lockfile = "renv.lock", prompt = FALSE)  # install the recorded versions
+renv::status(lockfile = "renv.lock")                    # should report no inconsistencies
+```
+
+The cache fingerprints record the R version and the versions of the packages that compute the results (flexsurv, survival, mvtnorm and dampack for sampling and PSA; voi, mgcv and dampack for EVPPI; `calculation_identity()` in `R/cache_provenance.R`), so a cache built under other versions of these is rebuilt rather than reused. After adding a package to the code, run `renv::snapshot(lockfile = "renv.lock")` to record it.
+
+```r
 
 # Shared setup (enough for Paper 1)
 source("analysis/01_data_prep.R")                  # validates the raw export, writes data/tidy/METIMMOX.rds
@@ -149,10 +157,12 @@ Render a single report PDF first and Markdown second (`--to pdf`, then `--to gfm
 
 ## Tests
 
-Tests run from the repository root and exit non-zero on failure:
+Tests run from the repository root and exit non-zero on failure. `tests/run_all.R` runs every `tests/test_*.R` in its own process against a temporary copy of the caches, skips the tests that need the trial export when it is absent, and fails if any live cache changed:
 
 ```bash
-Rscript tests/test_dag_landmark_contracts.R
+Rscript tests/run_all.R                                   # all tests, summary in data/output/test_run_all.csv
+Rscript tests/run_all.R --only test_pfs_endpoint,test_psa_summary
+Rscript tests/test_dag_landmark_contracts.R               # a single test
 Rscript tests/test_survival_ordering.R
 Rscript tests/test_report_contracts.R
 ```

@@ -28,6 +28,8 @@ source("R/calculate_outcomes.R")
 source("R/parameter_distributions.R")
 source("R/cea_helpers.R")
 
+#' Assert that `expr` raises an error whose message matches the regular
+#' expression `pattern`; returns the condition invisibly.
 expect_error_matching <- function(expr, pattern) {
   err <- tryCatch({ force(expr); NULL }, error = identity)
   if (is.null(err)) stop("Expected an error matching '", pattern, "', got none.")
@@ -37,16 +39,20 @@ expect_error_matching <- function(expr, pattern) {
   invisible(err)
 }
 
+#' Names of the OS and PFS curves model_fun() expects (control, then positive and
+#' negative for each biomarker); returns list(os, pfs) of character vectors.
 curve_keys <- function() {
   ctrl <- get_control_strategy()
-  os <- paste0(ctrl, "_OS"); pfs <- paste0(ctrl, "_PFS")
+  v_os <- paste0(ctrl, "_OS"); v_pfs <- paste0(ctrl, "_PFS")
   for (bm in get_biomarkers()) {
-    os <- c(os, paste0(bm, c("_pos_OS", "_neg_OS")))
-    pfs <- c(pfs, paste0(bm, c("_pos_PFS", "_neg_PFS")))
+    v_os <- c(v_os, paste0(bm, c("_pos_OS", "_neg_OS")))
+    v_pfs <- c(v_pfs, paste0(bm, c("_pos_PFS", "_neg_PFS")))
   }
-  list(os = os, pfs = pfs)
+  list(os = v_os, pfs = v_pfs)
 }
 
+#' Complete synthetic model input on a `horizon`-week grid with exponential
+#' curves (OS above PFS) and the production treatment schedules.
 make_params <- function(horizon, cl = 1 / 52) {
   t <- seq(0, horizon)
   keys <- curve_keys()
@@ -64,11 +70,11 @@ make_params <- function(horizon, cl = 1 / 52) {
 # 1. Time settings come from the parameter list (#172)
 # ---------------------------------------------------------------------------
 p260 <- make_params(260)
-bare <- model_fun(p260)
-stopifnot(nrow(bare) == 3L, all(is.finite(bare$Cost)), all(is.finite(bare$Effect)),
-          identical(bare, model_fun(p260, time_horizon = 260, cl = 1 / 52)))
+df_bare <- model_fun(p260)
+stopifnot(nrow(df_bare) == 3L, all(is.finite(df_bare$Cost)), all(is.finite(df_bare$Effect)),
+          identical(df_bare, model_fun(p260, time_horizon = 260, cl = 1 / 52)))
 basecase <- run_basecase(p260, verbose = FALSE)
-stopifnot(identical(basecase$base_results, bare))
+stopifnot(identical(basecase$base_results, df_bare))
 
 expect_error_matching(model_fun(p260, time_horizon = 520), "conflicts with params\\$time_horizon")
 expect_error_matching(model_fun(p260, cl = 1 / 12), "conflicts with params\\$cl")
@@ -76,12 +82,12 @@ expect_error_matching(model_fun(p260, cl = 1 / 12), "conflicts with params\\$cl"
 no_time <- p260; no_time$time_horizon <- NULL; no_time$cl <- NULL
 expect_error_matching(model_fun(no_time), "needs 'time_horizon'")
 expect_error_matching(model_fun(no_time, time_horizon = 260), "needs 'cl'")
-stopifnot(identical(model_fun(no_time, time_horizon = 260, cl = 1 / 52), bare))
+stopifnot(identical(model_fun(no_time, time_horizon = 260, cl = 1 / 52), df_bare))
 
 # A monthly cycle length in params is honoured without an explicit argument.
 monthly <- p260; monthly$cl <- 1 / 12
 stopifnot(identical(model_fun(monthly), model_fun(monthly, cl = 1 / 12)),
-          all(model_fun(monthly)$Effect > bare$Effect))
+          all(model_fun(monthly)$Effect > df_bare$Effect))
 
 bad_horizon <- p260; bad_horizon$time_horizon <- 260.5
 expect_error_matching(model_fun(bad_horizon), "time_horizon must be a non-negative whole number")
@@ -91,10 +97,10 @@ expect_error_matching(model_fun(bad_cl), "cl must be a positive finite")
 # ---------------------------------------------------------------------------
 # 2. Schedules on every horizon (#172, #49)
 # ---------------------------------------------------------------------------
-schedule_names <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit")
+v_schedule_names <- c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit")
 for (n in 1:60) {
   s <- build_treatment_schedules(n)
-  stopifnot(identical(names(s), schedule_names),
+  stopifnot(identical(names(s), v_schedule_names),
             all(vapply(s, length, integer(1)) == n),
             all(unlist(s) %in% c(0, 1)), s$l_visit[1] == 1, s$l_CT[1] == 1, s$l_blood[1] == 1)
 }
@@ -119,9 +125,9 @@ stopifnot(identical(build_treatment_schedules(521), legacy))
 # Issue #164: the CT rule adds visits only after the last administration
 # (position 39); every in-treatment CT already falls on an administration.
 s521 <- build_treatment_schedules(521)
-added <- which(s521$l_visit == 1 & !(s521$l_nivo == 1 | s521$l_FLOX_exp == 1 |
+v_added <- which(s521$l_visit == 1 & !(s521$l_nivo == 1 | s521$l_FLOX_exp == 1 |
                                         s521$l_FLOX_control == 1))
-stopifnot(identical(added, seq(49L, 521L, by = 12L)),
+stopifnot(identical(v_added, seq(49L, 521L, by = 12L)),
           all(s521$l_visit[s521$l_CT == 1] == 1))
 
 # A 30-point horizon keeps 30 points (script 05 used to lengthen it to 39).
@@ -143,27 +149,29 @@ expect_error_matching(model_fun(fractional), "Schedule 'l_blood' must contain on
 
 # build_horizon_params() on short horizons (mock survival models, as in
 # test_canonical_prevalence.R).
+#' Mock predict() method: exponential survival whose per-patient rate rises with
+#' age, CRP and TMB/BRAF; returns flexsurv-style nested `.pred` survival frames.
 predict.mock_survival_model <- function(object, newdata, type, times, ...) {
-  rate <- (0.01 + newdata$Age / 3000 + as.numeric(as.character(newdata$crp)) / 100 +
+  v_rate <- (0.01 + newdata$Age / 3000 + as.numeric(as.character(newdata$crp)) / 100 +
              as.numeric(as.character(newdata$tmb_braf)) / 50) * object$rate
-  structure(list(.pred = lapply(rate, function(r)
+  structure(list(.pred = lapply(v_rate, function(r)
     data.frame(.pred_survival = exp(-r * times)))), class = "data.frame",
-    row.names = seq_along(rate))
+    row.names = seq_along(v_rate))
 }
-mock_data <- data.frame(ID = 1:8, Age = seq(45, 80, 5), sex = factor(rep(0:1, 4)),
+df_mock_data <- data.frame(ID = 1:8, Age = seq(45, 80, 5), sex = factor(rep(0:1, 4)),
   Rx = factor(rep(c("control", "experimental"), 4)),
   crp = c(0, 0, 0, 0, 1, 1, 1, 1), tmb_braf = c(0, 0, 0, 1, 0, 1, 1, 1),
   OSwk = 100, Death = 1, PFSwk = 50, Progression = 1)
-mock_complete <- economic_prediction_population(mock_data)
+df_mock_complete <- economic_prediction_population(df_mock_data)
 mock_models <- list(os = structure(list(rate = 1), class = "mock_survival_model"),
                     pfs = structure(list(rate = 2), class = "mock_survival_model"))
-mock_strategies <- data.frame(id = get_strategies(), prevalence = c(1, 0.5, 0.5))
+df_mock_strategies <- data.frame(id = get_strategies(), prevalence = c(1, 0.5, 0.5))
 mock_base <- set_population_predictions(make_params(52), generate_population_averaged_predictions(
-  mock_models, mock_strategies, mock_complete, 0:52, quiet = TRUE))
+  mock_models, df_mock_strategies, df_mock_complete, 0:52, quiet = TRUE))
 for (h in c(2, 4, 12, 30, 104)) {
-  hp <- build_horizon_params(mock_base, h, mock_models, mock_strategies, mock_complete)
+  hp <- build_horizon_params(mock_base, h, mock_models, df_mock_strategies, df_mock_complete)
   stopifnot(hp$time_horizon == h,
-            all(vapply(hp[schedule_names], length, integer(1)) == h + 1),
+            all(vapply(hp[v_schedule_names], length, integer(1)) == h + 1),
             sum(hp$l_nivo) == sum(c(5, 7, 13, 15, 29, 31, 37, 39) <= h + 1))
   r <- model_fun(hp)
   stopifnot(all(is.finite(r$Cost)), all(is.finite(r$Effect)))
@@ -206,31 +214,38 @@ stopifnot(is.null(survival_curve_problem(c(1 - 1e-13, 0.5, 0.5 + 1e-13, 0))))
 # the draw. The sampled-prediction machinery is mocked.
 n_samples <- 1L
 sampling_models <- list(joint = list())
+#' Mock accessor: returns the `joint` component of the sampling cache.
 get_joint_sampling_models <- function(x) x$joint
+#' Mock accessor: every sampled draw rebuilds successfully (no models needed).
 sampled_survival_models <- function(component, idx) list(failed = FALSE)
+#' Mock weights: NULL, i.e. unweighted population averaging.
 model_population_weights <- function(params, population) NULL
 psa_mock_curve <- NULL
+#' Mock PSA predictor returning psa_mock_curve() for the control curve or for
+#' both biomarker subgroups.
 generate_psa_population_averaged_predictions <- function(sampling_model_list, biomarker_name = NULL,
                                                          outcome, sample_idx, data_original,
                                                          weights, time_points) {
-  curve <- psa_mock_curve(outcome, time_points)
-  if (is.null(biomarker_name)) curve else list(positive = curve, negative = curve)
+  v_curve <- psa_mock_curve(outcome, time_points)
+  if (is.null(biomarker_name)) v_curve else list(positive = v_curve, negative = v_curve)
 }
-psa_params <- p260; psa_params$prediction_population <- mock_complete
+psa_params <- p260; psa_params$prediction_population <- df_mock_complete
 
+#' Valid exponential PSA curve, OS above PFS.
 psa_mock_curve <- function(outcome, t) exp(-(if (outcome == "os") 0.003 else 0.006) * t)
-valid_draw <- model_fun(psa_params, determpsa = "psa", sim_idx = 1)
-stopifnot(!isTRUE(attr(valid_draw, "fallback_used")),
-          !isTRUE(all.equal(valid_draw$Effect, bare$Effect)))
+df_valid_draw <- model_fun(psa_params, determpsa = "psa", sim_idx = 1)
+stopifnot(!isTRUE(attr(df_valid_draw, "fallback_used")),
+          !isTRUE(all.equal(df_valid_draw$Effect, df_bare$Effect)))
 
+#' Invalid PSA curve: as the valid one, but OS rises to 1.1 at the second point.
 psa_mock_curve <- function(outcome, t) {
-  curve <- exp(-(if (outcome == "os") 0.003 else 0.006) * t)
-  if (outcome == "os") curve[2] <- 1.1
-  curve
+  v_curve <- exp(-(if (outcome == "os") 0.003 else 0.006) * t)
+  if (outcome == "os") v_curve[2] <- 1.1
+  v_curve
 }
-invalid_draw <- suppressWarnings(model_fun(psa_params, determpsa = "psa", sim_idx = 1))
-stopifnot(isTRUE(attr(invalid_draw, "fallback_used")),
-          isTRUE(all.equal(as.data.frame(invalid_draw), as.data.frame(bare),
+df_invalid_draw <- suppressWarnings(model_fun(psa_params, determpsa = "psa", sim_idx = 1))
+stopifnot(isTRUE(attr(df_invalid_draw, "fallback_used")),
+          isTRUE(all.equal(as.data.frame(df_invalid_draw), as.data.frame(df_bare),
                            check.attributes = FALSE)))
 
 # ---------------------------------------------------------------------------

@@ -140,12 +140,12 @@ prepare_full_dag <- function(dag_obj) {
 #' @param tidy_dag_obj A ggdag tidy object with a logical `hyp` edge column.
 #' @param caption_pal Named node-status colour palette.
 plot_dag <- function(tidy_dag_obj, caption_pal = dag_palette) {
-  node_data <- ggdag::node_status(tidy_dag_obj)$data |>
+  df_node <- ggdag::node_status(tidy_dag_obj)$data |>
     dplyr::distinct(name, x, y, status)
-  x_range <- range(node_data$x, na.rm = TRUE)
-  y_range <- range(node_data$y, na.rm = TRUE)
-  x_pad <- diff(x_range) * 0.10
-  y_pad <- diff(y_range) * 0.10
+  v_x_range <- range(df_node$x, na.rm = TRUE)
+  v_y_range <- range(df_node$y, na.rm = TRUE)
+  x_pad <- diff(v_x_range) * 0.10
+  y_pad <- diff(v_y_range) * 0.10
 
   ggplot2::ggplot(
     tidy_dag_obj$data,
@@ -159,21 +159,21 @@ plot_dag <- function(tidy_dag_obj, caption_pal = dag_palette) {
       edge_linetype = "dashed"
     ) +
     ggdag::geom_dag_node(
-      data = node_data,
+      data = df_node,
       mapping = ggplot2::aes(x = x, y = y, colour = status, fill = status),
       size = 24,
       inherit.aes = FALSE
     ) +
     ggdag::geom_dag_text(
-      data = node_data,
+      data = df_node,
       mapping = ggplot2::aes(x = x, y = y, label = name),
       colour = "white",
       size = 3.0,
       inherit.aes = FALSE
     ) +
     ggplot2::coord_equal(
-      xlim = c(x_range[1] - x_pad, x_range[2] + x_pad),
-      ylim = c(y_range[1] - y_pad, y_range[2] + y_pad),
+      xlim = c(v_x_range[1] - x_pad, v_x_range[2] + x_pad),
+      ylim = c(v_y_range[1] - y_pad, v_y_range[2] + y_pad),
       clip = "off"
     ) +
     ggdag::theme_dag() +
@@ -227,7 +227,7 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
       hyp = !is.na(to) & name == "T" & to == "Survival"
     )
 
-  node_data <- ggdag::node_status(tidy_dag_obj)$data |>
+  df_node <- ggdag::node_status(tidy_dag_obj)$data |>
     dplyr::distinct(name, x, y, status) |>
     dplyr::mutate(
       status = dplyr::if_else(is.na(status), "covariate", status),
@@ -237,9 +237,9 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
         TRUE ~ name
       )
     )
-  x_range <- range(node_data$x, na.rm = TRUE)
-  y_range <- range(node_data$y, na.rm = TRUE)
-  palette <- c(
+  v_x_range <- range(df_node$x, na.rm = TRUE)
+  v_y_range <- range(df_node$y, na.rm = TRUE)
+  v_palette <- c(
     exposure = "#2166ac",
     outcome = "#b2182b",
     covariate = "grey55"
@@ -257,13 +257,13 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
       edge_linetype = "dashed"
     ) +
     ggdag::geom_dag_node(
-      data = node_data,
+      data = df_node,
       mapping = ggplot2::aes(x = x, y = y, colour = status, fill = status),
       size = 24,
       inherit.aes = FALSE
     ) +
     ggtext::geom_richtext(
-      data = node_data,
+      data = df_node,
       mapping = ggplot2::aes(x = x, y = y, label = label),
       colour = "white",
       size = 3.5,
@@ -273,14 +273,14 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
       inherit.aes = FALSE
     ) +
     ggplot2::coord_equal(
-      xlim = c(x_range[1] - diff(x_range) * 0.10, x_range[2] + diff(x_range) * 0.10),
-      ylim = c(y_range[1] - diff(y_range) * 0.10, y_range[2] + diff(y_range) * 0.10),
+      xlim = c(v_x_range[1] - diff(v_x_range) * 0.10, v_x_range[2] + diff(v_x_range) * 0.10),
+      ylim = c(v_y_range[1] - diff(v_y_range) * 0.10, v_y_range[2] + diff(v_y_range) * 0.10),
       clip = "off"
     ) +
     ggdag::theme_dag() +
     ggplot2::scale_color_manual(
       name = NULL,
-      values = palette,
+      values = v_palette,
       breaks = c("exposure", "outcome", "covariate"),
       labels = c(
         exposure = "Treatment",
@@ -290,7 +290,7 @@ plot_simple_dag <- function(dag_obj = dag_simple) {
     ) +
     ggplot2::scale_fill_manual(
       name = NULL,
-      values = palette,
+      values = v_palette,
       breaks = c("exposure", "outcome", "covariate"),
       labels = c(
         exposure = "Treatment",

@@ -32,15 +32,17 @@ suppressMessages({
 })
 
 utility_source_label <- "correct"   # cache_paths resolves label from this
-failures <- character(0)
-skips <- character(0)
+v_failures <- character(0)
+v_skips <- character(0)
 checks <- 0L
 
+#' Count a contract check and record `msg` as a failure unless `ok` is TRUE.
 check <- function(ok, msg) {
   checks <<- checks + 1L
-  if (!isTRUE(ok)) failures <<- c(failures, msg)
+  if (!isTRUE(ok)) v_failures <<- c(v_failures, msg)
 }
-skip <- function(msg) skips <<- c(skips, msg)
+#' Record `msg` as a skipped (not applicable) check.
+skip <- function(msg) v_skips <<- c(v_skips, msg)
 
 # ---------------------------------------------------------------------------
 # 1. EVPPI cache carries the treatment-by-biomarker interaction rows
@@ -64,15 +66,15 @@ if (!file.exists(evppi_file)) {
     skip(sprintf("EVPPI cache has no rows because EVPI = %s; row checks not applicable",
                  format(e$evpi_manual)))
   } else if (!is.null(e$evppi_results)) {
-    params <- e$evppi_results$parameter
-    expected <- unlist(lapply(get_biomarkers(), function(b) {
+    v_params <- e$evppi_results$parameter
+    v_expected <- unlist(lapply(get_biomarkers(), function(b) {
       paste0("b_", b, "_rx_", c("os", "pfs"))
     }))
-    missing <- setdiff(expected, params)
+    v_missing <- setdiff(v_expected, v_params)
     check(
-      length(missing) == 0,
+      length(v_missing) == 0,
       paste0("EVPPI cache is missing interaction rows: ",
-             paste(missing, collapse = ", "),
+             paste(v_missing, collapse = ", "),
              ". extract_interaction_coefficients() is matching nothing -- ",
              "check the coefficient-name pattern against a real fit.")
     )
@@ -80,16 +82,16 @@ if (!file.exists(evppi_file)) {
     # never changes the optimal decision, so a zero value is not a failure
     # signature. An extraction failure now surfaces as an NA estimate with a
     # populated error column and no standard error.
-    present <- intersect(expected, params)
-    if (length(present) > 0) {
-      rows <- e$evppi_results[match(present, params), , drop = FALSE]
+    v_present <- intersect(v_expected, v_params)
+    if (length(v_present) > 0) {
+      df_rows <- e$evppi_results[match(v_present, v_params), , drop = FALSE]
       check(
-        all(is.finite(rows$evppi)) &&
-          (!"error" %in% names(rows) || all(!nzchar(rows$error))),
+        all(is.finite(df_rows$evppi)) &&
+          (!"error" %in% names(df_rows) || all(!nzchar(df_rows$error))),
         "Interaction EVPPI rows are NA or carry an error; extraction likely failed"
       )
       check(
-        "evppi_se" %in% names(rows) && all(is.finite(rows$evppi_se)),
+        "evppi_se" %in% names(df_rows) && all(is.finite(df_rows$evppi_se)),
         "Interaction EVPPI rows lack a finite Monte Carlo standard error"
       )
     }
@@ -101,15 +103,15 @@ if (!file.exists(evppi_file)) {
       source(here::here("R", "evppi_functions.R"))
     })
     groups <- add_interaction_param_groups(create_parameter_groups())
-    consistency <- check_evppi_group_consistency(e$evppi_results, groups)
-    check(nrow(consistency) > 0, "EVPPI cache has no [GROUP] rows to check")
+    df_consistency <- check_evppi_group_consistency(e$evppi_results, groups)
+    check(nrow(df_consistency) > 0, "EVPPI cache has no [GROUP] rows to check")
     check(
-      !any(consistency$violation),
+      !any(df_consistency$violation),
       paste0("Group EVPPI below its largest member beyond tolerance: ",
-             paste(consistency$group[consistency$violation], collapse = ", "))
+             paste(df_consistency$group[df_consistency$violation], collapse = ", "))
     )
     check(
-      "[GROUP] interaction_all" %in% params,
+      "[GROUP] interaction_all" %in% v_params,
       "EVPPI cache lacks the joint interaction group used by Figure 5 / Table S7"
     )
   }
@@ -183,17 +185,17 @@ if (!file.exists(sampling_file)) {
         "Sampling cache lacks joint OS/PFS coefficient covariance (issue #159)")
   if (!is.null(sm$joint$joint_covariance$covariance)) {
     joint <- sm$joint
-    covariance <- joint$joint_covariance$covariance
-    os_idx <- seq_along(joint$original_os$opt$par)
-    pfs_idx <- length(os_idx) + seq_along(joint$original_pfs$opt$par)
-    check(max(abs(covariance[os_idx, os_idx] - joint$original_os$cov)) < 1e-10 &&
-            max(abs(covariance[pfs_idx, pfs_idx] - joint$original_pfs$cov)) < 1e-10,
+    m_covariance <- joint$joint_covariance$covariance
+    v_os_idx <- seq_along(joint$original_os$opt$par)
+    v_pfs_idx <- length(v_os_idx) + seq_along(joint$original_pfs$opt$par)
+    check(max(abs(m_covariance[v_os_idx, v_os_idx] - joint$original_os$cov)) < 1e-10 &&
+            max(abs(m_covariance[v_pfs_idx, v_pfs_idx] - joint$original_pfs$cov)) < 1e-10,
           "Joint sampling changed the fitted endpoint marginal covariances (#159)")
-    realised <- cov(cbind(joint$draws$os[, joint$original_os$optpars],
+    m_realised <- cov(cbind(joint$draws$os[, joint$original_os$optpars],
                           joint$draws$pfs[, joint$original_pfs$optpars]))
-    mcse <- sqrt((outer(diag(covariance), diag(covariance)) + covariance^2) /
+    m_mcse <- sqrt((outer(diag(m_covariance), diag(m_covariance)) + m_covariance^2) /
                    (joint$n_samples - 1))
-    check(all(abs(realised - covariance) <= 5 * mcse),
+    check(all(abs(m_realised - m_covariance) <= 5 * m_mcse),
           "Realised coefficient covariance differs from joint target by >5 MCSE (#159)")
     check(joint$joint_covariance$n_successful + joint$joint_covariance$n_failed ==
             joint$joint_covariance$n_attempted,
@@ -213,7 +215,7 @@ if (!file.exists(sampling_file)) {
 # 3. Every setup_report(sources = ...) prefix resolves to an analysis script
 #    Guards against the 06->04 style renumbering silently repointing a report.
 # ---------------------------------------------------------------------------
-qmd_files <- c(
+v_qmd_files <- c(
   list.files(here::here("reports"), pattern = "\\.qmd$",
              recursive = TRUE, full.names = TRUE),
   list.files(here::here("outputs", "vignettes"), pattern = "\\.qmd$",
@@ -222,17 +224,21 @@ qmd_files <- c(
 analysis_dir <- here::here("analysis")
 fun_dir <- here::here("R")
 
+#' Lines of the first setup chunk of the Quarto file at `path`, without its
+#' fences; character(0) when there is none.
 setup_chunk <- function(path) {
-  lines <- readLines(path, warn = FALSE)
-  starts <- grep("^```\\{r[ ,].*setup", lines)
-  if (length(starts) == 0) return(character(0))
-  start <- starts[1]
-  ends <- grep("^```\\s*$", lines)
-  ends <- ends[ends > start]
-  if (length(ends) == 0) return(character(0))
-  lines[(start + 1):(ends[1] - 1)]
+  v_lines <- readLines(path, warn = FALSE)
+  v_starts <- grep("^```\\{r[ ,].*setup", v_lines)
+  if (length(v_starts) == 0) return(character(0))
+  start <- v_starts[1]
+  v_ends <- grep("^```\\s*$", v_lines)
+  v_ends <- v_ends[v_ends > start]
+  if (length(v_ends) == 0) return(character(0))
+  v_lines[(start + 1):(v_ends[1] - 1)]
 }
 
+#' String values passed to argument `arg` (a c(...) vector or a single string)
+#' in a setup chunk; returns a character vector.
 arg_values <- function(chunk, arg) {
   txt <- paste(chunk, collapse = " ")
   m <- regmatches(txt, regexpr(paste0(arg, "\\s*=\\s*c\\([^)]*\\)"), txt))
@@ -243,18 +249,18 @@ arg_values <- function(chunk, arg) {
   unlist(regmatches(m, gregexpr('"[^"]*"', m))) |> gsub(pattern = '"', replacement = "")
 }
 
-for (qmd in qmd_files) {
-  chunk <- setup_chunk(qmd)
-  if (length(chunk) == 0) next
+for (qmd in v_qmd_files) {
+  v_chunk <- setup_chunk(qmd)
+  if (length(v_chunk) == 0) next
   rel <- sub(".*/(reports|outputs)/", "", gsub("\\\\", "/", qmd))
 
-  for (pfx in arg_values(chunk, "sources")) {
-    hits <- list.files(analysis_dir, pattern = paste0("^", pfx, "_.*\\.R$"))
-    check(length(hits) > 0,
+  for (pfx in arg_values(v_chunk, "sources")) {
+    v_hits <- list.files(analysis_dir, pattern = paste0("^", pfx, "_.*\\.R$"))
+    check(length(v_hits) > 0,
           paste0(rel, ": setup_report(sources=) prefix '", pfx,
                  "' matches no script in analysis/"))
   }
-  for (fn in arg_values(chunk, "funs")) {
+  for (fn in arg_values(v_chunk, "funs")) {
     check(file.exists(file.path(fun_dir, paste0(fn, ".R"))),
           paste0(rel, ": setup_report(funs=) names '", fn,
                  "' but R/", fn, ".R does not exist"))
@@ -266,55 +272,57 @@ for (qmd in qmd_files) {
 #    This is the class that made the scenario_effect fix fail on first attempt:
 #    the report called psa_failed_draw_policy() without sourcing psa_functions.
 # ---------------------------------------------------------------------------
-fun_files <- list.files(fun_dir, pattern = "\\.R$", full.names = TRUE)
+v_fun_files <- list.files(fun_dir, pattern = "\\.R$", full.names = TRUE)
 defines <- list()
-for (f in fun_files) {
-  src <- readLines(f, warn = FALSE)
+for (f in v_fun_files) {
+  v_src <- readLines(f, warn = FALSE)
   nm <- unique(sub("^\\s*([A-Za-z._][A-Za-z0-9._]*)\\s*(<-|=)\\s*function.*$", "\\1",
-                   grep("^\\s*[A-Za-z._][A-Za-z0-9._]*\\s*(<-|=)\\s*function", src, value = TRUE)))
+                   grep("^\\s*[A-Za-z._][A-Za-z0-9._]*\\s*(<-|=)\\s*function", v_src, value = TRUE)))
   for (n in nm) defines[[n]] <- c(defines[[n]], tools::file_path_sans_ext(basename(f)))
 }
 # Sourced unconditionally by 02_setup_and_global_variables.R, so always in scope.
-always <- c("model_configs", "cache_paths", "cache_provenance", "report_setup", "report_tables")
+v_always <- c("model_configs", "cache_paths", "cache_provenance", "report_setup", "report_tables")
 
 # A declared analysis script brings its own source() calls with it. e.g. 04
 # sources prediction_functions.R, so a report declaring sources = "04" may call
 # generate_population_averaged_predictions() without naming it in funs=.
 # Resolving this transitively is what separates a real wiring gap from a
 # false positive.
+#' Names (without .R) of the R/ files sourced by the analysis script whose name
+#' starts with `prefix`.
 sourced_by_analysis <- function(prefix) {
-  hits <- list.files(analysis_dir, pattern = paste0("^", prefix, "_.*\\.R$"),
+  v_hits <- list.files(analysis_dir, pattern = paste0("^", prefix, "_.*\\.R$"),
                      full.names = TRUE)
-  if (length(hits) == 0) return(character(0))
-  src <- readLines(hits[1], warn = FALSE)
-  refs <- unlist(regmatches(
-    src, gregexpr('"?R"?[/", ]+[A-Za-z0-9._]+\\.R', src)
+  if (length(v_hits) == 0) return(character(0))
+  v_src <- readLines(v_hits[1], warn = FALSE)
+  v_refs <- unlist(regmatches(
+    v_src, gregexpr('"?R"?[/", ]+[A-Za-z0-9._]+\\.R', v_src)
   ))
-  unique(tools::file_path_sans_ext(basename(gsub('[", ]+', "/", refs))))
+  unique(tools::file_path_sans_ext(basename(gsub('[", ]+', "/", v_refs))))
 }
 
-for (qmd in qmd_files) {
-  chunk <- setup_chunk(qmd)
-  if (length(chunk) == 0) next
+for (qmd in v_qmd_files) {
+  v_chunk <- setup_chunk(qmd)
+  if (length(v_chunk) == 0) next
   rel <- sub(".*/(reports|outputs)/", "", gsub("\\\\", "/", qmd))
-  available <- c(always, arg_values(chunk, "funs"))
-  if (any(grepl("R/publication_artifacts.R", chunk, fixed = TRUE)))
-    available <- c(available, "publication_artifacts")
-  for (pfx in arg_values(chunk, "sources")) {
-    available <- c(available, sourced_by_analysis(pfx))
+  v_available <- c(v_always, arg_values(v_chunk, "funs"))
+  if (any(grepl("R/publication_artifacts.R", v_chunk, fixed = TRUE)))
+    v_available <- c(v_available, "publication_artifacts")
+  for (pfx in arg_values(v_chunk, "sources")) {
+    v_available <- c(v_available, sourced_by_analysis(pfx))
   }
-  available <- unique(available)
+  v_available <- unique(v_available)
 
-  called <- unique(unlist(regmatches(
-    chunk, gregexpr("[A-Za-z._][A-Za-z0-9._]*(?=\\s*\\()", chunk, perl = TRUE)
+  v_called <- unique(unlist(regmatches(
+    v_chunk, gregexpr("[A-Za-z._][A-Za-z0-9._]*(?=\\s*\\()", v_chunk, perl = TRUE)
   )))
-  for (fname in called) {
-    owners <- defines[[fname]]
-    if (is.null(owners)) next          # not one of ours; base/pkg function
-    if (!any(owners %in% available)) {
+  for (fname in v_called) {
+    v_owners <- defines[[fname]]
+    if (is.null(v_owners)) next          # not one of ours; base/pkg function
+    if (!any(v_owners %in% v_available)) {
       check(FALSE,
             paste0(rel, ": setup chunk calls ", fname, "() from ",
-                   paste(unique(owners), collapse = "/"),
+                   paste(unique(v_owners), collapse = "/"),
                    " but does not source it via setup_report(funs=)"))
     }
   }
@@ -334,66 +342,66 @@ source(here::here("R/publication_artifacts.R"))
 source(here::here("R/report_format.R"))
 table5_path <- here::here("outputs/tables/table_5.csv")
 if (exists("po") && file.exists(table5_path)) {
-  table5 <- read.csv(table5_path, colClasses = "character", check.names = FALSE)
+  df_table5 <- read.csv(table5_path, colClasses = "character", check.names = FALSE)
   wtp <- 51000
-  nmb <- as.matrix(po$effect) * wtp - as.matrix(po$cost)
+  m_nmb <- as.matrix(po$effect) * wtp - as.matrix(po$cost)
   # Independent calculation, including dampack's equal sharing of ties.
-  winners <- nmb == apply(nmb, 1, max)
-  probabilities <- colMeans(winners / rowSums(winners))
-  check(identical(table5$Strategy, as.character(po$strategies)),
+  m_winners <- m_nmb == apply(m_nmb, 1, max)
+  v_probabilities <- colMeans(m_winners / rowSums(m_winners))
+  check(identical(df_table5$Strategy, as.character(po$strategies)),
         "Table 5 strategy rows differ from the PSA cache")
   control <- match(get_control_strategy(), po$strategies)
-  cost <- as.matrix(po$cost)
-  effect <- as.matrix(po$effect)
-  dc <- sweep(cost, 1, cost[, control])
-  de <- sweep(effect, 1, effect[, control])
-  expected <- list(Mean_Cost = colMeans(cost), Mean_QALY = colMeans(effect),
-    Mean_Inc_Cost = colMeans(dc), Mean_Inc_QALY = colMeans(de), Prob_CE = probabilities)
-  for (entry in list(list("Cost", cost), list("QALY", effect),
-                     list("Inc_Cost", dc), list("Inc_QALY", de))) {
+  m_cost <- as.matrix(po$cost)
+  m_effect <- as.matrix(po$effect)
+  m_dc <- sweep(m_cost, 1, m_cost[, control])
+  m_de <- sweep(m_effect, 1, m_effect[, control])
+  expected <- list(Mean_Cost = colMeans(m_cost), Mean_QALY = colMeans(m_effect),
+    Mean_Inc_Cost = colMeans(m_dc), Mean_Inc_QALY = colMeans(m_de), Prob_CE = v_probabilities)
+  for (entry in list(list("Cost", m_cost), list("QALY", m_effect),
+                     list("Inc_Cost", m_dc), list("Inc_QALY", m_de))) {
     expected[[paste0(entry[[1]], "_Lower")]] <- apply(entry[[2]], 2, quantile, 0.025)
     expected[[paste0(entry[[1]], "_Upper")]] <- apply(entry[[2]], 2, quantile, 0.975)
   }
-  expected$ICER <- colMeans(dc) / colMeans(de)
+  expected$ICER <- colMeans(m_dc) / colMeans(m_de)
   expected$ICER[control] <- NA_real_
   for (column in names(expected)) {
-    check(isTRUE(all.equal(as.numeric(table5[[column]]), unname(expected[[column]]),
+    check(isTRUE(all.equal(as.numeric(df_table5[[column]]), unname(expected[[column]]),
                            tolerance = 1e-10)),
           paste("Table 5 differs from independent PSA calculation:", column))
   }
-  expected_status <- ifelse(colMeans(dc) > 0 & colMeans(de) <= 0,
+  v_expected_status <- ifelse(colMeans(m_dc) > 0 & colMeans(m_de) <= 0,
     "Dominated by SoC", "Pairwise ICER vs SoC")
-  expected_status[control] <- "Reference"
-  check(identical(table5$Status, unname(expected_status)),
+  v_expected_status[control] <- "Reference"
+  check(identical(df_table5$Status, unname(v_expected_status)),
         "Table 5 pairwise status differs from PSA means")
 } else skip("Table 5 versus PSA comparison requires the table and PSA cache")
 
 manifest_path <- here::here("outputs/manifest.csv")
 check(file.exists(manifest_path), "Publication artifact manifest is absent")
 if (file.exists(manifest_path)) {
-  manifest <- read.csv(manifest_path, stringsAsFactors = FALSE)
+  df_manifest <- read.csv(manifest_path, stringsAsFactors = FALSE)
   registry <- publication_outputs()
-  owners <- setNames(rep(paste0("outputs/vignettes/", names(registry), ".qmd"), lengths(registry)),
+  v_owners <- setNames(rep(paste0("outputs/vignettes/", names(registry), ".qmd"), lengths(registry)),
                      unlist(registry, use.names = FALSE))
-  check(!anyDuplicated(manifest$file), "Manifest has duplicate artifact rows")
-  check(setequal(manifest$file, unlist(registry)), "Manifest does not cover every declared output")
-  tracked_csvs <- system2("git", c("ls-files", "outputs/tables/*.csv"), stdout = TRUE)
-  check(all(tracked_csvs %in% manifest$file), "A tracked publication CSV is missing from the manifest")
-  for (i in seq_len(nrow(manifest))) {
-    row <- manifest[i, ]
-    path <- here::here(row$file)
-    check(file.exists(here::here(row$generating_vignette)), paste("Missing generator:", row$file))
-    check(identical(row$generating_vignette, unname(owners[row$file])),
-          paste("Manifest names the wrong generator:", row$file))
-    check(nzchar(row$render_time), paste("Missing render time:", row$file))
-    if (row$status == "deleted_empty") {
-      check(!file.exists(path), paste("Obsolete empty-state predecessor survives:", row$file))
+  check(!anyDuplicated(df_manifest$file), "Manifest has duplicate artifact rows")
+  check(setequal(df_manifest$file, unlist(registry)), "Manifest does not cover every declared output")
+  v_tracked_csvs <- system2("git", c("ls-files", "outputs/tables/*.csv"), stdout = TRUE)
+  check(all(v_tracked_csvs %in% df_manifest$file), "A tracked publication CSV is missing from the manifest")
+  for (i in seq_len(nrow(df_manifest))) {
+    df_row <- df_manifest[i, ]
+    path <- here::here(df_row$file)
+    check(file.exists(here::here(df_row$generating_vignette)), paste("Missing generator:", df_row$file))
+    check(identical(df_row$generating_vignette, unname(v_owners[df_row$file])),
+          paste("Manifest names the wrong generator:", df_row$file))
+    check(nzchar(df_row$render_time), paste("Missing render time:", df_row$file))
+    if (df_row$status == "deleted_empty") {
+      check(!file.exists(path), paste("Obsolete empty-state predecessor survives:", df_row$file))
     } else {
-      check(file.exists(path), paste("Missing publication artifact:", row$file))
-      check(file.exists(path) && identical(unname(tools::md5sum(path)), row$artifact_md5),
-            paste("Artifact differs from its manifest:", row$file))
-      if (grepl("\\.csv$", row$file))
-        check(row$status == "csv_verified", paste("CSV not checked against its generating object:", row$file))
+      check(file.exists(path), paste("Missing publication artifact:", df_row$file))
+      check(file.exists(path) && identical(unname(tools::md5sum(path)), df_row$artifact_md5),
+            paste("Artifact differs from its manifest:", df_row$file))
+      if (grepl("\\.csv$", df_row$file))
+        check(df_row$status == "csv_verified", paste("CSV not checked against its generating object:", df_row$file))
     }
   }
   for (vignette in names(registry)) {
@@ -402,33 +410,33 @@ if (file.exists(manifest_path)) {
             grepl("finish_artifact_render()", src, fixed = TRUE),
           paste("Vignette lacks an artifact lifecycle:", vignette))
   }
-  table5_manifest <- subset(manifest, file == "outputs/tables/table_5.csv")
-  if (exists("po")) check(nrow(table5_manifest) == 1L &&
-    grepl(paste0("psa_obj=", po$fingerprint), table5_manifest$source_cache_fingerprints, fixed = TRUE),
+  df_table5_manifest <- subset(df_manifest, file == "outputs/tables/table_5.csv")
+  if (exists("po")) check(nrow(df_table5_manifest) == 1L &&
+    grepl(paste0("psa_obj=", po$fingerprint), df_table5_manifest$source_cache_fingerprints, fixed = TRUE),
     "Table 5 manifest refers to a different PSA input fingerprint")
   if (exists("sc")) {
     for (file in c("outputs/figs/figure4.png", "outputs/figs/figure_s4.png",
                    "outputs/figs/figure5.png", "outputs/tables/table_s7.csv")) {
-      entry <- manifest[manifest$file == file, ]
-      check(nrow(entry) == 1L && grepl(sc$fingerprint, entry$source_cache_fingerprints, fixed = TRUE),
+      df_entry <- df_manifest[df_manifest$file == file, ]
+      check(nrow(df_entry) == 1L && grepl(sc$fingerprint, df_entry$source_cache_fingerprints, fixed = TRUE),
             paste("Manifest refers to a different scenario input fingerprint:", file))
     }
   }
 }
 if (exists("sc") && file.exists(here::here("outputs/tables/table_s7.csv"))) {
-  s7 <- read.csv(here::here("outputs/tables/table_s7.csv"))
-  totals <- subset(s7, group == "evpi")
-  check(setequal(totals$scenario_id, sc$scenarios$scenario_id), "Table S7 drops a scenario EVPI row")
+  df_s7 <- read.csv(here::here("outputs/tables/table_s7.csv"))
+  df_totals <- subset(df_s7, group == "evpi")
+  check(setequal(df_totals$scenario_id, sc$scenarios$scenario_id), "Table S7 drops a scenario EVPI row")
   for (result in sc$all_scenario_results) {
     id <- result$scenario_info$scenario_id
-    nmb <- as.matrix(result$psa_obj$effect) * result$scenario_info$wtp - as.matrix(result$psa_obj$cost)
-    evpi <- mean(apply(nmb, 1, max)) - max(colMeans(nmb))
-    check(isTRUE(all.equal(totals$evpi[totals$scenario_id == id], evpi, tolerance = 1e-10)),
+    m_nmb <- as.matrix(result$psa_obj$effect) * result$scenario_info$wtp - as.matrix(result$psa_obj$cost)
+    evpi <- mean(apply(m_nmb, 1, max)) - max(colMeans(m_nmb))
+    check(isTRUE(all.equal(df_totals$evpi[df_totals$scenario_id == id], evpi, tolerance = 1e-10)),
           paste("Table S7 total EVPI differs from scenario PSA:", id))
     if (evpi == 0) {
-      rows <- subset(s7, scenario_id == id & group != "evpi")
-      check(nrow(rows) > 0 && all(rows$evppi == 0) && all(rows$evppi_se == 0) &&
-        all(is.na(rows$evppi_percent_of_evpi)), paste("Table S7 loses explicit zero groups:", id))
+      df_rows <- subset(df_s7, scenario_id == id & group != "evpi")
+      check(nrow(df_rows) > 0 && all(df_rows$evppi == 0) && all(df_rows$evppi_se == 0) &&
+        all(is.na(df_rows$evppi_percent_of_evpi)), paste("Table S7 loses explicit zero groups:", id))
     }
   }
 }
@@ -436,11 +444,11 @@ if (exists("sc") && file.exists(here::here("outputs/tables/table_s7.csv"))) {
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
-for (s in skips) cat("SKIP:", s, "\n")
-if (length(failures) > 0) {
-  cat("\n", length(failures), " CONTRACT FAILURE(S):\n", sep = "")
-  for (f in failures) cat("  - ", f, "\n", sep = "")
+for (s in v_skips) cat("SKIP:", s, "\n")
+if (length(v_failures) > 0) {
+  cat("\n", length(v_failures), " CONTRACT FAILURE(S):\n", sep = "")
+  for (f in v_failures) cat("  - ", f, "\n", sep = "")
   stop("Report/cache contract check failed.")
 }
 cat("PASS: ", checks, " report/cache contract checks (",
-    length(skips), " skipped).\n", sep = "")
+    length(v_skips), " skipped).\n", sep = "")

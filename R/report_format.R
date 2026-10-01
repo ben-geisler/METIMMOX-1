@@ -12,30 +12,30 @@ strategy_labels <- with(get_strategy_metadata(), setNames(report_label, id))
 #'
 #' Unknown identifiers are returned unchanged.
 strategy_label <- function(x) {
-  x_chr <- as.character(x)
-  out <- x_chr
-  known <- !is.na(x_chr) & x_chr %in% names(strategy_labels)
-  out[known] <- unname(strategy_labels[x_chr[known]])
-  out
+  v_ids <- as.character(x)
+  v_out <- v_ids
+  v_known <- !is.na(v_ids) & v_ids %in% names(strategy_labels)
+  v_out[v_known] <- unname(strategy_labels[v_ids[v_known]])
+  v_out
 }
 
 #' Short labels for narrow tables; guided strategies retain their canonical names.
 strategy_short_label <- function(x) {
-  out <- strategy_label(x)
-  out[!is.na(x) & as.character(x) == get_control_strategy()] <- "SoC"
-  out
+  v_out <- strategy_label(x)
+  v_out[!is.na(x) & as.character(x) == get_control_strategy()] <- "SoC"
+  v_out
 }
 
 #' Convert biomarker identifiers to display labels
 #'
 #' Unknown identifiers are returned unchanged.
 biomarker_label <- function(x) {
-  labels <- c(strategy_display_name(get_biomarkers()), tlr = "TLR")
-  x_chr <- as.character(x)
-  out <- x_chr
-  known <- !is.na(x_chr) & x_chr %in% names(labels)
-  out[known] <- unname(labels[x_chr[known]])
-  out
+  v_labels <- c(strategy_display_name(get_biomarkers()), tlr = "TLR")
+  v_ids <- as.character(x)
+  v_out <- v_ids
+  v_known <- !is.na(v_ids) & v_ids %in% names(v_labels)
+  v_out[v_known] <- unname(v_labels[v_ids[v_known]])
+  v_out
 }
 
 #' Convert EVPPI parameter-group identifiers to display labels
@@ -44,8 +44,8 @@ biomarker_label <- function(x) {
 #' result tables (e.g. "[GROUP] drug_costs" or "drug_costs"). Unknown
 #' identifiers are returned without the prefix.
 evppi_group_label <- function(x) {
-  biomarkers <- get_biomarkers()
-  labels <- c(
+  v_biomarkers <- get_biomarkers()
+  v_labels <- c(
     # Drug and test unit prices are fixed in the PSA since issue #154, so these
     # groups no longer appear; the labels are kept for older caches.
     drug_costs = "Drug costs",
@@ -54,23 +54,23 @@ evppi_group_label <- function(x) {
     all_costs = "All costs",
     utilities = "Utilities",
     prevalence = "Biomarker prevalence",
-    stats::setNames(paste0(biomarker_label(biomarkers), "-treatment interaction"),
-                    paste0("interaction_", biomarkers)),
+    stats::setNames(paste0(biomarker_label(v_biomarkers), "-treatment interaction"),
+                    paste0("interaction_", v_biomarkers)),
     interaction_all = "Biomarker-treatment interaction"
   )
-  x_chr <- sub("^\\[GROUP\\] ", "", as.character(x))
-  out <- x_chr
-  known <- !is.na(x_chr) & x_chr %in% names(labels)
-  out[known] <- unname(labels[x_chr[known]])
-  out
+  v_ids <- sub("^\\[GROUP\\] ", "", as.character(x))
+  v_out <- v_ids
+  v_known <- !is.na(v_ids) & v_ids %in% names(v_labels)
+  v_out[v_known] <- unname(v_labels[v_ids[v_known]])
+  v_out
 }
 
 #' Format values as euros, guarding missing and non-finite values
 format_eur <- function(x, accuracy = 1) {
-  out <- rep("--", length(x))
-  valid <- !is.na(x) & is.finite(x)
-  out[valid] <- scales::dollar(x[valid], prefix = "EUR ", accuracy = accuracy)
-  out
+  v_out <- rep("--", length(x))
+  v_valid <- !is.na(x) & is.finite(x)
+  v_out[v_valid] <- scales::dollar(x[v_valid], prefix = "EUR ", accuracy = accuracy)
+  v_out
 }
 
 # Backward-compatible short name used by input and poster reports.
@@ -116,19 +116,19 @@ format_icer <- function(x, status = NULL) {
     rep_len(as.character(status), length(x))
   }
 
-  out <- format_eur(x)
-  reference <- status %in% c("Reference", "ref")
-  dominated <- status %in% c("D", "ED", "Dominated") |
+  v_out <- format_eur(x)
+  v_reference <- status %in% c("Reference", "ref")
+  v_dominated <- status %in% c("D", "ED", "Dominated") |
     grepl("^Dominated", status)
-  cost_saving <- status %in% c("Dominant", "Cost-saving") |
+  v_cost_saving <- status %in% c("Dominant", "Cost-saving") |
     grepl("^Cost-saving", status) | grepl("^Dominant", status)
-  out[!is.na(dominated) & dominated] <- "Dominated"
-  out[!is.na(cost_saving) & cost_saving] <- "Cost-saving"
-  out[reference] <- "--"
-  unlabelled_negative <- is.finite(x) & x < 0 & !reference &
-    !(!is.na(dominated) & dominated) & !(!is.na(cost_saving) & cost_saving)
-  out[unlabelled_negative] <- "--"
-  out
+  v_out[!is.na(v_dominated) & v_dominated] <- "Dominated"
+  v_out[!is.na(v_cost_saving) & v_cost_saving] <- "Cost-saving"
+  v_out[v_reference] <- "--"
+  v_unlabelled_negative <- is.finite(x) & x < 0 & !v_reference &
+    !(!is.na(v_dominated) & v_dominated) & !(!is.na(v_cost_saving) & v_cost_saving)
+  v_out[v_unlabelled_negative] <- "--"
+  v_out
 }
 
 #' Restricted mean survival time of a curve on the model's weekly grid

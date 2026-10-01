@@ -82,10 +82,10 @@ if (file.exists(cache_file_obj) && file.exists(cache_file_params)) {
     }
 
     # Parameter-set changes (including new diagnostic costs) invalidate old caches.
-    missing_param_columns <- setdiff(names(param_distributions), names(psa_params))
-    if (length(missing_param_columns) > 0) {
+    v_missing_param_columns <- setdiff(names(param_distributions), names(psa_params))
+    if (length(v_missing_param_columns) > 0) {
       cat("  Cache validation failed: missing PSA parameters:",
-          paste(missing_param_columns, collapse = ", "), "\n")
+          paste(v_missing_param_columns, collapse = ", "), "\n")
       cache_valid <- FALSE
     }
 
@@ -180,18 +180,18 @@ cat(" - Effect matrix dimensions:", dim(psa_obj$effect), "\n")
 psa_summary <- summary(psa_obj)
 print(psa_summary)
 
-psa_summary_c95ci <- summary(psa_obj, calc_sds = TRUE)
-print(psa_summary_c95ci)
+df_psa_summary_c95ci <- summary(psa_obj, calc_sds = TRUE)
+print(df_psa_summary_c95ci)
 
 # Calculate ICERs from mean PSA costs and effects
-mean_costs <- colMeans(psa_obj$cost, na.rm = TRUE)
-mean_effects <- colMeans(psa_obj$effect, na.rm = TRUE)
-cea_psa <- calculate_icers(
-  cost = mean_costs,
-  effect = mean_effects,
+v_mean_costs <- colMeans(psa_obj$cost, na.rm = TRUE)
+v_mean_effects <- colMeans(psa_obj$effect, na.rm = TRUE)
+df_cea_psa <- calculate_icers(
+  cost = v_mean_costs,
+  effect = v_mean_effects,
   strategies = psa_obj$strategies
 )
-print(cea_psa)
+print(df_cea_psa)
 
 # ICE scatter plot
 plot(psa_obj, frontier = TRUE, points = TRUE)
@@ -199,8 +199,8 @@ plot(psa_obj, frontier = TRUE, points = TRUE)
 # Create cost-effectiveness acceptability curves
 c_wtp <- seq(from = 0, to = 2e5, by = 5e3)
 ceac_obj <- ceac(c_wtp, psa_obj)
-ceac_sum <- summary(ceac_obj)
-print(ceac_sum)
+df_ceac_sum <- summary(ceac_obj)
+print(df_ceac_sum)
 plot(ceac_obj, frontier = TRUE, points = TRUE, currency = "€")
 
 # Save results (only if newly generated)

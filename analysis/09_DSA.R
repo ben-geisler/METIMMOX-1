@@ -15,7 +15,7 @@ if (!exists("param_distributions") || !exists("param_groups")) {
 # The DSA varies more parameters than the PSA samples: unit prices are fixed in
 # the PSA and tested deterministically here (issue #154), so the DSA reads the
 # shared specification directly rather than the PSA distribution list.
-param_spec <- parameter_distribution_spec()
+df_param_spec <- parameter_distribution_spec()
 
 # Load functions
 source(here::here("R/model_fun.R"))
@@ -31,9 +31,9 @@ dsa_basecase <- l_params_base
 # build_dsa_ranges() (parameter_distributions.R) is shared with table_1.qmd so
 # the published ranges are the ranges actually run (issue #153). It validates
 # min <= max (issue #48); min = max is allowed for zero-valued parameters.
-dsa_ranges <- build_dsa_ranges(l_params_base, param_spec, mult = DSA_mult)
+dsa_ranges <- build_dsa_ranges(l_params_base, df_param_spec, mult = DSA_mult)
 dsa_pars <- dsa_ranges$pars
-prevalence_params <- param_groups$prevalence
+v_prevalence_params <- param_groups$prevalence
 
 # Deterministic structural scenarios (discount rate, time horizon,
 # post-progression cost, second treatment sequence) run after the one-way
@@ -49,6 +49,17 @@ cat("Parameter ranges for DSA:\n")
 print(dsa_ranges)
 
 # Create a function to format model results consistently
+#' Annotate one DSA model run with its NMB and parameter setting
+#'
+#' @param model_output Data frame returned by model_fun() (Strategy, Cost,
+#'   Effect).
+#' @param parameter Name of the varied parameter or scenario ("base_case" for
+#'   the base case).
+#' @param value_type Which endpoint was run: "base", "min" or "max".
+#' @param param_value Value of the parameter at that endpoint (NA for the base
+#'   case).
+#' @return model_output with columns NMB (at the global WTP), Parameter, Value
+#'   and ParamValue added.
 format_results <- function(model_output, parameter = "base_case", value_type = "base", param_value = NA) {
   # Calculate NMB
   model_output$NMB <- model_output$Effect * WTP - model_output$Cost
@@ -67,13 +78,13 @@ result_counter <- 1
 
 # First run with base case
 cat("Running base case...\n")
-base_result <- model_fun(dsa_basecase)
-all_results[[result_counter]] <- format_results(base_result)
+df_base_result <- model_fun(dsa_basecase)
+all_results[[result_counter]] <- format_results(df_base_result)
 result_counter <- result_counter + 1
 
 # Identify optimal strategy in base case
-base_nmb <- base_result$Effect * WTP - base_result$Cost
-base_optimal <- base_result$Strategy[which.max(base_nmb)]
+v_base_nmb <- df_base_result$Effect * WTP - df_base_result$Cost
+base_optimal <- df_base_result$Strategy[which.max(v_base_nmb)]
 cat("Optimal strategy in base case:", base_optimal, "\n\n")
 
 # For each parameter, run the model at min and max values
@@ -86,9 +97,9 @@ for (i in seq_len(nrow(dsa_ranges))) {
     param_value <- dsa_ranges[[side]][i]
     params_side <- dsa_basecase
     params_side[[param_name]] <- param_value
-    result_side <- model_fun(params_side)
+    df_result_side <- model_fun(params_side)
     all_results[[result_counter]] <- format_results(
-      result_side, param_name, side, param_value
+      df_result_side, param_name, side, param_value
     )
     result_counter <- result_counter + 1
   }
@@ -110,6 +121,15 @@ horizon_models <- if (exists("models")) {
   NULL
 }
 
+#' Run the model under one structural scenario endpoint
+#'
+#' Builds the scenario inputs with apply_structural_scenario()
+#' (parameter_distributions.R) from the DSA base case and runs the
+#' deterministic model on the scenario's time horizon.
+#'
+#' @param scenario_name Name of a scenario in dsa_structural_scenarios().
+#' @param value Scenario value at the endpoint being run.
+#' @return Data frame returned by model_fun() (Strategy, Cost, Effect).
 run_structural_scenario <- function(scenario_name, value) {
   scenario <- apply_structural_scenario(
     scenario_name, value, dsa_basecase,
@@ -129,17 +149,17 @@ for (scenario_name in names(dsa_scenarios)) {
   for (side in structural_scenario_sides(scenario)) {
     value <- scenario[[side]]
     cat("  ", scenario$label, "-", side, "=", value, scenario$unit, "\n")
-    result_side <- tryCatch(
+    df_result_side <- tryCatch(
       run_structural_scenario(scenario_name, value),
       error = function(e) {
         cat("    Scenario failed:", conditionMessage(e), "\n")
         NULL
       }
     )
-    dsa_scenario_status[[paste(scenario_name, side)]] <- !is.null(result_side)
-    if (is.null(result_side)) next
+    dsa_scenario_status[[paste(scenario_name, side)]] <- !is.null(df_result_side)
+    if (is.null(df_result_side)) next
     all_results[[result_counter]] <- format_results(
-      result_side, scenario_name, side, value
+      df_result_side, scenario_name, side, value
     )
     result_counter <- result_counter + 1
   }
@@ -152,11 +172,11 @@ dsa_results <- do.call(rbind, all_results)
 # Add parameter group information. The lookup comes from the shared parameter
 # specification rather than the PSA groups, so fixed unit prices are still
 # grouped as drug/test costs in the tornado plots (issue #154).
-group_lookup <- parameter_group_lookup(param_spec)
+v_group_lookup <- parameter_group_lookup(df_param_spec)
 dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
   if (p == "base_case") return("base_case")
   if (p %in% names(dsa_scenarios)) return("structural")
-  if (p %in% names(group_lookup)) return(unname(group_lookup[p]))
+  if (p %in% names(v_group_lookup)) return(unname(v_group_lookup[p]))
   return("other")
 })
 
@@ -164,12 +184,12 @@ dsa_results$group <- sapply(dsa_results$Parameter, function(p) {
 cat("Calculating NMB differences...\n")
 for (strat in strategies) {
   # Find base case NMB for this strategy
-  base_nmb <- dsa_results$NMB[dsa_results$Parameter == "base_case" &
+  v_base_nmb <- dsa_results$NMB[dsa_results$Parameter == "base_case" &
                                 dsa_results$Strategy == strat]
 
   # Calculate differences
   dsa_results$NMB_diff[dsa_results$Strategy == strat] <-
-    dsa_results$NMB[dsa_results$Strategy == strat] - base_nmb
+    dsa_results$NMB[dsa_results$Strategy == strat] - v_base_nmb
 }
 
 # ===============================================================================
@@ -181,14 +201,20 @@ for (strat in strategies) {
 # the strategy's incremental NMB versus the control strategy; it measures
 # decision sensitivity and is the quantity Figure 2 plots.
 control_strategy <- get_control_strategy()
+#' Add incremental NMB versus the control strategy to DSA results
+#'
+#' @param df DSA results data frame with columns Strategy, Parameter, Value,
+#'   ParamValue and NMB, including the "base_case" rows.
+#' @return df with INMB (NMB minus the control strategy's NMB in the same run)
+#'   and INMB_diff (change in INMB from the strategy's base-case INMB) added.
 add_incremental_nmb <- function(df) {
-  key <- paste(df$Parameter, df$Value, df$ParamValue)
-  control_rows <- df[df$Strategy == control_strategy, ]
-  control_key <- paste(control_rows$Parameter, control_rows$Value, control_rows$ParamValue)
-  df$INMB <- df$NMB - control_rows$NMB[match(key, control_key)]
-  base_inmb <- df$INMB[df$Parameter == "base_case"]
-  names(base_inmb) <- df$Strategy[df$Parameter == "base_case"]
-  df$INMB_diff <- df$INMB - base_inmb[df$Strategy]
+  v_key <- paste(df$Parameter, df$Value, df$ParamValue)
+  df_control_rows <- df[df$Strategy == control_strategy, ]
+  v_control_key <- paste(df_control_rows$Parameter, df_control_rows$Value, df_control_rows$ParamValue)
+  df$INMB <- df$NMB - df_control_rows$NMB[match(v_key, v_control_key)]
+  v_base_inmb <- df$INMB[df$Parameter == "base_case"]
+  names(v_base_inmb) <- df$Strategy[df$Parameter == "base_case"]
+  df$INMB_diff <- df$INMB - v_base_inmb[df$Strategy]
   df
 }
 dsa_results <- add_incremental_nmb(dsa_results)
@@ -211,18 +237,18 @@ cat("\nRunning survival model structural sensitivity analysis...\n")
 
 has_models <- exists("models") && !is.null(models$full$os)
 
-model_sensitivity_df <- NULL
+df_model_sensitivity <- NULL
 model_impact_summary <- NULL
 dsa_distribution_status <- NULL
 dsa_results_inmb <- dsa_results
 
 if (has_models) {
 
-  distributions_tested <- names(models$full$os)
-  distributions_tested <- distributions_tested[
-    !vapply(models$full$os[distributions_tested], is.null, logical(1))
+  v_distributions_tested <- names(models$full$os)
+  v_distributions_tested <- v_distributions_tested[
+    !vapply(models$full$os[v_distributions_tested], is.null, logical(1))
   ]
-  cat("Distributions to test:", paste(distributions_tested, collapse = ", "), "\n")
+  cat("Distributions to test:", paste(v_distributions_tested, collapse = ", "), "\n")
 
   selected_pair <- list(
     os = models$best_fit$os_distribution,
@@ -235,14 +261,24 @@ if (has_models) {
   }
   cat("Base case (selected) pair:", selected_label, "\n")
 
-  pair_audit <- models$ordered_selection$pairs
+  df_pair_audit <- models$ordered_selection$pairs
+  #' Ordering-audit row of one OS/PFS distribution pair
+  #'
+  #' @param os_dist OS distribution name.
+  #' @param pfs_dist PFS distribution name.
+  #' @return One-row data frame from models$ordered_selection$pairs (including
+  #'   n_violations and ordered), or NULL when the audit or pair is absent.
   audit_row <- function(os_dist, pfs_dist) {
-    if (is.null(pair_audit)) return(NULL)
-    hit <- pair_audit[pair_audit$os_distribution == os_dist &
-                        pair_audit$pfs_distribution == pfs_dist, , drop = FALSE]
-    if (nrow(hit) == 0) NULL else hit[1, ]
+    if (is.null(df_pair_audit)) return(NULL)
+    df_hit <- df_pair_audit[df_pair_audit$os_distribution == os_dist &
+                        df_pair_audit$pfs_distribution == pfs_dist, , drop = FALSE]
+    if (nrow(df_hit) == 0) NULL else df_hit[1, ]
   }
 
+  #' Run the deterministic model with curves from alternative survival fits
+  #'
+  #' @param test_models List with $os and $pfs flexsurvreg fits of one family.
+  #' @return Data frame returned by model_fun() with an NMB column added.
   predict_and_run <- function(test_models) {
     test_predictions <- generate_population_averaged_predictions(
       models = test_models,
@@ -265,18 +301,18 @@ if (has_models) {
       test_params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- test_predictions[[biomarker]]$biomarker_negative$pfs
       test_params$p_pfs[[paste0(biomarker, "_weighted_PFS")]] <- test_predictions[[biomarker]]$pfs
     }
-    result <- model_fun(test_params, determpsa = "det")
-    result$NMB <- result$Effect * WTP - result$Cost
-    result
+    df_result <- model_fun(test_params, determpsa = "det")
+    df_result$NMB <- df_result$Effect * WTP - df_result$Cost
+    df_result
   }
 
   model_sensitivity_results <- list()
   status_rows <- list()
 
-  for (dist in distributions_tested) {
+  for (dist in v_distributions_tested) {
     cat("  Testing distribution:", dist, "\n")
     test_models <- list(os = models$full$os[[dist]], pfs = models$full$pfs[[dist]])
-    status <- data.frame(
+    df_status <- data.frame(
       Distribution = dist, OS_Distribution = dist, PFS_Distribution = dist,
       Selected = identical(dist, selected_label),
       Evaluated = FALSE, N_Violations = NA_integer_, Reason = NA_character_,
@@ -284,52 +320,52 @@ if (has_models) {
     )
 
     if (is.null(test_models$os) || is.null(test_models$pfs)) {
-      status$Reason <- "model not fitted for both OS and PFS"
-      cat("    Skipped:", status$Reason, "\n")
-      status_rows[[dist]] <- status
+      df_status$Reason <- "model not fitted for both OS and PFS"
+      cat("    Skipped:", df_status$Reason, "\n")
+      status_rows[[dist]] <- df_status
       next
     }
 
-    audit <- audit_row(dist, dist)
-    if (!is.null(audit)) status$N_Violations <- audit$n_violations
-    if (!is.null(audit) && !isTRUE(audit$ordered)) {
-      status$Reason <- sprintf(
+    df_audit <- audit_row(dist, dist)
+    if (!is.null(df_audit)) df_status$N_Violations <- df_audit$n_violations
+    if (!is.null(df_audit) && !isTRUE(df_audit$ordered)) {
+      df_status$Reason <- sprintf(
         "OS < PFS at %s curve-time points across the control and biomarker subgroup curves (%d weekly time points per curve); ordering constraint",
-        if (is.na(audit$n_violations)) "an unknown number of" else audit$n_violations,
+        if (is.na(df_audit$n_violations)) "an unknown number of" else df_audit$n_violations,
         length(time_points)
       )
-      cat("    Skipped:", status$Reason, "\n")
-      status_rows[[dist]] <- status
+      cat("    Skipped:", df_status$Reason, "\n")
+      status_rows[[dist]] <- df_status
       next
     }
 
-    dist_result <- tryCatch(predict_and_run(test_models), error = function(e) {
-      status$Reason <<- conditionMessage(e)
+    df_dist_result <- tryCatch(predict_and_run(test_models), error = function(e) {
+      df_status$Reason <<- conditionMessage(e)
       NULL
     })
-    if (is.null(dist_result)) {
-      cat("    Skipped:", status$Reason, "\n")
-      status_rows[[dist]] <- status
+    if (is.null(df_dist_result)) {
+      cat("    Skipped:", df_status$Reason, "\n")
+      status_rows[[dist]] <- df_status
       next
     }
-    dist_result$Distribution <- dist
-    model_sensitivity_results[[dist]] <- dist_result
-    status$Evaluated <- TRUE
-    status_rows[[dist]] <- status
+    df_dist_result$Distribution <- dist
+    model_sensitivity_results[[dist]] <- df_dist_result
+    df_status$Evaluated <- TRUE
+    status_rows[[dist]] <- df_status
   }
 
   # The selected pair is the base case; add it explicitly when it is not a
   # same-family pair so the reference row is always present.
   if (!selected_label %in% names(model_sensitivity_results)) {
-    base_rows <- dsa_results[dsa_results$Parameter == "base_case",
+    df_base_rows <- dsa_results[dsa_results$Parameter == "base_case",
                              c("Strategy", "Cost", "Effect", "NMB")]
-    base_rows$Distribution <- selected_label
-    model_sensitivity_results[[selected_label]] <- base_rows
-    audit <- audit_row(selected_pair$os, selected_pair$pfs)
+    df_base_rows$Distribution <- selected_label
+    model_sensitivity_results[[selected_label]] <- df_base_rows
+    df_audit <- audit_row(selected_pair$os, selected_pair$pfs)
     status_rows[[selected_label]] <- data.frame(
       Distribution = selected_label, OS_Distribution = selected_pair$os,
       PFS_Distribution = selected_pair$pfs, Selected = TRUE, Evaluated = TRUE,
-      N_Violations = if (is.null(audit)) NA_integer_ else audit$n_violations,
+      N_Violations = if (is.null(df_audit)) NA_integer_ else df_audit$n_violations,
       Reason = "selected ordering-constrained pair (base case)",
       stringsAsFactors = FALSE
     )
@@ -344,76 +380,82 @@ if (has_models) {
   cat(sprintf("\nDistributions evaluated: %d of %d; skipped: %d\n",
               sum(dsa_distribution_status$Evaluated), nrow(dsa_distribution_status), n_skipped))
   if (n_skipped > 0) {
-    skipped <- dsa_distribution_status[!dsa_distribution_status$Evaluated, ]
-    for (r in seq_len(nrow(skipped))) {
-      cat("  -", skipped$Distribution[r], ":", skipped$Reason[r], "\n")
+    df_skipped <- dsa_distribution_status[!dsa_distribution_status$Evaluated, ]
+    for (r in seq_len(nrow(df_skipped))) {
+      cat("  -", df_skipped$Distribution[r], ":", df_skipped$Reason[r], "\n")
     }
   }
 
   if (length(model_sensitivity_results) > 0) {
-    model_sensitivity_df <- do.call(rbind, model_sensitivity_results)
-    rownames(model_sensitivity_df) <- NULL
-    model_sensitivity_df$NMB <- model_sensitivity_df$Effect * WTP - model_sensitivity_df$Cost
-    model_sensitivity_df$Selected <- model_sensitivity_df$Distribution == selected_label
+    df_model_sensitivity <- do.call(rbind, model_sensitivity_results)
+    rownames(df_model_sensitivity) <- NULL
+    df_model_sensitivity$NMB <- df_model_sensitivity$Effect * WTP - df_model_sensitivity$Cost
+    df_model_sensitivity$Selected <- df_model_sensitivity$Distribution == selected_label
 
     # Incremental NMB of each strategy versus control under the same family.
-    ctrl <- model_sensitivity_df[model_sensitivity_df$Strategy == control_strategy, ]
-    model_sensitivity_df$INMB <- model_sensitivity_df$NMB -
-      ctrl$NMB[match(model_sensitivity_df$Distribution, ctrl$Distribution)]
+    df_ctrl <- df_model_sensitivity[df_model_sensitivity$Strategy == control_strategy, ]
+    df_model_sensitivity$INMB <- df_model_sensitivity$NMB -
+      df_ctrl$NMB[match(df_model_sensitivity$Distribution, df_ctrl$Distribution)]
 
     # Base-case anchors: the selected pair, taken from the base-case rows so the
     # anchor is the pair actually used, not the OS family alone.
-    base_nmb_by_strategy <- setNames(
+    v_base_nmb_by_strategy <- setNames(
       dsa_results$NMB[dsa_results$Parameter == "base_case"],
       dsa_results$Strategy[dsa_results$Parameter == "base_case"]
     )
-    base_inmb_by_strategy <- setNames(
+    v_base_inmb_by_strategy <- setNames(
       dsa_results$INMB[dsa_results$Parameter == "base_case"],
       dsa_results$Strategy[dsa_results$Parameter == "base_case"]
     )
-    model_sensitivity_df$NMB_diff <- model_sensitivity_df$NMB -
-      base_nmb_by_strategy[model_sensitivity_df$Strategy]
-    model_sensitivity_df$INMB_diff <- model_sensitivity_df$INMB -
-      base_inmb_by_strategy[model_sensitivity_df$Strategy]
+    df_model_sensitivity$NMB_diff <- df_model_sensitivity$NMB -
+      v_base_nmb_by_strategy[df_model_sensitivity$Strategy]
+    df_model_sensitivity$INMB_diff <- df_model_sensitivity$INMB -
+      v_base_inmb_by_strategy[df_model_sensitivity$Strategy]
 
     # Paired endpoints (lowest / highest value of the measure across the
     # evaluated families) in the same shape as the one-way DSA rows.
+    #' Survival-family DSA endpoints chosen on one measure
+    #'
+    #' @param measure Column of df_model_sensitivity used to pick the lowest
+    #'   ("min") and highest ("max") evaluated family: "NMB" or "INMB".
+    #' @return Data frame with one min and one max row per strategy, in the
+    #'   column layout of dsa_results plus Distribution and Base_NMB.
     survival_model_endpoints <- function(measure) {
       do.call(rbind, lapply(strategies, function(strat) {
-        strat_results <- model_sensitivity_df[model_sensitivity_df$Strategy == strat, ]
-        if (nrow(strat_results) == 0) return(NULL)
+        df_strat_results <- df_model_sensitivity[df_model_sensitivity$Strategy == strat, ]
+        if (nrow(df_strat_results) == 0) return(NULL)
         do.call(rbind, lapply(c("min", "max"), function(side) {
-          endpoint <- if (side == "min") which.min(strat_results[[measure]]) else
-            which.max(strat_results[[measure]])
+          endpoint <- if (side == "min") which.min(df_strat_results[[measure]]) else
+            which.max(df_strat_results[[measure]])
           data.frame(
             Strategy = strat, Cost = NA, Effect = NA,
-            NMB = strat_results$NMB[endpoint], Parameter = "Survival_Model",
+            NMB = df_strat_results$NMB[endpoint], Parameter = "Survival_Model",
             Value = side, ParamValue = NA, group = "survival_model",
-            NMB_diff = strat_results$NMB_diff[endpoint],
-            INMB = strat_results$INMB[endpoint],
-            INMB_diff = strat_results$INMB_diff[endpoint],
-            Distribution = strat_results$Distribution[endpoint],
-            Base_NMB = unname(base_nmb_by_strategy[strat]),
+            NMB_diff = df_strat_results$NMB_diff[endpoint],
+            INMB = df_strat_results$INMB[endpoint],
+            INMB_diff = df_strat_results$INMB_diff[endpoint],
+            Distribution = df_strat_results$Distribution[endpoint],
+            Base_NMB = unname(v_base_nmb_by_strategy[strat]),
             stringsAsFactors = FALSE
           )
         }))
       }))
     }
-    model_endpoints <- survival_model_endpoints("NMB")
-    model_endpoints_inmb <- survival_model_endpoints("INMB")
+    df_model_endpoints <- survival_model_endpoints("NMB")
+    df_model_endpoints_inmb <- survival_model_endpoints("INMB")
 
-    model_ranges <- summarise_param_ranges(model_endpoints)
-    min_endpoints <- model_endpoints[model_endpoints$Value == "min", ]
-    max_endpoints <- model_endpoints[model_endpoints$Value == "max", ]
-    min_endpoints <- min_endpoints[match(model_ranges$Strategy, min_endpoints$Strategy), ]
-    max_endpoints <- max_endpoints[match(model_ranges$Strategy, max_endpoints$Strategy), ]
+    df_model_ranges <- summarise_param_ranges(df_model_endpoints)
+    df_min_endpoints <- df_model_endpoints[df_model_endpoints$Value == "min", ]
+    df_max_endpoints <- df_model_endpoints[df_model_endpoints$Value == "max", ]
+    df_min_endpoints <- df_min_endpoints[match(df_model_ranges$Strategy, df_min_endpoints$Strategy), ]
+    df_max_endpoints <- df_max_endpoints[match(df_model_ranges$Strategy, df_max_endpoints$Strategy), ]
     model_impact_summary <- transform(
-      model_ranges,
-      Base_NMB = min_endpoints$Base_NMB,
+      df_model_ranges,
+      Base_NMB = df_min_endpoints$Base_NMB,
       Base_Dist = selected_label,
-      Min_NMB = min_endpoints$NMB, Max_NMB = max_endpoints$NMB,
-      Min_Dist = min_endpoints$Distribution,
-      Max_Dist = max_endpoints$Distribution,
+      Min_NMB = df_min_endpoints$NMB, Max_NMB = df_max_endpoints$NMB,
+      Min_Dist = df_min_endpoints$Distribution,
+      Max_Dist = df_max_endpoints$Distribution,
       N_Evaluated = sum(dsa_distribution_status$Evaluated),
       N_Candidates = nrow(dsa_distribution_status),
       group = "survival_model"
@@ -427,9 +469,9 @@ if (has_models) {
     # Add the paired structural endpoints to the common DSA/tornado data. The
     # NMB tornado data take the NMB-chosen endpoints; the incremental tornado
     # data take the endpoints chosen on incremental NMB.
-    dsa_results <- rbind(dsa_results, model_endpoints[, names(dsa_results)])
+    dsa_results <- rbind(dsa_results, df_model_endpoints[, names(dsa_results)])
     dsa_results_inmb <- rbind(dsa_results_inmb,
-                              model_endpoints_inmb[, names(dsa_results_inmb)])
+                              df_model_endpoints_inmb[, names(dsa_results_inmb)])
   } else {
     cat("Warning: No survival model sensitivity results generated.\n")
   }
@@ -450,10 +492,10 @@ par(mfrow = c(2, 2))  # Set up a 2x2 plot grid
 optimal_tornado <- create_tornado_plot(base_optimal, dsa_results)
 
 # Then for each biomarker strategy
-biomarker_strategies <- get_biomarkers()
+v_biomarker_strategies <- get_biomarkers()
 tornado_results <- list()
 
-for (strat in biomarker_strategies) {
+for (strat in v_biomarker_strategies) {
   # Skip if this is already the optimal strategy (to avoid duplication)
   if (strat == base_optimal) {
     cat("Skipping", strat, "as it is the optimal strategy and already plotted\n")
@@ -467,7 +509,7 @@ for (strat in biomarker_strategies) {
 # Incremental-NMB tornado plots for the guided strategies (issue #156): rank by
 # decision sensitivity, i.e. the change in NMB versus the control strategy.
 incremental_tornado_results <- list()
-for (strat in biomarker_strategies) {
+for (strat in v_biomarker_strategies) {
   incremental_tornado_results[[strat]] <-
     create_tornado_plot(strat, dsa_results_inmb, measure = "INMB_diff")
 }
@@ -480,22 +522,22 @@ cat("\nChecking if optimal strategy changes with parameter variations:\n")
 changes_found <- FALSE
 
 for (param_name in c(dsa_pars, names(dsa_scenarios))) {
-  side_optimal <- setNames(character(2), c("min", "max"))
-  for (side in names(side_optimal)) {
-    side_results <- dsa_results[
+  v_side_optimal <- setNames(character(2), c("min", "max"))
+  for (side in names(v_side_optimal)) {
+    df_side_results <- dsa_results[
       dsa_results$Parameter == param_name & dsa_results$Value == side, ]
-    if (nrow(side_results) == 0) break
-    side_optimal[side] <- side_results$Strategy[which.max(side_results$NMB)]
+    if (nrow(df_side_results) == 0) break
+    v_side_optimal[side] <- df_side_results$Strategy[which.max(df_side_results$NMB)]
   }
-  if (any(side_optimal == "")) next
+  if (any(v_side_optimal == "")) next
 
   # Check if optimal strategy changes
-  if (any(side_optimal != base_optimal)) {
+  if (any(v_side_optimal != base_optimal)) {
     changes_found <- TRUE
     cat("Parameter:", param_name, "\n")
     cat("  Base optimal strategy:", base_optimal, "\n")
-    cat("  Optimal at min value:", side_optimal["min"], "\n")
-    cat("  Optimal at max value:", side_optimal["max"], "\n\n")
+    cat("  Optimal at min value:", v_side_optimal["min"], "\n")
+    cat("  Optimal at max value:", v_side_optimal["max"], "\n\n")
   }
 }
 
@@ -505,24 +547,24 @@ if (!changes_found) {
 
 # Create a summary table of parameter impact for all strategies
 cat("\nSummary of parameter impact on NMB for all strategies:\n")
-param_ranges <- summarise_param_ranges(dsa_results)
+df_param_ranges <- summarise_param_ranges(dsa_results)
 impact_summary <- do.call(rbind, lapply(strategies, function(strat) {
-  top <- param_ranges[param_ranges$Strategy == strat, ]
-  top <- head(top[order(-top$Range), ], 3)
-  if (nrow(top) == 0) return(NULL)
-  data.frame(Strategy = strat, Rank = seq_len(nrow(top)),
-             Parameter = top$Parameter, Impact = top$Range)
+  df_top <- df_param_ranges[df_param_ranges$Strategy == strat, ]
+  df_top <- head(df_top[order(-df_top$Range), ], 3)
+  if (nrow(df_top) == 0) return(NULL)
+  data.frame(Strategy = strat, Rank = seq_len(nrow(df_top)),
+             Parameter = df_top$Parameter, Impact = df_top$Range)
 }))
 print(impact_summary)
 
 # Same ranking on incremental NMB versus control (issue #156), guided strategies only.
 cat("\nSummary of parameter impact on incremental NMB versus control:\n")
-param_ranges_inmb <- summarise_param_ranges(dsa_results_inmb, measure = "INMB_diff")
-incremental_impact_summary <- do.call(rbind, lapply(biomarker_strategies, function(strat) {
-  top <- param_ranges_inmb[param_ranges_inmb$Strategy == strat, ]
-  top <- head(top[order(-top$Range), ], 3)
-  if (nrow(top) == 0) return(NULL)
-  data.frame(Strategy = strat, Rank = seq_len(nrow(top)),
-             Parameter = top$Parameter, Impact = top$Range)
+df_param_ranges_inmb <- summarise_param_ranges(dsa_results_inmb, measure = "INMB_diff")
+incremental_impact_summary <- do.call(rbind, lapply(v_biomarker_strategies, function(strat) {
+  df_top <- df_param_ranges_inmb[df_param_ranges_inmb$Strategy == strat, ]
+  df_top <- head(df_top[order(-df_top$Range), ], 3)
+  if (nrow(df_top) == 0) return(NULL)
+  data.frame(Strategy = strat, Rank = seq_len(nrow(df_top)),
+             Parameter = df_top$Parameter, Impact = df_top$Range)
 }))
 print(incremental_impact_summary)

@@ -7,13 +7,13 @@ x <- cbind(a = rnorm(n), b = rnorm(n))
 y <- cbind(c = 0.8 * x[, 1] + 0.6 * rnorm(n), d = -0.5 * x[, 2] + rnorm(n))
 v1 <- matrix(c(1, 0.2, 0.2, 2), 2)
 v2 <- matrix(c(3, -0.4, -0.4, 1), 2)
-estimate <- calibrate_joint_covariance(x, y, v1, v2)$covariance
-stopifnot(max(abs(estimate[1:2, 1:2] - v1)) < 1e-12,
-          max(abs(estimate[3:4, 3:4] - v2)) < 1e-12,
-          min(eigen(estimate, symmetric = TRUE)$values) > 0,
-          estimate[1, 3] > 1, estimate[2, 4] < -0.4)
-independent <- calibrate_joint_covariance(x, y[sample.int(n), ], v1, v2)$covariance
-stopifnot(max(abs(independent[1:2, 3:4])) < 0.1)
+m_cov_estimate <- calibrate_joint_covariance(x, y, v1, v2)$covariance
+stopifnot(max(abs(m_cov_estimate[1:2, 1:2] - v1)) < 1e-12,
+          max(abs(m_cov_estimate[3:4, 3:4] - v2)) < 1e-12,
+          min(eigen(m_cov_estimate, symmetric = TRUE)$values) > 0,
+          m_cov_estimate[1, 3] > 1, m_cov_estimate[2, 4] < -0.4)
+m_cov_independent <- calibrate_joint_covariance(x, y[sample.int(n), ], v1, v2)$covariance
+stopifnot(max(abs(m_cov_independent[1:2, 3:4])) < 0.1)
 cat("PASS: calibrated cross-covariance preserves fitted marginal blocks and dependence.\n")
 
 # Identical endpoints must use identical patient resamples. Separate endpoint
@@ -25,6 +25,8 @@ d$event <- as.integer(d$time <= 5)
 d$time <- pmin(d$time, 5)
 f <- Surv(time, event) ~ age
 fit <- flexsurv::flexsurvreg(f, data = d, dist = "exp")
+#' Paired-bootstrap joint covariance (40 resamples) of the synthetic exponential
+#' fit with itself as OS and PFS, under the given seed.
 get_cov <- function(seed) estimate_joint_survival_covariance(f, f, d, fit, fit,
   "exp", "exp", n_bootstrap = 40L, seed = seed)
 a <- get_cov(45L)

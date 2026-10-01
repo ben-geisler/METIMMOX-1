@@ -23,7 +23,7 @@ source("R/prediction_functions.R")
 n_samples <- 2L
 time_horizon <- 52L
 cl <- 1 / 52
-curve <- exp(-seq(0, time_horizon) / 100)
+v_curve <- exp(-seq(0, time_horizon) / 100)
 l_params_base <- list(
   time_horizon = time_horizon, cl = cl,  # model_fun() reads its grid from params (#172)
   dr_costs = 0.04, dr_effects = 0.04, u_np = 0.73, u_p = 0.59,
@@ -34,8 +34,8 @@ l_params_base <- list(
 for (name in c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"))
   l_params_base[[name]] <- rep(0, time_horizon + 1L)
 for (outcome in c("OS", "PFS")) {
-  keys <- paste0(c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"), "_", outcome)
-  l_params_base[[paste0("p_", tolower(outcome))]] <- setNames(rep(list(curve), length(keys)), keys)
+  v_keys <- paste0(c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"), "_", outcome)
+  l_params_base[[paste0("p_", tolower(outcome))]] <- setNames(rep(list(v_curve), length(v_keys)), v_keys)
 }
 data <- data_complete <- data.frame(ID = 1:2, crp = 0:1, tmb_braf = 0:1)
 l_params_base$prediction_population <- data_complete
@@ -43,10 +43,12 @@ l_params_base$population_weights <- c(0.5, 0.5)
 sampling_models <- list(joint = list(samples = rep(list(list(failed = FALSE)), n_samples)))
 # Index validation is the unit under test; deterministic prediction fixture
 # exercises the remaining calculation without fitting or accessing any cache.
+#' Deterministic stand-in for the PSA predictor: checks the draw index and
+#' returns the fixture curve (or the same curve for both subgroups).
 generate_psa_population_averaged_predictions <- function(sampling_model_list,
     biomarker_name = NULL, outcome, sample_idx, data_original, time_points, weights = NULL) {
   stopifnot(sample_idx %in% seq_len(n_samples))
-  if (is.null(biomarker_name)) curve else list(positive = curve, negative = curve)
+  if (is.null(biomarker_name)) v_curve else list(positive = v_curve, negative = v_curve)
 }
 
 cat("Dependencies loaded successfully.\n\n")
@@ -56,13 +58,15 @@ cat("Dependencies loaded successfully.\n\n")
 # =============================================================================
 # Runs model_fun with given parameters and captures the outcome
 
+#' Run model_fun() in PSA mode with `sim_idx_value` and print the outcome; returns
+#' TRUE when the result matches the expectation (an error naming sim_idx, or success).
 test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
   cat(sprintf("%-35s", paste0("Test: ", test_name, "...")))
 
   result <- tryCatch({
     # Suppress warnings for clean output (we're testing for errors)
     suppressWarnings({
-      output <- model_fun(
+      df_output <- model_fun(
         params = l_params_base,
         time_horizon = time_horizon,
         cl = cl,
@@ -70,8 +74,8 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
         return_traces = FALSE,
         sim_idx = sim_idx_value
       )
-      stopifnot(!isTRUE(attr(output, "fallback_used")),
-                all(is.finite(output$Cost)), all(is.finite(output$Effect)))
+      stopifnot(!isTRUE(attr(df_output, "fallback_used")),
+                all(is.finite(df_output$Cost)), all(is.finite(df_output$Effect)))
     })
     # If we get here, no error was thrown
     list(status = "success", error = NULL)
@@ -102,6 +106,7 @@ test_model_fun <- function(test_name, sim_idx_value, expect_error = TRUE) {
 }
 
 # Supplied curves are an explicit mode, while PSA always requires an index.
+#' PSA mode with sim_idx = NULL must fail; returns TRUE when it does.
 test_null_sim_idx <- function() test_model_fun("sim_idx = NULL", NULL)
 for (bad in list(NA_real_, NaN, Inf, numeric(0), c(1, 2), 1.5)) {
   stopifnot(test_model_fun("invalid scalar index", bad))
@@ -111,9 +116,9 @@ for (mode in c("typo", "PSA")) {
                            determpsa = mode), error = identity)
   stopifnot(inherits(err, "error"))
 }
-det <- model_fun(l_params_base, time_horizon = time_horizon)
-curves <- model_fun(l_params_base, time_horizon = time_horizon, determpsa = "curves")
-stopifnot(identical(det, curves), !isTRUE(attr(curves, "fallback_used")))
+df_det <- model_fun(l_params_base, time_horizon = time_horizon)
+df_curves <- model_fun(l_params_base, time_horizon = time_horizon, determpsa = "curves")
+stopifnot(identical(df_det, df_curves), !isTRUE(attr(df_curves, "fallback_used")))
 
 # =============================================================================
 # RUN TEST CASES

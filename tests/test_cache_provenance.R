@@ -2,6 +2,8 @@
 source("R/cache_paths.R")
 source("R/cea_helpers.R")
 
+#' Run every synthetic cache-provenance contract in a temporary cache directory
+#' (restored on exit); stops at the first failed assertion, returns nothing.
 run_cache_provenance_tests <- function() {
   directory <- tempfile("cache-contracts-")
   dir.create(directory)
@@ -23,21 +25,21 @@ run_cache_provenance_tests <- function() {
   sf <- function(data = d, formulas = f) sampling_cache_fingerprint(
     formulas, data, list(os = "gamma", pfs = "gamma"), 10L, 123L, "mvn_v1")
   expected <- sf()
-  changed <- d
-  changed$unused <- 0
-  changed$time <- as.double(changed$time)
-  stopifnot(identical(sf(changed)$fingerprint, expected$fingerprint),
+  df_changed <- d
+  df_changed$unused <- 0
+  df_changed$time <- as.double(df_changed$time)
+  stopifnot(identical(sf(df_changed)$fingerprint, expected$fingerprint),
             identical(sf(d[, rev(names(d))])$fingerprint, expected$fingerprint),
             identical(cache_fingerprint(1:100), cache_fingerprint(c(1:100))),
             identical(names(expected$canonical_data), c("ID", "event", "time", "x")),
             !is.null(expected$runtime$libraries))
-  changed$time[1] <- 99
-  stopifnot(sf(changed)$fingerprint != expected$fingerprint)
-  changed <- d
-  changed$x <- stats::relevel(changed$x, "b")
-  stopifnot(sf(changed)$fingerprint != expected$fingerprint)
-  diagnostics <- capture.output(report_fingerprint_differences(expected$inputs, sf(changed)$inputs))
-  stopifnot(any(grepl("x:", diagnostics, fixed = TRUE)))
+  df_changed$time[1] <- 99
+  stopifnot(sf(df_changed)$fingerprint != expected$fingerprint)
+  df_changed <- d
+  df_changed$x <- stats::relevel(df_changed$x, "b")
+  stopifnot(sf(df_changed)$fingerprint != expected$fingerprint)
+  v_diagnostics <- capture.output(report_fingerprint_differences(expected$inputs, sf(df_changed)$inputs))
+  stopifnot(any(grepl("x:", v_diagnostics, fixed = TRUE)))
   # Fresh R processes must agree; serialize v2 removes ALTREP representation
   # differences without depending on the review session's unknown environment.
   hash_script <- file.path(directory, "hash-session.R")
@@ -47,11 +49,11 @@ run_cache_provenance_tests <- function() {
     'cat("HASH:", sampling_cache_fingerprint(f, d, list(os="gamma", pfs="gamma"), 10L, 123L, "mvn_v1")$fingerprint, "\\n")'),
     hash_script)
   rscript <- file.path(R.home("bin"), "Rscript.exe")
-  hashes <- replicate(2, {
+  v_hashes <- replicate(2, {
     output <- system2(rscript, shQuote(hash_script), stdout = TRUE, stderr = TRUE)
     sub("^HASH: ", "", trimws(grep("^HASH:", output, value = TRUE)))
   })
-  stopifnot(length(hashes) == 2L, all(hashes == expected$fingerprint))
+  stopifnot(length(v_hashes) == 2L, all(v_hashes == expected$fingerprint))
   cat("PASS: sampling identity hashes relevant values and records column diagnostics\n")
 
   # Check the real regeneration branch from script 06, not just the guard in
@@ -92,9 +94,9 @@ run_cache_provenance_tests <- function() {
     effect = data.frame(control = c(1, 1, 1), guided = c(1, 2, 3)),
     strategies = c("control", "guided"), n_sim = 3L, model_idx = c(1L, 3L, 3L),
     fingerprint = baseline$fingerprint)
-  pp <- data.frame(sim = 1:3, model_idx = po$model_idx, x = c(1, 2, 3))
-  attr(pp, "seed") <- 1L
-  pair <- bind_psa_pair(po, pp)
+  df_pp <- data.frame(sim = 1:3, model_idx = po$model_idx, x = c(1, 2, 3))
+  attr(df_pp, "seed") <- 1L
+  pair <- bind_psa_pair(po, df_pp)
   validate_psa_pair(pair$psa_obj, pair$psa_params)
   saveRDS(pair$psa_obj, psa_obj_path())
   saveRDS(pair$psa_params, psa_params_path())
@@ -106,20 +108,20 @@ run_cache_provenance_tests <- function() {
   unlink(psa_obj_path())
   fails(load_psa_params_cache(required = TRUE), "outcome cache missing")
   saveRDS(pair$psa_obj, psa_obj_path())
-  reversed <- pair$psa_params[3:1, ]
-  saveRDS(reversed, psa_params_path())
+  df_reversed <- pair$psa_params[3:1, ]
+  saveRDS(df_reversed, psa_params_path())
   fails(load_psa_params_cache(required = TRUE), "content hash mismatch")
   fails(load_psa_cache(required = TRUE), "content hash mismatch")
-  pp$x[1] <- 10
-  other <- bind_psa_pair(po, pp)
+  df_pp$x[1] <- 10
+  other <- bind_psa_pair(po, df_pp)
   fails(validate_psa_pair(pair$psa_obj, other$psa_params), "mixed generation")
   corrupted <- pair$psa_obj
   corrupted$cost[1, 1] <- 999
   fails(validate_psa_pair(corrupted, pair$psa_params), "content hash mismatch")
-  fails(validate_psa_pair(po, pp), "missing or mixed")
-  duplicate <- pp
-  duplicate$sim <- c(1L, 1L, 3L)
-  fails(bind_psa_pair(po, duplicate), "indices are not aligned")
+  fails(validate_psa_pair(po, df_pp), "missing or mixed")
+  df_duplicate <- df_pp
+  df_duplicate$sim <- c(1L, 1L, 3L)
+  fails(bind_psa_pair(po, df_duplicate), "indices are not aligned")
   cat("PASS: shuffled parameters, mixed saves, changed outcomes and duplicate IDs rejected\n")
 
   config <- list(params = "x", groups = list(group = "x"))
@@ -134,8 +136,8 @@ run_cache_provenance_tests <- function() {
     ef(population = modifyList(pop, list(annual_incidence = 100)))$fingerprint != base$fingerprint,
     ef(settings = list(B = 2L))$fingerprint != base$fingerprint)
   evppi_results <- data.frame()
-  nmb <- as.matrix(pair$psa_obj$effect) - as.matrix(pair$psa_obj$cost)
-  evpi_manual <- mean(apply(nmb, 1, max)) - max(colMeans(nmb))
+  m_nmb <- as.matrix(pair$psa_obj$effect) - as.matrix(pair$psa_obj$cost)
+  evpi_manual <- mean(apply(m_nmb, 1, max)) - max(colMeans(m_nmb))
   evppi_fingerprint <- base$fingerprint
   save(evppi_results, evpi_manual, evppi_fingerprint, file = evppi_path())
   load_evppi_cache(pair$psa_obj, base, 1)
@@ -144,27 +146,27 @@ run_cache_provenance_tests <- function() {
   save(evppi_results, evpi_manual, evppi_fingerprint, file = evppi_path())
   fails(load_evppi_cache(pair$psa_obj, base, 1), "Cached EVPI disagrees")
 
-  scenarios <- data.frame(scenario_id = "base", wtp = 1, c_drug_nivo = 100)
-  scf <- function(psa = baseline$fingerprint, sc = scenarios) scenario_cache_fingerprint(
+  df_scenarios <- data.frame(scenario_id = "base", wtp = 1, c_drug_nivo = 100)
+  scf <- function(psa = baseline$fingerprint, sc = df_scenarios) scenario_cache_fingerprint(
     psa, sc, config, 123L, pop)
   sid <- scf()
-  cache <- list(fingerprint = sid$fingerprint, scenarios = scenarios,
+  cache <- list(fingerprint = sid$fingerprint, scenarios = df_scenarios,
                 all_scenario_results = list(base = pair))
   cache$result_hash <- scenario_result_hash(cache)
   saveRDS(cache, scenario_evppi_path())
   load_scenario_cache(sid)
   fails(load_scenario_cache(scf(psa = "new code or parameters")), "fingerprint mismatch")
-  scenarios$wtp <- 2
-  fails(load_scenario_cache(scf(sc = scenarios)), "fingerprint mismatch")
-  scenarios$c_drug_nivo <- 50
-  fails(load_scenario_cache(scf(sc = scenarios)), "fingerprint mismatch")
+  df_scenarios$wtp <- 2
+  fails(load_scenario_cache(scf(sc = df_scenarios)), "fingerprint mismatch")
+  df_scenarios$c_drug_nivo <- 50
+  fails(load_scenario_cache(scf(sc = df_scenarios)), "fingerprint mismatch")
   cat("PASS: EVPPI/scenario identities track WTP, groups, estimator, seed, population and PSA\n")
 
   # A forced failed assertion must be visible to an executable-test runner.
-  index_script <- readLines("tests/test_sim_idx_validation.R", warn = FALSE)
-  index_script <- sub('^results\\["valid"\\] <-.*', 'results["valid"] <- FALSE', index_script)
+  v_index_script <- readLines("tests/test_sim_idx_validation.R", warn = FALSE)
+  v_index_script <- sub('^results\\["valid"\\] <-.*', 'results["valid"] <- FALSE', v_index_script)
   failed_script <- file.path(directory, "forced-index-failure.R")
-  writeLines(index_script, failed_script)
+  writeLines(v_index_script, failed_script)
   status <- suppressWarnings(system2(rscript, shQuote(failed_script),
     stdout = file.path(directory, "forced.out"), stderr = file.path(directory, "forced.err")))
   stopifnot(status != 0L)

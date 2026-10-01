@@ -308,8 +308,97 @@ knitr::kable(
   tbl_style(latex_options = c("HOLD_position"))
 ```
 
+# Input-to-Output Traceability
+
+The table maps every field of the base-case parameter list `l_params_base` to the function and calculation step that consumes it (issue #165). `model_fun()` resolves the grid, the population weights and the survival curves of each subgroup and calls `partitioned_survival_states()` and `calculate_outcomes()`, which converts state occupancy into discounted costs and QALYs. The table is built from the field names of `l_params_base`, and rendering stops if a field has no entry or an entry names a field that does not exist, so it cannot fall out of step with the model inputs.
+
+```{r traceability-table}
+biomarkers_econ <- get_biomarkers()
+cost_keys <- biomarker_cost_key(biomarkers_econ)
+prevalence_keys <- biomarker_prevalence_key(biomarkers_econ)
+schedule_step <- "Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy."
+
+trace <- rbind(
+  data.frame(Field = "cl", Function = "model_fun(), discount_weights(), calculate_outcomes()",
+             Step = "Cycle length in years: the year of each grid point for discounting, the duration of each interval for QALYs (trapezoidal weights), and the conversion of quarterly cost rates (4 x cl quarters per interval)."),
+  data.frame(Field = "time_horizon", Function = "model_fun()",
+             Step = "Number of weekly intervals; fixes the time_horizon + 1 grid points against which schedules and survival curves are checked and on which PSA curves are predicted."),
+  data.frame(Field = "dr_costs", Function = "discount_weights()",
+             Step = "Annual discount rate of the cost weights applied to every cost stream."),
+  data.frame(Field = "dr_effects", Function = "discount_weights()",
+             Step = "Annual discount rate of the QALY weights."),
+  data.frame(Field = "u_np", Function = "calculate_outcomes()",
+             Step = "Utility weight of progression-free occupancy."),
+  data.frame(Field = "u_p", Function = "calculate_outcomes()",
+             Step = "Utility weight of progressed occupancy (derived as u_np - u_decrement, floored at 0, in every PSA draw)."),
+  data.frame(Field = "u_decrement", Function = "apply_derived_psa_parameters()",
+             Step = "Not read by model_fun(); the sampled PSA decrement from which u_p is derived."),
+  data.frame(Field = "c_drug_nivo", Function = "calculate_outcomes()",
+             Step = "Drug cost per nivolumab administration (l_nivo), biomarker-positive subgroups only."),
+  data.frame(Field = "c_drug_FLOX", Function = "calculate_outcomes()",
+             Step = "Drug cost per FLOX administration: l_FLOX_exp in biomarker-positive subgroups, l_FLOX_control otherwise."),
+  data.frame(Field = "c_test_CT", Function = "calculate_outcomes()",
+             Step = "CT price: scheduled scans (l_CT) while progression-free, and one scan per quarter of progressed occupancy."),
+  data.frame(Field = "c_test_blood", Function = "calculate_outcomes()",
+             Step = "Blood-test price on the l_blood schedule."),
+  data.frame(Field = unname(cost_keys), Function = "calculate_outcomes()",
+             Step = paste0("One-time diagnostic test at week 0 for every patient of the ",
+                           strategy_label(names(cost_keys)), " strategy (also the screening cost of the enriched-population analysis).")),
+  data.frame(Field = "c_other_visit", Function = "calculate_outcomes()",
+             Step = "Outpatient visit price on the l_visit schedule."),
+  data.frame(Field = "c_other_baseline", Function = "calculate_outcomes()",
+             Step = "One-time baseline visit at week 0."),
+  data.frame(Field = "c_other_follow", Function = "calculate_outcomes()",
+             Step = "Follow-up visit rate per quarter of progressed occupancy."),
+  data.frame(Field = "c_other_pp", Function = "calculate_outcomes()",
+             Step = "Post-progression treatment rate per quarter of progressed occupancy (0 in the base case)."),
+  data.frame(Field = "c_other_last", Function = "calculate_outcomes()",
+             Step = "End-of-life cost charged on each interval's increase in dead occupancy."),
+  data.frame(Field = c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"),
+             Function = "calculate_outcomes()", Step = schedule_step),
+  data.frame(Field = "p_os", Function = "model_fun(), partitioned_survival_states()",
+             Step = "OS curve of each subgroup (control, biomarker-positive, biomarker-negative): progressed = max(OS - PFS, 0), dead = 1 - OS. The *_weighted curves are for reporting only."),
+  data.frame(Field = "p_pfs", Function = "model_fun(), partitioned_survival_states()",
+             Step = "PFS curve of each subgroup: progression-free occupancy."),
+  data.frame(Field = unname(prevalence_keys), Function = "model_fun(), model_population_weights()",
+             Step = paste0("Share of the ", strategy_label(names(prevalence_keys)),
+                           " cohort in the biomarker-positive subgroup: weights its costs and QALYs against the negative subgroup.")),
+  data.frame(Field = paste0("p_joint_", c("00", "01", "10", "11")), Function = "model_population_weights()",
+             Step = "Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included."),
+  data.frame(Field = "joint_counts", Function = "configure_parameter_distributions()",
+             Step = "Not read by model_fun(); complete-case joint cell counts, the Dirichlet parameters of the PSA prevalence draws."),
+  data.frame(Field = "population_curves", Function = "model_fun(), standardize_population_curves()",
+             Step = "Patient-level curves, re-averaged when the population weights change."),
+  data.frame(Field = "prediction_population", Function = "model_fun()",
+             Step = "Complete-case patients whose predictions are averaged, deterministically and in every PSA draw."),
+  data.frame(Field = "population_weights", Function = "model_fun()",
+             Step = "Weights behind the current curves; compared with the weights implied by the prevalence fields.")
+)
+
+unmapped <- setdiff(names(l_params_base), trace$Field)
+unknown <- setdiff(trace$Field, names(l_params_base))
+if (length(unmapped) > 0 || length(unknown) > 0 || anyDuplicated(trace$Field)) {
+  stop("Traceability table out of step with l_params_base. Unmapped: ",
+       paste(unmapped, collapse = ", "), "; not in l_params_base: ",
+       paste(unknown, collapse = ", "))
+}
+trace <- trace[match(names(l_params_base), trace$Field), ]
+
+knitr::kable(
+  trace,
+  booktabs = TRUE,
+  row.names = FALSE,
+  format = report_table_format(),
+  caption = "Fields of l\\_params\\_base and the model step that consumes each"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "repeat_header"), font_size = 8) %>%
+  tbl_column_spec(1, width = "2.8cm") %>%
+  tbl_column_spec(2, width = "3.6cm") %>%
+  tbl_column_spec(3, width = "7.6cm")
+```
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.6
+**Report version:** 4.7

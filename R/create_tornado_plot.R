@@ -16,17 +16,17 @@ summarise_param_ranges <- function(results_df, strategy_name = NULL,
   if (!is.null(strategy_name)) x <- x[x$Strategy == strategy_name, ]
   groups <- split(x, interaction(x$Strategy, x$Parameter, drop = TRUE))
   rows <- lapply(groups, function(group) {
-    endpoints <- match(c("min", "max"), group$Value)
-    if (all(is.na(endpoints))) return(NULL)
+    v_endpoints <- match(c("min", "max"), group$Value)
+    if (all(is.na(v_endpoints))) return(NULL)
     # A one-sided structural scenario runs only the endpoint that differs from
     # the base case (issue #154). The endpoint it omits IS the base case, whose
     # difference is zero by definition, so the bar still spans base to
     # scenario rather than dropping out of the tornado altogether.
-    diffs <- ifelse(is.na(endpoints), 0, group[[measure]][endpoints])
+    v_diffs <- ifelse(is.na(v_endpoints), 0, group[[measure]][v_endpoints])
     data.frame(
       Strategy = group$Strategy[1], Parameter = group$Parameter[1],
-      Min_diff = diffs[1], Max_diff = diffs[2],
-      Range = abs(diff(diffs)), stringsAsFactors = FALSE
+      Min_diff = v_diffs[1], Max_diff = v_diffs[2],
+      Range = abs(diff(v_diffs)), stringsAsFactors = FALSE
     )
   })
   rows <- Filter(Negate(is.null), rows)
@@ -56,20 +56,20 @@ create_tornado_plot <- function(strategy_name, results_df,
                                 title = NULL, drop_empty = TRUE) {
   measure <- match.arg(measure)
   cat("Creating tornado plot for strategy:", strategy_name, "(", measure, ")\n")
-  tornado_data <- summarise_param_ranges(results_df, strategy_name, measure)
-  tornado_data <- tornado_data[, c("Parameter", "Min_diff", "Max_diff", "Range")]
+  df_tornado <- summarise_param_ranges(results_df, strategy_name, measure)
+  df_tornado <- df_tornado[, c("Parameter", "Min_diff", "Max_diff", "Range")]
 
   # Sort by range for tornado plot (descending order)
-  tornado_data <- tornado_data[order(-tornado_data$Range), ]
+  df_tornado <- df_tornado[order(-df_tornado$Range), ]
 
-  empty <- !is.finite(tornado_data$Range) | tornado_data$Range == 0
-  if (isTRUE(drop_empty) && any(empty)) {
-    cat("Omitting", sum(empty), "parameter(s) with no effect on", measure, "for",
-        strategy_name, ":", paste(tornado_data$Parameter[empty], collapse = ", "), "\n")
-    tornado_data <- tornado_data[!empty, , drop = FALSE]
+  v_empty <- !is.finite(df_tornado$Range) | df_tornado$Range == 0
+  if (isTRUE(drop_empty) && any(v_empty)) {
+    cat("Omitting", sum(v_empty), "parameter(s) with no effect on", measure, "for",
+        strategy_name, ":", paste(df_tornado$Parameter[v_empty], collapse = ", "), "\n")
+    df_tornado <- df_tornado[!v_empty, , drop = FALSE]
   }
 
-  if (nrow(tornado_data) == 0) {
+  if (nrow(df_tornado) == 0) {
     cat("No data available for tornado plot for", strategy_name, "\n")
     return(NULL)
   }
@@ -88,11 +88,11 @@ create_tornado_plot <- function(strategy_name, results_df,
   }
 
   # Create matrix for barplot - REVERSED order to get highest impact at the top
-  barplot_data <- t(as.matrix(tornado_data[nrow(tornado_data):1, c("Min_diff", "Max_diff")]))
-  colnames(barplot_data) <- tornado_data$Parameter[nrow(tornado_data):1]
+  m_barplot <- t(as.matrix(df_tornado[nrow(df_tornado):1, c("Min_diff", "Max_diff")]))
+  colnames(m_barplot) <- df_tornado$Parameter[nrow(df_tornado):1]
 
   barplot(
-    barplot_data,
+    m_barplot,
     beside = TRUE,
     horiz = TRUE,
     las = 1,  # Horizontal labels
@@ -106,5 +106,5 @@ create_tornado_plot <- function(strategy_name, results_df,
          fill = c("blue", "red"),
          cex = 0.8)
 
-  tornado_data
+  df_tornado
 }

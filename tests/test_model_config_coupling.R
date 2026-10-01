@@ -8,15 +8,15 @@ source("R/evppi_functions.R")
 source("R/report_format.R")
 
 # Strategy metadata is joined by ID, not by position.
-reordered <- c("tmb_braf", "control", "crp")
-metadata <- get_strategy_metadata(reordered)
+v_reordered <- c("tmb_braf", "control", "crp")
+df_metadata <- get_strategy_metadata(v_reordered)
 stopifnot(
-  identical(metadata$id, reordered),
-  identical(metadata$short_name, c("TMB/BRAF", "Control", "CRP")),
-  identical(unname(strategy_labels[reordered]), metadata$report_label),
-  identical(unname(strategy_display_name(reordered)), metadata$short_name),
-  grepl("tumor mutation burden", metadata$name[1], fixed = TRUE),
-  grepl("Standard of care", metadata$name[2], fixed = TRUE)
+  identical(df_metadata$id, v_reordered),
+  identical(df_metadata$short_name, c("TMB/BRAF", "Control", "CRP")),
+  identical(unname(strategy_labels[v_reordered]), df_metadata$report_label),
+  identical(unname(strategy_display_name(v_reordered)), df_metadata$short_name),
+  grepl("tumor mutation burden", df_metadata$name[1], fixed = TRUE),
+  grepl("Standard of care", df_metadata$name[2], fixed = TRUE)
 )
 
 # Biomarker cost and prevalence parameter names are derived centrally.
@@ -42,8 +42,10 @@ stopifnot(
 )
 
 # Build a minimal valid model input with a control ordering violation.
+#' Minimal 14-point model input with zero costs and unit utilities whose control
+#' PFS exceeds OS at one time point; returns the parameter list.
 make_model_params <- function() {
-  biomarkers <- get_biomarkers()
+  v_biomarkers <- get_biomarkers()
   params <- list(
     dr_costs = 0,
     dr_effects = 0,
@@ -55,7 +57,7 @@ make_model_params <- function() {
     c_test_blood = 0,
     c_test_CRP = 0,
     c_test_NGS = 0,
-    c_test_biomarker = setNames(as.list(rep(0, length(biomarkers))), biomarkers),
+    c_test_biomarker = setNames(as.list(rep(0, length(v_biomarkers))), v_biomarkers),
     c_other_visit = 0,
     c_other_baseline = 0,
     c_other_follow = 0,
@@ -69,7 +71,7 @@ make_model_params <- function() {
     p_os = list(control_OS = c(1, rep(0.8, 13))),
     p_pfs = list(control_PFS = c(1, 0.9, rep(0.7, 12)))
   )
-  for (biomarker in biomarkers) {
+  for (biomarker in v_biomarkers) {
     params[[biomarker_prevalence_key(biomarker)]] <- 0.5
     params$p_os[[paste0(biomarker, "_pos_OS")]] <- c(1, rep(0.8, 13))
     params$p_os[[paste0(biomarker, "_neg_OS")]] <- c(1, rep(0.8, 13))
@@ -102,6 +104,8 @@ stopifnot(
 )
 
 # PSA aggregation routes on condition fields even when the message is opaque.
+#' Stub model that raises a survival_ordering_warning with an opaque message and
+#' returns zero costs and effects for every strategy.
 model_fun <- function(params, ...) {
   warning(warningCondition(
     "opaque message",
@@ -114,10 +118,10 @@ model_fun <- function(params, ...) {
   ))
   data.frame(Strategy = get_strategies(), Cost = 0, Effect = 0)
 }
-psa_params <- data.frame(sim = 1L)
-output <- capture.output({
+df_psa_params <- data.frame(sim = 1L)
+v_output <- capture.output({
   psa_result <- run_psa_analysis(
-    psa_params = psa_params,
+    psa_params = df_psa_params,
     l_params_base = make_model_params(),
     param_distributions = list(),
     strategies = get_strategies(),
@@ -128,27 +132,27 @@ output <- capture.output({
 })
 stopifnot(
   identical(psa_result$pfs_os_violations$tmb_braf_positive, 1L),
-  any(grepl("TMB/BRAF+: 1 iteration", output, fixed = TRUE))
+  any(grepl("TMB/BRAF+: 1 iteration", v_output, fixed = TRUE))
 )
 
 # EVPPI interaction extraction and grouping follow every configured biomarker.
 sampling_models <- setNames(lapply(get_biomarkers(), function(biomarker) {
-  coefficients <- setNames(0.5, paste0(biomarker, "1:Rxexperimental"))
+  v_coefficients <- setNames(0.5, paste0(biomarker, "1:Rxexperimental"))
   list(samples = list(list(
-    os = list(coefficients = coefficients),
-    pfs = list(coefficients = coefficients)
+    os = list(coefficients = v_coefficients),
+    pfs = list(coefficients = v_coefficients)
   )))
 }), get_biomarkers())
 invisible(capture.output(
-  interaction_coefficients <- extract_interaction_coefficients(sampling_models, 1L)
+  df_interaction_coefficients <- extract_interaction_coefficients(sampling_models, 1L)
 ))
-expected_interactions <- as.vector(outer(
+v_expected_interactions <- as.vector(outer(
   get_biomarkers(), c("os", "pfs"),
   function(biomarker, outcome) paste0("b_", biomarker, "_rx_", outcome)
 ))
 stopifnot(
-  setequal(names(interaction_coefficients), expected_interactions),
-  setequal(get_interaction_evppi_params(), expected_interactions),
+  setequal(names(df_interaction_coefficients), v_expected_interactions),
+  setequal(get_interaction_evppi_params(), v_expected_interactions),
   all(paste0("interaction_", get_biomarkers()) %in%
         names(add_interaction_param_groups(list())))
 )

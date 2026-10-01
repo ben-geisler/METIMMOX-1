@@ -24,11 +24,11 @@ derive_pfs_endpoint <- function(data, death_window_weeks = 16,
       is.na(death_window_weeks) || death_window_weeks < 0) {
     fail("death_window_weeks must be a nonnegative numeric scalar (Inf allowed).")
   }
-  required <- c("Progression", "PFSwk", "Death", "OSwk",
-                if (last_assessment == "LastEvalwk") "LastEvalwk")
-  missing <- setdiff(required, names(data))
-  if (length(missing)) fail("missing column(s): ", paste(missing, collapse = ", "),
-                            "; re-run analysis/01_data_prep.R.")
+  v_required <- c("Progression", "PFSwk", "Death", "OSwk",
+                  if (last_assessment == "LastEvalwk") "LastEvalwk")
+  v_missing <- setdiff(v_required, names(data))
+  if (length(v_missing)) fail("missing column(s): ", paste(v_missing, collapse = ", "),
+                              "; re-run analysis/01_data_prep.R.")
   if (!"ProgressionExit" %in% names(data)) data$ProgressionExit <- data$Progression
   if (!"TTPwk" %in% names(data)) data$TTPwk <- data$PFSwk
   for (nm in c("ProgressionExit", "Death")) {
@@ -41,20 +41,20 @@ derive_pfs_endpoint <- function(data, death_window_weeks = 16,
       fail(nm, " must contain nonnegative finite times or NA.")
     if (any(data[[nm]] > data$OSwk, na.rm = TRUE)) fail(nm, " exceeds OS time.")
   }
-  progressed <- data$ProgressionExit == 1
-  died <- data$Death == 1
-  anchor <- data[[last_assessment]]
-  anchor_missing <- !progressed & is.na(anchor)
-  gap <- data$OSwk - anchor
-  death_event <- died & !progressed & !is.na(anchor) &
-    (is.infinite(death_window_weeks) | (!is.na(gap) & gap <= death_window_weeks))
-  data$Progression <- as.numeric(progressed | death_event)
-  data$PFSwk <- ifelse(progressed, data$TTPwk, ifelse(death_event, data$OSwk, anchor))
-  data$Progression[anchor_missing] <- NA_real_
-  rule <- ifelse(progressed, "progression", ifelse(death_event, "death_within_window",
-    ifelse(died, "death_censored_at_assessment", "censored_alive")))
-  rule[anchor_missing] <- "anchor_missing"
-  data$PFS_rule <- factor(rule, levels = c("progression", "death_within_window",
+  v_progressed <- data$ProgressionExit == 1
+  v_died <- data$Death == 1
+  v_anchor <- data[[last_assessment]]
+  v_anchor_missing <- !v_progressed & is.na(v_anchor)
+  v_gap <- data$OSwk - v_anchor
+  v_death_event <- v_died & !v_progressed & !is.na(v_anchor) &
+    (is.infinite(death_window_weeks) | (!is.na(v_gap) & v_gap <= death_window_weeks))
+  data$Progression <- as.numeric(v_progressed | v_death_event)
+  data$PFSwk <- ifelse(v_progressed, data$TTPwk, ifelse(v_death_event, data$OSwk, v_anchor))
+  data$Progression[v_anchor_missing] <- NA_real_
+  v_rule <- ifelse(v_progressed, "progression", ifelse(v_death_event, "death_within_window",
+    ifelse(v_died, "death_censored_at_assessment", "censored_alive")))
+  v_rule[v_anchor_missing] <- "anchor_missing"
+  data$PFS_rule <- factor(v_rule, levels = c("progression", "death_within_window",
     "death_censored_at_assessment", "censored_alive", "anchor_missing"))
   counts <- table(data$PFS_rule)
   attr(data, "pfs_endpoint") <- list(rule = "two_interval_v1",

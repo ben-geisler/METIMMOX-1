@@ -46,6 +46,10 @@ source(here::here("R/prediction_functions.R"))
 #'
 #' Re-sources scripts 04 and 05 once so data_complete, models, time_points, and
 #' l_params_base are synchronized before enriched counterfactual curves are made.
+#'
+#' @param verbose Logical, print a progress message.
+#' @return Invisibly, the value of the last sourced script; called for its side
+#'   effect of recreating the script 04/05 objects in the global environment.
 refresh_single_model_inputs <- function(verbose = TRUE) {
   if (verbose) {
     cat("Refreshing survival fits and base-case inputs for the single model...\n")
@@ -76,16 +80,16 @@ generate_enriched_control_curves <- function(biomarker_name) {
     stop("Biomarker '", biomarker_name, "' is not an economic biomarker.")
   }
 
-  prediction_population <- l_params_base$prediction_population
-  population_weights <- model_population_weights(l_params_base, prediction_population)
-  ctrl_rx <- levels(prediction_population$Rx)[1]
+  df_prediction_population <- l_params_base$prediction_population
+  v_population_weights <- model_population_weights(l_params_base, df_prediction_population)
+  ctrl_rx <- levels(df_prediction_population$Rx)[1]
 
-  pos_data <- prediction_population[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1, ]
-  if (nrow(pos_data) == 0) {
+  df_pos <- df_prediction_population[as.numeric(as.character(df_prediction_population[[biomarker_name]])) == 1, ]
+  if (nrow(df_pos) == 0) {
     stop("No biomarker-positive patients available for ", biomarker_name)
   }
 
-  pos_data$Rx <- factor(ctrl_rx, levels = levels(prediction_population$Rx))
+  df_pos$Rx <- factor(ctrl_rx, levels = levels(df_prediction_population$Rx))
 
   model_os <- models$best_fit$os
   model_pfs <- models$best_fit$pfs
@@ -94,17 +98,17 @@ generate_enriched_control_curves <- function(biomarker_name) {
     stop("Best-fit OS/PFS models are not available in models$best_fit.")
   }
 
-  os_pred <- predict(model_os, newdata = pos_data,
+  df_os_pred <- predict(model_os, newdata = df_pos,
                      type = "survival", times = time_points)
-  pfs_pred <- predict(model_pfs, newdata = pos_data,
+  df_pfs_pred <- predict(model_pfs, newdata = df_pos,
                       type = "survival", times = time_points)
 
-  os_matrix <- extract_all_survival_probabilities(os_pred)
-  pfs_matrix <- extract_all_survival_probabilities(pfs_pred)
+  m_os <- extract_all_survival_probabilities(df_os_pred)
+  m_pfs <- extract_all_survival_probabilities(df_pfs_pred)
 
   list(
-    os = weighted_survival_average(os_matrix, population_weights[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1]),
-    pfs = weighted_survival_average(pfs_matrix, population_weights[as.numeric(as.character(prediction_population[[biomarker_name]])) == 1])
+    os = weighted_survival_average(m_os, v_population_weights[as.numeric(as.character(df_prediction_population[[biomarker_name]])) == 1]),
+    pfs = weighted_survival_average(m_pfs, v_population_weights[as.numeric(as.character(df_prediction_population[[biomarker_name]])) == 1])
   )
 }
 
@@ -124,7 +128,7 @@ run_enriched_analysis <- function(verbose = TRUE) {
   refresh_single_model_inputs(verbose = verbose)
 
   base_result <- run_basecase(verbose = verbose)
-  base_pairwise <- calculate_pairwise_icers(base_result$base_results)
+  df_base_pairwise <- calculate_pairwise_icers(base_result$base_results)
 
   if (verbose) {
     cat("Generating enriched population curves (biomarker-positive control)...\n")
@@ -136,10 +140,10 @@ run_enriched_analysis <- function(verbose = TRUE) {
 
   for (biomarker in get_biomarkers()) {
 
-    os_exp <- l_params_base$p_os[[paste0(biomarker, "_pos_OS")]]
-    pfs_exp <- l_params_base$p_pfs[[paste0(biomarker, "_pos_PFS")]]
+    v_os_exp <- l_params_base$p_os[[paste0(biomarker, "_pos_OS")]]
+    v_pfs_exp <- l_params_base$p_pfs[[paste0(biomarker, "_pos_PFS")]]
     states_exp <- partitioned_survival_states(
-      os_exp, pfs_exp, paste0("enriched ", biomarker, "+ experimental")
+      v_os_exp, v_pfs_exp, paste0("enriched ", biomarker, "+ experimental")
     )
 
     exp_outcomes <- calculate_outcomes(
@@ -194,13 +198,13 @@ run_enriched_analysis <- function(verbose = TRUE) {
     exp_cost <- exp_outcomes$costs_total - test_cost + screening_cost
     ctrl_cost <- ctrl_outcomes$costs_total - test_cost
 
-    pairwise <- calculate_pairwise_icers(data.frame(
+    df_pairwise <- calculate_pairwise_icers(data.frame(
       Strategy = c(get_control_strategy(), biomarker),
       Cost = c(ctrl_cost, exp_cost),
       Effect = c(ctrl_outcomes$qalys_total, exp_outcomes$qalys_total)
     ))[2, ]
     enriched_rows[[biomarker]] <- transform(
-      pairwise,
+      df_pairwise,
       Ctrl_Cost = ctrl_cost,
       Ctrl_Effect = ctrl_outcomes$qalys_total,
       Test_Cost = test_cost,
@@ -208,16 +212,16 @@ run_enriched_analysis <- function(verbose = TRUE) {
     )
   }
 
-  enriched_pairwise <- do.call(rbind, enriched_rows)
-  rownames(enriched_pairwise) <- NULL
+  df_enriched_pairwise <- do.call(rbind, enriched_rows)
+  rownames(df_enriched_pairwise) <- NULL
 
   if (verbose) {
     cat("Enriched analysis complete.\n")
   }
 
-  biomarkers <- get_biomarkers()
-  base_rows <- base_pairwise[match(biomarkers, base_pairwise$Strategy), ]
-  enriched_rows <- enriched_pairwise[match(biomarkers, enriched_pairwise$Strategy), ]
+  v_biomarkers <- get_biomarkers()
+  df_base_rows <- df_base_pairwise[match(v_biomarkers, df_base_pairwise$Strategy), ]
+  df_enriched_rows <- df_enriched_pairwise[match(v_biomarkers, df_enriched_pairwise$Strategy), ]
   # Both ICER columns are PAIRWISE comparisons against standard of care
   # (issue #153). Base_Frontier_Status carries the dampack frontier status of
   # the guided strategy in the three-strategy base case; a strategy that is
@@ -226,35 +230,35 @@ run_enriched_analysis <- function(verbose = TRUE) {
   # such ICERs is not meaningful, so Pct_Change is reported only when the
   # strategy is on the frontier and both pairwise ICERs are finite, positive
   # trade-offs (more costly and more effective).
-  enriched_comparison <- data.frame(
-    Biomarker = unname(strategy_display_name(biomarkers)),
-    Prevalence = strategies_df$prevalence[match(biomarkers, strategies_df$id)],
-    Base_Cost = base_rows$Cost, Base_Effect = base_rows$Effect,
-    Base_ICER = base_rows$ICER, Base_Status = base_rows$Status,
-    Base_Frontier_Status = base_rows$Frontier_Status,
-    Enr_Cost = enriched_rows$Cost, Enr_Effect = enriched_rows$Effect,
-    Enr_Ctrl_Cost = enriched_rows$Ctrl_Cost,
-    Enr_Ctrl_Effect = enriched_rows$Ctrl_Effect,
-    Enr_Test_Cost = enriched_rows$Test_Cost,
-    Enr_Screening_Cost = enriched_rows$Screening_Cost,
-    Enr_ICER = enriched_rows$ICER, Enr_Status = enriched_rows$Status,
+  df_enriched_comparison <- data.frame(
+    Biomarker = unname(strategy_display_name(v_biomarkers)),
+    Prevalence = strategies_df$prevalence[match(v_biomarkers, strategies_df$id)],
+    Base_Cost = df_base_rows$Cost, Base_Effect = df_base_rows$Effect,
+    Base_ICER = df_base_rows$ICER, Base_Status = df_base_rows$Status,
+    Base_Frontier_Status = df_base_rows$Frontier_Status,
+    Enr_Cost = df_enriched_rows$Cost, Enr_Effect = df_enriched_rows$Effect,
+    Enr_Ctrl_Cost = df_enriched_rows$Ctrl_Cost,
+    Enr_Ctrl_Effect = df_enriched_rows$Ctrl_Effect,
+    Enr_Test_Cost = df_enriched_rows$Test_Cost,
+    Enr_Screening_Cost = df_enriched_rows$Screening_Cost,
+    Enr_ICER = df_enriched_rows$ICER, Enr_Status = df_enriched_rows$Status,
     Pct_Change = ifelse(
-      base_rows$Frontier_Status == "ND" &
-        base_rows$Status == "Pairwise ICER vs SoC" &
-        enriched_rows$Status == "Pairwise ICER vs SoC" &
-        is.finite(base_rows$ICER) & base_rows$ICER > 0 &
-        is.finite(enriched_rows$ICER) & enriched_rows$ICER > 0,
-      (enriched_rows$ICER - base_rows$ICER) / abs(base_rows$ICER) * 100,
+      df_base_rows$Frontier_Status == "ND" &
+        df_base_rows$Status == "Pairwise ICER vs SoC" &
+        df_enriched_rows$Status == "Pairwise ICER vs SoC" &
+        is.finite(df_base_rows$ICER) & df_base_rows$ICER > 0 &
+        is.finite(df_enriched_rows$ICER) & df_enriched_rows$ICER > 0,
+      (df_enriched_rows$ICER - df_base_rows$ICER) / abs(df_base_rows$ICER) * 100,
       NA_real_
     )
   )
 
   list(
     base_results = base_result$base_results,
-    base_pairwise = base_pairwise,
+    base_pairwise = df_base_pairwise,
     base_icer_obj = base_result$icer_obj,
-    enriched_pairwise = enriched_pairwise,
-    comparison = enriched_comparison,
+    enriched_pairwise = df_enriched_pairwise,
+    comparison = df_enriched_comparison,
     model_config = base_result$model_config
   )
 }

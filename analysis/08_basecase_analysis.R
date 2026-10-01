@@ -45,20 +45,20 @@ print(ce_plot)
 wtp_threshold <- WTP  # Using the WTP value defined in section 1
 
 # Calculate NMB manually
-nmb_at_wtp <- data.frame(
+df_nmb_at_wtp <- data.frame(
   Strategy = base_results$Strategy,
   Cost = base_results$Cost,
   Effect = base_results$Effect,
   NMB = base_results$Effect * wtp_threshold - base_results$Cost
 )
-nmb_at_wtp <- nmb_at_wtp[order(-nmb_at_wtp$NMB), ]
-print(nmb_at_wtp)
+df_nmb_at_wtp <- df_nmb_at_wtp[order(-df_nmb_at_wtp$NMB), ]
+print(df_nmb_at_wtp)
 
 # Identify optimal strategy
-cat("Optimal strategy at WTP threshold €", format(wtp_threshold, big.mark=","), ": ", nmb_at_wtp$Strategy[1], "\n")
-optimal_strategy <- nmb_at_wtp$Strategy[1]
+cat("Optimal strategy at WTP threshold €", format(wtp_threshold, big.mark=","), ": ", df_nmb_at_wtp$Strategy[1], "\n")
+optimal_strategy <- df_nmb_at_wtp$Strategy[1]
 
 # If we need to see the efficiency frontier in a table format
-frontier_strategies <- icer_obj$Strategy[!is.na(icer_obj$ICER) | icer_obj$Status == "Reference"]
-cat("Strategies on the efficiency frontier: ", paste(frontier_strategies, collapse=", "), "\n")
+v_frontier_strategies <- icer_obj$Strategy[!is.na(icer_obj$ICER) | icer_obj$Status == "Reference"]
+cat("Strategies on the efficiency frontier: ", paste(v_frontier_strategies, collapse=", "), "\n")
 #write.csv(icer_obj, "icer_obj.csv")

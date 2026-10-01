@@ -484,6 +484,41 @@
       "Maintainer": "Torsten Hothorn <Torsten.Hothorn@R-project.org>",
       "Repository": "CRAN"
     },
+    "TeachingDemos": {
+      "Package": "TeachingDemos",
+      "Version": "2.12",
+      "Source": "Repository",
+      "Title": "Demonstrations for Teaching and Learning",
+      "Author": "Greg Snow",
+      "Description": "Demonstration functions that can be used in a classroom to demonstrate statistical concepts, or on your own to better understand the concepts or the programming.",
+      "Maintainer": "Greg Snow <538280@gmail.com>",
+      "License": "Artistic-2.0",
+      "Date": "2020-04-01",
+      "Suggests": [
+        "tkrplot",
+        "lattice",
+        "MASS",
+        "rgl",
+        "tcltk",
+        "tcltk2",
+        "png",
+        "ggplot2",
+        "logspline",
+        "maptools",
+        "R2wd",
+        "manipulate"
+      ],
+      "LazyData": "true",
+      "KeepSource": "true",
+      "Repository": "CRAN",
+      "Repository/R-Forge/Project": "teachingdemos",
+      "Repository/R-Forge/Revision": "76",
+      "Repository/R-Forge/DateTimeStamp": "2020-04-04 15:55:45",
+      "NeedsCompilation": "no",
+      "Depends": [
+        "R (>= 2.10)"
+      ]
+    },
     "V8": {
       "Package": "V8",
       "Version": "4.4.1",
@@ -2011,6 +2046,38 @@
       "Maintainer": "Tyson Barrett <t.barrett88@gmail.com>",
       "Repository": "CRAN"
     },
+    "dbarts": {
+      "Package": "dbarts",
+      "Version": "0.9-25",
+      "Source": "Repository",
+      "Date": "2023-12-07",
+      "Title": "Discrete Bayesian Additive Regression Trees Sampler",
+      "Authors@R": "c( person(\"Vincent\", \"Dorie\", role = c(\"aut\", \"cre\"), email = \"vdorie@gmail.com\", comment = c(ORCID = \"0000-0002-9576-3064\")), person(\"Hugh\", \"Chipman\", role = \"aut\", email = \"hugh.chipman@gmail.com\"), person(\"Robert\", \"McCulloch\", role = \"aut\", email = \"robert.mcculloch1@gmail.com\"), person(\"Armon\", \"Dadgar\", role = \"ctb\", comment = \"adaptive radix tree\"), person(\"R Core Team\", role = \"ctb\", comment = \"basis of RNG\"), person(\"Guido U\", \"Draheim\", role = \"ctb\", comment = \"ax_check_compile_flag.m4\"), person(\"Maarten\", \"Bosmans\", role = \"ctb\", comment = \"ax_check_compile_flag.m4\"), person(\"Christophe\", \"Tournayre\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4\"), person(\"Michael\", \"Petch\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4, ax_gcc_x86_avx_xgetbv.m4, ax_gcc_x86_cpuid.m4\"), person(\"Rafael\", \"de Lucena Valle\", role = \"ctb\", comment = \"ax_compiler_ext.m4, ax_ext.m4\"), person(\"Steven G.\", \"Johnson\", role = \"ctb\", comment = c(\"ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4, ax_pthread.m4\", ORCID = \"0000-0001-7327-4967\")), person(\"Matteo\", \"Frigo\", role = \"ctb\", comment = \"ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4\"), person(\"John\", \"Zaitseff\", role = \"ctb\", comment = \"ax_compiler_vendor.m4\"), person(\"Todd\", \"Veldhuizen\", role = \"ctb\", comment = \"ax_cxx_namespace_std.m4\"), person(\"Luc\", \"Maisonobe\", role = \"ctb\", comment = \"ax_cxx_namespace_std.m4\"), person(\"Scott\", \"Pakin\", role = \"ctb\", comment = c(\"ax_func_posix_memalign.m4\", ORCID = \"0000-0002-5220-1985\")), person(\"Daniel\", \"Richard G.\", role = \"ctb\", comment = \"ax_pthread.m4\"))",
+      "Depends": [
+        "R (>= 3.1-0)"
+      ],
+      "Imports": [
+        "stats",
+        "methods",
+        "graphics",
+        "parallel"
+      ],
+      "Suggests": [
+        "testthat (>= 0.9-0)",
+        "knitr",
+        "rmarkdown"
+      ],
+      "VignetteBuilder": "knitr, rmarkdown",
+      "Description": "Fits Bayesian additive regression trees (BART; Chipman, George, and McCulloch (2010) <doi:10.1214/09-AOAS285>) while allowing the updating of predictors or response so that BART can be incorporated as a conditional model in a Gibbs/Metropolis-Hastings sampler. Also serves as a drop-in replacement for package 'BayesTree'.",
+      "License": "GPL (>= 2)",
+      "NeedsCompilation": "yes",
+      "Biarch": "yes",
+      "URL": "https://github.com/vdorie/dbarts",
+      "BugReports": "https://github.com/vdorie/dbarts/issues",
+      "Author": "Vincent Dorie [aut, cre] (<https://orcid.org/0000-0002-9576-3064>), Hugh Chipman [aut], Robert McCulloch [aut], Armon Dadgar [ctb] (adaptive radix tree), R Core Team [ctb] (basis of RNG), Guido U Draheim [ctb] (ax_check_compile_flag.m4), Maarten Bosmans [ctb] (ax_check_compile_flag.m4), Christophe Tournayre [ctb] (ax_compiler_ext.m4, ax_ext.m4), Michael Petch [ctb] (ax_compiler_ext.m4, ax_ext.m4, ax_gcc_x86_avx_xgetbv.m4, ax_gcc_x86_cpuid.m4), Rafael de Lucena Valle [ctb] (ax_compiler_ext.m4, ax_ext.m4), Steven G. Johnson [ctb] (ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4, ax_pthread.m4, <https://orcid.org/0000-0001-7327-4967>), Matteo Frigo [ctb] (ax_compiler_vendor.m4, ax_gcc_x86_cpuid.m4), John Zaitseff [ctb] (ax_compiler_vendor.m4), Todd Veldhuizen [ctb] (ax_cxx_namespace_std.m4), Luc Maisonobe [ctb] (ax_cxx_namespace_std.m4), Scott Pakin [ctb] (ax_func_posix_memalign.m4, <https://orcid.org/0000-0002-5220-1985>), Daniel Richard G. [ctb] (ax_pthread.m4)",
+      "Maintainer": "Vincent Dorie <vdorie@gmail.com>",
+      "Repository": "CRAN"
+    },
     "dbplyr": {
       "Package": "dbplyr",
       "Version": "2.4.0",
@@ -2268,6 +2335,45 @@
       "NeedsCompilation": "yes",
       "Repository": "CRAN"
     },
+    "distributional": {
+      "Package": "distributional",
+      "Version": "0.3.2",
+      "Source": "Repository",
+      "Title": "Vectorised Probability Distributions",
+      "Authors@R": "c(person(given = \"Mitchell\", family = \"O'Hara-Wild\", role = c(\"aut\", \"cre\"), email = \"mail@mitchelloharawild.com\", comment = c(ORCID = \"0000-0001-6729-7695\")), person(given = \"Matthew\", family = \"Kay\", role = c(\"aut\"), comment = c(ORCID = \"0000-0001-9446-0419\")), person(given = \"Alex\", family = \"Hayes\", role = c(\"aut\"), comment = c(ORCID = \"0000-0002-4985-5160\")), person(given = \"Earo\", family = \"Wang\", role = c(\"ctb\"), comment = c(ORCID = \"0000-0001-6448-5260\")))",
+      "Description": "Vectorised distribution objects with tools for manipulating,  visualising, and using probability distributions. Designed to allow model prediction outputs to return distributions rather than their parameters,  allowing users to directly interact with predictive distributions in a data-oriented workflow. In addition to providing generic replacements for p/d/q/r functions, other useful statistics can be computed including means, variances, intervals, and highest density regions.",
+      "License": "GPL-3",
+      "Imports": [
+        "vctrs (>= 0.3.0)",
+        "rlang (>= 0.4.5)",
+        "generics",
+        "stats",
+        "numDeriv",
+        "ggplot2",
+        "scales",
+        "farver",
+        "digest",
+        "utils",
+        "lifecycle"
+      ],
+      "Suggests": [
+        "testthat (>= 2.1.0)",
+        "covr",
+        "mvtnorm",
+        "actuar (>= 2.0.0)",
+        "ggdist"
+      ],
+      "RdMacros": "lifecycle",
+      "URL": "https://pkg.mitchelloharawild.com/distributional/, https://github.com/mitchelloharawild/distributional",
+      "BugReports": "https://github.com/mitchelloharawild/distributional/issues",
+      "Encoding": "UTF-8",
+      "Language": "en-GB",
+      "RoxygenNote": "7.2.1",
+      "NeedsCompilation": "no",
+      "Author": "Mitchell O'Hara-Wild [aut, cre] (<https://orcid.org/0000-0001-6729-7695>), Matthew Kay [aut] (<https://orcid.org/0000-0001-9446-0419>), Alex Hayes [aut] (<https://orcid.org/0000-0002-4985-5160>), Earo Wang [ctb] (<https://orcid.org/0000-0001-6448-5260>)",
+      "Maintainer": "Mitchell O'Hara-Wild <mail@mitchelloharawild.com>",
+      "Repository": "CRAN"
+    },
     "downlit": {
       "Package": "downlit",
       "Version": "0.4.3",
@@ -2453,6 +2559,33 @@
       "Author": "David Meyer [aut, cre] (<https://orcid.org/0000-0002-5196-3048>), Evgenia Dimitriadou [aut, cph], Kurt Hornik [aut] (<https://orcid.org/0000-0003-4198-9911>), Andreas Weingessel [aut], Friedrich Leisch [aut], Chih-Chung Chang [ctb, cph] (libsvm C++-code), Chih-Chen Lin [ctb, cph] (libsvm C++-code)",
       "Maintainer": "David Meyer <David.Meyer@R-project.org>",
       "Repository": "CRAN"
+    },
+    "earth": {
+      "Package": "earth",
+      "Version": "5.3.2",
+      "Source": "Repository",
+      "Title": "Multivariate Adaptive Regression Splines",
+      "Author": "Stephen Milborrow.  Derived from mda:mars by Trevor Hastie and Rob Tibshirani.  Uses Alan Miller's Fortran utilities with Thomas Lumley's leaps wrapper.",
+      "Maintainer": "Stephen Milborrow <milbo@sonic.net>",
+      "Depends": [
+        "R (>= 3.4.0)",
+        "Formula (>= 1.2-3)",
+        "plotmo (>= 3.6.0)",
+        "TeachingDemos (>= 2.10)"
+      ],
+      "Suggests": [
+        "gam (>= 1.20)",
+        "mgcv (>= 1.8-26)",
+        "mda (>= 0.5-2)",
+        "MASS (>= 7.3-51)"
+      ],
+      "Description": "Build regression models using the techniques in Friedman's papers \"Fast MARS\" and \"Multivariate Adaptive Regression Splines\" <doi:10.1214/aos/1176347963>. (The term \"MARS\" is trademarked and thus not used in the name of the package.)",
+      "License": "GPL-3",
+      "LazyData": "yes",
+      "URL": "http://www.milbo.users.sonic.net/earth/",
+      "Repository": "CRAN",
+      "RoxygenNote": "5.1.2",
+      "NeedsCompilation": "yes"
     },
     "ellipse": {
       "Package": "ellipse",
@@ -6739,6 +6872,63 @@
       "Maintainer": "Lionel Henry <lionel@posit.co>",
       "Repository": "CRAN"
     },
+    "plotmo": {
+      "Package": "plotmo",
+      "Version": "3.6.2",
+      "Source": "Repository",
+      "Title": "Plot a Model's Residuals, Response, and Partial Dependence Plots",
+      "Author": "Stephen Milborrow",
+      "Maintainer": "Stephen Milborrow <milbo@sonic.net>",
+      "Depends": [
+        "R (>= 3.4.0)",
+        "Formula (>= 1.2-3)",
+        "plotrix",
+        "TeachingDemos"
+      ],
+      "Description": "Plot model surfaces for a wide variety of models using partial dependence plots and other techniques. Also plot model residuals and other information on the model.",
+      "Suggests": [
+        "C50 (>= 0.1.0-24)",
+        "earth (>= 5.1.2)",
+        "gbm (>= 2.1.1)",
+        "glmnet (>= 2.0.5)",
+        "glmnetUtils (>= 1.0.3)",
+        "MASS (>= 7.3-51)",
+        "mlr (>= 2.12.1)",
+        "neuralnet (>= 1.33)",
+        "partykit (>= 1.2-2)",
+        "pre (>= 0.5.0)",
+        "rpart (>= 4.1-15)",
+        "rpart.plot (>= 3.0.8)"
+      ],
+      "License": "GPL-3",
+      "URL": "http://www.milbo.users.sonic.net",
+      "NeedsCompilation": "no",
+      "Repository": "CRAN"
+    },
+    "plotrix": {
+      "Package": "plotrix",
+      "Version": "3.8-4",
+      "Source": "Repository",
+      "Date": "2023-11-09",
+      "Title": "Various Plotting Functions",
+      "Author": "Jim Lemon, Ben Bolker, Sander Oom, Eduardo Klein, Barry Rowlingson, Hadley Wickham, Anupam Tyagi, Olivier Eterradossi, Gabor Grothendieck, Michael Toews, John Kane, Rolf Turner, Carl Witthoft, Julian Stander, Thomas Petzoldt, Remko Duursma, Elisa Biancotto, Ofir Levy, Christophe Dutang, Peter Solymos, Robby Engelmann,  Michael Hecker, Felix Steinbeck, Hans Borchers, Henrik Singmann, Ted Toal, Derek Ogle, Darshan Baral, Ulrike Groemping, Bill Venables, The CRAN Team, Duncan Murdoch",
+      "Maintainer": "Duncan Murdoch <murdoch.duncan@gmail.com>",
+      "Imports": [
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Description": "Lots of plots, various labeling, axis and color scaling functions. The author/maintainer died in September 2023.",
+      "License": "GPL (>= 2)",
+      "NeedsCompilation": "no",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "Repository": "CRAN",
+      "URL": "https://github.com/dmurdoch/plotrix",
+      "BugReports": "https://github.com/dmurdoch/plotrix/issues"
+    },
     "plyr": {
       "Package": "plyr",
       "Version": "1.8.9",
@@ -6852,6 +7042,55 @@
         "rmarkdown"
       ],
       "VignetteBuilder": "knitr",
+      "Repository": "CRAN"
+    },
+    "posterior": {
+      "Package": "posterior",
+      "Version": "1.5.0",
+      "Source": "Repository",
+      "Title": "Tools for Working with Posterior Distributions",
+      "Date": "2023-10-31",
+      "Authors@R": "c(person(\"Paul-Christian\", \"Bürkner\", email = \"paul.buerkner@gmail.com\", role = c(\"aut\", \"cre\")), person(\"Jonah\", \"Gabry\", email = \"jsg2201@columbia.edu\", role = c(\"aut\")), person(\"Matthew\", \"Kay\", email = \"mjskay@northwestern.edu\", role = c(\"aut\")), person(\"Aki\", \"Vehtari\", email = \"Aki.Vehtari@aalto.fi\", role = c(\"aut\")), person(\"Måns\", \"Magnusson\", role = c(\"ctb\")), person(\"Rok\", \"Češnovar\", role = c(\"ctb\")), person(\"Ben\", \"Lambert\", role = c(\"ctb\")), person(\"Ozan\", \"Adıgüzel\", role = c(\"ctb\")),  person(\"Jacob\", \"Socolar\", role = c(\"ctb\")))",
+      "Description": "Provides useful tools for both users and developers of packages  for fitting Bayesian models or working with output from Bayesian models.  The primary goals of the package are to:  (a) Efficiently convert between many different useful formats of draws (samples) from posterior or prior distributions. (b) Provide consistent methods for operations commonly performed on draws,  for example, subsetting, binding, or mutating draws. (c) Provide various summaries of draws in convenient formats. (d) Provide lightweight implementations of state of the art posterior  inference diagnostics. References: Vehtari et al. (2021)  <doi:10.1214/20-BA1221>.",
+      "Depends": [
+        "R (>= 3.2.0)"
+      ],
+      "Imports": [
+        "methods",
+        "abind",
+        "checkmate",
+        "rlang (>= 1.0.6)",
+        "stats",
+        "tibble (>= 3.1.0)",
+        "vctrs (>= 0.5.0)",
+        "tensorA",
+        "pillar",
+        "distributional",
+        "parallel",
+        "matrixStats"
+      ],
+      "Suggests": [
+        "testthat (>= 2.1.0)",
+        "caret (>= 6.0.84)",
+        "gbm (>= 2.1.8)",
+        "randomForest (>= 4.6.14)",
+        "e1071 (>= 1.7.3)",
+        "dplyr",
+        "tidyr",
+        "knitr",
+        "ggplot2",
+        "ggdist",
+        "rmarkdown"
+      ],
+      "License": "BSD_3_clause + file LICENSE",
+      "Encoding": "UTF-8",
+      "URL": "https://mc-stan.org/posterior/, https://discourse.mc-stan.org/",
+      "BugReports": "https://github.com/stan-dev/posterior/issues",
+      "RoxygenNote": "7.2.3",
+      "VignetteBuilder": "knitr",
+      "NeedsCompilation": "no",
+      "Author": "Paul-Christian Bürkner [aut, cre], Jonah Gabry [aut], Matthew Kay [aut], Aki Vehtari [aut], Måns Magnusson [ctb], Rok Češnovar [ctb], Ben Lambert [ctb], Ozan Adıgüzel [ctb], Jacob Socolar [ctb]",
+      "Maintainer": "Paul-Christian Bürkner <paul.buerkner@gmail.com>",
       "Repository": "CRAN"
     },
     "praise": {
@@ -8878,6 +9117,24 @@
       "Author": "Kazuki Yoshida [cre, aut] (<https://orcid.org/0000-0002-2030-3549>), Alexander Bartel [ctb, aut] (<https://orcid.org/0000-0002-1280-6138>), Jonathan J Chipman [ctb], Justin Bohn [ctb], Lucy DAgostino McGowan [ctb], Malcolm Barrett [ctb], Rune Haubo B Christensen [ctb], gbouzill [ctb]",
       "Repository": "CRAN"
     },
+    "tensorA": {
+      "Package": "tensorA",
+      "Version": "0.36.2.1",
+      "Source": "Repository",
+      "Date": "2020-11-13",
+      "Title": "Advanced Tensor Arithmetic with Named Indices",
+      "Author": "K. Gerald van den Boogaart <boogaart@uni-greifswald.de>",
+      "Maintainer": "K. Gerald van den Boogaart <boogaart@math.tu-freiberg.de>",
+      "Depends": [
+        "R (>= 2.2.0)",
+        "stats"
+      ],
+      "Description": "Provides convenience functions for advanced linear algebra with tensors and computation with data sets of tensors on a higher level abstraction. It includes Einstein and Riemann summing conventions, dragging, co- and contravariate indices, parallel computations on sequences of tensors.",
+      "License": "GPL (>= 2)",
+      "URL": "http://www.stat.boogaart.de/tensorA/",
+      "NeedsCompilation": "yes",
+      "Repository": "CRAN"
+    },
     "testthat": {
       "Package": "testthat",
       "Version": "3.2.1",
@@ -9799,6 +10056,55 @@
       "Author": "Simon Garnier [aut, cre], Noam Ross [ctb, cph], Bob Rudis [ctb, cph], Marco Sciaini [ctb, cph], Antônio Pedro Camargo [ctb, cph], Cédric Scherer [ctb, cph]",
       "Repository": "CRAN"
     },
+    "voi": {
+      "Package": "voi",
+      "Version": "1.0.3",
+      "Source": "Repository",
+      "Title": "Expected Value of Information",
+      "Date": "2024-09-16",
+      "Authors@R": "c(person(given = \"Christopher\", family = \"Jackson\",role = c(\"aut\", \"cre\"),email = \"chris.jackson@mrc-bsu.cam.ac.uk\"), person(given = \"Anna\", family = \"Heath\", role = c(\"aut\"), email = \"anna.heath@sickkids.ca\"), person(given = \"Gianluca\", family = \"Baio\", role = c(\"ctb\"), email = \"g.baio@ucl.ac.uk\", comment=\"Author of code taken from the BCEA package\"), person(given = \"Mark\", family = \"Strong\", role = c(\"ctb\"), email = \"mark.strong@sheffield.ac.uk\", comment=\"Author of code taken from the SAVI package\"), person(given=\"Kofi Placid\", family=\"Adragni\", role=\"ctb\", comment=\"Author of code taken from the ldr package\"), person(given=\"Andrew\", family=\"Raim\", role=\"ctb\",comment=\"Author of code taken from the ldr package\") )",
+      "Description": "Methods to calculate the expected value of information from a decision-analytic model.  This includes the expected value of perfect information (EVPI), partial perfect information (EVPPI) and sample information (EVSI), and the expected net benefit of sampling (ENBS).  A range of alternative computational methods are provided under the same user interface.  See Heath et al. (2024) <doi:10.1201/9781003156109>, Jackson et al. (2022) <doi:10.1146/annurev-statistics-040120-010730>.",
+      "License": "GPL-3",
+      "Encoding": "UTF-8",
+      "LazyData": "true",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "VignetteBuilder": "knitr",
+      "Imports": [
+        "mgcv",
+        "earth",
+        "mvtnorm",
+        "progress",
+        "dbarts",
+        "posterior",
+        "ggplot2",
+        "gridExtra",
+        "Matrix"
+      ],
+      "Suggests": [
+        "testthat",
+        "BCEA",
+        "INLA",
+        "splancs",
+        "sf",
+        "knitr",
+        "rmarkdown",
+        "rjags",
+        "truncnorm",
+        "scales",
+        "dplyr",
+        "heemod"
+      ],
+      "RoxygenNote": "7.3.2",
+      "URL": "https://chjackson.github.io/voi/",
+      "BugReports": "https://github.com/chjackson/voi/issues",
+      "Additional_repositories": "https://inla.r-inla-download.org/R/stable/",
+      "NeedsCompilation": "no",
+      "Author": "Christopher Jackson [aut, cre], Anna Heath [aut], Gianluca Baio [ctb] (Author of code taken from the BCEA package), Mark Strong [ctb] (Author of code taken from the SAVI package), Kofi Placid Adragni [ctb] (Author of code taken from the ldr package), Andrew Raim [ctb] (Author of code taken from the ldr package)",
+      "Maintainer": "Christopher Jackson <chris.jackson@mrc-bsu.cam.ac.uk>",
+      "Repository": "CRAN"
+    },
     "vroom": {
       "Package": "vroom",
       "Version": "1.6.5",
@@ -9906,40 +10212,6 @@
       "NeedsCompilation": "no",
       "Author": "Hadley Wickham [aut, cre], Posit Software, PBC [cph, fnd]",
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
-      "Repository": "CRAN"
-    },
-    "webshot": {
-      "Package": "webshot",
-      "Version": "0.5.5",
-      "Source": "Repository",
-      "Title": "Take Screenshots of Web Pages",
-      "Authors@R": "c( person(\"Winston\", \"Chang\", email = \"winston@rstudio.com\", role = c(\"aut\", \"cre\")), person(\"Yihui\", \"Xie\", role = \"ctb\"), person(\"Francois\", \"Guillem\", role = \"ctb\"), person(\"Barret\", \"Schloerke\", role = \"ctb\"), person(\"Nicolas\", \"Perriault\", role = \"ctb\", comment = \"The CasperJS library\") )",
-      "Description": "Takes screenshots of web pages, including Shiny applications and R Markdown documents.",
-      "Depends": [
-        "R (>= 3.0)"
-      ],
-      "Imports": [
-        "magrittr",
-        "jsonlite",
-        "callr"
-      ],
-      "Suggests": [
-        "httpuv",
-        "knitr",
-        "rmarkdown",
-        "shiny",
-        "testthat (>= 3.0.0)"
-      ],
-      "License": "GPL-2",
-      "SystemRequirements": "PhantomJS for taking screenshots, ImageMagick or GraphicsMagick and OptiPNG for manipulating images.",
-      "RoxygenNote": "7.2.3",
-      "Encoding": "UTF-8",
-      "URL": "https://wch.github.io/webshot/, https://github.com/wch/webshot/",
-      "BugReports": "https://github.com/wch/webshot/issues",
-      "Config/testthat/edition": "3",
-      "NeedsCompilation": "no",
-      "Author": "Winston Chang [aut, cre], Yihui Xie [ctb], Francois Guillem [ctb], Barret Schloerke [ctb], Nicolas Perriault [ctb] (The CasperJS library)",
-      "Maintainer": "Winston Chang <winston@rstudio.com>",
       "Repository": "CRAN"
     },
     "whisker": {
