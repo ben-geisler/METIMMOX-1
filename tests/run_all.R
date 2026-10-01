@@ -17,8 +17,9 @@
 # Known failures: KNOWN_FAILURES lists tests documented as failing in the test
 # protocol of AGENTS.md. They are reported as XFAIL and do not fail the run; a
 # known failure that passes is reported as XPASS and does fail the run, so the
-# list cannot go stale. test_psa_basecase_alignment.R left the list when issue
-# #180 retired its five-MCSE alignment criterion.
+# list cannot go stale. The list is empty: test_psa_basecase_alignment.R left it
+# when #180 retired its five-MCSE criterion, test_sampling_failure_fallback.R
+# when #186 rewrote it for the #159 sampler.
 #
 # Usage (from the repository root):
 #   "C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" tests/run_all.R
@@ -29,13 +30,7 @@
 # The summary is also written to data/output/test_run_all.csv (ignored by git).
 # ===============================================================================
 
-KNOWN_FAILURES <- c(
-  # Stale since #159: sample_survival_coefficients() now estimates the joint
-  # covariance with flexsurv::flexsurvreg(), which the test's mock cannot
-  # intercept, and its assertions describe the pre-#159 independent draws.
-  # The #159 sampler is covered by test_joint_survival_sampling.R.
-  "test_sampling_failure_fallback.R"
-)
+KNOWN_FAILURES <- character(0)
 
 # Tests that stop (rather than skip) without data/tidy/METIMMOX.rds.
 REQUIRES_TRIAL_DATA <- c(
