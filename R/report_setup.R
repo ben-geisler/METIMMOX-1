@@ -45,6 +45,29 @@ setup_report <- function(sources = character(0),
                          set_theme = TRUE,
                          quiet_sources = FALSE) {
 
+  # Keep warnings out of the report body while retaining a visible audit at its
+  # end. The hook sees warnings from ordinary chunks; source warnings are caught
+  # below because the setup chunk itself is hidden.
+  report_warnings <- new.env(parent = emptyenv())
+  report_warnings$items <- character()
+  record_warning <- function(message, where) {
+    report_warnings$items <- c(report_warnings$items,
+                               paste0(where, ": ", trimws(message)))
+  }
+  knitr::knit_hooks$set(warning = function(x, options) {
+    record_warning(x, options$label)
+    ""
+  })
+  knitr::knit_hooks$set(document = function(x) {
+    items <- unique(report_warnings$items)
+    summary <- if (length(items)) {
+      paste0("Warnings recorded during rendering: ", length(report_warnings$items),
+             " (", length(items), " distinct).\n\n",
+             paste0("- ", gsub("[\r\n]+", " ", items), collapse = "\n"))
+    } else "No warnings recorded during rendering."
+    c(x, "\n\n## Validation warnings\n\n", summary, "\n")
+  })
+
   old_sampling_option <- options(metimmox.sampling_allow_regenerate = FALSE)
   on.exit(options(old_sampling_option), add = TRUE)
 
@@ -63,7 +86,7 @@ setup_report <- function(sources = character(0),
 
   if (isTRUE(set_knitr)) {
     knitr::opts_chunk$set(
-      echo = FALSE, warning = FALSE, message = FALSE,
+      echo = FALSE, warning = TRUE, message = FALSE,
       fig.align = "center", fig.width = 8, fig.height = 6,
       dpi = 300, out.width = "100%"
     )
@@ -92,7 +115,7 @@ setup_report <- function(sources = character(0),
     }
   }
 
-  suppressMessages(suppressWarnings({
+  withCallingHandlers(suppressMessages({
     for (num in sources) {
       matches <- list.files(analysis_dir, pattern = paste0("^", num, "_.*\\.R$"),
                             full.names = TRUE)
@@ -108,7 +131,10 @@ setup_report <- function(sources = character(0),
       }
       source_report_file(fn_path)
     }
-  }))
+  }), warning = function(w) {
+    record_warning(conditionMessage(w), "report setup")
+    invokeRestart("muffleWarning")
+  })
 
   invisible(NULL)
 }

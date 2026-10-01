@@ -19,6 +19,13 @@ strategy_label <- function(x) {
   out
 }
 
+#' Short labels for narrow tables; guided strategies retain their canonical names.
+strategy_short_label <- function(x) {
+  out <- strategy_label(x)
+  out[!is.na(x) & as.character(x) == get_control_strategy()] <- "SoC"
+  out
+}
+
 #' Convert biomarker identifiers to display labels
 #'
 #' Unknown identifiers are returned unchanged.

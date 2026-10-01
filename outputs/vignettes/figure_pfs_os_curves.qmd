@@ -110,7 +110,7 @@ curve_set <- function(d, subgroup) {
 
 # --- Standard of care: control arm patients -----------------------------------
 d_soc <- data_complete[data_complete$Rx == ctrl_rx, ]
-soc <- curve_set(d_soc, subgroup = "Standard of care")
+soc <- curve_set(d_soc, subgroup = strategy_label("control"))
 
 # --- Biomarker-guided strategies: positive on experimental, negative on control -
 # The subsets already carry the strategy's treatment (positives were in the
@@ -178,8 +178,8 @@ fit_note <- sprintf(
 
 ```{r make-plots, include=FALSE}
 p_soc <- plot_pfs_os(
-  soc$km, soc$para, "Standard of care",
-  title = "Standard of care (FLOX)",
+  soc$km, soc$para, strategy_label("control"),
+  title = paste0(strategy_label("control"), " (FLOX)"),
   subtitle = sprintf("Control arm, n = %d", soc$n)
 )
 

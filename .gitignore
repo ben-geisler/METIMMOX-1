@@ -49,6 +49,7 @@ Rplots.pdf
 # PDFs, HTML and LaTeX intermediates are regenerable and published via GitHub Pages / releases
 # (publish/publish_reports.R).
 /reports/**/*.pdf
+/reports/**/*.pdf.provenance.json
 /reports/**/*.html
 /reports/**/*.tex
 /reports/**/*.aux

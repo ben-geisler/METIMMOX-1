@@ -213,7 +213,6 @@ scenario_rows <- dsa_results %>%
 
 if (any(scenario_rows$Parameter != "base_case")) {
   # Short labels keep the table within the page width.
-  short_strategy <- c(control = "SoC", crp = "CRP-guided", tmb_braf = "TMB/BRAF-guided")
   scenario_value_label <- function(parameter, value, param_value) {
     if (parameter == "base_case") return("Base case")
     if (parameter == "Discount_rate") return(sprintf("Discount rate %g%%", 100 * param_value))
@@ -231,7 +230,7 @@ if (any(scenario_rows$Parameter != "base_case")) {
   scenario_display <- scenario_rows %>%
     mutate(
       Scenario = mapply(scenario_value_label, Parameter, Value, ParamValue),
-      Strategy = unname(short_strategy[Strategy])
+      Strategy = strategy_short_label(Strategy)
     ) %>%
     group_by(Scenario) %>%
     mutate(Optimal = Strategy[which.max(NMB)]) %>%

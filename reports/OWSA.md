@@ -1,6 +1,6 @@
 # One-Way Sensitivity Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Parameter Ranges](#parameter-ranges)
@@ -11,6 +11,7 @@ Ben Geisler
   Sensitivity](#survival-distribution-sensitivity)
 - [Structural Scenarios](#structural-scenarios)
 - [Interpretation](#interpretation)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -201,6 +202,30 @@ drug and test costs.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.4
+
+## Validation warnings
+
+Warnings recorded during rendering: 16 (8 distinct).
+
+- report setup: Hessian not positive definite: smallest eigenvalue is
+  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
+  optimization did not converge to the maximum likelihood, so that the
+  results are invalid. Continuing with the nearest positive definite
+  approximation of the covariance matrix.
+- parameter-ranges: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- basecase: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
+  instead. See help(“Deprecated”)
+- impact-ranking: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- impact-ranking-incremental: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- model-sensitivity: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- distribution-status: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- structural-scenarios: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
