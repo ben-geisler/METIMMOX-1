@@ -208,24 +208,4 @@ drug and test costs.
 
 ## Validation warnings
 
-Warnings recorded during rendering: 16 (8 distinct).
-
-- report setup: Hessian not positive definite: smallest eigenvalue is
-  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
-  optimization did not converge to the maximum likelihood, so that the
-  results are invalid. Continuing with the nearest positive definite
-  approximation of the covariance matrix.
-- parameter-ranges: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- basecase: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- impact-ranking: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- impact-ranking-incremental: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- model-sensitivity: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- distribution-status: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- structural-scenarios: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+No warnings recorded during rendering.

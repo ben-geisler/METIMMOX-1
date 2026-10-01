@@ -1,11 +1,12 @@
 # Enriched Population Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
 - [Base Case vs Enriched Population](#base-case-vs-enriched-population)
 - [Interpretation](#interpretation)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -83,6 +84,10 @@ patients, and that screening cost is charged to the experimental arm.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.2
+
+## Validation warnings
+
+No warnings recorded during rendering.

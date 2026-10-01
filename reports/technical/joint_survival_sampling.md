@@ -1,12 +1,13 @@
 # Joint OS/PFS Coefficient Sampling
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Change and scope](#change-and-scope)
 - [Covariance construction](#covariance-construction)
 - [Diagnostics](#diagnostics)
 - [Deterministic versus probabilistic
   outcomes](#deterministic-versus-probabilistic-outcomes)
+  - [Validation warnings](#validation-warnings)
 
 # Change and scope
 
@@ -162,6 +163,10 @@ conditioning alone guarantees ordered survival curves.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0
+
+## Validation warnings
+
+No warnings recorded during rendering.

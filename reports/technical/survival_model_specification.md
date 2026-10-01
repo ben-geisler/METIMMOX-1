@@ -509,25 +509,8 @@ alt="Labelled candidate distributions, TMB/BRAF-negative patients on FLOX." />
 
 ## Validation warnings
 
-Warnings recorded during rendering: 31 (8 distinct).
+Warnings recorded during rendering: 1 (1 distinct).
 
-- report setup: Hessian not positive definite: smallest eigenvalue is
-  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
-  optimization did not converge to the maximum likelihood, so that the
-  results are invalid. Continuing with the nearest positive definite
-  approximation of the covariance matrix.
-- strategy-table: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- aic-table: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- effect-table: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- coef-tables: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- pair-table: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- violation-detail: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
 - pair-curves-data: Warning: A numeric `legend.position` argument in
   `theme()` was deprecated in ggplot2 3.5.0. ℹ Please use the
   `legend.position.inside` argument of `theme()` instead.

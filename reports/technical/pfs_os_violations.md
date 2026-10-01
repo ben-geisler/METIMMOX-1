@@ -1,6 +1,6 @@
 # PFS \> OS Ordering Violations in the PSA
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Methods](#methods)
@@ -21,6 +21,7 @@ Ben Geisler
     case?](#is-the-clamp-why-the-psa-increments-differ-from-the-base-case)
 - [Interpretation](#interpretation)
 - [Notes](#notes)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -159,9 +160,9 @@ file is younger than the sampling-cache file.
 
 | Cache | Modified | Sampling fingerprint |
 |:---|:---|:---|
-| Sampling draws | 2026-09-30 15:03 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
-| PSA results | 2026-09-30 16:51 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
-| Violation diagnostics | 2026-09-30 19:00 | 09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8 |
+| Sampling draws | 2026-10-01 12:55 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
+| PSA results | 2026-10-01 13:31 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
+| Violation diagnostics | 2026-10-01 15:08 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
 
 Caches read by this report
 
@@ -434,8 +435,8 @@ attribution was too strong.
   `data/tidy/pfs_os_violations_n{n_samples}.rds`;
   `run_pfs_os_violation_diagnostics()` regenerates the cache on any
   fingerprint mismatch. The current cache was built from sampling cache
-  09df4ea65ee297a56ef6fdef1e6207c2d052da3f908229ed359a84fd16b9ced8
-  (method mvn_joint_v2) in 852 seconds on 2026-09-30 19:00.
+  acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a
+  (method mvn_joint_v2) in 602 seconds on 2026-10-01 15:08.
 - Curves are computed in closed form from the gamma parameters of each
   draw; `validate_direct_curves()` checks them against the pipeline’s
   `predict()`-based helper before every regeneration and stops if they
@@ -448,6 +449,10 @@ attribution was too strong.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 2.1
+
+## Validation warnings
+
+No warnings recorded during rendering.

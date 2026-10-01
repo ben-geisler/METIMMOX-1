@@ -1,12 +1,13 @@
 # Biomarker Effect Decomposition
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Biomarker Prevalence](#biomarker-prevalence)
 - [Restricted Mean Survival](#restricted-mean-survival)
 - [Survival Decomposition](#survival-decomposition)
 - [Interpretation](#interpretation)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -70,6 +71,10 @@ economic strategy effect.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.0
+
+## Validation warnings
+
+No warnings recorded during rendering.

@@ -1,6 +1,6 @@
 # Week-4 CRP Estimand
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Purpose](#purpose)
 - [Estimand](#estimand)
@@ -15,6 +15,7 @@ Ben Geisler
   - [Results](#results)
 - [Limitations](#limitations)
 - [Scope decision](#scope-decision)
+  - [Validation warnings](#validation-warnings)
 
 # Purpose
 
@@ -411,6 +412,10 @@ if a reviewer or the manuscript (issue \#160) requires these analyses.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.1
+
+## Validation warnings
+
+No warnings recorded during rendering.

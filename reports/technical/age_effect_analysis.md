@@ -1,12 +1,13 @@
 # Age Effect Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Age Distribution](#age-distribution)
 - [Restricted Mean Survival
   Comparison](#restricted-mean-survival-comparison)
 - [Interpretation](#interpretation)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -54,6 +55,10 @@ definitions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.0
+
+## Validation warnings
+
+No warnings recorded during rendering.

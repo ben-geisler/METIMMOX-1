@@ -1,6 +1,6 @@
 # PSA Extrapolation Plausibility
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Purpose and scope](#purpose-and-scope)
 - [Norwegian population reference](#norwegian-population-reference)
@@ -12,6 +12,7 @@ Ben Geisler
 - [Relationship to PFS-above-OS
   violations](#relationship-to-pfs-above-os-violations)
 - [Verdict](#verdict)
+  - [Validation warnings](#validation-warnings)
 
 # Purpose and scope
 
@@ -253,6 +254,10 @@ this paper’s scope.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0
+
+## Validation warnings
+
+No warnings recorded during rendering.

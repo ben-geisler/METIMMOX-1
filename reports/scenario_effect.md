@@ -1,11 +1,12 @@
 # Scenario Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Scenario Definitions](#scenario-definitions)
 - [PSA Summary by Scenario](#psa-summary-by-scenario)
 - [Scenario EVPPI](#scenario-evppi)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -107,6 +108,10 @@ alt="Scenario EVPPI by parameter" />
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.2
+
+## Validation warnings
+
+No warnings recorded during rendering.

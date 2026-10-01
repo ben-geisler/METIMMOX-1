@@ -1,12 +1,13 @@
 # All Parametric Survival Models
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Information Criteria](#information-criteria)
 - [Coefficient Tables](#coefficient-tables)
 - [Ordering-Constrained Selection
   Summary](#ordering-constrained-selection-summary)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -242,6 +243,10 @@ and `models$best_fit$ordering_aic_penalty`, respectively.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.0
+
+## Validation warnings
+
+No warnings recorded during rendering.

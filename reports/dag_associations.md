@@ -1,6 +1,6 @@
 # DAG Association Tests
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Introduction](#introduction)
 - [Methods](#methods)
@@ -32,6 +32,7 @@ Ben Geisler
 - [Consolidated Summary Table](#consolidated-summary-table)
 - [Discussion](#discussion)
 - [Conclusion](#conclusion)
+  - [Validation warnings](#validation-warnings)
 
 # Introduction
 
@@ -510,6 +511,10 @@ refinement or stronger justification in future versions.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.4
+
+## Validation warnings
+
+No warnings recorded during rendering.

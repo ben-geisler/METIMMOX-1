@@ -1,6 +1,6 @@
 # Causal DAG
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Introduction](#introduction)
 - [Node Definitions](#node-definitions)
@@ -17,6 +17,7 @@ Ben Geisler
     - [Implied Conditional
       Independencies](#implied-conditional-independencies-1)
 - [Simplified DAG](#simplified-dag)
+  - [Validation warnings](#validation-warnings)
 
 # Introduction
 
@@ -194,6 +195,10 @@ alt="Figure 3. Simplified causal DAG for METIMMOX-1. Solid arrows denote assumed
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 2.3
+
+## Validation warnings
+
+No warnings recorded during rendering.

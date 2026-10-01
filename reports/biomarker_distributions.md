@@ -1,6 +1,6 @@
 # Biomarker Distributions
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Introduction](#introduction)
 - [Sample Characteristics](#sample-characteristics)
@@ -8,6 +8,7 @@ Ben Geisler
 - [TLR Stratification](#tlr-stratification)
 - [TMB/BRAF Stratification](#tmbbraf-stratification)
 - [Biomarker Correlations](#biomarker-correlations)
+  - [Validation warnings](#validation-warnings)
 
 # Introduction
 
@@ -139,6 +140,12 @@ negligible.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.5
+
+## Validation warnings
+
+Warnings recorded during rendering: 1 (1 distinct).
+
+- report setup: package ‘survival’ was built under R version 4.3.3

@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -12,6 +12,8 @@ Ben Geisler
     costs](#post-progression-treatment-costs)
   - [Second treatment sequence](#second-treatment-sequence)
 - [Structural Parameters](#structural-parameters)
+- [Input-to-Output Traceability](#input-to-output-traceability)
+  - [Validation warnings](#validation-warnings)
 
 # Model Configuration
 
@@ -233,8 +235,65 @@ giving a cost-side bound.
 
 Structural model parameters
 
+# Input-to-Output Traceability
+
+The table maps every field of the base-case parameter list
+`l_params_base` to the function and calculation step that consumes it
+(issue \#165). `model_fun()` resolves the grid, the population weights
+and the survival curves of each subgroup and calls
+`partitioned_survival_states()` and `calculate_outcomes()`, which
+converts state occupancy into discounted costs and QALYs. The table is
+built from the field names of `l_params_base`, and rendering stops if a
+field has no entry or an entry names a field that does not exist, so it
+cannot fall out of step with the model inputs.
+
+| Field | Function | Step |
+|:---|:---|:---|
+| cl | model_fun(), discount_weights(), calculate_outcomes() | Cycle length in years: the year of each grid point for discounting, the duration of each interval for QALYs (trapezoidal weights), and the conversion of quarterly cost rates (4 x cl quarters per interval). |
+| time_horizon | model_fun() | Number of weekly intervals; fixes the time_horizon + 1 grid points against which schedules and survival curves are checked and on which PSA curves are predicted. |
+| dr_costs | discount_weights() | Annual discount rate of the cost weights applied to every cost stream. |
+| dr_effects | discount_weights() | Annual discount rate of the QALY weights. |
+| u_np | calculate_outcomes() | Utility weight of progression-free occupancy. |
+| u_p | calculate_outcomes() | Utility weight of progressed occupancy (derived as u_np - u_decrement, floored at 0, in every PSA draw). |
+| c_drug_nivo | calculate_outcomes() | Drug cost per nivolumab administration (l_nivo), biomarker-positive subgroups only. |
+| c_drug_FLOX | calculate_outcomes() | Drug cost per FLOX administration: l_FLOX_exp in biomarker-positive subgroups, l_FLOX_control otherwise. |
+| c_test_CT | calculate_outcomes() | CT price: scheduled scans (l_CT) while progression-free, and one scan per quarter of progressed occupancy. |
+| c_test_blood | calculate_outcomes() | Blood-test price on the l_blood schedule. |
+| c_test_CRP | calculate_outcomes() | One-time diagnostic test at week 0 for every patient of the CRP-guided strategy (also the screening cost of the enriched-population analysis). |
+| c_test_NGS | calculate_outcomes() | One-time diagnostic test at week 0 for every patient of the TMB/BRAF-guided strategy (also the screening cost of the enriched-population analysis). |
+| c_other_visit | calculate_outcomes() | Outpatient visit price on the l_visit schedule. |
+| c_other_baseline | calculate_outcomes() | One-time baseline visit at week 0. |
+| c_other_follow | calculate_outcomes() | Follow-up visit rate per quarter of progressed occupancy. |
+| c_other_pp | calculate_outcomes() | Post-progression treatment rate per quarter of progressed occupancy (0 in the base case). |
+| c_other_last | calculate_outcomes() | End-of-life cost charged on each interval’s increase in dead occupancy. |
+| l_nivo | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| l_FLOX_exp | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| l_FLOX_control | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| l_CT | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| l_blood | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| l_visit | calculate_outcomes() | Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy. |
+| p_os | model_fun(), partitioned_survival_states() | OS curve of each subgroup (control, biomarker-positive, biomarker-negative): progressed = max(OS - PFS, 0), dead = 1 - OS. The \*\_weighted curves are for reporting only. |
+| p_pfs | model_fun(), partitioned_survival_states() | PFS curve of each subgroup: progression-free occupancy. |
+| u_decrement | apply_derived_psa_parameters() | Not read by model_fun(); the sampled PSA decrement from which u_p is derived. |
+| p_crp | model_fun(), model_population_weights() | Share of the CRP-guided cohort in the biomarker-positive subgroup: weights its costs and QALYs against the negative subgroup. |
+| p_tmb_braf | model_fun(), model_population_weights() | Share of the TMB/BRAF-guided cohort in the biomarker-positive subgroup: weights its costs and QALYs against the negative subgroup. |
+| population_curves | model_fun(), standardize_population_curves() | Patient-level curves, re-averaged when the population weights change. |
+| prediction_population | model_fun() | Complete-case patients whose predictions are averaged, deterministically and in every PSA draw. |
+| population_weights | model_fun() | Weights behind the current curves; compared with the weights implied by the prevalence fields. |
+| joint_counts | configure_parameter_distributions() | Not read by model_fun(); complete-case joint cell counts, the Dirichlet parameters of the PSA prevalence draws. |
+| p_joint_00 | model_population_weights() | Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included. |
+| p_joint_01 | model_population_weights() | Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included. |
+| p_joint_10 | model_population_weights() | Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included. |
+| p_joint_11 | model_population_weights() | Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included. |
+
+Fields of l_params_base and the model step that consumes each
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.6
+**Report version:** 4.7
+
+## Validation warnings
+
+No warnings recorded during rendering.

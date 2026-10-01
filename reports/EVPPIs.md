@@ -1,6 +1,6 @@
 # Value of Information Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [PSA Decision Uncertainty](#psa-decision-uncertainty)
@@ -10,6 +10,7 @@ Ben Geisler
   - [Group Consistency Check](#group-consistency-check)
 - [EVPPI Estimator](#evppi-estimator)
 - [Population Scaling](#population-scaling)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -126,6 +127,10 @@ per-patient standard errors multiplied by the same factor.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.3
+
+## Validation warnings
+
+No warnings recorded during rendering.
