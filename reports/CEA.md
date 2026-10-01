@@ -1,6 +1,6 @@
 # Cost-Effectiveness Analysis
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Economic Survival Model](#economic-survival-model)
@@ -14,6 +14,7 @@ Ben Geisler
 - [Summary](#summary)
 - [Common Target Population](#common-target-population)
 - [Scope Limitations](#scope-limitations)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -271,8 +272,43 @@ move with it.
 Adverse-event costs and disutilities remain outside the modeled scope,
 as described in the project documentation.
 
+**Extrapolated survival is checked against external data only
+one-sidedly.** Trial follow-up ends before five years, and the published
+first-line mCRC sources report survival beyond that only as lower
+bounds. Modelled standard-of-care OS is 5.5% at 5 years and meets 0 of
+the 3 published lower bounds at 5 years or later. The comparison, its
+pre-specified tolerance and the dependent validation against the trial
+Kaplan-Meier curves are in the technical report
+`survival_external_validation.qmd` (issue \#162).
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.7
+**Report version:** 4.8
+
+## Validation warnings
+
+Warnings recorded during rendering: 18 (9 distinct).
+
+- report setup: Hessian not positive definite: smallest eigenvalue is
+  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
+  optimization did not converge to the maximum likelihood, so that the
+  results are invalid. Continuing with the nearest positive definite
+  approximation of the covariance matrix.
+- model-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- strategy-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- psa-summary: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- psa-primary-increments: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- basecase-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- icer-table: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
+  instead. See help(“Deprecated”)
+- psa-basecase-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- psa-incremental-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)

@@ -244,8 +244,10 @@ ggplot(plot_data, aes(x = Week, y = Survival, color = Curve, linetype = Curve)) 
 
 The economic model uses one joint formula for both CRP-guided and TMB/BRAF-guided strategies. The OS and PFS distributions are selected jointly as the minimum combined-AIC pair that keeps OS >= PFS for every subgroup over the model horizon (currently OS `r selected_os`, PFS `r selected_pfs`), not by marginal AIC per endpoint; Weibull PH is retained as a familiar reference fit.
 
+The comparisons in this report are dependent validation: the fits are checked against the data they were fitted to. Model-versus-Kaplan-Meier survival at 1, 2, 3 and 5 years, and the comparison of the extrapolated standard-of-care curves with published first-line mCRC survival, are in the technical report `survival_external_validation.qmd` (issue #162).
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

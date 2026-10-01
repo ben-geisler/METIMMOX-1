@@ -544,9 +544,10 @@ gallery_plot("tmb_braf_negative", labelled = TRUE)
 - Kaplan-Meier curves are estimated on the same complete-case patients (control arm for standard of care and the biomarker-negative subgroups; experimental arm for the biomarker-positive subgroups).
 - The previous pair referred to in Section 3 is the unconstrained minimum-combined-AIC pair, which was the base case before the ordering constraint was introduced.
 - Coefficient estimates, standard errors, and confidence intervals are taken directly from `flexsurvreg` (`fit$res`).
+- The overlays here are visual checks against the trial data only. Tabulated model-versus-Kaplan-Meier survival at 1, 2, 3 and 5 years, with the model predicted for exactly the Kaplan-Meier patients, and the comparison with published first-line mCRC survival, are in `survival_external_validation.qmd` (issue #162).
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 1.2

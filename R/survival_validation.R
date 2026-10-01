@@ -103,3 +103,117 @@ benchmark_passed <- function(verdict) {
   ifelse(verdict %in% c("Within CI", "Above lower bound"), TRUE,
          ifelse(verdict %in% c("Outside CI", "Below lower bound"), FALSE, NA))
 }
+
+# ===============================================================================
+# KAPLAN-MEIER AND MODEL LANDMARKS
+# ===============================================================================
+
+WEEKS_PER_YEAR <- 52
+MONTHS_PER_WEEK <- 12 / 52
+KM_FEW_AT_RISK <- 5
+
+#' Kaplan-Meier survival at landmark years, with log-log 95% CIs
+#'
+#' A landmark after the last observed time is not estimable ("NE") unless the
+#' curve has already reached zero, in which case it stays zero.
+#'
+#' @param time Event/censoring times in weeks.
+#' @param event 1 = event, 0 = censored.
+#' @param years Landmarks in years.
+#' @return Data frame: years, surv, lower, upper, n_risk, status.
+km_landmarks <- function(time, event, years = c(1, 2, 3, 5)) {
+  fit <- survival::survfit(survival::Surv(time, event) ~ 1, conf.type = "log-log")
+  weeks <- years * WEEKS_PER_YEAR
+  s <- summary(fit, times = weeks, extend = TRUE)
+  out <- data.frame(years = years, surv = s$surv, lower = s$lower,
+                    upper = s$upper, n_risk = s$n.risk, status = "Estimated",
+                    stringsAsFactors = FALSE)
+  last_time <- max(time)
+  last_surv <- utils::tail(fit$surv, 1)
+  beyond <- weeks > last_time
+  if (last_surv == 0) {
+    out$status[beyond] <- "All events before landmark"
+    out$surv[beyond] <- 0
+    out$lower[beyond] <- NA
+    out$upper[beyond] <- NA
+  } else {
+    out$status[beyond] <- "NE (beyond follow-up)"
+    out[beyond, c("surv", "lower", "upper")] <- NA
+  }
+  # Before the first event the estimate is 1 and the CI degenerate (1 to 1)
+  no_event <- !beyond & out$surv == 1
+  out$status[no_event] <- "No events before landmark"
+  out[no_event, c("lower", "upper")] <- NA
+  few <- !beyond & !no_event & out$n_risk < KM_FEW_AT_RISK
+  out$status[few] <- paste0("Fewer than ", KM_FEW_AT_RISK, " at risk")
+  out
+}
+
+#' Kaplan-Meier median with 95% CI, in months
+km_median_months <- function(time, event) {
+  fit <- survival::survfit(survival::Surv(time, event) ~ 1, conf.type = "log-log")
+  tab <- summary(fit)$table
+  c(median = unname(tab["median"]), lower = unname(tab["0.95LCL"]),
+    upper = unname(tab["0.95UCL"])) * MONTHS_PER_WEEK
+}
+
+#' Value of a weekly curve (index 1 = week 0) at landmark years; NA beyond it
+curve_at_years <- function(curve, years) {
+  idx <- round(years * WEEKS_PER_YEAR) + 1
+  ifelse(idx <= length(curve), curve[pmin(idx, length(curve))], NA_real_)
+}
+
+#' Median of a weekly survival curve in months (linear interpolation between
+#' weeks); NA when the curve does not reach 0.5 within its horizon
+curve_median_months <- function(curve) {
+  k <- which(curve <= 0.5)[1]
+  if (is.na(k)) return(NA_real_)
+  if (k == 1) return(0)
+  w <- (k - 2) + (curve[k - 1] - 0.5) / (curve[k - 1] - curve[k])
+  w * MONTHS_PER_WEEK
+}
+
+#' Population-averaged curves of one endpoint for coefficient draws
+#'
+#' Uses the closed-form gamma evaluation of `direct_gamma_pop_avg()`
+#' (R/pfs_os_violation_diagnostics.R) when the fit is gamma, otherwise rebuilds
+#' each draw with `sampled_survival_models()` and predicts with
+#' `predict_pop_avg()`. Each patient keeps the `Rx` in `newdata`.
+#'
+#' @param component Joint sampling component (`get_joint_sampling_models()`).
+#' @param endpoint "os" or "pfs".
+#' @param newdata Patients to average over.
+#' @param idx Draw indices.
+#' @param times Weekly grid.
+#' @return Matrix, one row per draw and one column per time.
+draw_curves <- function(component, endpoint, newdata, idx, times) {
+  fit <- component[[paste0("original_", endpoint)]]
+  draws <- component$draws[[endpoint]]
+  if (identical(fit$dlist$name, "gamma")) {
+    rows <- lapply(idx, function(i) {
+      direct_gamma_pop_avg(fit, draws[i, ], newdata, times)
+    })
+  } else {
+    rows <- lapply(idx, function(i) {
+      predict_pop_avg(sampled_survival_models(component, i)[[endpoint]]$model,
+                      newdata, times)
+    })
+  }
+  do.call(rbind, rows)
+}
+
+#' 95% percentile interval of landmark survival and medians over draws
+#'
+#' @param mat Output of `draw_curves()`.
+#' @param years Landmark years.
+#' @return Data frame with one row per landmark plus one "median" row
+#'   (`years = NA`, values in months).
+draw_landmark_intervals <- function(mat, years) {
+  q <- function(x) stats::quantile(x, c(0.025, 0.975), na.rm = TRUE, names = FALSE)
+  land <- t(vapply(years, function(y) q(apply(mat, 1, curve_at_years, years = y)),
+                   numeric(2)))
+  med <- q(apply(mat, 1, curve_median_months))
+  data.frame(years = c(years, NA), lower = c(land[, 1], med[1]),
+             upper = c(land[, 2], med[2]),
+             measure = c(rep("survival", length(years)), "median_months"))
+}

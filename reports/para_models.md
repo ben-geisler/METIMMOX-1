@@ -1,12 +1,13 @@
 # Parametric Survival Models
 Ben Geisler
-2026-09-30
+2026-10-01
 
 - [Overview](#overview)
 - [Distribution Selection](#distribution-selection)
 - [Coefficients](#coefficients)
 - [Strategy Survival Curves](#strategy-survival-curves)
 - [Summary](#summary)
+  - [Validation warnings](#validation-warnings)
 
 # Overview
 
@@ -158,8 +159,34 @@ subgroup over the model horizon (currently OS gamma, PFS gamma), not by
 marginal AIC per endpoint; Weibull PH is retained as a familiar
 reference fit.
 
+The comparisons in this report are dependent validation: the fits are
+checked against the data they were fitted to. Model-versus-Kaplan-Meier
+survival at 1, 2, 3 and 5 years, and the comparison of the extrapolated
+standard-of-care curves with published first-line mCRC survival, are in
+the technical report `survival_external_validation.qmd` (issue \#162).
+
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-09-30  
+**Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.1
+**Report version:** 4.2
+
+## Validation warnings
+
+Warnings recorded during rendering: 10 (6 distinct).
+
+- report setup: Hessian not positive definite: smallest eigenvalue is
+  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
+  optimization did not converge to the maximum likelihood, so that the
+  results are invalid. Continuing with the nearest positive definite
+  approximation of the covariance matrix.
+- formula-table: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+- os-ic: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
+  instead. See help(“Deprecated”)
+- pfs-ic: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
+  instead. See help(“Deprecated”)
+- pair-audit: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
+  instead. See help(“Deprecated”)
+- coefficients: Warning: ‘xfun::attr()’ is deprecated. Use
+  ‘xfun::attr2()’ instead. See help(“Deprecated”)
