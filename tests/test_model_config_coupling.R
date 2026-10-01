@@ -165,4 +165,47 @@ stopifnot(
          evppi_source, fixed = TRUE)
 )
 
+# Analysis scripts are sourced into the same global environment as the R/
+# helpers, so a script-level assignment to a name that R/ defines silently
+# replaces it (issue #187: 07_traces.R overwrote the id-keyed strategy_labels of
+# R/report_format.R with an unnamed vector of trace labels). Static check of the
+# assignment targets outside function bodies; needs no data.
+#' Names assigned outside function bodies in an R file (top level and inside
+#' if/for/braces blocks).
+script_level_targets <- function(file) {
+  v_out <- character(0)
+  walk <- function(e) {
+    if (!is.call(e)) return(invisible())
+    head <- e[[1]]
+    if ((identical(head, as.name("<-")) || identical(head, as.name("="))) &&
+        is.symbol(e[[2]])) v_out <<- c(v_out, as.character(e[[2]]))
+    if (any(vapply(c("<-", "=", "if", "for", "{"), function(op)
+      identical(head, as.name(op)), logical(1)))) {
+      for (k in as.list(e)[-1]) walk(k)
+    }
+  }
+  for (e in parse(file, keep.source = FALSE)) walk(e)
+  unique(v_out)
+}
+v_r_files <- list.files("R", pattern = "[.]R$", full.names = TRUE)
+v_r_names <- unique(unlist(lapply(v_r_files, script_level_targets)))
+v_shadowing <- unlist(lapply(list.files("analysis", pattern = "[.]R$", full.names = TRUE),
+  function(f) {
+    hit <- intersect(script_level_targets(f), v_r_names)
+    if (length(hit)) paste0(basename(f), ": ", hit) else character(0)
+  }))
+if (length(v_shadowing) > 0) {
+  stop("Analysis scripts overwrite globals defined in R/: ",
+       paste(v_shadowing, collapse = "; "))
+}
+stopifnot("strategy_labels" %in% v_r_names,
+          !"strategy_labels" %in% script_level_targets("analysis/07_traces.R"))
+
+# The guard detects the defect it was written for.
+v_bad_script <- tempfile(fileext = ".R")
+writeLines(c("x <- 1", "if (TRUE) {", "  strategy_labels <- c('a', 'b')", "}"),
+           v_bad_script)
+stopifnot("strategy_labels" %in% intersect(script_level_targets(v_bad_script), v_r_names))
+unlink(v_bad_script)
+
 cat("Model-configuration coupling tests passed.\n")

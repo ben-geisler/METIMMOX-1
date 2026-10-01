@@ -65,11 +65,13 @@ for(strategy in strategies) {
   df_all_strategies <- rbind(df_all_strategies, df_long)
 }
 
-# Create strategy labels for faceting from keyed configuration metadata.
-strategy_labels <- get_strategy_metadata(strategies)$trace_label
+# Create strategy labels for faceting from keyed configuration metadata. Kept
+# local: the global strategy_labels (R/report_format.R) maps id -> report label
+# and must not be overwritten by this script (issue #187).
+v_trace_labels <- get_strategy_metadata(strategies)$trace_label
 df_all_strategies$Strategy <- factor(df_all_strategies$Strategy,
                                      levels = strategies,
-                                     labels = strategy_labels)
+                                     labels = v_trace_labels)
 
 # Create faceted plot
 all_strategies_plot <- ggplot(df_all_strategies, aes(x = Year, y = Proportion, fill = State)) +
