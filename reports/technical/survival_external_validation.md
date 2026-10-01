@@ -15,6 +15,7 @@ Ben Geisler
     patients](#secondary-comparison-control-arm-patients)
   - [Overall survival at fixed
     landmarks](#overall-survival-at-fixed-landmarks)
+  - [Figures](#figures)
 - [Applicability of the benchmarks](#applicability-of-the-benchmarks)
 - [Limitations](#limitations)
 - [References](#references)
@@ -370,22 +371,66 @@ None of the comparable sources reports landmark survival in its text or
 tables; they report medians only. The published landmark values above
 are all lower bounds.
 
-<div id="fig-tail">
+**Why the two parametric-model columns differ.** Both come from the same
+parametric survival model but average over different patients. The
+economic SoC curve averages all 68 complete-case patients, each
+predicted as if treated with FLOX; this is the common population in
+which every strategy of the cost-effectiveness model is evaluated (issue
+\#166). The control-arm curve averages only the 32 patients randomised
+to FLOX, the same patients as the METIMMOX Kaplan-Meier column (issue
+\#157). The two groups differ by chance: 6 of 32 control-arm patients
+are CRP-positive (week-4 CRP below 5 mg/L, a favourable prognostic
+factor) against 23 of 68 in the whole cohort, reflecting the arm
+imbalance in week-4 CRP; the control arm is also slightly older (median
+67.5 versus 65 years). The SoC curve therefore lies above the
+control-arm curve.
+
+## Figures
+
+<div id="fig-os">
 
 <img
-src="survival_external_validation_files/figure-commonmark/fig-tail-1.png"
+src="survival_external_validation_files/figure-commonmark/fig-os-1.png"
 style="width:100.0%" data-fig-align="center" />
 
-Figure 1: Overall survival under standard of care. Solid line and band:
-the economic standard-of-care curve of the parametric survival model
-(all complete-case patients with Rx = control) and its 95%
-coefficient-draw interval, compared with the published values
-(triangles; all are lower bounds). Dashed line: the parametric model
-predicted for the control-arm patients, the same patients as the
-METIMMOX Kaplan-Meier step curve (issue \#157 convention). Dotted line:
-end of trial follow-up.
+Figure 1: Overall survival under standard of care. Panel (a): solid line
+and band, the economic standard-of-care curve of the parametric survival
+model (all complete-case patients with Rx = control) and its 95%
+coefficient-draw interval; dashed line, the parametric model predicted
+for the control-arm patients, the same patients as the METIMMOX
+Kaplan-Meier step curve (issue \#157 convention); dotted line, end of
+trial follow-up. Triangles: published survival proportions, all lower
+bounds, with their 95% CI where reported. Panel (b): published medians
+with their 95% CI (circles comparable, triangles lower bounds; colours
+as in panel a), the parametric model’s standard-of-care median with its
+95% interval (diamond, line and band) and the METIMMOX control-arm
+Kaplan-Meier median with its 95% CI (square).
 
 </div>
+
+<div id="fig-pfs">
+
+<img
+src="survival_external_validation_files/figure-commonmark/fig-pfs-1.png"
+style="width:100.0%" data-fig-align="center" />
+
+Figure 2: Progression-free survival under standard of care, first 5
+years. Panel (a): solid line and band, the economic standard-of-care
+curve of the parametric survival model (all complete-case patients with
+Rx = control) and its 95% coefficient-draw interval; dashed line, the
+parametric model predicted for the control-arm patients, the same
+patients as the METIMMOX Kaplan-Meier step curve (issue \#157
+convention); dotted line, end of trial follow-up. Panel (b): published
+medians with their 95% CI (circles comparable, triangles lower bounds),
+the parametric model’s standard-of-care median with its 95% interval
+(diamond, line and band) and the METIMMOX control-arm Kaplan-Meier
+median with its 95% CI (square).
+
+</div>
+
+All published PFS values are medians, so the PFS comparison is in panel
+(b). Panel (a) is cut at 5 years, beyond which the parametric model’s
+standard-of-care PFS is 0.1% or less.
 
 # Applicability of the benchmarks
 
@@ -470,7 +515,7 @@ pull in both directions:
 
 **Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 1.1
+**Report version:** 1.2
 
 ## Validation warnings
 

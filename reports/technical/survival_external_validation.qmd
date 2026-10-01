@@ -569,41 +569,149 @@ knitr::kable(land_tab, format = report_table_format(), booktabs = TRUE, row.name
 
 None of the comparable sources reports landmark survival in its text or tables; they report medians only. The published landmark values above are all lower bounds.
 
-```{r fig-tail, fig.height=5.5, fig.cap="Overall survival under standard of care. Solid line and band: the economic standard-of-care curve of the parametric survival model (all complete-case patients with Rx = control) and its 95% coefficient-draw interval, compared with the published values (triangles; all are lower bounds). Dashed line: the parametric model predicted for the control-arm patients, the same patients as the METIMMOX Kaplan-Meier step curve (issue #157 convention). Dotted line: end of trial follow-up."}
-band <- data.frame(year = times / 52, model = soc_curve$OS,
-                   ctrl = model_curves$ctrl$OS,
-                   lower = apply(model_draws$soc$OS, 2, quantile, 0.025),
-                   upper = apply(model_draws$soc$OS, 2, quantile, 0.975))
-km_df <- data.frame(year = c(0, ctrl_os_fit$time) / 52, surv = c(1, ctrl_os_fit$surv))
-pts <- comparison[comparison$endpoint == "OS" & comparison$measure == "survival", ]
-pts$label <- source_label(pts)
+**Why the two parametric-model columns differ.** Both come from the same parametric survival model but average over different patients. The economic SoC curve averages all `r nrow(data_complete)` complete-case patients, each predicted as if treated with FLOX; this is the common population in which every strategy of the cost-effectiveness model is evaluated (issue #166). The control-arm curve averages only the `r nrow(ctrl_data)` patients randomised to FLOX, the same patients as the METIMMOX Kaplan-Meier column (issue #157). The two groups differ by chance: `r sum(as.numeric(as.character(ctrl_data$crp)) == 1)` of `r nrow(ctrl_data)` control-arm patients are CRP-positive (week-4 CRP below 5 mg/L, a favourable prognostic factor) against `r sum(as.numeric(as.character(data_complete$crp)) == 1)` of `r nrow(data_complete)` in the whole cohort, reflecting the arm imbalance in week-4 CRP; the control arm is also slightly older (median `r median(ctrl_data$Age)` versus `r median(data_complete$Age)` years). The SoC curve therefore lies above the control-arm curve.
+
+## Figures
+
+```{r tail-figure-setup, include=FALSE}
+ctrl_pfs_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = ctrl_data)
+bench_fills <- c("#eb6834", "#7b3294", "#1b9e77", "#e7298a", "#66a61e", "#a6761d",
+                 "#1f78b4", "#666666")
 line_cols <- c("Parametric model, economic SoC" = "#2a78d6",
                "Parametric model, control-arm patients" = "#2a78d6",
                "METIMMOX Kaplan-Meier, control arm" = "grey35")
 line_types <- c("Parametric model, economic SoC" = "solid",
                 "Parametric model, control-arm patients" = "dashed",
                 "METIMMOX Kaplan-Meier, control arm" = "solid")
-point_fills <- c("#eb6834", "#7b3294", "#1b9e77", "#e7298a", "#66a61e", "#a6761d")
-ggplot() +
-  geom_ribbon(data = band, aes(year, ymin = lower, ymax = upper), fill = "#2a78d6", alpha = 0.18) +
-  geom_line(data = band, aes(year, model, colour = "Parametric model, economic SoC",
-                             linetype = "Parametric model, economic SoC"), linewidth = 0.8) +
-  geom_line(data = band, aes(year, ctrl, colour = "Parametric model, control-arm patients",
-                             linetype = "Parametric model, control-arm patients"), linewidth = 0.6) +
-  geom_step(data = km_df, aes(year, surv, colour = "METIMMOX Kaplan-Meier, control arm",
-                              linetype = "METIMMOX Kaplan-Meier, control arm"), linewidth = 0.6) +
-  geom_point(data = pts, aes(time_years, estimate, fill = label), shape = 24,
-             size = 2.8, colour = "grey15") +
-  geom_vline(xintercept = max_fu_yr, linetype = "dotted", colour = "grey50") +
-  scale_colour_manual(values = line_cols, name = NULL) +
-  scale_linetype_manual(values = line_types, name = NULL) +
-  scale_fill_manual(values = point_fills[seq_along(unique(pts$label))], name = NULL) +
-  scale_x_continuous(breaks = 0:10, limits = c(0, time_horizon / 52)) +
-  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
-  labs(x = "Years from randomisation", y = "Overall survival") +
-  guides(colour = guide_legend(ncol = 1), linetype = guide_legend(ncol = 1),
-         fill = guide_legend(ncol = 2))
+role_shapes <- c("Comparable" = 21, "Lower bound" = 24)
+
+# One figure per endpoint, in two panels:
+# (a) curves plus published survival proportions at their time;
+# (b) forest-style panel of medians (months) with 95% CIs: every published
+#     median, the parametric model's SoC median with its 95% interval and the
+#     METIMMOX control-arm Kaplan-Meier median with its CI.
+# Fill colours are fixed per source across both endpoints.
+all_source_labels <- unique(source_label(comparison))
+source_fills <- setNames(bench_fills[seq_along(all_source_labels)], all_source_labels)
+
+curve_panel <- function(ep, x_max) {
+  band <- data.frame(year = times / 52, model = soc_curve[[ep]],
+                     ctrl = model_curves$ctrl[[ep]],
+                     lower = apply(model_draws$soc[[ep]], 2, quantile, 0.025),
+                     upper = apply(model_draws$soc[[ep]], 2, quantile, 0.975))
+  km_fit <- if (ep == "OS") ctrl_os_fit else ctrl_pfs_fit
+  km_df <- data.frame(year = c(0, km_fit$time) / 52, surv = c(1, km_fit$surv))
+  pts <- comparison[comparison$endpoint == ep & comparison$measure == "survival", ]
+  if (nrow(pts) > 0) pts$label <- source_label(pts)
+  p <- ggplot() +
+    geom_ribbon(data = band, aes(year, ymin = lower, ymax = upper),
+                fill = "#2a78d6", alpha = 0.18) +
+    geom_line(data = band, aes(year, model, colour = "Parametric model, economic SoC",
+                               linetype = "Parametric model, economic SoC"), linewidth = 0.8) +
+    geom_line(data = band, aes(year, ctrl, colour = "Parametric model, control-arm patients",
+                               linetype = "Parametric model, control-arm patients"),
+              linewidth = 0.6) +
+    geom_step(data = km_df, aes(year, surv, colour = "METIMMOX Kaplan-Meier, control arm",
+                                linetype = "METIMMOX Kaplan-Meier, control arm"),
+              linewidth = 0.6) +
+    geom_vline(xintercept = max_fu_yr, linetype = "dotted", colour = "grey50") +
+    scale_colour_manual(values = line_cols, name = NULL) +
+    scale_linetype_manual(values = line_types, name = NULL) +
+    scale_x_continuous(breaks = 0:x_max) +
+    scale_y_continuous(labels = percent_format(accuracy = 1), breaks = seq(0, 1, 0.25)) +
+    coord_cartesian(xlim = c(0, x_max), ylim = c(0, 1)) +
+    labs(x = "Years from randomisation",
+         y = if (ep == "OS") "Overall survival" else "Progression-free survival",
+         title = if (ep == "OS") "(a) Survival curves and published survival proportions"
+                 else "(a) Survival curves") +
+    theme(legend.position = "bottom", legend.box = "vertical",
+          plot.title = element_text(size = 10, face = "bold")) +
+    guides(colour = guide_legend(nrow = 1, order = 1),
+           linetype = guide_legend(nrow = 1, order = 1))
+  if (nrow(pts) > 0) {
+    p <- p +
+      geom_errorbar(data = pts[is.finite(pts$lower), ],
+                    aes(x = time_years, ymin = lower, ymax = upper), width = 0.08,
+                    colour = "grey25", linewidth = 0.4) +
+      geom_point(data = pts, aes(time_years, estimate, fill = label), shape = 24,
+                 size = 2.6, colour = "grey15") +
+      scale_fill_manual(values = source_fills[unique(pts$label)],
+                        name = "Published lower bounds:") +
+      guides(fill = guide_legend(ncol = 2, order = 2, title.position = "top",
+                                 override.aes = list(shape = 24, size = 3)))
+  }
+  p
+}
+
+median_panel <- function(ep) {
+  med <- comparison[comparison$endpoint == ep & comparison$measure == "median_months", ]
+  pub <- data.frame(
+    row = source_label(med), est = med$estimate, lo = med$lower, hi = med$upper,
+    kind = ifelse(med$role == "comparable", "Published, comparable",
+                  "Published, lower bound"),
+    fill = unname(source_fills[source_label(med)]), stringsAsFactors = FALSE)
+  km_med <- if (ep == "OS") ctrl_km_os_med else ctrl_km_pfs_med
+  mod_iv <- benchmark_model_interval(model_draws$soc[[ep]], list(measure = "median_months"))
+  ref <- data.frame(
+    row = c("METIMMOX: parametric model, economic SoC",
+            "METIMMOX: Kaplan-Meier, control arm"),
+    est = c(curve_median_months(soc_curve[[ep]]), km_med[["median"]]),
+    lo = c(mod_iv[1], km_med[["lower"]]), hi = c(mod_iv[2], km_med[["upper"]]),
+    kind = c("Parametric model (95% interval)", "METIMMOX Kaplan-Meier (95% CI)"),
+    fill = c("#2a78d6", "grey35"), stringsAsFactors = FALSE)
+  d <- rbind(ref, pub)
+  d$row <- factor(d$row, levels = rev(d$row))
+  kind_shapes <- c("Parametric model (95% interval)" = 23,
+                   "METIMMOX Kaplan-Meier (95% CI)" = 22,
+                   "Published, comparable" = 21, "Published, lower bound" = 24)
+  ggplot(d, aes(est, row)) +
+    annotate("rect", xmin = mod_iv[1], xmax = mod_iv[2], ymin = -Inf, ymax = Inf,
+             fill = "#2a78d6", alpha = 0.12) +
+    geom_vline(xintercept = curve_median_months(soc_curve[[ep]]), colour = "#2a78d6",
+               linewidth = 0.5) +
+    geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.25, colour = "grey25",
+                   linewidth = 0.4, na.rm = TRUE) +
+    geom_point(aes(shape = kind), fill = d$fill, size = 2.6, colour = "grey15") +
+    scale_shape_manual(values = kind_shapes[unique(d$kind)], name = NULL) +
+    labs(x = sprintf("Median %s (months)", ep), y = NULL,
+         title = "(b) Medians: METIMMOX and published values") +
+    theme(legend.position = "bottom",
+          plot.title = element_text(size = 10, face = "bold"),
+          axis.text.y = element_text(size = 8)) +
+    guides(shape = guide_legend(nrow = 2, override.aes = list(fill = "grey60")))
+}
+
+endpoint_figure <- function(ep, x_max, heights) {
+  cowplot::plot_grid(curve_panel(ep, x_max), median_panel(ep), ncol = 1,
+                     rel_heights = heights)
+}
+fig_note <- paste(
+  "Panel (a): solid line and band, the economic standard-of-care curve of the parametric",
+  "survival model (all complete-case patients with Rx = control) and its 95%",
+  "coefficient-draw interval; dashed line, the parametric model predicted for the",
+  "control-arm patients, the same patients as the METIMMOX Kaplan-Meier step curve",
+  "(issue #157 convention); dotted line, end of trial follow-up.")
+note_os <- paste(fig_note, "Triangles: published survival proportions, all lower bounds,",
+  "with their 95% CI where reported. Panel (b): published medians with their 95% CI",
+  "(circles comparable, triangles lower bounds; colours as in panel a), the parametric",
+  "model's standard-of-care median with its 95% interval (diamond, line and band) and",
+  "the METIMMOX control-arm Kaplan-Meier median with its 95% CI (square).")
+note_pfs <- paste(fig_note, "Panel (b): published medians with their 95% CI (circles",
+  "comparable, triangles lower bounds), the parametric model's standard-of-care median",
+  "with its 95% interval (diamond, line and band) and the METIMMOX control-arm",
+  "Kaplan-Meier median with its 95% CI (square).")
 ```
+
+```{r fig-os, fig.height=9, fig.cap=paste("Overall survival under standard of care.", note_os)}
+endpoint_figure("OS", x_max = 10, heights = c(1.55, 1))
+```
+
+```{r fig-pfs, fig.height=7.5, fig.cap=paste("Progression-free survival under standard of care, first 5 years.", note_pfs)}
+endpoint_figure("PFS", x_max = 5, heights = c(1.5, 0.8))
+```
+
+All published PFS values are medians, so the PFS comparison is in panel (b). Panel (a) is cut at 5 years, beyond which the parametric model's standard-of-care PFS is `r fmt_pct(curve_at_years(soc_curve$PFS, 5))` or less.
+
 
 # Applicability of the benchmarks
 
@@ -637,4 +745,4 @@ None of the benchmark cohorts matches METIMMOX exactly. The differences pull in 
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 1.1
+**Report version:** 1.2
