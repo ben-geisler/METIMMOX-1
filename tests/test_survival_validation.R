@@ -99,4 +99,24 @@ stopifnot(nrow(iv) == 3, iv$measure[3] == "median_months",
           abs(iv$lower[1] - quantile(exp(-rates * 52), 0.025, names = FALSE)) < 1e-12)
 cat("PASS: draw percentile intervals\n")
 
+# ---- Consistency with the model's 95% interval (added after review) ------------
+stopifnot(
+  benchmark_consistent(16, 24, comp) == "Consistent",          # 20 inside
+  benchmark_consistent(21, 24, comp) == "Not consistent",      # 20 below interval
+  benchmark_consistent(0.01, 0.10, low) == "Consistent",       # upper reaches bound
+  benchmark_consistent(0.01, 0.09, low) == "Not consistent",
+  benchmark_consistent(NA, 0.2, low) == "Not evaluable",
+  identical(point_estimate_label(c("Within CI", "Below lower bound", "Above lower bound")),
+            c("Within CI", "Below bound", "At or above bound"))
+)
+row_med <- list(measure = "median_months", time_years = NA)
+row_s1 <- list(measure = "survival", time_years = 1)
+stopifnot(
+  abs(benchmark_model_value(curve, row_med) - curve_median_months(curve)) < 1e-12,
+  abs(benchmark_model_value(curve, row_s1) - exp(-lambda * 52)) < 1e-15,
+  abs(benchmark_model_interval(mat, row_s1)[2] -
+        quantile(exp(-rates * 52), 0.975, names = FALSE)) < 1e-12
+)
+cat("PASS: consistency with the model interval\n")
+
 cat("All survival-validation tests passed.\n")

@@ -217,3 +217,51 @@ draw_landmark_intervals <- function(mat, years) {
              upper = c(land[, 2], med[2]),
              measure = c(rep("survival", length(years)), "median_months"))
 }
+
+# ===============================================================================
+# BENCHMARK COMPARISON UNDER UNCERTAINTY (added after review, 1 October 2026)
+# ===============================================================================
+# The pre-specified rule above judges the point estimate of the parametric
+# survival model. The headline assessment adopted after review asks whether
+# the published value is compatible with the model's 95% coefficient-draw
+# interval: for a comparable benchmark the published estimate must lie inside
+# that interval; for a lower bound the interval's upper limit must reach it.
+
+#' Parametric-model value matching a benchmark row (median in months, or
+#' survival at `time_years`)
+benchmark_model_value <- function(curve, row) {
+  if (row$measure == "median_months") curve_median_months(curve)
+  else curve_at_years(curve, row$time_years)
+}
+
+#' 95% percentile interval over coefficient-draw curves for a benchmark row
+#'
+#' @param mat Output of `draw_curves()` (one row per draw).
+benchmark_model_interval <- function(mat, row) {
+  v <- if (row$measure == "median_months") apply(mat, 1, curve_median_months)
+       else apply(mat, 1, curve_at_years, years = row$time_years)
+  stats::quantile(v, c(0.025, 0.975), na.rm = TRUE, names = FALSE)
+}
+
+#' Is a published benchmark consistent with the model's 95% interval?
+#'
+#' @return "Consistent", "Not consistent" or "Not evaluable".
+benchmark_consistent <- function(model_lower, model_upper, row) {
+  if (!is.finite(model_lower) || !is.finite(model_upper)) return("Not evaluable")
+  ok <- if (identical(row$role, "comparable")) {
+    row$estimate >= model_lower && row$estimate <= model_upper
+  } else if (identical(row$role, "lower_bound")) {
+    model_upper >= row$estimate
+  } else {
+    stop("Unknown benchmark role: ", row$role)
+  }
+  if (ok) "Consistent" else "Not consistent"
+}
+
+#' Short display label for a pre-specified point-estimate verdict
+point_estimate_label <- function(verdict) {
+  labels <- c("Within CI" = "Within CI", "Outside CI" = "Outside CI",
+              "Above lower bound" = "At or above bound",
+              "Below lower bound" = "Below bound", "Not evaluable" = "--")
+  unname(labels[verdict])
+}

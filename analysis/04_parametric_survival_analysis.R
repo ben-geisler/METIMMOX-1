@@ -133,6 +133,10 @@ for (formula_set in names(model_formulas)) {
   models[[formula_set]]$pfs <- pfs_results$fitted_models
 
   # Store Kaplan-Meier fits for reference
+  # Warnings from candidate fits (per distribution; NULL when none)
+  models[[formula_set]]$os_fit_warnings <- os_results$fit_warnings
+  models[[formula_set]]$pfs_fit_warnings <- pfs_results$fit_warnings
+
   models[[formula_set]]$km_os <- os_results$km_all
   models[[formula_set]]$km_pfs <- pfs_results$km_all
 
@@ -255,6 +259,15 @@ if (!is.null(all_os_aic) && !is.null(all_pfs_aic)) {
   models$best_fit$pfs_aic <- selected$pfs_ic
   models$best_fit$combined_aic <- selected$combined_ic
   models$best_fit$ordering_aic_penalty <- ordered_selection$ic_penalty
+
+  # Candidate-fit warnings are recorded, not raised; a warning from a selected
+  # family still reaches the caller.
+  selected_fit_warnings <- c(
+    models[[selected$os_formula_set]]$os_fit_warnings[[selected$os_distribution]],
+    models[[selected$pfs_formula_set]]$pfs_fit_warnings[[selected$pfs_distribution]])
+  for (msg in unique(selected_fit_warnings)) {
+    warning("Selected survival model fit: ", msg, call. = FALSE)
+  }
 
   cat("Ordering-constrained model pair:", selected$os_distribution, "(OS),",
       selected$pfs_distribution, "(PFS); combined AIC:",

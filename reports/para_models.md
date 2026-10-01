@@ -63,6 +63,18 @@ Overall survival distribution comparison (ordered by marginal AIC)
 Progression-free survival distribution comparison (ordered by marginal
 AIC)
 
+2 candidate fits raised a warning while fitting, listed below. None of
+them is a selected distribution, so the economic model and the PSA
+covariance are unaffected; the warnings concern the reliability of the
+standard errors of rejected candidates.
+
+| Endpoint | Distribution | Warning |
+|:---|:---|:---|
+| PFS | gengamma | Hessian not positive definite: smallest eigenvalue is -1.0e+00 (threshold: -1.0e-05). |
+| PFS | genf | Hessian not positive definite: smallest eigenvalue is -1.0e+00 (threshold: -1.0e-05). |
+
+Warnings raised while fitting candidate distributions
+
 | Rank | OS distribution | PFS distribution | Combined AIC | OS \>= PFS | Violating points | Selected |
 |---:|:---|:---|---:|:--:|---:|:--:|
 | 1 | weibull | gengamma | 1163.03 | No | 1614 |  |
@@ -169,24 +181,8 @@ the technical report `survival_external_validation.qmd` (issue \#162).
 
 **Report completed on:** 2026-10-01  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.2
+**Report version:** 4.3
 
 ## Validation warnings
 
-Warnings recorded during rendering: 10 (6 distinct).
-
-- report setup: Hessian not positive definite: smallest eigenvalue is
-  -1.0e+00 (threshold: -1.0e-05). This might indicate that the
-  optimization did not converge to the maximum likelihood, so that the
-  results are invalid. Continuing with the nearest positive definite
-  approximation of the covariance matrix.
-- formula-table: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
-- os-ic: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- pfs-ic: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- pair-audit: Warning: ‘xfun::attr()’ is deprecated. Use ‘xfun::attr2()’
-  instead. See help(“Deprecated”)
-- coefficients: Warning: ‘xfun::attr()’ is deprecated. Use
-  ‘xfun::attr2()’ instead. See help(“Deprecated”)
+No warnings recorded during rendering.

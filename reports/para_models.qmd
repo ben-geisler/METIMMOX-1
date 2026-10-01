@@ -156,6 +156,37 @@ knitr::kable(
   tbl_row_spec(which(pfs_ic$Selected == "Yes"), bold = TRUE)
 ```
 
+```{r fit-warnings, include=FALSE}
+# Warnings raised while fitting the candidates are recorded per family by
+# fit_all_direct() rather than propagated (script 04 re-raises any that concern
+# a selected family).
+fit_warning_rows <- do.call(rbind, lapply(c("os", "pfs"), function(ep) {
+  w <- models$full[[paste0(ep, "_fit_warnings")]]
+  w <- w[lengths(w) > 0]
+  if (length(w) == 0) return(NULL)
+  data.frame(Endpoint = toupper(ep), Distribution = rep(names(w), lengths(w)),
+             Warning = unlist(w, use.names = FALSE), stringsAsFactors = FALSE)
+}))
+n_fit_warn_fams <- if (is.null(fit_warning_rows)) 0 else
+  nrow(unique(fit_warning_rows[, c("Endpoint", "Distribution")]))
+fit_warn_selected <- !is.null(fit_warning_rows) && any(
+  (fit_warning_rows$Endpoint == "OS" & fit_warning_rows$Distribution == selected_os) |
+  (fit_warning_rows$Endpoint == "PFS" & fit_warning_rows$Distribution == selected_pfs))
+```
+
+`r if (n_fit_warn_fams == 0) "No candidate fit raised a warning." else paste0(n_fit_warn_fams, " candidate fit", ifelse(n_fit_warn_fams == 1, "", "s"), " raised a warning while fitting, listed below. ", if (fit_warn_selected) "**A selected distribution is among them; its standard errors and the PSA covariance rest on an approximated covariance matrix.**" else "None of them is a selected distribution, so the economic model and the PSA covariance are unaffected; the warnings concern the reliability of the standard errors of rejected candidates.")`
+
+```{r fit-warnings-table}
+if (n_fit_warn_fams > 0) {
+  fw <- fit_warning_rows
+  fw$Warning <- sub("This might indicate.*$", "", fw$Warning)
+  knitr::kable(fw, booktabs = TRUE, row.names = FALSE,
+               caption = "Warnings raised while fitting candidate distributions") %>%
+    tbl_style(latex_options = c("HOLD_position")) %>%
+    tbl_column_spec(3, width = "10cm")
+}
+```
+
 ```{r pair-audit}
 pairs <- ordered_selection$pairs
 n_show <- min(12, nrow(pairs))
@@ -250,4 +281,4 @@ The comparisons in this report are dependent validation: the fits are checked ag
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.2
+**Report version:** 4.3

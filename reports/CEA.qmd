@@ -35,7 +35,8 @@ source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
   funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
-           "psa_functions", "survival_validation")
+           "psa_functions", "prediction_functions", "pfs_os_violation_diagnostics",
+           "survival_validation")
 )
 
 basecase <- run_basecase(verbose = FALSE)
@@ -331,15 +332,29 @@ Adverse-event costs and disutilities remain outside the modeled scope, as descri
 bench <- read_survival_benchmarks()
 tail_bench <- bench[bench$endpoint == "OS" & bench$measure == "survival" &
                       bench$time_years >= 5, ]
-tail_model <- curve_at_years(l_params_base$p_os$control_OS, tail_bench$time_years)
-tail_pass <- benchmark_passed(vapply(seq_len(nrow(tail_bench)), function(k)
+soc_os <- l_params_base$p_os$control_OS
+tail_model <- curve_at_years(soc_os, tail_bench$time_years)
+tail_pe_pass <- benchmark_passed(vapply(seq_len(nrow(tail_bench)), function(k)
   evaluate_benchmark(tail_model[k], tail_bench[k, ]), character(1)))
+# 95% interval of the parametric model over 1,000 coefficient draws, as in the
+# technical report
+soc_pop <- data_complete
+soc_pop$Rx <- factor(levels(data_complete$Rx)[1], levels = levels(data_complete$Rx))
+os_component <- get_joint_sampling_models(sampling_models)
+set.seed(analysis_seed)
+os_draw_idx <- sort(sample(seq_len(os_component$n_samples), min(1000, os_component$n_samples)))
+soc_os_draws <- draw_curves(os_component, "os", soc_pop, os_draw_idx, 0:time_horizon)
+tail_consistent <- vapply(seq_len(nrow(tail_bench)), function(k) {
+  iv <- benchmark_model_interval(soc_os_draws, tail_bench[k, ])
+  benchmark_consistent(iv[1], iv[2], tail_bench[k, ])
+}, character(1))
+os5_iv <- benchmark_model_interval(soc_os_draws, list(measure = "survival", time_years = 5))
 ```
 
-**Extrapolated survival is checked against external data only one-sidedly.** Trial follow-up ends before five years, and the published first-line mCRC sources report survival beyond that only as lower bounds. Modelled standard-of-care OS is `r sprintf("%.1f%%", 100 * curve_at_years(l_params_base$p_os$control_OS, 5))` at 5 years and meets `r sum(tail_pass, na.rm = TRUE)` of the `r sum(!is.na(tail_pass))` published lower bounds at 5 years or later. The comparison, its pre-specified tolerance and the dependent validation against the trial Kaplan-Meier curves are in the technical report `survival_external_validation.qmd` (issue #162).
+**The extrapolated survival tail is on the low side of external evidence, within uncertainty.** Trial follow-up ends before five years, and the published first-line mCRC sources report survival beyond that only as lower bounds. Standard-of-care OS from the parametric survival model is `r sprintf("%.1f%%", 100 * curve_at_years(soc_os, 5))` at 5 years (95% interval `r sprintf("%.1f-%.1f%%", 100 * os5_iv[1], 100 * os5_iv[2])`). `r if (all(tail_consistent == "Consistent")) paste("All", length(tail_consistent)) else paste(sum(tail_consistent == "Consistent"), "of the", length(tail_consistent))` published lower bounds at 5 years or later lie within the parametric model's 95% interval, but the point estimate is below `r ifelse(sum(!tail_pe_pass, na.rm = TRUE) == length(tail_pe_pass), "each of them", paste(sum(!tail_pe_pass, na.rm = TRUE), "of them"))`. The parametric survival model is not changed (project decision, 1 October 2026); the comparison, its criteria and the dependent validation against the trial Kaplan-Meier curves are in the technical report `survival_external_validation.qmd` (issue #162).
 
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.8
+**Report version:** 4.9

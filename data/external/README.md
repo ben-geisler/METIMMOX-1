@@ -55,3 +55,15 @@ implemented in `evaluate_benchmark()` in `R/survival_validation.R`.
 the diagnosis of metastatic disease rather than from randomisation (which lengthens
 their OS), cohorts predate METIMMOX (2018-2023) by 10-20 years, and only Aasebo
 2019 is restricted to MSS tumours.
+
+**Headline criterion added after review (1 October 2026).** The point-estimate
+rule above stays as pre-specified and is still reported. After the comparison was
+run, it was judged too strict as the headline, because it ignores the uncertainty
+of a model fitted to 68 patients. The report therefore leads with consistency
+under uncertainty:
+
+- a comparable benchmark is consistent if its published estimate lies inside the
+  95% coefficient-draw interval of the parametric survival model;
+- a lower bound is consistent if the upper limit of that interval reaches the bound.
+
+This rule is implemented in `benchmark_consistent()` in `R/survival_validation.R`.

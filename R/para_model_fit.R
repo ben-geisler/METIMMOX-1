@@ -59,14 +59,23 @@ fit_all_direct <- function(fit_data,
     km_std <- km_all
   }
   
-  # Fit all standard models (these can handle interactions)
+  # Fit all standard models (these can handle interactions). Warnings raised by
+  # a candidate fit (e.g. a non-positive-definite Hessian) are recorded per
+  # distribution in `fit_warnings` instead of propagating; the caller decides
+  # whether they matter (script 04 re-raises them for the selected families).
+  fit_warnings <- setNames(vector("list", length(fit_dists)), fit_dists)
   fits <- lapply(fit_dists,
                  function(x){
-                   tryCatch(expr = eval(as.call(list(quote(flexsurvreg),
-                                                     formula = fit_formula,
-                                                     data = quote(fit_data),
-                                                     dist = x))),
-                            error = function(e) paste("Error message:", e$message))
+                   withCallingHandlers(
+                     tryCatch(expr = eval(as.call(list(quote(flexsurvreg),
+                                                       formula = fit_formula,
+                                                       data = quote(fit_data),
+                                                       dist = x))),
+                              error = function(e) paste("Error message:", e$message)),
+                     warning = function(w) {
+                       fit_warnings[[x]] <<- c(fit_warnings[[x]], conditionMessage(w))
+                       invokeRestart("muffleWarning")
+                     })
                  })
   
   # Strip background data from fitted models
@@ -81,7 +90,8 @@ fit_all_direct <- function(fit_data,
   res <- list(data_name = data_name,
               km_all = km_all,
               km_std = km_std,
-              fitted_models = fits)
+              fitted_models = fits,
+              fit_warnings = fit_warnings)
 }
 
 # Extract AIC and BIC from fitted models
