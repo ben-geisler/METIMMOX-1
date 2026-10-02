@@ -41,7 +41,28 @@ finish_artifact_render(env)
 df_manifest <- read.csv(artifact_manifest_path(root), stringsAsFactors = FALSE)
 stopifnot(df_manifest$status == "csv_verified", df_manifest$comparison_with_predecessor == "changed",
   df_manifest$source_cache_fingerprints == "psa_obj=synthetic-psa",
-  df_manifest$artifact_md5 == unname(tools::md5sum(path)))
+  df_manifest$artifact_md5 == unname(tools::md5sum(path)),
+  is.na(df_manifest$additional_inputs_md5) | df_manifest$additional_inputs_md5 == "")
+# A registered extra input is digested in the manifest (issue #161), and a
+# manifest written before that column existed is still merged.
+dir.create(file.path(root, "data/sensitive"), recursive = TRUE)
+input <- file.path(root, "data/sensitive/input.xlsx")
+writeLines("synthetic input", input)
+legacy <- read.csv(artifact_manifest_path(root), stringsAsFactors = FALSE)
+legacy$additional_inputs_md5 <- NULL
+legacy$file <- "outputs/tables/table_s1.csv"
+utils::write.csv(legacy, artifact_manifest_path(root), row.names = FALSE)
+begin_artifact_render("table_5", root)
+stopifnot(inherits(try(register_artifact_input("data/sensitive/missing.xlsx"), silent = TRUE), "try-error"))
+register_artifact_input("data/sensitive/input.xlsx")
+write_artifact_csv(df_value, path, row.names = FALSE)
+finish_artifact_render(env)
+df_manifest <- read.csv(artifact_manifest_path(root), stringsAsFactors = FALSE)
+stopifnot(nrow(df_manifest) == 2L,
+  df_manifest$additional_inputs_md5[df_manifest$file == "outputs/tables/table_5.csv"] ==
+    paste0("data/sensitive/input.xlsx=", unname(tools::md5sum(input))))
+utils::write.csv(df_manifest[df_manifest$file == "outputs/tables/table_5.csv", ],
+                 artifact_manifest_path(root), row.names = FALSE)
 # Empty successful render must remove both the predecessor and its old claim.
 begin_artifact_render("table_5", root)
 stopifnot(!file.exists(path), nrow(read.csv(artifact_manifest_path(root))) == 0L)

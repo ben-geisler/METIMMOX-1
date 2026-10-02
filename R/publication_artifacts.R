@@ -31,6 +31,7 @@ begin_artifact_render <- function(vignette, root = here::here()) {
   ctx$vignette <- paste0("outputs/vignettes/", vignette, ".qmd")
   ctx$files <- v_files
   ctx$written <- list()
+  ctx$inputs <- character()
   ctx$previous <- lapply(file.path(ctx$root, v_files), function(f)
     if (file.exists(f)) unname(tools::md5sum(f)) else NA_character_)
   names(ctx$previous) <- v_files
@@ -45,6 +46,20 @@ begin_artifact_render <- function(vignette, root = here::here()) {
   }
   options(metimmox.artifact_context = ctx)
   invisible(ctx)
+}
+
+#' Record an input file other than data/tidy/METIMMOX.rds that the active
+#' render reads (issue #161), so the manifest carries its md5 digest.
+#'
+#' @param file Path relative to the repository root.
+#' @return The path, invisibly.
+register_artifact_input <- function(file) {
+  ctx <- getOption("metimmox.artifact_context")
+  if (is.null(ctx)) stop("Call begin_artifact_render() before registering an input")
+  path <- file.path(ctx$root, file)
+  if (!file.exists(path)) stop("Registered artifact input does not exist: ", file)
+  ctx$inputs[file] <- unname(tools::md5sum(path))
+  invisible(file)
 }
 
 artifact_target <- function(file) {
@@ -109,6 +124,8 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
       status = if (exists) status else "deleted_empty",
       artifact_md5 = hash, source_code_sha256 = code_hash,
       trial_data_md5 = if (file.exists(trial)) unname(tools::md5sum(trial)) else NA_character_,
+      additional_inputs_md5 = if (length(ctx$inputs)) paste(names(ctx$inputs), ctx$inputs,
+        sep = "=", collapse = ";") else "",
       comparison_with_predecessor = if (!exists) "removed" else if (is.na(ctx$previous[[f]]))
         "created" else if (identical(hash, ctx$previous[[f]])) "unchanged" else "changed",
       stringsAsFactors = FALSE)
@@ -117,6 +134,9 @@ finish_artifact_render <- function(envir = knitr::knit_global()) {
   manifest <- artifact_manifest_path(ctx$root)
   if (file.exists(manifest)) {
     df_old <- read.csv(manifest, stringsAsFactors = FALSE)
+    # Manifests written before issue #161 lack the additional-inputs column.
+    if (!"additional_inputs_md5" %in% names(df_old)) df_old$additional_inputs_md5 <- ""
+    df_old <- df_old[, names(df_rows), drop = FALSE]
     df_rows <- rbind(df_old[!df_old$file %in% ctx$files, , drop = FALSE], df_rows)
   }
   # Locale-independent row order, so the manifest diff is stable (#185).

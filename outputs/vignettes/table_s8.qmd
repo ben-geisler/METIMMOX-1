@@ -19,7 +19,8 @@ source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
   funs = c("model_fun", "calculate_outcomes", "prediction_functions",
-           "scenario_analysis", "report_format"),
+           "scenario_analysis", "report_format", "eq5d5l_utility",
+           "trial_utilities"),
   packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
                "flexsurv", "survival"),
   set_theme = FALSE
@@ -37,7 +38,9 @@ setup_report(
 #                               reported in OWSA.qmd and Table 1), applied here
 #                               through the same apply_structural_scenario()
 #                               that 09_DSA.R uses
-#   define_utility_scenarios()  alternative utilities (scenario_analysis.R)
+#   define_utility_scenarios()  trial EQ-5D-5L utilities (scenario_analysis.R,
+#                               derived by trial_eq5d_utilities() in
+#                               trial_utilities.R; issue #161)
 # All scenarios are run deterministically on the base-case curves.
 base_params <- l_params_base
 
@@ -105,7 +108,10 @@ for (scenario_name in names(structural)) {
 }
 
 # 3. Alternative utilities
-utility_scenarios <- define_utility_scenarios()
+register_artifact_input(TRIAL_EQ5D_PATH)
+trial_utilities <- trial_eq5d_utilities(read_trial_eq5d(), readRDS(here::here("data/tidy/METIMMOX.rds")),
+                                        value_set = "dk")
+utility_scenarios <- define_utility_scenarios(trial_utilities)
 for (k in seq_len(nrow(utility_scenarios))) {
   params <- base_params
   params$u_np <- utility_scenarios$u_np[k]
@@ -113,7 +119,7 @@ for (k in seq_len(nrow(utility_scenarios))) {
   params$u_decrement <- params$u_np - params$u_p
   runs[[length(runs) + 1]] <- run_scenario(
     utility_scenarios$scenario_name[k], params,
-    definition = sprintf("u_np %.2f, u_p %.2f (base case %.2f, %.2f); source: %s",
+    definition = sprintf("u_np %.3f, u_p %.3f (base case %.2f, %.2f); source: %s",
                          utility_scenarios$u_np[k], utility_scenarios$u_p[k],
                          base_params$u_np, base_params$u_p,
                          utility_scenarios$source[k])
@@ -151,9 +157,9 @@ kable(
       paste0("Base case WTP: EUR ", format(WTP, big.mark = ","), "/QALY; base-case discount rate ",
              sprintf("%g%%", 100 * dr), "; base-case time horizon ",
              sprintf("%g years", time_horizon / 52), "."),
-      "Every scenario is a pipeline definition: WTP and nivolumab-price scenarios from define_scenarios() (scenario_analysis.R), structural scenarios from dsa_structural_scenarios() applied with apply_structural_scenario() (parameter_distributions.R, shared with 09_DSA.R), alternative utilities from define_utility_scenarios() (scenario_analysis.R). All are deterministic runs on the base-case survival curves.",
+      "Every scenario is a pipeline definition: WTP and nivolumab-price scenarios from define_scenarios() (scenario_analysis.R), structural scenarios from dsa_structural_scenarios() applied with apply_structural_scenario() (parameter_distributions.R, shared with 09_DSA.R), trial EQ-5D-5L utilities from define_utility_scenarios() (scenario_analysis.R) and trial_eq5d_utilities() (trial_utilities.R). All are deterministic runs on the base-case survival curves.",
       "Biosimilar (decreased) nivolumab pricing sets nivolumab to EUR 4,641 per administration.",
-      paste0("Literature utilities: ", utility_source_note, "."),
+      paste0("Trial EQ-5D-5L utilities: ", utility_source_note, "."),
       "Optimal strategy is the highest-NMB strategy within each scenario."
     ),
     general_title = "Notes: "
