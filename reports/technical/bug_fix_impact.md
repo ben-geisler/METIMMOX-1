@@ -1,6 +1,6 @@
 # Bug Fix Impact Analysis
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Snapshot Inventory](#snapshot-inventory)
 - [Impact Comparisons](#impact-comparisons)
@@ -24,8 +24,9 @@ Ben Geisler
   - [Batch \#173 / \#171 / \#163: baseline vs
     fixed](#batch-173--171--163-baseline-vs-fixed)
   - [Issue 181: baseline vs fixed](#issue-181-baseline-vs-fixed)
-  - [Cumulative: issue 145 baseline vs issue 165
-    fixed](#cumulative-issue-145-baseline-vs-issue-165-fixed)
+  - [Issue 188: baseline vs fixed](#issue-188-baseline-vs-fixed)
+  - [Cumulative: issue 145 baseline vs issue 188
+    fixed](#cumulative-issue-145-baseline-vs-issue-188-fixed)
 - [Interpretation](#interpretation)
   - [Validation warnings](#validation-warnings)
 
@@ -77,6 +78,8 @@ after refitting and regenerating every downstream cache.
 | snapshot_173_fixed_1b50e8d.rds    | 173   | fixed    | 1b50e8d | 2026-09-21 16:04:39 |
 | snapshot_181_baseline_2a48ae8.rds | 181   | baseline | 2a48ae8 | 2026-09-24 17:07:25 |
 | snapshot_181_fixed_791443e.rds    | 181   | fixed    | 791443e | 2026-09-24 19:19:42 |
+| snapshot_188_baseline_286a660.rds | 188   | baseline | 286a660 | 2026-10-02 11:59:54 |
+| snapshot_188_fixed_d0edfdc.rds    | 188   | fixed    | d0edfdc | 2026-10-02 15:53:04 |
 | snapshot_36_baseline_08ec4a9.rds  | 36    | baseline | 08ec4a9 | 2026-09-30 15:50:08 |
 | snapshot_36_fixed_e5ff9c1.rds     | 36    | fixed    | e5ff9c1 | 2026-09-30 20:03:23 |
 
@@ -116,7 +119,8 @@ filenames carry the same pre-fix HEAD identifier.
 | Issue 172: baseline vs fixed | snapshot_172_baseline_15999f9.rds | snapshot_172_fixed_15999f9.rds |
 | Batch \#173 / \#171 / \#163: baseline vs fixed | snapshot_173_baseline_1b50e8d.rds | snapshot_173_fixed_1b50e8d.rds |
 | Issue 181: baseline vs fixed | snapshot_181_baseline_2a48ae8.rds | snapshot_181_fixed_791443e.rds |
-| Cumulative: issue 145 baseline vs issue 165 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_165_fixed_6499092.rds |
+| Issue 188: baseline vs fixed | snapshot_188_baseline_286a660.rds | snapshot_188_fixed_d0edfdc.rds |
+| Cumulative: issue 145 baseline vs issue 188 fixed | snapshot_145_baseline_ce8ec08.rds | snapshot_188_fixed_d0edfdc.rds |
 
 Impact comparisons included in this report
 
@@ -712,7 +716,31 @@ PSA cache md5 before ca7e7d9091880b1f5879fe9cd8a7f967 (modified
 
 Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 
-## Cumulative: issue 145 baseline vs issue 165 fixed
+## Issue 188: baseline vs fixed
+
+| Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
+|:---|---:|---:|---:|---:|---:|---:|
+| Standard of Care | EUR 25,764 | 1.3400 | EUR 25,764 | 1.3400 | EUR 0 | 0.0000 |
+| CRP-guided | EUR 58,203 | 1.3775 | EUR 58,203 | 1.3775 | EUR 0 | 0.0000 |
+| TMB/BRAF-guided | EUR 66,916 | 1.3389 | EUR 66,916 | 1.3389 | EUR 0 | 0.0000 |
+
+Base case impact – Issue 188: baseline vs fixed
+
+| Strategy         | NMB Before |  NMB After | NMB Change |
+|:-----------------|-----------:|-----------:|-----------:|
+| Standard of Care | EUR 42,574 | EUR 42,574 |      EUR 0 |
+| CRP-guided       | EUR 12,048 | EUR 12,048 |      EUR 0 |
+| TMB/BRAF-guided  |  EUR 1,368 |  EUR 1,368 |      EUR 0 |
+
+Net monetary benefit impact – Issue 188: baseline vs fixed
+
+PSA cache md5 before 240069919ae165e572113ebffdd9dc9d (modified
+2026-10-01 13:31), after 91d1a9d29fc662bfeec18604e545ba07 (modified
+2026-10-02 13:03).
+
+Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
+
+## Cumulative: issue 145 baseline vs issue 188 fixed
 
 | Strategy | Cost Before | QALYs Before | Cost After | QALYs After | Cost Change | QALY Change |
 |:---|---:|---:|---:|---:|---:|---:|
@@ -720,7 +748,7 @@ Per-patient EVPI: EUR 0.00 before, EUR 0.00 after.
 | CRP-guided | EUR 55,026 | 1.3842 | EUR 58,203 | 1.3775 | EUR 3,177 | -0.0068 |
 | TMB/BRAF-guided | EUR 60,798 | 1.3530 | EUR 66,916 | 1.3389 | EUR 6,118 | -0.0141 |
 
-Base case impact – Cumulative: issue 145 baseline vs issue 165 fixed
+Base case impact – Cumulative: issue 145 baseline vs issue 188 fixed
 
 | Strategy         | NMB Before |  NMB After | NMB Change |
 |:-----------------|-----------:|-----------:|-----------:|
@@ -729,11 +757,11 @@ Base case impact – Cumulative: issue 145 baseline vs issue 165 fixed
 | TMB/BRAF-guided  |  EUR 8,207 |  EUR 1,368 | -EUR 6,839 |
 
 Net monetary benefit impact – Cumulative: issue 145 baseline vs issue
-165 fixed
+188 fixed
 
 PSA provenance: before snapshot predates issue \#156 and did not record
-the PSA cache md5; after PSA cache md5 240069919ae165e572113ebffdd9dc9d
-(modified 2026-10-01 13:31). Identity of the two PSA files cannot be
+the PSA cache md5; after PSA cache md5 91d1a9d29fc662bfeec18604e545ba07
+(modified 2026-10-02 13:03). Identity of the two PSA files cannot be
 established from metadata.
 
 # Interpretation
@@ -801,7 +829,7 @@ record](../../validation/issue168_2026-09-22/README.md).
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.7
 

@@ -1,6 +1,6 @@
 # PSA Extrapolation Plausibility
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Purpose and scope](#purpose-and-scope)
 - [Norwegian population reference](#norwegian-population-reference)
@@ -254,7 +254,7 @@ this paper’s scope.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.0
 

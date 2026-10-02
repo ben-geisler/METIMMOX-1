@@ -1,6 +1,6 @@
 # Parametric Survival Model Specification
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Model specification](#model-specification)
 - [Regression coefficients](#regression-coefficients)
@@ -503,7 +503,7 @@ alt="Labelled candidate distributions, TMB/BRAF-negative patients on FLOX." />
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.2
 

@@ -1,6 +1,6 @@
 # Week-4 CRP Estimand
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Purpose](#purpose)
 - [Estimand](#estimand)
@@ -412,7 +412,7 @@ if a reviewer or the manuscript (issue \#160) requires these analyses.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.1
 

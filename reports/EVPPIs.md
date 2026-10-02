@@ -1,6 +1,6 @@
 # Value of Information Analysis
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [PSA Decision Uncertainty](#psa-decision-uncertainty)
@@ -127,7 +127,7 @@ per-patient standard errors multiplied by the same factor.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 5.3
 

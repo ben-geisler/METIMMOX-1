@@ -1,6 +1,6 @@
 # Parametric Survival Models
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [Distribution Selection](#distribution-selection)
@@ -179,7 +179,7 @@ the technical report `survival_external_validation.qmd` (issue \#162).
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.3
 

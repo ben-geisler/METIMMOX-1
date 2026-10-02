@@ -1,6 +1,6 @@
 # Survival Extrapolation Validation
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Purpose and classification](#purpose-and-classification)
 - [Dependent validation: parametric model versus trial
@@ -513,7 +513,7 @@ pull in both directions:
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 1.2
 

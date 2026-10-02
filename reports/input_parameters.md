@@ -1,6 +1,6 @@
 # Input Parameters
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Model Configuration](#model-configuration)
 - [Biomarker Prevalence](#biomarker-prevalence)
@@ -103,7 +103,14 @@ draws a non-negative decrement `u_decrement` (gamma, CV 0.15, mean equal
 to the base-case difference `u_np - u_p`) and sets
 `u_p = u_np - u_decrement`, so `u_p <= u_np` holds in every draw and the
 marginal mean of `u_p` is unchanged (issue \#154). The realised reversal
-fraction is reported in the cost-effectiveness report.
+fraction is reported in the cost-effectiveness report. The reported
+results use the CORRECT utilities (`UTILITY_SOURCE = 1`). The
+alternative IPD mode (`UTILITY_SOURCE = 0`, issue \#188) derives both
+utilities in the pipeline from the METIMMOX EQ-5D-5L responses with the
+value set chosen by `EQ5D_VALUE_SET` (Danish by default: 0.912 and
+0.897), and replaces the assumed CV 0.15 of `u_np` and `u_decrement`
+with patient-clustered bootstrap standard errors (Danish set: 0.013 and
+0.016).
 
 | Parameter                | Symbol | Base Case | DSA Low | DSA High |
 |:-------------------------|:-------|----------:|--------:|---------:|
@@ -290,9 +297,9 @@ Fields of l_params_base and the model step that consumes each
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
-**Report version:** 4.7
+**Report version:** 4.8
 
 ## Validation warnings
 

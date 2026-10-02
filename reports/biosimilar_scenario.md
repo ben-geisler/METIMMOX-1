@@ -1,6 +1,6 @@
 # Biosimilar Nivolumab Pricing Scenario
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [Pricing Scenarios](#pricing-scenarios)
@@ -71,7 +71,7 @@ survival curves are unchanged.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.1
 

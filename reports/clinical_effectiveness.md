@@ -1,6 +1,6 @@
 # Clinical Effectiveness
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [Methodological Notes](#methodological-notes)
@@ -1419,7 +1419,7 @@ supports baseline treatment selection on TLR.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 3.11
 

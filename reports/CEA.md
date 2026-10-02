@@ -1,6 +1,6 @@
 # Cost-Effectiveness Analysis
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [Economic Survival Model](#economic-survival-model)
@@ -286,7 +286,7 @@ Kaplan-Meier curves are in the technical report
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 4.9
 

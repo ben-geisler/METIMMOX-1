@@ -1,6 +1,6 @@
 # PFS \> OS Ordering Violations in the PSA
 Ben Geisler
-2026-10-01
+2026-10-02
 
 - [Overview](#overview)
 - [Methods](#methods)
@@ -161,7 +161,7 @@ file is younger than the sampling-cache file.
 | Cache | Modified | Sampling fingerprint |
 |:---|:---|:---|
 | Sampling draws | 2026-10-01 12:55 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
-| PSA results | 2026-10-01 13:31 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
+| PSA results | 2026-10-02 13:03 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
 | Violation diagnostics | 2026-10-01 15:08 | acbb0449a4bbb1a3fb7cb656ee87abe969611779319f748c9f8158755d49f96a |
 
 Caches read by this report
@@ -449,7 +449,7 @@ attribution was too strong.
 
 ------------------------------------------------------------------------
 
-**Report completed on:** 2026-10-01  
+**Report completed on:** 2026-10-02  
 **Repository:** ben-geisler/METIMMOX-1  
 **Report version:** 2.1
 
