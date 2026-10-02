@@ -58,11 +58,12 @@ parameter_distribution_spec <- function() {
   # u_p > u_np. Sampling a non-negative decrement instead makes u_p <= u_np hold
   # by construction, and E[u_decrement] = u_np - u_p leaves the marginal mean of
   # u_p unchanged.
-  # CV 0.15 for u_np and u_decrement is an ASSUMPTION (issue #56): neither the
-  # CORRECT utilities nor the IPD values come with a usable standard error, so
-  # a conventional CV is used (beta 95% interval for u_np = 0.73 about
-  # 0.49-0.91). It is not derived from data or cited literature and is not
-  # varied in any scenario.
+  # CV 0.15 for u_np and u_decrement is an ASSUMPTION (issue #56): the CORRECT
+  # utilities come without a usable standard error, so a conventional CV is
+  # used (beta 95% interval for u_np = 0.73 about 0.49-0.91). It is not derived
+  # from data or cited literature and is not varied in any scenario. In IPD
+  # mode (UTILITY_SOURCE = 0, issue #188) patient-clustered bootstrap SEs in
+  # params$utility_se replace it (create_parameter_distributions()).
   df_utilities <- data.frame(
     parameter = c("u_np", "u_decrement", "u_p"),
     distribution = c("beta", "gamma", "derived"),
@@ -154,9 +155,17 @@ create_parameter_distributions <- function(params,
       return(list(dist = "dirichlet", alpha = v_counts,
                   component = sub("^p_joint_", "", spec$parameter[i])))
     }
-    distribution_parameters(
-      params[[spec$parameter[i]]], spec$distribution[i], spec$cv[i]
-    )
+    # In IPD utility mode (UTILITY_SOURCE = 0, issue #188) script 05 supplies
+    # patient-clustered bootstrap standard errors in params$utility_se; they
+    # replace the assumed CV for the parameters they name. The literature base
+    # case has no utility_se and keeps the spec's CV.
+    cv <- spec$cv[i]
+    se <- params$utility_se[spec$parameter[i]]
+    if (length(se) == 1L && !is.na(se)) {
+      if (!is.finite(se) || se <= 0) stop("utility_se must be positive and finite.")
+      cv <- unname(se / params[[spec$parameter[i]]])
+    }
+    distribution_parameters(params[[spec$parameter[i]]], spec$distribution[i], cv)
   })
   stats::setNames(distributions, spec$parameter)
 }

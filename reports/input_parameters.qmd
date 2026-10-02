@@ -175,7 +175,7 @@ of its full-horizon QALY increment.
 
 # Utilities
 
-The two health-state utilities are not sampled independently in the PSA. Independent beta draws placed the progressed utility above the progression-free utility in a substantial minority of draws (about 16% under the CORRECT utilities and about 49% under the IPD utilities), which widened the PSA with orderings that cannot occur. The PSA instead draws a non-negative decrement `u_decrement` (gamma, CV 0.15, mean equal to the base-case difference `u_np - u_p`) and sets `u_p = u_np - u_decrement`, so `u_p <= u_np` holds in every draw and the marginal mean of `u_p` is unchanged (issue #154). The realised reversal fraction is reported in the cost-effectiveness report.
+The two health-state utilities are not sampled independently in the PSA. Independent beta draws placed the progressed utility above the progression-free utility in a substantial minority of draws (about 16% under the CORRECT utilities and about 49% under the IPD utilities), which widened the PSA with orderings that cannot occur. The PSA instead draws a non-negative decrement `u_decrement` (gamma, CV 0.15, mean equal to the base-case difference `u_np - u_p`) and sets `u_p = u_np - u_decrement`, so `u_p <= u_np` holds in every draw and the marginal mean of `u_p` is unchanged (issue #154). The realised reversal fraction is reported in the cost-effectiveness report. The reported results use the CORRECT utilities (`UTILITY_SOURCE = 1`). The alternative IPD mode (`UTILITY_SOURCE = 0`, issue #188) derives both utilities in the pipeline from the METIMMOX EQ-5D-5L responses with the value set chosen by `EQ5D_VALUE_SET` (Danish by default: 0.912 and 0.897), and replaces the assumed CV 0.15 of `u_np` and `u_decrement` with patient-clustered bootstrap standard errors (Danish set: 0.013 and 0.016).
 
 ```{r utility-table}
 utility_table <- data.frame(
@@ -375,6 +375,15 @@ trace <- rbind(
              Step = "Weights behind the current curves; compared with the weights implied by the prevalence fields.")
 )
 
+# IPD utility mode only (UTILITY_SOURCE = 0, issue #188).
+if (UTILITY_SOURCE == 0) {
+  trace <- rbind(trace,
+    data.frame(Field = "utility_se", Function = "create_parameter_distributions()",
+               Step = "Not read by model_fun(); patient-clustered bootstrap SEs of u_np and u_decrement that replace the assumed CV 0.15 of their PSA distributions."),
+    data.frame(Field = "utility_input", Function = "psa_cache_fingerprint()",
+               Step = "Not read by model_fun(); EQ-5D-5L value set, file digest and counts, so the PSA fingerprint covers the utility input."))
+}
+
 unmapped <- setdiff(names(l_params_base), trace$Field)
 unknown <- setdiff(trace$Field, names(l_params_base))
 if (length(unmapped) > 0 || length(unknown) > 0 || anyDuplicated(trace$Field)) {
@@ -401,4 +410,4 @@ knitr::kable(
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.7
+**Report version:** 4.8

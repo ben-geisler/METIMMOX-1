@@ -59,4 +59,50 @@ stopifnot(nrow(df_scen) == 1L, df_scen$u_np == l_u$u_np, df_scen$u_p == l_u$u_p,
           !grepl("PLACEHOLDER", df_scen$source, fixed = TRUE))
 cat("PASS: utility scenario built from the trial-derived pair.\n")
 
+# Patient-clustered bootstrap (issue #188): reproducible, leaves the caller's
+# RNG untouched, point estimates equal the full-data values, SEs positive.
+set.seed(5)
+n_pat <- 40L
+df_trial_b <- data.frame(ID = sprintf("P%02d", seq_len(n_pat)),
+                         `First progression` = as.POSIXct("2020-06-01", tz = "UTC"),
+                         `Progression exit` = rep(c(1, 0), length.out = n_pat), check.names = FALSE)
+df_eq5d_b <- do.call(rbind, lapply(seq_len(n_pat), function(i) data.frame(
+  ID = sprintf("P%02d", i), Date = as.Date(c("2020-01-01", "2020-09-01")),
+  mo = sample(1:3, 2, TRUE), sc = 1L, ua = sample(1:2, 2, TRUE), pd = sample(1:3, 2, TRUE), ad = 1L)))
+invisible(runif(1)); rng_before <- .Random.seed
+l_b1 <- trial_eq5d_utility_uncertainty(df_eq5d_b, df_trial_b, "dk", n_boot = 200L, seed = 7L)
+stopifnot(identical(.Random.seed, rng_before))
+l_b2 <- trial_eq5d_utility_uncertainty(df_eq5d_b, df_trial_b, "dk", n_boot = 200L, seed = 7L)
+l_b3 <- trial_eq5d_utility_uncertainty(df_eq5d_b, df_trial_b, "dk", n_boot = 200L, seed = 8L)
+l_full <- trial_eq5d_utilities(df_eq5d_b, df_trial_b, "dk")
+stopifnot(identical(l_b1$se, l_b2$se), !identical(l_b1$se, l_b3$se),
+          l_b1$u_np == l_full$u_np, l_b1$u_p == l_full$u_p,
+          abs(l_b1$u_decrement - (l_full$u_np - l_full$u_p)) < 1e-15,
+          all(l_b1$se > 0), identical(names(l_b1$se), c("u_np", "u_p", "u_decrement")),
+          l_b1$n_boot_discarded == 0L)
+# Clustering: duplicating every response within its patient adds no
+# information, so the patient-level SE stays (about) the same.
+df_dup <- rbind(df_eq5d_b, df_eq5d_b)
+l_dup <- trial_eq5d_utility_uncertainty(df_dup, df_trial_b, "dk", n_boot = 200L, seed = 7L)
+stopifnot(abs(l_dup$se["u_np"] / l_b1$se["u_np"] - 1) < 0.25)
+cat("PASS: patient-clustered bootstrap is reproducible, RNG-neutral and cluster-aware.\n")
+
+# The SEs replace the assumed CV in the PSA distributions (issue #188).
+source("R/model_configs.R")
+source("R/parameter_distributions.R")
+v_spec <- parameter_distribution_spec()
+v_spec <- v_spec[v_spec$parameter %in% c("u_np", "u_decrement"), ]
+l_params <- list(u_np = 0.9, u_decrement = 0.02)
+l_cv <- create_parameter_distributions(l_params, v_spec)
+l_params$utility_se <- c(u_np = 0.01, u_decrement = 0.02)
+l_se <- create_parameter_distributions(l_params, v_spec)
+v_beta_var <- with(l_se$u_np, shape1 * shape2 / ((shape1 + shape2)^2 * (shape1 + shape2 + 1)))
+stopifnot(abs(l_cv$u_decrement$shape - 1 / 0.15^2) < 1e-12,
+          abs(sqrt(v_beta_var) - 0.01) < 1e-12,
+          abs(l_se$u_decrement$shape - 1) < 1e-12,           # CV = 0.02 / 0.02 = 1
+          abs(l_se$u_decrement$shape / l_se$u_decrement$rate - 0.02) < 1e-12)
+l_params$utility_se <- c(u_np = -1)
+stopifnot(fails(create_parameter_distributions(l_params, v_spec)))
+cat("PASS: utility_se replaces the assumed CV of u_np and u_decrement.\n")
+
 cat("Trial utility tests passed.\n")

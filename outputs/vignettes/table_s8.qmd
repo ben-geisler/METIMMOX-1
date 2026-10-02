@@ -110,7 +110,7 @@ for (scenario_name in names(structural)) {
 # 3. Alternative utilities
 register_artifact_input(TRIAL_EQ5D_PATH)
 trial_utilities <- trial_eq5d_utilities(read_trial_eq5d(), readRDS(here::here("data/tidy/METIMMOX.rds")),
-                                        value_set = "dk")
+                                        value_set = EQ5D_VALUE_SET)
 utility_scenarios <- define_utility_scenarios(trial_utilities)
 for (k in seq_len(nrow(utility_scenarios))) {
   params <- base_params

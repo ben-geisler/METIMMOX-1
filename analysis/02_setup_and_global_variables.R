@@ -68,14 +68,24 @@ discount_rate_research <- 0.035  # Discount rate for future research benefits (3
 ## Utility source switch
 ## Controls which health state utility values are used as base case
 ## Options:
-##   0 = "ipd"      - IPD-derived from METIMMOX trial (u_np = 0.9077, u_p = 0.9005)
+##   0 = "ipd"      - METIMMOX EQ-5D-5L IPD, derived in the pipeline by
+##                     trial_eq5d_utility_uncertainty() (R/trial_utilities.R) with
+##                     the EQ5D_VALUE_SET value set and patient-clustered
+##                     bootstrap SEs for the PSA (issue #188). Danish set:
+##                     u_np = 0.912, u_p = 0.897.
 ##   1 = "correct"  - EQ-5D from CORRECT trial (u_np = 0.73, u_p = 0.59)
 ##                     (Grothey et al. Lancet 2013, cited by Gourzoulidis et al. J Comp Effect Res 2018)
 ##
+## Both can be set without editing this file, e.g.
+## options(metimmox.utility_source = 0, metimmox.eq5d_value_set = "uk") before
+## sourcing the scripts. IPD caches are labelled ipd_<value set>.
 ## IMPORTANT: When changed, PSA and EVPPI caches must be regenerated.
 ## Sampling cache (survival models) is NOT affected.
-UTILITY_SOURCE <- 1  # Default: CORRECT trial utilities (Gourzoulidis et al. 2018)
-utility_source_label <- c("ipd", "correct")[UTILITY_SOURCE + 1]
+UTILITY_SOURCE <- getOption("metimmox.utility_source", 1)  # Default: CORRECT (Gourzoulidis et al. 2018)
+EQ5D_VALUE_SET <- getOption("metimmox.eq5d_value_set", "dk")  # EQ-5D-5L value set for IPD utilities
+if (!UTILITY_SOURCE %in% c(0, 1)) stop("UTILITY_SOURCE must be 0 (IPD) or 1 (CORRECT).")
+if (!EQ5D_VALUE_SET %in% c("dk", "uk")) stop("EQ5D_VALUE_SET must be 'dk' or 'uk'.")
+utility_source_label <- if (UTILITY_SOURCE == 0) paste0("ipd_", EQ5D_VALUE_SET) else "correct"
 
 # ===============================================================================
 # SOURCE MODEL CONFIGURATIONS (Single Source of Truth)

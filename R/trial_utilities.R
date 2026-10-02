@@ -73,6 +73,55 @@ trial_eq5d_utilities <- function(eq5d, trial_data, value_set = c("dk", "uk")) {
        n_unmatched_responses = sum(!v_matched))
 }
 
+#' Trial utilities with patient-clustered bootstrap standard errors (issue #188)
+#'
+#' Point estimates are those of trial_eq5d_utilities() on all responses. Patients
+#' answer several times, so uncertainty comes from a patient-level bootstrap:
+#' each replicate resamples matched patients with replacement (with all their
+#' responses) and recomputes u_np, u_p and their difference u_decrement on the
+#' same resample, which keeps the dependence between the two states. Replicates
+#' in which a state has no response are discarded and counted.
+#'
+#' @param eq5d Responses as returned by read_trial_eq5d().
+#' @param trial_data Trial data (see trial_eq5d_utilities()).
+#' @param value_set "dk" or "uk".
+#' @param n_boot Number of bootstrap replicates.
+#' @param seed RNG seed; the caller's RNG state is restored afterwards.
+#' @return The list of trial_eq5d_utilities() plus u_decrement, se (named
+#'   numeric: u_np, u_p, u_decrement), n_boot and n_boot_discarded.
+trial_eq5d_utility_uncertainty <- function(eq5d, trial_data, value_set = c("dk", "uk"),
+                                           n_boot = 2000L, seed = 2026L) {
+  value_set <- match.arg(value_set)
+  l_point <- trial_eq5d_utilities(eq5d, trial_data, value_set)
+  v_ids <- unique(eq5d$ID[eq5d$ID %in% as.character(trial_data$ID)])
+  l_rows <- split(which(eq5d$ID %in% v_ids), eq5d$ID[eq5d$ID %in% v_ids])[v_ids]
+
+  old_seed <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv())
+  on.exit(if (is.null(old_seed)) rm(".Random.seed", envir = globalenv())
+          else assign(".Random.seed", old_seed, envir = globalenv()), add = TRUE)
+  set.seed(seed)
+  m_boot <- matrix(NA_real_, n_boot, 2L, dimnames = list(NULL, c("u_np", "u_p")))
+  for (b in seq_len(n_boot)) {
+    v_pick <- sample(v_ids, length(v_ids), replace = TRUE)
+    df_b <- eq5d[unlist(l_rows[v_pick], use.names = FALSE), , drop = FALSE]
+    # Resampled patients must stay distinct units: relabel duplicates.
+    df_b$ID <- paste0(df_b$ID, "#", rep(seq_along(v_pick), lengths(l_rows[v_pick])))
+    df_trial_b <- trial_data[match(sub("#.*$", "", unique(df_b$ID)), as.character(trial_data$ID)), , drop = FALSE]
+    df_trial_b$ID <- unique(df_b$ID)
+    l_b <- tryCatch(trial_eq5d_utilities(df_b, df_trial_b, value_set), error = function(e) NULL)
+    if (!is.null(l_b)) m_boot[b, ] <- c(l_b$u_np, l_b$u_p)
+  }
+  v_ok <- stats::complete.cases(m_boot)
+  if (sum(v_ok) < 0.9 * n_boot) stop("More than 10% of utility bootstrap replicates failed.")
+  m_boot <- m_boot[v_ok, , drop = FALSE]
+  v_decrement <- m_boot[, "u_np"] - m_boot[, "u_p"]
+  c(l_point, list(
+    u_decrement = l_point$u_np - l_point$u_p,
+    se = c(u_np = stats::sd(m_boot[, "u_np"]), u_p = stats::sd(m_boot[, "u_p"]),
+           u_decrement = stats::sd(v_decrement)),
+    n_boot = n_boot, n_boot_discarded = sum(!v_ok), seed = seed))
+}
+
 #' Source note for trial-derived utilities, for table footnotes
 #'
 #' @param utilities List returned by trial_eq5d_utilities().

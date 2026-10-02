@@ -52,6 +52,19 @@ for (biomarker in get_biomarkers()) {
 c_test_CRP <- 16
 c_test_NGS <- 2518
 
+# IPD utilities (UTILITY_SOURCE = 0, issue #188): derived in the pipeline from
+# the METIMMOX EQ-5D-5L responses with the EQ5D_VALUE_SET value set, with
+# patient-clustered bootstrap standard errors for the PSA. The literature base
+# case (UTILITY_SOURCE = 1, CORRECT trial) reads no utility data. There is no
+# fallback to constants: a missing EQ-5D file stops.
+if (UTILITY_SOURCE == 0) {
+  source(here::here("R", "eq5d5l_utility.R"))
+  source(here::here("R", "trial_utilities.R"))
+  ipd_utilities <- trial_eq5d_utility_uncertainty(
+    read_trial_eq5d(), readRDS(here::here("data", "tidy", "METIMMOX.rds")),
+    value_set = EQ5D_VALUE_SET, seed = analysis_seed)
+}
+
 # Compile all parameters into a list for the model function
 l_params_base <- list(
   # Time parameters
@@ -63,10 +76,10 @@ l_params_base <- list(
   dr_effects = dr,
   
   # Utilities - determined by UTILITY_SOURCE switch (set in 02_setup_and_global_variables.R)
-  # IPD-derived: u_np = 0.9077, u_p = 0.9005 (from METIMMOX trial)
+  # IPD-derived (issue #188): trial_eq5d_utility_uncertainty() above
   # CORRECT trial: u_np = 0.73, u_p = 0.59 (Gourzoulidis et al. 2018)
-  u_np = if (UTILITY_SOURCE == 0) 0.9077 else 0.73,
-  u_p  = if (UTILITY_SOURCE == 0) 0.9005 else 0.59,
+  u_np = if (UTILITY_SOURCE == 0) ipd_utilities$u_np else 0.73,
+  u_p  = if (UTILITY_SOURCE == 0) ipd_utilities$u_p else 0.59,
   
   # Drug costs
   # c_drug_nivo: ASSUMPTION, not a published tariff (issue #154). EUR 13,923 per
@@ -132,6 +145,18 @@ l_params_base$u_decrement <- l_params_base$u_np - l_params_base$u_p
 if (l_params_base$u_decrement <= 0) {
   stop("The base-case progressed utility must be below the progression-free ",
        "utility for the PSA decrement parameterisation.")
+}
+
+# IPD mode only: bootstrap SEs replace the assumed CV 0.15 of u_np and
+# u_decrement in create_parameter_distributions(), and the EQ-5D input (value
+# set, file digest, counts) enters l_params_base and hence the PSA fingerprint.
+if (UTILITY_SOURCE == 0) {
+  l_params_base$utility_se <- ipd_utilities$se[c("u_np", "u_decrement")]
+  l_params_base$utility_input <- list(
+    source = "METIMMOX EQ-5D-5L IPD", value_set = ipd_utilities$value_set,
+    eq5d_md5 = unname(tools::md5sum(here::here(TRIAL_EQ5D_PATH))),
+    n_responses = ipd_utilities$n_responses, n_patients = ipd_utilities$n_patients,
+    n_boot = ipd_utilities$n_boot, seed = ipd_utilities$seed)
 }
 
 for (biomarker in get_biomarkers()) {

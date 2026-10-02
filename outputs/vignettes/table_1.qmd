@@ -72,7 +72,9 @@ utility_meta <- if (UTILITY_SOURCE == 1) {
   list(source = "CORRECT trial (Gourzoulidis et al. 2018)",
        note = "EQ-5D in regorafenib-treated mCRC (Grothey et al. 2013)")
 } else {
-  list(source = "METIMMOX EQ-5D-5L (IPD)", note = "Danish tariff")
+  list(source = "METIMMOX EQ-5D-5L (IPD, trial_eq5d_utility_uncertainty())",
+       note = paste(c(dk = "Danish", uk = "UK")[[EQ5D_VALUE_SET]],
+                    "EQ-5D-5L value set; PSA spread from patient-clustered bootstrap SEs"))
 }
 
 # PSA distribution family per parameter from the shared specification. Unit
