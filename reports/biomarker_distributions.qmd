@@ -1,0 +1,359 @@
+---
+title: "Biomarker Distributions"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup}
+#| include: false
+
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = "02",
+  packages = c("here", "knitr", "kableExtra", "dplyr", "tableone", "vcd"),
+  set_theme = FALSE
+)
+
+# Set knitr options for PDF
+options(knitr.table.format = report_table_format())
+```
+
+```{r load-data}
+#| include: false
+
+# Load the full dataset directly to preserve continuous biomarker variables
+data_full <- readRDS(here("data/tidy/METIMMOX.rds"))
+
+# Create binary biomarker variables (same as 03_biomarker_strategies.R)
+data_full$crp <- as.numeric(data_full$CRP1cat == 1)
+data_full$tlr <- as.numeric(data_full$TLRcat == 1)
+data_full$tmb_braf <- as.numeric((data_full$TMBcat == 1) | (data_full$Mutation == "BRAF"))
+
+# Rename sex variable for consistency
+data_full$sex <- data_full$Female
+
+# Rename Progression exit to Progression (as in 02_setup_and_global_variables.R)
+names(data_full)[names(data_full) == "Progression exit"] <- "Progression"
+
+# Derive the composite PFS endpoint (progression or death), as in 02 (issue #149)
+source(here("R/pfs_endpoint.R"))
+data_full <- derive_pfs_endpoint(data_full, pfs_death_window_weeks, pfs_last_assessment)
+
+# Patients without a week-4 CRP, described by arm and by death or follow-up
+# time relative to week 4 (issue #182): only those who died before week 4
+# could not have had the measurement.
+crp_missing <- data_full[is.na(data_full$crp), ]
+crp_missing_arm <- table(droplevels(as.factor(crp_missing$Rx)))
+crp_missing_arm_text <- paste(sprintf("%d %s", as.integer(crp_missing_arm),
+                                      sub(" arm$", "-arm", tolower(names(crp_missing_arm)))),
+                              collapse = " and ")
+crp_missing_before4 <- crp_missing$Death == 1 & crp_missing$OSwk < 4
+fmt_weeks <- function(x) paste(sprintf("%.1f", sort(x)), collapse = " and ")
+crp_missing_text <- sprintf(
+  "%d died before week 4 (week %s) and %d %s alive at week 4 without a week-4 value (%s at weeks %s)",
+  sum(crp_missing_before4), fmt_weeks(crp_missing$OSwk[crp_missing_before4]),
+  sum(!crp_missing_before4), if (sum(!crp_missing_before4) == 1) "was" else "were",
+  if (all(crp_missing$Death[!crp_missing_before4] == 1)) "later deaths" else "death or last follow-up",
+  fmt_weeks(crp_missing$OSwk[!crp_missing_before4]))
+```
+
+# Introduction
+
+This report presents the distribution of patient characteristics stratified by treatment arm and biomarker status. Three biomarker strategies are evaluated:
+
+- **CRP**: C-reactive protein at week 4 (cycle 3 day 1), measured after two FLOX cycles common to both arms and before the first nivolumab dose (positive: CRP < 5 mg/L). This is not the baseline value. The `r nrow(crp_missing)` patients without a week-4 CRP (`r crp_missing_arm_text` patients) are excluded from the complete-case tables below: `r crp_missing_text`.
+- **TLR**: Target lesion reduction at the first on-treatment CT (positive: a reduction of at least 10% in the sum of target-lesion diameters)
+- **TMB/BRAF**: Combined biomarker from baseline NGS (positive: TMB $\geq$ 9 mut/MB OR BRAF mutation)
+
+Each table shows the distribution of age, sex, and the other two biomarkers (both categorical and continuous) within subgroups defined by treatment arm and biomarker status.
+
+```{r prepare-data}
+#| include: false
+
+# Create complete cases dataset for analysis
+data_complete <- data_full[complete.cases(data_full[, c("Age", "sex", "Rx", "crp", "tlr",
+                                                         "tmb_braf", "OSwk", "Death",
+                                                         "PFSwk", "Progression")]), ]
+
+# Sample characteristics
+n_total <- nrow(data_complete)
+n_control <- sum(data_complete$Rx == "Control arm")
+n_experimental <- sum(data_complete$Rx == "Experimental arm")
+
+# Event counts
+n_deaths <- sum(data_complete$Death)
+n_progressions <- sum(data_complete$Progression)
+
+# Biomarker prevalence
+prev_crp <- mean(data_complete$crp)
+prev_tlr <- mean(data_complete$tlr)
+prev_tmb_braf <- mean(data_complete$tmb_braf)
+
+# Create factor versions of biomarkers for better table display
+data_complete <- data_complete %>%
+  mutate(
+    # Strata labels use just + and -
+    crp_strata = factor(ifelse(crp == 1, "+", "-"), levels = c("-", "+")),
+    tlr_strata = factor(ifelse(tlr == 1, "+", "-"), levels = c("-", "+")),
+    tmb_braf_strata = factor(ifelse(tmb_braf == 1, "+", "-"), levels = c("-", "+")),
+    # Row variable labels include biomarker name
+    crp_status = factor(ifelse(crp == 1, "CRP+", "CRP-"), levels = c("CRP-", "CRP+")),
+    tlr_status = factor(ifelse(tlr == 1, "TLR+", "TLR-"), levels = c("TLR-", "TLR+")),
+    tmb_braf_status = factor(ifelse(tmb_braf == 1, "TMB/BRAF+", "TMB/BRAF-"),
+                              levels = c("TMB/BRAF-", "TMB/BRAF+")),
+    # Continuous variables with better names
+    CRP_continuous = CRP1,
+    TLR_continuous = TLR,
+    TMB_continuous = TMB,
+    # Events as factors for tableone
+    Death_event = factor(Death, levels = c(0, 1), labels = c("No", "Yes")),
+    Progression_event = factor(Progression, levels = c(0, 1), labels = c("No", "Yes"))
+  )
+
+# Create strata variables for each biomarker with clean labels.
+# Relabel by level NAME, not by position: interaction() orders its levels with
+# the first factor varying fastest (Control/-, Exp/-, Control/+, Exp/+), so a
+# positional relabel would swap the Exp/- and Control/+ columns (issue #153).
+make_arm_strata <- function(rx, strata) {
+  f <- interaction(rx, strata, sep = " / ", lex.order = TRUE)
+  arm_short <- c("Control arm" = "Control", "Experimental arm" = "Exp")
+  new_levels <- vapply(strsplit(levels(f), " / ", fixed = TRUE), function(parts) {
+    paste(arm_short[[parts[1]]], parts[2], sep = " / ")
+  }, character(1))
+  levels(f) <- new_levels
+  f
+}
+
+data_complete$strata_crp      <- make_arm_strata(data_complete$Rx, data_complete$crp_strata)
+data_complete$strata_tlr      <- make_arm_strata(data_complete$Rx, data_complete$tlr_strata)
+data_complete$strata_tmb_braf <- make_arm_strata(data_complete$Rx, data_complete$tmb_braf_strata)
+
+stopifnot(identical(levels(data_complete$strata_crp),
+                    c("Control / -", "Control / +", "Exp / -", "Exp / +")))
+
+# Calculate complete cases per stratum for each biomarker
+complete_cases_crp <- table(data_complete$strata_crp)
+complete_cases_tlr <- table(data_complete$strata_tlr)
+complete_cases_tmb_braf <- table(data_complete$strata_tmb_braf)
+```
+
+# Sample Characteristics
+
+```{r table-sample}
+sample_df <- data.frame(
+  Characteristic = c("Total patients (complete cases)",
+                     "Control arm (FLOX alone)",
+                     "Experimental arm (alternating FLOX/nivolumab)",
+                     "",
+                     "Deaths (OS events)",
+                     "PFS events (progression or death)",
+                     "",
+                     "CRP-positive (low CRP)",
+                     "TLR-positive (early response)",
+                     "TMB/BRAF-positive"),
+  Value = c(n_total,
+            paste0(n_control, " (", round(100*n_control/n_total, 1), "%)"),
+            paste0(n_experimental, " (", round(100*n_experimental/n_total, 1), "%)"),
+            "",
+            paste0(n_deaths, " (", round(100*n_deaths/n_total, 1), "%)"),
+            paste0(n_progressions, " (", round(100*n_progressions/n_total, 1), "%)"),
+            "",
+            paste0(sum(data_complete$crp), " (", round(100*prev_crp, 1), "%)"),
+            paste0(sum(data_complete$tlr), " (", round(100*prev_tlr, 1), "%)"),
+            paste0(sum(data_complete$tmb_braf), " (", round(100*prev_tmb_braf, 1), "%)"))
+)
+
+sample_df %>%
+  kable(col.names = c("Characteristic", "N (%)"),
+        caption = "Sample Characteristics",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10) %>%
+  tbl_row_spec(c(4, 7), bold = FALSE, extra_css = "border-bottom: none;")
+```
+
+# CRP Stratification
+
+Distribution of patient characteristics by treatment arm and CRP status.
+
+```{r table-crp}
+# Variables for CRP table (exclude CRP, include TLR and TMB/BRAF both ways, plus events)
+vars_crp <- c("Age", "sex", "TLR_continuous", "tlr_status", "TMB_continuous", "tmb_braf_status",
+              "Death_event", "Progression_event")
+factor_vars_crp <- c("sex", "tlr_status", "tmb_braf_status", "Death_event", "Progression_event")
+
+# Create TableOne
+tab_crp <- CreateTableOne(
+  vars = vars_crp,
+  strata = "strata_crp",
+  data = data_complete,
+  factorVars = factor_vars_crp,
+  test = FALSE,
+  addOverall = FALSE
+)
+
+# Print and convert to matrix
+tab_crp_mat <- print(tab_crp,
+                      printToggle = FALSE,
+                      noSpaces = TRUE,
+                      showAllLevels = TRUE)
+
+# Convert to kable
+kable(tab_crp_mat,
+      caption = "Patient Characteristics by Treatment Arm and CRP Status",
+      booktabs = TRUE,
+      linesep = "") %>%
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
+                font_size = 10)
+```
+
+```{r pagebreak-1, results='asis'}
+cat("\\newpage\n")
+```
+
+# TLR Stratification
+
+Distribution of patient characteristics by treatment arm and TLR status.
+
+```{r table-tlr}
+# Variables for TLR table (exclude TLR, include CRP and TMB/BRAF both ways, plus events)
+vars_tlr <- c("Age", "sex", "CRP_continuous", "crp_status", "TMB_continuous", "tmb_braf_status",
+              "Death_event", "Progression_event")
+factor_vars_tlr <- c("sex", "crp_status", "tmb_braf_status", "Death_event", "Progression_event")
+
+# Create TableOne
+tab_tlr <- CreateTableOne(
+  vars = vars_tlr,
+  strata = "strata_tlr",
+  data = data_complete,
+  factorVars = factor_vars_tlr,
+  test = FALSE,
+  addOverall = FALSE
+)
+
+# Print and convert to matrix
+tab_tlr_mat <- print(tab_tlr,
+                      printToggle = FALSE,
+                      noSpaces = TRUE,
+                      showAllLevels = TRUE)
+
+# Convert to kable
+kable(tab_tlr_mat,
+      caption = "Patient Characteristics by Treatment Arm and TLR Status",
+      booktabs = TRUE,
+      linesep = "") %>%
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
+                font_size = 10)
+```
+
+# TMB/BRAF Stratification
+
+Distribution of patient characteristics by treatment arm and TMB/BRAF status.
+
+```{r table-tmb-braf}
+# Variables for TMB/BRAF table (exclude TMB/BRAF, include CRP and TLR both ways, plus events)
+vars_tmb <- c("Age", "sex", "CRP_continuous", "crp_status", "TLR_continuous", "tlr_status",
+              "Death_event", "Progression_event")
+factor_vars_tmb <- c("sex", "crp_status", "tlr_status", "Death_event", "Progression_event")
+
+# Create TableOne
+tab_tmb <- CreateTableOne(
+  vars = vars_tmb,
+  strata = "strata_tmb_braf",
+  data = data_complete,
+  factorVars = factor_vars_tmb,
+  test = FALSE,
+  addOverall = FALSE
+)
+
+# Print and convert to matrix
+tab_tmb_mat <- print(tab_tmb,
+                      printToggle = FALSE,
+                      noSpaces = TRUE,
+                      showAllLevels = TRUE)
+
+# Convert to kable
+kable(tab_tmb_mat,
+      caption = "Patient Characteristics by Treatment Arm and TMB/BRAF Status",
+      booktabs = TRUE,
+      linesep = "") %>%
+  tbl_style(latex_options = c("striped", "HOLD_position", "scale_down"),
+                font_size = 10)
+```
+
+```{r pagebreak-2, results='asis'}
+cat("\\newpage\n")
+```
+
+# Biomarker Correlations
+
+```{r biomarker-correlation}
+#| include: false
+
+# CRP vs TLR
+crp_tlr_table <- table(data_complete$crp, data_complete$tlr)
+crp_tlr_assoc <- assocstats(crp_tlr_table)
+cramers_v_crp_tlr <- crp_tlr_assoc$cramer
+
+# CRP vs TMB/BRAF
+crp_tmb_table <- table(data_complete$crp, data_complete$tmb_braf)
+crp_tmb_assoc <- assocstats(crp_tmb_table)
+cramers_v_crp_tmb <- crp_tmb_assoc$cramer
+
+# TLR vs TMB/BRAF
+tlr_tmb_table <- table(data_complete$tlr, data_complete$tmb_braf)
+tlr_tmb_assoc <- assocstats(tlr_tmb_table)
+cramers_v_tlr_tmb <- tlr_tmb_assoc$cramer
+
+# Build correlation summary
+correlation_df <- data.frame(
+  Comparison = c("CRP vs TLR", "CRP vs TMB/BRAF", "TLR vs TMB/BRAF"),
+  Cramers_V = round(c(cramers_v_crp_tlr, cramers_v_crp_tmb, cramers_v_tlr_tmb), 3),
+  Interpretation = sapply(c(cramers_v_crp_tlr, cramers_v_crp_tmb, cramers_v_tlr_tmb), function(v) {
+    if (v > 0.3) "Moderate/Strong"
+    else if (v > 0.1) "Weak"
+    else "Negligible"
+  })
+)
+```
+
+```{r table-correlation}
+correlation_df %>%
+  kable(col.names = c("Biomarker Pair", "Cramer's V", "Interpretation"),
+        caption = "Biomarker Correlations (Cramer's V)",
+        booktabs = TRUE, format = report_table_format()) %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 10)
+```
+
+**Note:** Cramer's V interpretation: <0.1 = Negligible, 0.1-0.3 = Weak, >0.3 = Moderate/Strong. The observed correlations are weak to negligible.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.5

@@ -1,0 +1,164 @@
+---
+title: "Figure 5: EVPPI by Parameter Group"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("figure5")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
+  packages = c("here", "ggplot2", "dplyr", "scales"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+cache_file <- scenario_evppi_path()
+if (!file.exists(cache_file)) {
+  stop(
+    "Full scenario cache not found: ", cache_file, ". Run ",
+    "analysis/12_scenario_EVPPIs.R before rendering Figure 5."
+  )
+}
+evppi_cache <- load_scenario_cache(path = cache_file)
+
+# Figure 5 shows joint ([GROUP]) EVPPI rows only. Per-parameter rows are never
+# added to group rows: EVPPI is not additive, and summing single-parameter and
+# group estimates for the same parameters produced bars above total EVPI in
+# earlier versions (issue #152). The interaction bar is the joint EVPPI of all
+# treatment-by-biomarker coefficients (interaction_all).
+# Unit drug and test prices are fixed in the PSA since issue #154, so there is
+# no drug_costs group; the cost bar is the sampled resource-use costs (visits,
+# baseline work-up, follow-up contacts, end-of-life care).
+figure_groups <- c(
+  "[GROUP] other_costs" = "Resource-use costs",
+  "[GROUP] utilities" = "Utilities",
+  "[GROUP] prevalence" = "Biomarker prevalence",
+  "[GROUP] interaction_all" = "Biomarker-treatment interaction"
+)
+
+scenario_labels <- c(
+  base = "Base case",
+  s1_decreased_nivo = "Biosimilar pricing",
+  s2_wtp100k = "WTP 100,000"
+)
+
+to_population <- function(x) {
+  calculate_population_evppi(
+    x,
+    annual_incidence = annual_incidence_norway,
+    research_horizon = research_horizon_years,
+    discount_rate = discount_rate_research
+  )
+}
+
+evppi_all <- compile_evppi_results(evppi_cache$all_scenario_results)
+evppi_grouped <- data.frame()
+if (nrow(evppi_all) > 0) {
+  if (!"evppi_se" %in% names(evppi_all)) evppi_all$evppi_se <- NA_real_
+
+  evppi_grouped <- evppi_all %>%
+    filter(scenario_id %in% names(scenario_labels),
+           parameter %in% names(figure_groups)) %>%
+    mutate(
+      param_group = unname(figure_groups[parameter]),
+      evppi_pop = to_population(evppi),
+      se_pop = to_population(evppi_se),
+      evpi_pop = to_population(evpi),
+      Scenario = factor(scenario_labels[scenario_id], levels = scenario_labels)
+    )
+
+
+}
+```
+
+```{r figure, fig.width=9, fig.height=6}
+if (nrow(evppi_grouped) > 0) {
+  group_order <- evppi_grouped %>%
+    group_by(param_group) %>%
+    summarise(total = sum(evppi_pop, na.rm = TRUE), .groups = "drop") %>%
+    arrange(total) %>%
+    pull(param_group)
+
+  evppi_grouped$param_group <- factor(evppi_grouped$param_group, levels = group_order)
+
+  p_evppi <- ggplot(evppi_grouped, aes(x = param_group, y = evppi_pop, fill = Scenario)) +
+    geom_col(na.rm = TRUE, position = position_dodge(width = 0.8), width = 0.7) +
+    geom_errorbar(
+      aes(ymin = ifelse(se_pop > 0, evppi_pop - 1.96 * se_pop, NA_real_),
+          ymax = ifelse(se_pop > 0, evppi_pop + 1.96 * se_pop, NA_real_)),
+      position = position_dodge(width = 0.8), width = 0.25,
+      linewidth = 0.4, colour = "gray30", na.rm = TRUE
+    ) +
+    geom_text(aes(label = ifelse(is.na(evppi_pop), "NA", ifelse(evppi_pop == 0, "0", "")),
+                  y = ifelse(is.na(evppi_pop), 0, evppi_pop), colour = Scenario),
+              position = position_dodge(width = 0.8), hjust = -0.2, size = 3,
+              show.legend = FALSE) +
+    coord_flip() +
+    scale_y_continuous(labels = function(x) paste0("EUR ", format(x, big.mark = ","), "M")) +
+    labs(
+      x = NULL,
+      y = "Population EVPPI (EUR millions)",
+      fill = "Scenario",
+      caption = paste0(
+        "Joint EVPPI per parameter group (regression estimator); ",
+        "error bars are 95% Monte Carlo intervals.\nGroups are not sums of ",
+        "single-parameter EVPPIs. Zero EVPI bounds every group at zero.\nNA denotes a missing or failed estimate."
+      )
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+
+  print(p_evppi)
+} else {
+  p_evppi <- ggplot() + theme_void() +
+    annotate("text", x = 0, y = 0, label = "No scenario EVPPI estimates")
+  print(p_evppi)
+}
+```
+
+```{r evpi-reference}
+if (nrow(evppi_grouped) > 0) {
+  evppi_grouped %>%
+    distinct(Scenario, evpi_pop) %>%
+    arrange(Scenario) %>%
+    mutate(`Population EVPI` = paste0("EUR ", sprintf("%.2f", evpi_pop), "M")) %>%
+    select(Scenario, `Population EVPI`) %>%
+    knitr::kable(caption = "Total population EVPI per scenario (upper bound for every bar)")
+}
+```
+
+```{r failed-estimates}
+if (nrow(evppi_grouped) > 0 && any(nzchar(evppi_grouped$error))) {
+  evppi_grouped %>% filter(nzchar(error)) %>%
+    select(scenario_name, parameter, error) %>% knitr::kable()
+}
+```
+
+```{r save-figure, include=FALSE}
+if (exists("p_evppi")) {
+  figs_dir <- here("outputs", "figs")
+  if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+  save_artifact_plot(here("outputs", "figs", "figure5.png"), p_evppi, width = 9, height = 6,
+         dpi = 300, bg = "white")
+}
+```
+
+Figure 5 has been saved to `outputs/figs/figure5.png`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

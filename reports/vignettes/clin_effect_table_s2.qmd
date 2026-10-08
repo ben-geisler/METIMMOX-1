@@ -1,0 +1,65 @@
+---
+title: "Table S2 (Clinical Effectiveness): Bivariate Association Tests"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("clin_effect_table_s2")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("dag_helpers", "assoc_tests", "cox_extract", "tlr_landmark",
+           "dag_association_tests", "supp_table_labels", "supp_table_s2"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "dagitty", "survival",
+               "coxphf", "logistf", "coin"),
+  set_theme = FALSE
+)
+
+# The edge list is derived from the canonical `dag` object (dag_helpers.R) by
+# dag_association_tests.R, so this table always tests the graph shown in the
+# DAG figure (issue #155). The week-9 landmark PFS cohort, built from the
+# TLR-classified patients of the complete-case cohort (issue #184), is used for
+# TLR -> PFS and a time-dependent progression indicator for PFS -> OS.
+dd <- prepare_dag_data(data, landmark = "week9")
+```
+
+```{r run-tests, include=FALSE}
+edge_results <- run_dag_edge_tests(dag, dd)
+# Adjusted primary model of the main text, refitted for the reconciliation
+# footnote (Firth Cox via fit_firth_cox(); issue #184).
+adj_results <- run_adjusted_interaction_models(dd)
+
+s2 <- build_supp_table_s2(edge_results, adj_results, dd)
+```
+
+```{r display-table}
+kable(s2$table,
+      caption = "Table S2. Bivariate association tests (direct edges of the assumed causal graph)",
+      format = "html", row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  footnote(general = s2$footnotes, general_title = "Notes: ")
+```
+
+```{r save-csv, include=FALSE}
+write_artifact_csv(s2$table, file = here("outputs", "tables", "clin_effect_table_s2.csv"),
+                   row.names = FALSE)
+write_artifact_csv(s2$raw, file = here("outputs", "tables", "clin_effect_table_s2_raw.csv"),
+                   row.names = FALSE)
+```
+
+Table saved to `outputs/tables/clin_effect_table_s2.csv`; unformatted values (estimates, intervals, p-values) in `outputs/tables/clin_effect_table_s2_raw.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

@@ -1,0 +1,75 @@
+---
+title: "Table S6: Full Enriched-Population Results"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s6")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "08b"),
+  funs = c("cea_helpers", "report_format"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "scales", "dampack",
+               "flexsurv", "survival"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+```
+
+```{r display-table}
+display_df <- enriched_comparison %>%
+  transmute(
+    Biomarker,
+    Prevalence = sprintf("%.1f%%", Prevalence * 100),
+    Base_Cost = format_eur(Base_Cost),
+    Base_Effect = sprintf("%.3f", Base_Effect),
+    Base_ICER = format_icer(Base_ICER, Base_Status),
+    Base_Frontier = frontier_label(Base_Frontier_Status),
+    Enr_Cost = format_eur(Enr_Cost),
+    Enr_Effect = sprintf("%.3f", Enr_Effect),
+    Enr_Ctrl_Cost = format_eur(Enr_Ctrl_Cost),
+    Enr_Ctrl_Effect = sprintf("%.3f", Enr_Ctrl_Effect),
+    Enr_Screening = format_eur(Enr_Screening_Cost),
+    Enr_ICER = format_icer(Enr_ICER, Enr_Status),
+    Pct_Change = ifelse(is.na(Pct_Change), "--", sprintf("%+.1f%%", Pct_Change))
+  )
+
+kable(
+  display_df,
+  caption = "Table S6: Full enriched-population cost-effectiveness results",
+  format = "html",
+  align = c("l", rep("r", ncol(display_df) - 1))
+) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 10) %>%
+  footnote(
+    general = c(
+      "All ICERs are pairwise comparisons against standard of care. Base case compares each guided strategy with overall standard care; enriched analysis compares biomarker-positive experimental and biomarker-positive control arms.",
+      "Enr_Screening is the expected screening cost per identified positive (biomarker test cost divided by the canonical prevalence); it is included in Enr_Cost in place of a single test, while Enr_Ctrl_Cost includes no test.",
+      "Base_Frontier is the dampack efficiency-frontier status of the guided strategy among the three base-case strategies. A frontier-dominated strategy (more costly and less effective than the other guided strategy) still has a finite pairwise ICER; the percentage change is shown only for frontier strategies with finite, positive pairwise ICERs in both analyses."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("outputs", "tables")
+if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+write_artifact_csv(enriched_comparison, file = here("outputs", "tables", "table_s6.csv"), row.names = FALSE)
+```
+
+Table S6 has been saved to `outputs/tables/table_s6.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

@@ -1,0 +1,63 @@
+---
+title: "Table S3 (Clinical Effectiveness): Conditional Independence Assessments"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("clin_effect_table_s3")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  funs = c("dag_helpers", "assoc_tests", "cox_extract", "tlr_landmark",
+           "dag_association_tests", "supp_table_labels", "supp_table_s3"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "dagitty", "survival",
+               "coxphf", "logistf", "coin"),
+  set_theme = FALSE
+)
+
+# The conditional independencies are derived from the canonical `dag` object
+# (dag_helpers.R) by dag_association_tests.R (issues #155, #170).
+dd <- prepare_dag_data(data, landmark = "week9")
+```
+
+```{r run-tests, include=FALSE}
+ci_results <- run_dag_ci_tests(dag, dd, seed = analysis_seed)
+em_results <- run_dag_effect_modification_tests(dag, dd)
+
+s3 <- build_supp_table_s3(ci_results, em_results, dd)
+n_omitted <- sum(s3$raw$Section == SUPP_S3_OMITTED_SECTION)
+```
+
+```{r display-table}
+kable(s3$table[, names(s3$table) != "Section"],
+      caption = "Table S3. Conditional independence assessments",
+      format = "html", row.names = FALSE) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  pack_rows(supp_label(SUPP_S3_OMITTED_SECTION),
+            nrow(s3$table) - n_omitted + 1, nrow(s3$table)) |>
+  footnote(general = s3$footnotes, general_title = "Notes: ")
+```
+
+```{r save-csv, include=FALSE}
+write_artifact_csv(s3$table, file = here("outputs", "tables", "clin_effect_table_s3.csv"),
+                   row.names = FALSE)
+write_artifact_csv(s3$raw, file = here("outputs", "tables", "clin_effect_table_s3_raw.csv"),
+                   row.names = FALSE)
+```
+
+Table saved to `outputs/tables/clin_effect_table_s3.csv`; unformatted values (estimates, intervals, p-values, check flags) in `outputs/tables/clin_effect_table_s3_raw.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

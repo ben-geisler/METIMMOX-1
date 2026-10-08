@@ -1,0 +1,68 @@
+---
+title: "Table 5: Primary Probabilistic Cost-Effectiveness Results"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_5")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
+  set_theme = FALSE
+)
+```
+
+```{r load-psa, include=FALSE}
+psa_obj <- load_current_psa_cache()
+
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP)
+display_df <- format_psa_summary(psa_summary)
+
+```
+
+```{r display-table}
+if (nrow(display_df) > 0) {
+  kable(
+    display_df,
+    caption = "Table 5: Primary probabilistic cost-effectiveness results, means (95% uncertainty intervals)",
+    format = "html",
+    col.names = c("Strategy", "Cost", "QALYs", "Incremental cost vs SoC",
+                  "Incremental QALYs vs SoC", "ICER vs SoC", "Pairwise status", "Probability CE"),
+    align = c("l", rep("r", 5), "l", "r")
+  ) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width = FALSE, font_size = 12) %>%
+    footnote(
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Intervals are the 2.5th and 97.5th percentiles of PSA draws, not confidence intervals for the mean. Increments are paired within draws versus standard of care. ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios; dominance is assessed from the means. Costs and QALYs are discounted at 4% annually. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
+      general_title = "Notes: "
+    )
+} else {
+  cat("PSA cache not available. Run analysis/10_PSA.R first.")
+}
+```
+
+```{r save-table, include=FALSE}
+{
+  tables_dir <- here("outputs", "tables")
+  if (!dir.exists(tables_dir)) dir.create(tables_dir, recursive = TRUE)
+  write_artifact_csv(psa_summary, file = here("outputs", "tables", "table_5.csv"), row.names = FALSE)
+}
+```
+
+Table 5 has been saved to `outputs/tables/table_5.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

@@ -1,0 +1,147 @@
+---
+title: "Table S4: Full Parametric Model Coefficients"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s4")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  packages = c("here", "dplyr", "knitr", "kableExtra", "flexsurv", "survival"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+# Create data_complete (same logic as 04_parametric_survival_analysis.R)
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp",
+                                               "tmb_braf", "OSwk", "Death",
+                                               "PFSwk", "Progression")]), ]
+
+cat("Complete cases:", nrow(data_complete), "\n")
+```
+
+```{r fit-all-models, include=FALSE}
+# Helper to extract coefficients from a flexsurvreg object
+extract_coefs <- function(model, model_label, outcome_label) {
+  if (is.null(model) || !inherits(model, "flexsurvreg")) return(NULL)
+
+  coef_table <- as.data.frame(model$res)
+  coef_table$Parameter <- rownames(coef_table)
+  coef_table$Model <- model_label
+  coef_table$Outcome <- outcome_label
+  rownames(coef_table) <- NULL
+
+  coef_table <- coef_table %>%
+    select(Model, Outcome, Parameter, est, se, L95 = `L95%`, U95 = `U95%`)
+
+  return(coef_table)
+}
+
+# Fit gamma model for the single joint economic model specification
+model_specs <- list(
+  joint = list(
+    os = Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx,
+    pfs = Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx
+  )
+)
+
+# Model labels for display
+model_display_labels <- c(
+  joint = "Joint economic model (CRP + TMB/BRAF)"
+)
+
+all_coefs <- data.frame()
+
+for (spec_name in names(model_specs)) {
+  spec <- model_specs[[spec_name]]
+  display_label <- model_display_labels[spec_name]
+
+  for (outcome in c("os", "pfs")) {
+    formula <- spec[[outcome]]
+    outcome_label <- toupper(outcome)
+
+    # Use the distribution selected for this endpoint by the ordering-constrained
+    # selection in script 04 (issue #153), not a hard-coded family.
+    dist_use <- models$best_fit[[paste0(outcome, "_distribution")]]
+    fit <- tryCatch(
+      flexsurvreg(formula = formula, data = data_complete, dist = dist_use),
+      error = function(e) {
+        cat("Failed to fit", spec_name, outcome, ":", e$message, "\n")
+        NULL
+      }
+    )
+
+    coefs <- extract_coefs(fit, display_label, outcome_label)
+    if (!is.null(coefs)) {
+      all_coefs <- rbind(all_coefs, coefs)
+    }
+  }
+}
+
+cat("Total coefficient rows:", nrow(all_coefs), "\n")
+```
+
+```{r display-tables}
+# Display one table per model specification
+for (spec_label in unique(all_coefs$Model)) {
+  spec_data <- all_coefs %>%
+    filter(Model == spec_label)
+
+  display_df <- spec_data %>%
+    mutate(
+      Coefficient = sprintf("%.4f", est),
+      SE = sprintf("%.4f", se),
+      `95% CI` = sprintf("[%.4f, %.4f]", L95, U95)
+    ) %>%
+    select(Outcome, Parameter, Coefficient, SE, `95% CI`)
+
+  cat("\n\n")
+  print(kable(display_df,
+              caption = sprintf("Table S4: %s - coefficients of the selected distributions (OS %s, PFS %s)",
+                                spec_label, models$best_fit$os_distribution,
+                                models$best_fit$pfs_distribution),
+              format = "html",
+              row.names = FALSE) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                  full_width = FALSE,
+                  font_size = 11) %>%
+    pack_rows(index = table(display_df$Outcome)))
+}
+```
+
+```{r footnotes}
+cat("\n\n**Notes:**\n\n")
+cat(sprintf("- Distributions: OS %s, PFS %s, selected jointly as the minimum combined-AIC pair with OS >= PFS for every subgroup over the model horizon (see Table S3).\n",
+            models$best_fit$os_distribution, models$best_fit$pfs_distribution))
+cat("- Rows named after distribution parameters (e.g. shape, rate) are baseline parameters on their natural scale; all covariate rows are additive effects on the log of the location parameter (log(rate) for gamma), so exp(coefficient) is a rate ratio.\n")
+cat("- Joint economic model: both biomarker-treatment interactions (crp:Rx, tmb_braf:Rx) in a single model, adjusted for age and sex.\n")
+cat("- Rx = treatment arm (experimental vs control). Interaction terms (e.g., crp1:Rx) represent treatment-biomarker interaction effects.\n")
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("outputs", "tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+write_artifact_csv(all_coefs, file = here("outputs", "tables", "table_s4.csv"), row.names = FALSE)
+cat("Table saved to:", here("outputs", "tables", "table_s4.csv"), "\n")
+```
+
+Table S4 has been saved to `outputs/tables/table_s4.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

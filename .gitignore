@@ -1,0 +1,44 @@
+# METIMMOX-1 is the public mirror of a private working repository that also
+# holds the confidential trial data, the rendered outputs and the manuscripts.
+# Everything below is produced locally when the pipeline runs with the data
+# (see README) and is never committed here.
+data/
+outputs/
+docs/
+_site/
+
+# Render products next to the report sources (make.R moves them to outputs/)
+/reports/**/*.pdf
+/reports/**/*.pdf.provenance.json
+/reports/**/*.md
+/reports/**/*_files/
+/reports/**/*.html
+/reports/**/*.tex
+/reports/**/*.aux
+/reports/**/*.log
+/reports/**/*.toc
+
+# Data, workspaces and caches anywhere
+*.rds
+*.RData
+*.rda
+*.rdb
+*.rdx
+*_cache/
+*.xlsx
+*.xls
+*.sav
+*.dta
+
+# R, Quarto and editor files
+.Rproj.user/
+.Rhistory
+.Ruserdata
+Rplots.pdf
+.quarto/
+.claude/
+
+# Private agent notes
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md

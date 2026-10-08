@@ -1,0 +1,208 @@
+---
+title: "Cost-effectiveness manuscript numbers"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("cea_numbers")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis"),
+  packages = c("here", "dplyr", "knitr"),
+  set_theme = FALSE
+)
+```
+
+Numbers that the cost-effectiveness manuscript quotes but that no publication table carries (issues #160, #189). Each table below is written to `outputs/tables/cea_*.csv`, and the manuscript's number check reads them from there.
+
+```{r load-scenarios, include=FALSE}
+cache_file <- scenario_evppi_path()
+if (!file.exists(cache_file)) {
+  stop("Full scenario cache not found: ", cache_file, ". Run ",
+       "analysis/12_scenario_EVPPIs.R before rendering this vignette.")
+}
+scenario_cache <- load_scenario_cache(path = cache_file)
+v_wtp <- c(51000, 100000, 150000)
+price_of <- function(id) scenario_cache$scenarios$c_drug_nivo[scenario_cache$scenarios$scenario_id == id]
+price_base <- price_of("base")
+price_low <- price_of("s1_decreased_nivo")
+stopifnot(isTRUE(all.equal(price_base, l_params_base$c_drug_nivo)), price_low < price_base)
+```
+
+## Probability of the highest net monetary benefit
+
+Share of the 5,000 simulations in which each strategy has the highest net monetary benefit, by nivolumab price and willingness-to-pay threshold, with the mean costs and QALYs of each price scenario.
+
+```{r psa-probabilities}
+rows <- list()
+for (id in names(scenario_cache$all_scenario_results)) {
+  psa <- scenario_cache$all_scenario_results[[id]]$psa_obj
+  price <- price_of(id)
+  for (wtp in v_wtp) {
+    m_nmb <- as.matrix(psa$effectiveness) * wtp - as.matrix(psa$cost)
+    v_best <- psa$strategies[max.col(m_nmb, ties.method = "first")]
+    for (s in psa$strategies) {
+      rows[[length(rows) + 1]] <- data.frame(
+        scenario_id = id, c_drug_nivo = price, wtp = wtp, strategy = s,
+        mean_cost = mean(psa$cost[[s]]), mean_qaly = mean(psa$effectiveness[[s]]),
+        prob_optimal = mean(v_best == s), n_sim = nrow(m_nmb))
+    }
+  }
+}
+# The scenarios at higher thresholds reuse the PSA of their price, so each
+# price/threshold/strategy combination is kept once.
+df_probabilities <- unique(do.call(rbind, rows))
+df_probabilities <- df_probabilities[!duplicated(df_probabilities[, c("c_drug_nivo", "wtp", "strategy")]), ]
+df_probabilities$cache_fingerprint <- scenario_cache$fingerprint
+kable(df_probabilities[, c("c_drug_nivo", "wtp", "strategy", "mean_cost", "mean_qaly", "prob_optimal")],
+      digits = c(0, 0, 0, 0, 4, 4), row.names = FALSE)
+```
+
+## Paired increments versus standard of care by nivolumab price
+
+```{r psa-increments}
+inc_rows <- list()
+for (id in c("base", "s1_decreased_nivo")) {
+  psa <- scenario_cache$all_scenario_results[[id]]$psa_obj
+  for (s in setdiff(psa$strategies, get_control_strategy())) {
+    v_dc <- psa$cost[[s]] - psa$cost[[get_control_strategy()]]
+    v_de <- psa$effectiveness[[s]] - psa$effectiveness[[get_control_strategy()]]
+    inc_rows[[length(inc_rows) + 1]] <- data.frame(
+      scenario_id = id, c_drug_nivo = price_of(id), strategy = s,
+      mean_inc_cost = mean(v_dc), mean_inc_qaly = mean(v_de),
+      ratio_of_means = mean(v_dc) / mean(v_de),
+      share_qaly_gain = mean(v_de > 0), share_cost_saving = mean(v_dc < 0))
+  }
+}
+df_increments <- do.call(rbind, inc_rows)
+df_increments$cache_fingerprint <- scenario_cache$fingerprint
+kable(df_increments[, 1:8], digits = 4, row.names = FALSE)
+```
+
+## Threshold nivolumab price
+
+Costs are linear in the nivolumab price and QALYs do not depend on it, so the incremental cost at any price follows exactly from the two evaluated prices. The threshold price makes the incremental net monetary benefit versus standard of care zero at the base-case willingness to pay. Deterministic values come from the base-case model at both prices, probabilistic values from the scenario means above.
+
+```{r threshold-price}
+#' Threshold price from the incremental cost at two prices
+#'
+#' @param dc_base,dc_low Incremental cost at the base-case and the lower price.
+#' @param dq Incremental QALYs (independent of the price).
+#' @return One-row data frame of the threshold-price quantities.
+threshold_row <- function(dc_base, dc_low, dq) {
+  slope <- (dc_base - dc_low) / (price_base - price_low)  # discounted administrations
+  dc_zero <- dc_low - slope * price_low                   # incremental cost at price zero
+  threshold <- if (dq > 0) (WTP * dq - dc_zero) / slope else NaN
+  data.frame(inc_qaly = dq, discounted_administrations = slope,
+             inc_cost_at_price_zero = dc_zero, threshold_price = threshold,
+             reduction_vs_base = if (dq > 0) 1 - threshold / price_base else NaN,
+             icer_at_price_zero = dc_zero / dq)
+}
+
+det_at <- function(price) {
+  df_res <- model_fun(modifyList(l_params_base, list(c_drug_nivo = price)))
+  list(cost = setNames(df_res$Cost, df_res$Strategy), qaly = setNames(df_res$Effect, df_res$Strategy))
+}
+det_base <- det_at(price_base)
+det_low <- det_at(price_low)
+psa_mean <- function(price, strategy, column) {
+  df_probabilities[[column]][df_probabilities$c_drug_nivo == price & df_probabilities$wtp == WTP &
+                               df_probabilities$strategy == strategy]
+}
+
+control <- get_control_strategy()
+threshold_rows <- list()
+for (analysis in c("deterministic", "probabilistic")) {
+  for (s in setdiff(get_strategies(), control)) {
+    if (analysis == "deterministic") {
+      dc_base <- det_base$cost[[s]] - det_base$cost[[control]]
+      dc_low <- det_low$cost[[s]] - det_low$cost[[control]]
+      dq <- det_base$qaly[[s]] - det_base$qaly[[control]]
+    } else {
+      dc_base <- psa_mean(price_base, s, "mean_cost") - psa_mean(price_base, control, "mean_cost")
+      dc_low <- psa_mean(price_low, s, "mean_cost") - psa_mean(price_low, control, "mean_cost")
+      dq <- psa_mean(price_base, s, "mean_qaly") - psa_mean(price_base, control, "mean_qaly")
+    }
+    threshold_rows[[length(threshold_rows) + 1]] <-
+      cbind(data.frame(analysis = analysis, strategy = s), threshold_row(dc_base, dc_low, dq))
+  }
+}
+df_threshold <- do.call(rbind, threshold_rows)
+kable(df_threshold, digits = 4, row.names = FALSE)
+```
+
+## Modelled survival at 5 and 10 years
+
+Deterministic base-case curves of each strategy (population-averaged over the 68-patient cohort).
+
+```{r survival-landmarks}
+v_week <- c(5, 10) * 52
+df_landmarks <- do.call(rbind, lapply(c("control", "crp_weighted", "tmb_braf_weighted"), function(curve) {
+  os <- l_params_base$p_os[[paste0(curve, "_OS")]]
+  pfs <- l_params_base$p_pfs[[paste0(curve, "_PFS")]]
+  data.frame(curve = curve, years = v_week / 52, os = os[v_week + 1], pfs = pfs[v_week + 1])
+}))
+kable(df_landmarks, digits = 5, row.names = FALSE)
+```
+
+## Cost of the ordering constraint on the survival distributions
+
+All candidate OS/PFS distribution pairs from script 04, without the proportional-hazards Weibull (the same fit as the accelerated-failure-time Weibull).
+
+```{r model-selection}
+df_pairs <- subset(models$ordered_selection$pairs,
+                   os_distribution != "weibullph" & pfs_distribution != "weibullph")
+best <- df_pairs[which.min(df_pairs$combined_ic), ]
+selected <- df_pairs[df_pairs$os_distribution == models$best_fit$os_distribution &
+                       df_pairs$pfs_distribution == models$best_fit$pfs_distribution, ]
+stopifnot(nrow(selected) == 1L)
+df_model_selection <- data.frame(
+  pairs = nrow(df_pairs),
+  admissible_pairs = sum(df_pairs$ordered),
+  selected = paste(selected$os_distribution, selected$pfs_distribution, sep = "/"),
+  best_unconstrained = paste(best$os_distribution, best$pfs_distribution, sep = "/"),
+  delta_aic = selected$combined_ic - best$combined_ic,
+  lower_pairs_all_unordered = !any(df_pairs$ordered[df_pairs$combined_ic < selected$combined_ic]))
+kable(df_model_selection, digits = 2, row.names = FALSE)
+```
+
+## Baseline CRP by arm
+
+Normal baseline CRP (< 5 mg/L, cycle 1 day 1; `CRP0cat` in `01_data_prep.R`) among patients with a baseline value, for the 74 patients of the trial export used in the analysis. The model uses the week-4 value; the baseline value shows that the arms were balanced before treatment.
+
+```{r baseline-crp}
+trial <- readRDS(here("data", "tidy", "METIMMOX.rds"))
+trial <- trial[!is.na(trial$CRP0cat), ]
+arm <- ifelse(trial$Rx == "Experimental arm", "experimental", "control")
+df_baseline_crp <- data.frame(
+  arm = c("control", "experimental"),
+  n_normal = c(sum(arm == "control" & trial$CRP0cat == "1"), sum(arm == "experimental" & trial$CRP0cat == "1")),
+  n_measured = c(sum(arm == "control"), sum(arm == "experimental")))
+df_baseline_crp$fisher_p <- fisher.test(table(arm, trial$CRP0cat))$p.value
+kable(df_baseline_crp, digits = 3, row.names = FALSE)
+```
+
+```{r save-tables, include=FALSE}
+write_artifact_csv(df_probabilities, file = here("outputs", "tables", "cea_psa_probabilities.csv"), row.names = FALSE)
+write_artifact_csv(df_increments, file = here("outputs", "tables", "cea_psa_increments.csv"), row.names = FALSE)
+write_artifact_csv(df_threshold, file = here("outputs", "tables", "cea_threshold_price.csv"), row.names = FALSE)
+write_artifact_csv(df_landmarks, file = here("outputs", "tables", "cea_survival_landmarks.csv"), row.names = FALSE)
+write_artifact_csv(df_model_selection, file = here("outputs", "tables", "cea_model_selection.csv"), row.names = FALSE)
+write_artifact_csv(df_baseline_crp, file = here("outputs", "tables", "cea_baseline_crp.csv"), row.names = FALSE)
+```
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

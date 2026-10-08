@@ -1,0 +1,158 @@
+---
+title: "Table S2: Biomarker Intercorrelations"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s2")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03"),
+  packages = c("here", "dplyr", "knitr", "kableExtra"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+data_complete <- data[complete.cases(data[, c("Age", "sex", "Rx", "crp", "tlr",
+                                               "tmb_braf", "OSwk", "Death",
+                                               "PFSwk", "Progression")]), ]
+```
+
+```{r cramers-v-function, include=FALSE}
+# Cramer's V function for binary variables
+cramers_v <- function(x, y) {
+  tab <- table(as.numeric(as.character(x)), as.numeric(as.character(y)))
+  chi2 <- suppressWarnings(chisq.test(tab, correct = FALSE))
+  n <- sum(tab)
+  k <- min(nrow(tab), ncol(tab))
+  v <- sqrt(chi2$statistic / (n * (k - 1)))
+  p_val <- chi2$p.value
+  return(list(v = as.numeric(v), p = p_val))
+}
+```
+
+```{r compute-correlations, include=FALSE}
+biomarkers <- list(
+  CRP = data_complete$crp,
+  TLR = data_complete$tlr,
+  `TMB/BRAF` = data_complete$tmb_braf
+)
+
+bm_names <- names(biomarkers)
+n_bm <- length(bm_names)
+
+# Correlation matrix
+v_matrix <- matrix(NA, nrow = n_bm, ncol = n_bm,
+                   dimnames = list(bm_names, bm_names))
+p_matrix <- matrix(NA, nrow = n_bm, ncol = n_bm,
+                   dimnames = list(bm_names, bm_names))
+
+for (i in 1:n_bm) {
+  for (j in 1:n_bm) {
+    if (i == j) {
+      v_matrix[i, j] <- 1.000
+      p_matrix[i, j] <- NA
+    } else {
+      result <- cramers_v(biomarkers[[i]], biomarkers[[j]])
+      v_matrix[i, j] <- result$v
+      p_matrix[i, j] <- result$p
+    }
+  }
+}
+
+# Create display matrix with V values and significance stars
+display_matrix <- matrix("", nrow = n_bm, ncol = n_bm,
+                         dimnames = list(bm_names, bm_names))
+
+for (i in 1:n_bm) {
+  for (j in 1:n_bm) {
+    if (i == j) {
+      display_matrix[i, j] <- "1.000"
+    } else {
+      v_val <- sprintf("%.3f", v_matrix[i, j])
+      p_val <- p_matrix[i, j]
+      stars <- ifelse(p_val < 0.001, "***",
+               ifelse(p_val < 0.01, "**",
+               ifelse(p_val < 0.05, "*", "")))
+      display_matrix[i, j] <- paste0(v_val, stars)
+    }
+  }
+}
+
+# Also compute prevalence for context
+prevalence_df <- data.frame(
+  Biomarker = bm_names,
+  `N positive` = sapply(biomarkers, function(x) sum(as.numeric(as.character(x)) == 1)),
+  `N total` = sapply(biomarkers, function(x) length(x)),
+  Prevalence = sapply(biomarkers, function(x) {
+    sprintf("%.1f%%", mean(as.numeric(as.character(x)) == 1) * 100)
+  }),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+cat("Cramer's V matrix computed\n")
+```
+
+```{r display-prevalence}
+kable(prevalence_df,
+      caption = paste0("Biomarker prevalence in the analysis population (n = ",
+                       nrow(data_complete), ")"),
+      format = "html",
+      row.names = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12)
+```
+
+```{r display-correlation}
+kable(display_matrix,
+      caption = "Table S2: Biomarker intercorrelations (Cramer's V)",
+      format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  footnote(
+    general = c(
+      "Cramer's V measures association between categorical variables (range 0-1).",
+      "Significance levels: * p<0.05, ** p<0.01, *** p<0.001.",
+      "CRP = C-reactive protein (<5 mg/L at week 4, before the first nivolumab dose); TLR = target lesion reduction (a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT); TMB/BRAF = TMB >=9 mut/Mb or BRAF V600E.",
+      sprintf("Weak intercorrelations (largest V = %.3f, for %s) limit confounding between biomarkers across model specifications.",
+              max(v_matrix[upper.tri(v_matrix)]),
+              paste(bm_names[which(v_matrix == max(v_matrix[upper.tri(v_matrix)]), arr.ind = TRUE)[1, ]], collapse = "-"))
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("outputs", "tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+# Save both V matrix and p-value matrix
+save_df <- as.data.frame(v_matrix)
+save_df$Biomarker <- rownames(save_df)
+save_df <- save_df[, c("Biomarker", bm_names)]
+
+write_artifact_csv(save_df, file = here("outputs", "tables", "table_s2.csv"), row.names = FALSE)
+cat("Table saved to:", here("outputs", "tables", "table_s2.csv"), "\n")
+```
+
+Table S2 has been saved to `outputs/tables/table_s2.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

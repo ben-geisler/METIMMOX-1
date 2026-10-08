@@ -1,0 +1,372 @@
+---
+title: "Cost-Effectiveness Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "prediction_functions", "pfs_os_violation_diagnostics",
+           "survival_validation", "crp_week4_estimand")
+)
+
+basecase <- run_basecase(verbose = FALSE)
+base_results <- basecase$base_results
+icer_obj <- basecase$icer_obj
+model_config <- basecase$model_config
+
+# The PSA cache must have been generated from the inputs of this session. The
+# expected fingerprint is the one 10_PSA.R stamps on the cache (sampling-cache
+# fingerprint, l_params_base, PSA distributions, strategies, n_sim, seed,
+# horizon and cycle length; issue #156); the loader stops on an absent or stale
+# cache instead of rendering placeholders (issue #157). Script 06 is sourced
+# for the sampling-cache fingerprint and the PSA distributions; it loads from
+# cache in seconds.
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+psa_obj <- load_psa_cache(
+  verbose = FALSE, required = TRUE,
+  expected_fingerprint = expected_psa,
+  strategies = strategies, n_sim = n_sim,
+  sampling_fingerprint = sampling_models$fingerprint
+)
+
+# PSA parameter draws, used to report the utility-ordering diagnostic below.
+psa_params <- load_psa_params_cache(
+  verbose = FALSE, required = TRUE,
+  seed = analysis_seed, n_sim = psa_obj$n_sim
+)
+```
+
+# Overview
+
+This cost-effectiveness analysis evaluates standard of care against two pre-immunotherapy biomarker-guided immunotherapy strategies for metastatic MSS/pMMR colorectal cancer:
+
+- CRP-guided treatment selection (CRP < 5 mg/L at week 4, before the first nivolumab dose)
+- TMB/BRAF-guided treatment selection (baseline next-generation sequencing)
+
+The headline analysis is probabilistic: decisions use expected net monetary benefit from the PSA. The deterministic point evaluation anchors the one-way sensitivity analysis (tornado), which varies one input at a time around fitted parameters to explain sensitivity. These analyses answer different questions and need not have identical means.
+
+The economic survival model is a single joint model with CRP and TMB/BRAF treatment interactions. Economic strategies are restricted to biomarkers that are available before the decision to add immunotherapy is made.
+
+```{r crp-timing}
+# Patients without a week-4 CRP and the outcomes accrued before the first
+# nivolumab dose (issue #175; reconciled with crp_week4_estimand.qmd). Counts
+# only: no individual event times.
+crp_missing <- data[is.na(data$crp), ]
+crp_missing_n_died_before4 <- sum(crp_missing$Death == 1 & crp_missing$OSwk < 4)
+crp_missing_n_alive4 <- sum(crp_missing$OSwk >= 4)
+stopifnot(crp_missing_n_died_before4 + crp_missing_n_alive4 == nrow(crp_missing))
+pre_decision_crp <- subset(pre_decision_increments(pre_decision_outcomes(l_params_base)),
+                           Strategy == "crp")
+```
+
+**CRP timing.** CRP is not a baseline (pre-randomization) measurement. In the METIMMOX trial every patient received two cycles of FLOX before the first nivolumab dose, and the CRP used to define the CRP-guided strategy is the value measured at week 4 (cycle 3 day 1), i.e. at the point where the decision to add nivolumab is made. The model estimates a randomization-time policy (see `crp_week4_estimand.qmd`): up to week 4 both arms receive identical FLOX, monitoring and visits, but the fitted treatment and interaction effects act from randomization. Before the first nivolumab dose the CRP-guided strategy therefore accrues `r format(signif(pre_decision_crp$inc_qalys_pre, 2), scientific = FALSE)` incremental QALYs (`r sprintf("%.3f", 100 * pre_decision_crp$share_qalys)`% of its full-horizon increment) and EUR `r sprintf("%.2f", pre_decision_crp$inc_cost_pre_survival)` of survival-dependent incremental cost: small, but not zero. The `r nrow(crp_missing)` patients without a week-4 CRP value are excluded from the complete-case data on which the survival models are fitted; `r crp_missing_n_died_before4` died before week 4 and `r crp_missing_n_alive4` `r if (crp_missing_n_alive4 == 1) "was" else "were"` alive at week 4 without a value, so the exclusion is not the same as conditioning on survival to week 4. The estimand report restores them under alternative CRP and TMB/BRAF assignments.
+
+# Economic Survival Model
+
+QALYs and ongoing progressed-state cost rates use trapezoidal integration over
+the weekly grid: 521 points cover exactly 520 weeks. Scheduled treatment,
+diagnostic tests and visits, baseline costs and end-of-life events retain full
+charges at their modeled time points (issue #163). See the
+[input-parameter report](input_parameters.md) for the integration convention.
+
+```{r model-table}
+model_df <- data.frame(
+  Component = c("OS", "PFS", "Control arm"),
+  Formula = c(
+    "Surv(OSwk, Death) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",
+    "Surv(PFSwk, Progression) ~ Age + sex + Rx + crp*Rx + tmb_braf*Rx",
+    "Same joint OS and PFS models, predicted with Rx = control for every patient"
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  model_df,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Single economic survival model"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_column_spec(2, width = "10cm")
+```
+
+```{r strategy-table}
+strategy_df <- data.frame(
+  Strategy = strategy_label(get_strategies()),
+  Definition = c(
+    "All patients receive standard FLOX chemotherapy",
+    "CRP-positive patients receive FLOX + nivolumab; CRP-negative patients receive FLOX",
+    "TMB/BRAF-positive patients receive FLOX + nivolumab; TMB/BRAF-negative patients receive FLOX"
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  strategy_df,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Economic strategies"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_column_spec(2, width = "10cm")
+```
+
+# Primary Analysis: Probabilistic Cost-Effectiveness
+
+## Parameters sampled
+
+The PSA samples the health-state utilities, the joint biomarker cell probabilities, and the resource-use costs (visit, baseline work-up, quarterly follow-up, end-of-life care), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
+
+The two utilities are sampled jointly rather than independently. The PSA draws a non-negative decrement and sets the progressed utility to the progression-free utility minus that decrement, so no draw can place the progressed utility above the progression-free utility.
+
+```{r utility-ordering}
+reversal <- utility_reversal_fraction(psa_params)
+cat(sprintf(
+  paste0("Utility-ordering diagnostic: %d of %d PSA draws (%.1f%%) have u_p > u_np, ",
+         "and %.1f%% exceed it by more than %.2f. The decrement parameterisation ",
+         "makes these fractions zero by construction; independent beta draws ",
+         "for the two utilities did not."),
+  reversal$n_reversed, reversal$n, 100 * reversal$fraction,
+  100 * reversal$fraction_material, reversal$margin
+))
+```
+
+## Results
+
+```{r psa-summary}
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP)
+psa_display <- format_psa_summary(psa_summary)
+knitr::kable(
+  psa_display[, c("Strategy", "Cost", "QALYs", "Prob_CE")],
+  booktabs = TRUE,
+  col.names = c("Strategy", "Cost", "QALYs", "Probability CE"),
+  caption = paste0("Primary probabilistic results: means (95 percent uncertainty intervals), WTP EUR ", format(WTP, big.mark = ","))
+) %>% tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+```
+
+```{r psa-primary-increments}
+knitr::kable(
+  psa_display[, c("Strategy", "Inc_Cost", "Inc_QALYs", "ICER")],
+  booktabs = TRUE,
+  col.names = c("Strategy", "Incremental cost", "Incremental QALYs", "ICER"),
+  caption = "Primary pairwise results versus standard of care: means (95 percent uncertainty intervals)"
+) %>% tbl_style(latex_options = c("HOLD_position", "scale_down"), font_size = 9)
+
+```
+
+Intervals are the 2.5th and 97.5th percentiles of the retained PSA draws, not confidence intervals for the mean. Incremental intervals use paired differences within each draw versus standard of care. The ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios. Dominance labels compare mean costs and QALYs. Table 5 is the primary publication table.
+
+```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
+create_ceac_plot(psa_obj, wtp_line = WTP)
+```
+
+# Deterministic Point Evaluation
+
+```{r basecase-table}
+base_display <- base_results %>%
+  mutate(
+    NMB = Effect * WTP - Cost,
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    NMB = format_eur(NMB)
+  )
+
+knitr::kable(
+  base_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
+  caption = paste0("Deterministic point evaluation anchoring the one-way sensitivity analysis; WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r icer-table}
+icer_display <- as.data.frame(icer_obj) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Cost = format_eur(Cost),
+    Effect = sprintf("%.3f", Effect),
+    Inc_Cost = format_eur(Inc_Cost),
+    Inc_Effect = ifelse(is.na(Inc_Effect), "--", sprintf("%.3f", Inc_Effect)),
+    ICER = mapply(format_icer, ICER, Status)
+  )
+
+knitr::kable(
+  icer_display,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r", "r", "r", "l"),
+  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
+                "Incremental QALYs", "ICER", "Status"),
+  caption = "Deterministic efficiency-frontier results"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+```{r ce-plane, fig.cap="Deterministic cost-effectiveness plane"}
+plot(
+  icer_obj,
+  txtsize = 11,
+  currency = "EUR",
+  effect_units = "QALYs",
+  label = "all",
+  alpha = 0.8
+)
+```
+
+# Methods Diagnostic: Probabilistic and Deterministic Estimands
+
+The PSA and the base case use the same survival formulas and target population. Since issue #159, the OS and PFS coefficient vectors are drawn together from a multivariate normal centred at their maximum-likelihood estimates. Paired patient bootstrap fits estimate their cross-endpoint dependence; block whitening and recolouring preserve each original fit's marginal covariance. The bootstrap is used only to estimate dependence, never to supply PSA coefficient draws. See the [joint sampling specification](technical/joint_survival_sampling.md) for the covariance construction and diagnostics.
+
+The deterministic result evaluates survival at the fitted coefficients; the PSA averages nonlinear survival predictions over parameter uncertainty. Those are different quantities: even correctly centred coefficient draws need not give outcome means equal to the deterministic result. Joint sampling changes the dependence and the ordering correction, but, with fixed marginal coefficient distributions, cannot remove the raw-curve mean shift in expectation. No draws or outcomes are recentered. With all coefficient covariance set to zero and economic parameters and population weights fixed, `test_psa_zero_uncertainty.R` reproduces every deterministic cost and QALY result. Issue #180 retires the historical five-Monte-Carlo-standard-error alignment criterion because it tested equality of different estimands. The comparison below describes the difference and simulation precision without a pass/fail threshold; the structural joint-control check remains in `test_psa_basecase_alignment.R`, and zero-uncertainty equality is the correctness criterion.
+
+```{r psa-basecase-table}
+psa_vs_base <- create_psa_basecase_comparison(psa_obj, base_results) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
+                       sprintf("%.4f", Base_Case)),
+    PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
+                      sprintf("%.4f", PSA_Mean)),
+    PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
+                    sprintf("%.4f", PSA_SE)),
+    Diff = ifelse(Outcome == "Cost", format_eur(Diff),
+                  sprintf("%+.4f", Diff)),
+    Diff_SE = sprintf("%+.1f", Diff_SE)
+  )
+
+knitr::kable(
+  psa_vs_base,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "r", "r"),
+  col.names = c("Strategy", "Outcome", "Base Case", "PSA Mean",
+                "PSA SE", "Difference", "Difference (SE)"),
+  caption = "Methods diagnostic: PSA means versus deterministic point evaluations (Monte Carlo SE)"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+The nonlinear mean shift can differ across strategies, so it need not cancel in increments even though every strategy shares the same coefficient draw. The incremental comparison below reports this remaining difference directly. Decisions under uncertainty use expected net monetary benefit from the PSA; the deterministic results describe the fitted-parameter scenario.
+
+```{r psa-incremental-table}
+psa_inc <- create_psa_incremental_comparison(psa_obj, base_results) %>%
+  mutate(
+    Comparator = paste(strategy_label(Comparator), "vs", strategy_label(get_control_strategy())),
+    Base_Case = ifelse(Outcome == "Cost", format_eur(Base_Case),
+                       sprintf("%+.4f", Base_Case)),
+    PSA_Mean = ifelse(Outcome == "Cost", format_eur(PSA_Mean),
+                      sprintf("%+.4f", PSA_Mean)),
+    PSA_SE = ifelse(Outcome == "Cost", format_eur(PSA_SE),
+                    sprintf("%.4f", PSA_SE)),
+    Diff = ifelse(Outcome == "Cost", format_eur(Diff),
+                  sprintf("%+.4f", Diff)),
+    Diff_SE = sprintf("%+.1f", Diff_SE)
+  )
+
+knitr::kable(
+  psa_inc,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "r", "r"),
+  col.names = c("Comparison", "Outcome", "Base Case", "PSA Mean",
+                "PSA SE", "Difference", "Difference (SE)"),
+  caption = "Incremental PSA means versus base-case increments relative to standard of care"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down"))
+```
+
+
+
+The joint covariance improvement is retained: in issue #159, crossings fell from 2,422/5,000 (48.44%) to 1,198/5,000 (23.96%), and mean CRP incremental QALYs increased from 0.00175 to 0.00629. The QALY level differences remained 5.94--8.77 Monte Carlo SEs. Joint dependence therefore improved ordering and the incremental decision quantities without eliminating the nonlinear mean shift; it does not make the two estimands equal.
+
+# Summary
+
+The economic evaluation now uses one joint survival model and three economic strategies: standard of care, CRP-guided immunotherapy (week-4 CRP, before the first nivolumab dose), and TMB/BRAF-guided immunotherapy (baseline NGS).
+
+# Common Target Population
+
+Control and both guided strategies are evaluated in the same complete-case trial population (n = `r nrow(l_params_base$prediction_population)`). The base case uses its observed joint CRP and TMB/BRAF distribution. The PSA draws all four joint cell probabilities together using a Dirichlet distribution with the observed cell counts; marginal prevalences are derived from that draw. The age and sex distributions within each cell remain fixed. Every draw's common population weights apply to control and both guided strategies. This represents uncertainty in the trial population, not transport to an external population. The prevalence DSA changes one marginal while retaining the other marginal and joint odds ratio, and reweights every strategy consistently (issue #166).
+
+# Scope Limitations
+
+Three scope decisions bound the interpretation of these results (issue #154).
+
+**No post-progression treatment costs.** After progression the model charges only a quarterly follow-up visit, a quarterly CT scan and the one-time end-of-life cost. Second-line systemic therapy and any further post-progression visits are not modeled. The strategies differ in time spent in the progressed state, so this omission is differential rather than a common offset. A structural scenario charging EUR 5,000 per quarter in the progressed state is reported in the one-way sensitivity analysis.
+
+**Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption.
+
+**Nivolumab price is an assumption.** The base-case price per administration is an assumed Norwegian hospital acquisition cost rather than a citable tariff, because Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver; the biosimilar scenario and the one-way analysis show how the conclusions move with it.
+
+Adverse-event costs and disutilities remain outside the modeled scope, as described in the project documentation.
+
+```{r extrapolation-check, include=FALSE}
+# External check of the extrapolated SoC OS tail (issue #162); the full
+# comparison is in reports/technical/survival_external_validation.qmd.
+bench <- read_survival_benchmarks()
+tail_bench <- bench[bench$endpoint == "OS" & bench$measure == "survival" &
+                      bench$time_years >= 5, ]
+soc_os <- l_params_base$p_os$control_OS
+tail_model <- curve_at_years(soc_os, tail_bench$time_years)
+tail_pe_pass <- benchmark_passed(vapply(seq_len(nrow(tail_bench)), function(k)
+  evaluate_benchmark(tail_model[k], tail_bench[k, ]), character(1)))
+# 95% interval of the parametric model over 1,000 coefficient draws, as in the
+# technical report
+soc_pop <- data_complete
+soc_pop$Rx <- factor(levels(data_complete$Rx)[1], levels = levels(data_complete$Rx))
+os_component <- get_joint_sampling_models(sampling_models)
+set.seed(analysis_seed)
+os_draw_idx <- sort(sample(seq_len(os_component$n_samples), min(1000, os_component$n_samples)))
+soc_os_draws <- draw_curves(os_component, "os", soc_pop, os_draw_idx, 0:time_horizon)
+tail_consistent <- vapply(seq_len(nrow(tail_bench)), function(k) {
+  iv <- benchmark_model_interval(soc_os_draws, tail_bench[k, ])
+  benchmark_consistent(iv[1], iv[2], tail_bench[k, ])
+}, character(1))
+os5_iv <- benchmark_model_interval(soc_os_draws, list(measure = "survival", time_years = 5))
+```
+
+**The extrapolated survival tail is on the low side of external evidence, within uncertainty.** Trial follow-up ends before five years, and the published first-line mCRC sources report survival beyond that only as lower bounds. Standard-of-care OS from the parametric survival model is `r sprintf("%.1f%%", 100 * curve_at_years(soc_os, 5))` at 5 years (95% interval `r sprintf("%.1f-%.1f%%", 100 * os5_iv[1], 100 * os5_iv[2])`). `r if (all(tail_consistent == "Consistent")) paste("All", length(tail_consistent)) else paste(sum(tail_consistent == "Consistent"), "of the", length(tail_consistent))` published lower bounds at 5 years or later lie within the parametric model's 95% interval, but the point estimate is below `r ifelse(sum(!tail_pe_pass, na.rm = TRUE) == length(tail_pe_pass), "each of them", paste(sum(!tail_pe_pass, na.rm = TRUE), "of them"))`. The parametric survival model is not changed (project decision, 1 October 2026); the comparison, its criteria and the dependent validation against the trial Kaplan-Meier curves are in the technical report `survival_external_validation.qmd` (issue #162).
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 5.0

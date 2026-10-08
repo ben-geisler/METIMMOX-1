@@ -1,0 +1,335 @@
+---
+title: "PSA Extrapolation Plausibility"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    fig-width: 7
+    fig-height: 7
+    keep-tex: false
+    geometry: [top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm]
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "prediction_functions", "cea_helpers",
+           "report_format", "psa_functions", "pfs_os_violation_diagnostics",
+           "psa_extrapolation_diagnostics"),
+  packages = c("here", "knitr", "ggplot2", "dplyr", "tidyr", "survival", "flexsurv"),
+  set_theme = FALSE, quiet_sources = TRUE)
+theme_set(theme_minimal(base_size = 10) + theme(legend.position = "bottom",
+  panel.grid.minor = element_blank()))
+psa <- load_current_psa_cache()
+draws <- load_psa_params_cache(required = TRUE, seed = analysis_seed, n_sim = psa$n_sim)
+population <- l_params_base$prediction_population
+ordering <- read_extrapolation_ordering(pfs_os_violation_cache_path(),
+  sampling_models, population, draws, l_params_base)
+input_paths <- c(sampling_cache_path(), psa_obj_path(), psa_params_path(),
+                 pfs_os_violation_cache_path())
+hash_before <- tools::md5sum(input_paths)
+life_path <- here::here("data/external/ssb_07902_2025.csv")
+life <- read.csv(life_path)
+times <- seq(0, time_horizon)
+individual_ref <- population_reference_survival(population$Age,
+  as.character(population$sex), life, times * cl)
+reference <- rowMeans(individual_ref)
+reconstructed <- reconstruct_extrapolation_curves(sampling_models, psa, draws,
+  l_params_base, ordering)
+labels <- c(control = "SoC", crp = "CRP", tmb_braf = "TMB/BRAF")
+det <- model_fun(l_params_base, time_horizon = time_horizon, cl = cl)
+det_q <- setNames(det$Effect, det$Strategy)
+det_curve <- function(s, ep) {
+  p <- if (ep == "os") l_params_base$p_os else l_params_base$p_pfs
+  suffix <- toupper(ep)
+  if (s == "control") return(p[[paste0(s, "_", suffix)]])
+  prev <- l_params_base[[paste0("p_", s)]]
+  prev * p[[paste0(s, "_pos_", suffix)]] +
+    (1 - prev) * p[[paste0(s, "_neg_", suffix)]]
+}
+fmt <- function(x, digits = 4) formatC(x, format = "f", digits = digits)
+pct <- function(x) paste0(fmt(100 * x, 2), "%")
+tab <- function(x, digits = 3) knitr::kable(x, digits = digits,
+  format = report_table_format(), row.names = FALSE) |> tbl_style(latex_options = "HOLD_position")
+ribbon_rows <- spaghetti_rows <- metric_rows <- tail_rows <- list()
+thinned <- unique(round(seq(1, psa$n_sim, length.out = 50)))
+for (s in psa$strategies) {
+  for (ep in c("os", "pfs")) {
+    mat <- reconstructed$curves[[s]][[ep]]
+    qs <- apply(mat, 2, quantile, probs = c(.025, .10, .25, .75, .90, .975))
+    ribbon_rows[[paste(s, ep)]] <- data.frame(strategy = labels[[s]], endpoint = toupper(ep),
+      year = times * cl, low95 = qs[1, ], low80 = qs[2, ], low50 = qs[3, ],
+      high50 = qs[4, ], high80 = qs[5, ], high95 = qs[6, ],
+      mean = colMeans(mat), deterministic = det_curve(s, ep), reference = reference)
+    spaghetti_rows[[paste(s, ep)]] <- data.frame(strategy = labels[[s]], endpoint = toupper(ep),
+      year = rep(times * cl, each = length(thinned)),
+      draw = rep(thinned, length(times)), survival = as.vector(mat[thinned, ]))
+    rmst <- apply(mat, 1, restricted_mean_survival, cycle_length = cl)
+    metric_rows[[paste(s, ep)]] <- data.frame(strategy = labels[[s]], endpoint = toupper(ep),
+      sim = psa$sim, model_idx = psa$model_idx, rmst = rmst)
+    ts <- extrapolation_tail_summary(rmst, psa$effectiveness[, s])
+    ts$strategy <- labels[[s]]; ts$endpoint <- toupper(ep)
+    ts$deterministic <- det_q[[s]]
+    tail_rows[[paste(s, ep)]] <- ts
+  }
+}
+ribbons <- bind_rows(ribbon_rows)
+spaghetti <- bind_rows(spaghetti_rows)
+metrics <- bind_rows(metric_rows)
+tails <- bind_rows(tail_rows)
+exceedance <- bind_rows(lapply(psa$strategies, function(s) {
+  mat <- reconstructed$curves[[s]]$os
+  difference <- sweep(mat, 2, reference, "-")
+  exceeds <- difference > 1e-10
+  any_week <- which(colSums(exceeds) > 0)
+  excess_rmst <- apply(pmax(difference, 0), 1, restricted_mean_survival, cycle_length = cl)
+  data.frame(Strategy = labels[[s]], Any = sum(rowSums(exceeds) > 0),
+    Week520 = sum(exceeds[, ncol(mat)]), Max520 = max(mat[, ncol(mat)]),
+    AfterYear1 = sum(rowSums(exceeds[, times > 52, drop = FALSE]) > 0),
+    FirstWeek = if (length(any_week)) min(times[any_week]) else NA_real_,
+    LastWeek = if (length(any_week)) max(times[any_week]) else NA_real_,
+    MaxExcess = max(pmax(difference, 0)), MeanExcessArea = mean(excess_rmst),
+    DetExcess = any(det_curve(s, "os") - reference > 1e-10))
+}))
+alignment <- data.frame(Strategy = unname(labels[psa$strategies]),
+  Deterministic = det_q[psa$strategies], PSA = colMeans(psa$effectiveness))
+alignment$Gap <- alignment$PSA - alignment$Deterministic
+alignment$MCSE <- apply(psa$effectiveness, 2, sd) / sqrt(psa$n_sim)
+relation <- bind_rows(lapply(psa$strategies, function(s) {
+  rmst <- metrics$rmst[metrics$strategy == labels[[s]] & metrics$endpoint == "OS"]
+  cross <- reconstructed$crossing[, s]
+  top <- rep(FALSE, length(rmst)); top[order(rmst, decreasing = TRUE)[seq_len(ceiling(.1 * length(rmst)))]] <- TRUE
+  ft <- fisher.test(table(factor(top, levels = c(FALSE, TRUE)), factor(cross, levels = c(FALSE, TRUE))))
+  data.frame(Strategy = labels[[s]], Cross = sum(cross), TopCross = sum(cross & top),
+    TopN = sum(top), OtherCross = sum(cross & !top), OtherN = sum(!top),
+    MedianCross = median(rmst[cross]), MedianOther = median(rmst[!cross]),
+    OR = unname(ft$estimate), Lower = ft$conf.int[1], Upper = ft$conf.int[2], P = ft$p.value)
+}))
+stopifnot(identical(hash_before, tools::md5sum(input_paths)))
+```
+
+# Purpose and scope
+
+This report investigates whether optimistic survival tails dominate the PSA mean
+QALYs (issue #179). It uses all `r psa$n_sim` retained PSA rows and the existing joint
+OS/PFS coefficient draws. SoC denotes standard of care; CRP denotes guidance by
+week-4 CRP, before the first nivolumab dose; TMB/BRAF denotes baseline NGS guidance.
+All strategies target the same `r nrow(population)` complete-case patients.
+
+The sampling cache and paired PSA files pass their current input-fingerprint and
+pair validations. The ordering cache passes its full fingerprint check, including
+population, PSA parameters, utilities and horizon. No cache is generated or
+rewritten. The reconstruction uses the saved `model_idx`, joint population weights
+and utilities of each PSA row, and reproduces all cached strategy QALYs to a maximum
+absolute error of `r format(reconstructed$max_qaly_error, scientific = TRUE)`.
+The PFS curves shown are **after the subgroup-level OS clamp**, as used economically;
+OS is unchanged. The ordering analysis uses the **raw, unclamped** subgroup curves.
+
+```{r alignment}
+tab(alignment, 5)
+```
+
+MCSE is the Monte Carlo standard error of the PSA mean. A nonlinear mean under
+parameter uncertainty need not equal the deterministic result. The existing
+five-MCSE alignment diagnostic remains a known failure; this report does not
+recenter draws, relax that criterion, or replace reported economic results.
+
+# Norwegian population reference
+
+The public [Statistics Norway life table 07902](https://www.ssb.no/en/statbank/table/07902)
+provides 2025 sex-specific annual death probabilities (updated 12 March 2026;
+retrieved 23 September 2026 from the [official Deaths table](https://www.ssb.no/en/befolkning/fodte-og-dode/statistikk/dode)).
+The versioned extract is `data/external/ssb_07902_2025.csv` (MD5
+`r unname(tools::md5sum(life_path))`). Conditional survival from each patient's
+baseline age uses constant hazards within each attained-age year,
+$h_x=-\log(1-q_x)$, including fractional years. Trial sex 0 maps to female and 1 to
+male. Individual reference curves are averaged equally over the observed cohort
+(`r sum(as.character(population$sex) == "0")` female,
+`r sum(as.character(population$sex) == "1")` male; mean age
+`r fmt(mean(population$Age), 1)` years). The same fixed cohort reference is used for
+every strategy and draw; PSA population-weight uncertainty remains in the cancer
+curves. This is a 2025 **period** reference, with no future mortality improvement,
+not a historical trial-year life table or an individual cancer-survival prediction.
+
+The matched population survival at week 520 is `r pct(tail(reference, 1))`.
+Exceedance means strategy-average OS exceeds that fixed reference by more than
+$10^{-10}$ at any weekly point (or at week 520 specifically). The shared value of
+one at week zero is not an exceedance. This aggregate check is a permissive
+plausibility screen: it cannot establish plausible individual hazards, validate a
+cancer-specific tail, or exclude implausibility below population survival.
+
+```{r exceedance}
+tab(data.frame(Strategy = exceedance$Strategy,
+  `Any week: n (%)` = paste0(exceedance$Any, " (", pct(exceedance$Any / psa$n_sim), ")"),
+  `Week 520: n (%)` = paste0(exceedance$Week520, " (", pct(exceedance$Week520 / psa$n_sim), ")"),
+  `Maximum OS at 520` = pct(exceedance$Max520), check.names = FALSE))
+```
+
+```{r exceedance-timing}
+tab(data.frame(Strategy = exceedance$Strategy,
+  `First week` = exceedance$FirstWeek, `Last week` = exceedance$LastWeek,
+  `After year 1: n` = exceedance$AfterYear1,
+  `Max excess (pp)` = 100 * exceedance$MaxExcess, check.names = FALSE), 4)
+```
+
+The timing table pools all draws: it gives the earliest and latest weekly
+exceedance, and the largest vertical excess in percentage points (pp).
+The mean positive excess area is
+`r paste(fmt(exceedance$MeanExcessArea, 7), collapse = ", ")` life-years for SoC,
+CRP and TMB/BRAF, respectively. The deterministic OS curves also exceed the
+reference for `r paste(exceedance$Strategy[exceedance$DetExcess], collapse = ", ")`.
+Thus any-week counts must be interpreted alongside timing and magnitude, rather
+than equated with the frequency of implausibly long tails. Gamma distributions
+with shape greater than one start with zero hazard, whereas the population
+reference has a positive hazard from time zero. A brief initial excess can arise
+from this shape property; it is still a departure from the population reference.
+
+# Sampled survival curves
+
+Ribbons are pointwise central 95%, 80% and 50% intervals over **all 5,000** PSA
+rows, drawn from light to dark. Fifty evenly spaced row indices supply the thin
+spaghetti lines; they are not selected for their outcomes. Solid blue is the PSA
+mean, dashed black the deterministic curve, and dotted red the Norwegian reference
+(OS only). The lower plot makes the mean-minus-deterministic gap visible.
+
+```{r survival-curves, fig.cap="All-strategy survival uncertainty and the matched Norwegian reference.", fig.height=8}
+ggplot(ribbons, aes(year)) +
+  geom_ribbon(aes(ymin = low95, ymax = high95), fill = "#bdd7e7") +
+  geom_ribbon(aes(ymin = low80, ymax = high80), fill = "#9ecae1") +
+  geom_ribbon(aes(ymin = low50, ymax = high50), fill = "#6baed6") +
+  geom_line(data = spaghetti, aes(y = survival, group = draw), alpha = .10, linewidth = .2) +
+  geom_line(aes(y = mean, colour = "PSA mean", linetype = "PSA mean"), linewidth = .7) +
+  geom_line(aes(y = deterministic, colour = "Deterministic", linetype = "Deterministic"), linewidth = .7) +
+  geom_line(data = filter(ribbons, endpoint == "OS"),
+    aes(y = reference, colour = "Population", linetype = "Population"), linewidth = .7) +
+  facet_grid(strategy ~ endpoint) +
+  scale_colour_manual(values = c(Deterministic = "black", Population = "#b2182b", `PSA mean` = "#08519c")) +
+  scale_linetype_manual(values = c(Deterministic = "dashed", Population = "dotted", `PSA mean` = "solid")) +
+  labs(x = "Years from randomization", y = "Survival probability", colour = NULL, linetype = NULL)
+```
+
+```{r curve-gap, fig.cap="Pointwise PSA mean minus deterministic survival.", fig.height=4}
+ggplot(ribbons, aes(year, mean - deterministic, colour = strategy)) +
+  geom_hline(yintercept = 0, colour = "grey60") + geom_line() + facet_wrap(~ endpoint) +
+  labs(x = "Years", y = "Survival difference", colour = "Strategy")
+```
+
+# Restricted means and tail contributions
+
+Restricted mean survival time (RMST) is the undiscounted trapezoidal area from
+week 0 to 520, in years, calculated with `restricted_mean_survival()`.
+PFS RMST uses clamped curves. QALYs retain sampled utilities and 4% effect
+discounting. Ranking is performed **separately within each strategy and endpoint**;
+ties use PSA row order. Thus OS-ranked and PFS-ranked trims can remove different
+draws. The top 1%, 5% and 10% contain 50, 250 and 500 rows, respectively.
+
+```{r rmst-distribution, fig.cap="Distributions of ten-year restricted mean OS and PFS.", fig.height=6}
+ggplot(metrics, aes(rmst)) + geom_histogram(bins = 45, fill = "#3182bd", colour = "white") +
+  facet_grid(strategy ~ endpoint, scales = "free_x") +
+  labs(x = "Restricted mean survival (years)", y = "PSA rows")
+```
+
+```{r rmst-summary}
+summary_rmst <- metrics |> group_by(strategy, endpoint) |>
+  summarise(Mean = mean(rmst), Median = median(rmst), P95 = quantile(rmst, .95),
+    P99 = quantile(rmst, .99), Maximum = max(rmst), .groups = "drop")
+tab(summary_rmst)
+```
+
+Contribution is the sum of QALYs in the selected upper tail divided by the sum
+over all rows, equivalently its contribution to the untrimmed PSA mean. Trimmed
+means renormalize over retained rows. These are **selection diagnostics only**:
+trimming favorable outcomes necessarily lowers the mean even for a valid
+distribution. It is not evidence by itself that any draw should be rejected.
+
+```{r tail-contributions, results='asis'}
+for (ep in c("OS", "PFS")) {
+  cat("\n\n## Ranked by ", ep, " RMST\n\n", sep = "")
+  tt <- filter(tails, endpoint == ep)
+  print(tab(data.frame(Strategy = tt$strategy, Top = pct(tt$fraction),
+    `RMST cutoff` = tt$cutoff, `QALY contribution` = pct(tt$contribution), check.names = FALSE)))
+  cat("\n\n")
+  print(tab(data.frame(Strategy = tt$strategy, Trim = pct(tt$fraction),
+    `PSA mean` = tt$mean, `Trimmed mean` = tt$trimmed,
+    `Trimmed - det.` = tt$trimmed - tt$deterministic, check.names = FALSE), 5))
+  cat("\n\n")
+}
+```
+
+# Relationship to PFS-above-OS violations
+
+Each reconstructed row joins the ordering cache on **model_idx plus simulation
+ID and curve**. The additional keys preserve the population and utility draws
+if a replacement coefficient vector is reused. There are
+`r sum(duplicated(psa$model_idx))` repeated model indices in this PSA. A guided
+strategy is classified as crossing if either contributing subgroup crosses;
+SoC uses its own curve. All reconstructed raw flags agree with the saved flags.
+The long-tail indicator here is the **top 10% by strategy OS RMST**. Counts below
+compare its crossing rate with the other 90%; medians describe OS RMST in crossing
+and non-crossing draws.
+
+```{r ordering-counts}
+tab(data.frame(Strategy = relation$Strategy, Crossings = relation$Cross,
+  `Top 10%: n (%)` = paste0(relation$TopCross, " (", pct(relation$TopCross / relation$TopN), ")"),
+  `Other 90%: n (%)` = paste0(relation$OtherCross, " (", pct(relation$OtherCross / relation$OtherN), ")"),
+  check.names = FALSE))
+```
+
+```{r ordering-association}
+tab(data.frame(Strategy = relation$Strategy, `RMST: crossing` = relation$MedianCross,
+  `RMST: other` = relation$MedianOther, `Odds ratio (95% CI)` =
+    paste0(fmt(relation$OR, 2), " (", fmt(relation$Lower, 2), ", ", fmt(relation$Upper, 2), ")"),
+  `Fisher p` = format.pval(relation$P, digits = 2, eps = .001), check.names = FALSE))
+```
+
+Fisher's exact test compares crossing odds in the upper decile versus the rest.
+It describes association within simulated draws, not clinical hypothesis testing;
+the three strategies share coefficient draws and these comparisons are dependent.
+
+# Verdict
+
+```{r verdict, results='asis'}
+top1 <- filter(tails, endpoint == "OS", fraction == .01)
+top10 <- filter(tails, endpoint == "OS", fraction == .10)
+cat(sprintf(paste0(
+  "The diagnostics support a broadly distributed nonlinear averaging effect rather than a mean dominated by a tiny, demonstrably implausible survival tail. ",
+  "Across SoC, CRP and TMB/BRAF, the highest 1%% of OS-RMST draws contribute %s, %s and %s of total QALYs; ",
+  "removing them changes the means by %.5f, %.5f and %.5f QALYs, leaving gaps of %.5f, %.5f and %.5f above the deterministic results. ",
+  "The top 10%% contribute %s, %s and %s, showing meaningful upper-tail sensitivity without dominance. ",
+  "%d of %d strategy-draw curves exceed matched population survival at any modeled week (%d at week 520). ",
+  "Crossing rates in the top OS-RMST decile are %s, %s and %s versus %s, %s and %s in the remaining draws, distinguishing ordering violations from optimistic OS tails. ",
+  "The exceedances occur between weeks %.0f and %.0f, with a maximum vertical excess of %.4f percentage points; ",
+  "they therefore require interpretation as an early-curve limitation, not evidence that optimistic ten-year tails dominate the mean. ",
+  "The evidence favors the broad-spread explanation for the mean shift, but does not establish that every extrapolation is plausible: ",
+  "a general-population comparator is too permissive to establish cancer-specific extrapolation validity. ",
+  "The unbounded extrapolation remains a stated limitation; no draw is excluded, no mean is corrected, and a population-mortality hazard floor remains outside this paper's scope.\n"),
+  pct(top1$contribution[1]), pct(top1$contribution[2]), pct(top1$contribution[3]),
+  top1$shift[1], top1$shift[2], top1$shift[3],
+  (top1$trimmed - top1$deterministic)[1], (top1$trimmed - top1$deterministic)[2], (top1$trimmed - top1$deterministic)[3],
+  pct(top10$contribution[1]), pct(top10$contribution[2]), pct(top10$contribution[3]),
+  sum(exceedance$Any), psa$n_sim * length(psa$strategies), sum(exceedance$Week520),
+  pct(relation$TopCross[1] / relation$TopN[1]), pct(relation$TopCross[2] / relation$TopN[2]), pct(relation$TopCross[3] / relation$TopN[3]),
+  pct(relation$OtherCross[1] / relation$OtherN[1]), pct(relation$OtherCross[2] / relation$OtherN[2]), pct(relation$OtherCross[3] / relation$OtherN[3]),
+  min(exceedance$FirstWeek, na.rm = TRUE), max(exceedance$LastWeek, na.rm = TRUE),
+  100 * max(exceedance$MaxExcess)))
+```
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.0

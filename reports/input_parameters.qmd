@@ -1,0 +1,413 @@
+---
+title: "Input Parameters"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05"),
+  funs = c("report_format", "model_fun", "calculate_outcomes", "cea_helpers",
+           "crp_week4_estimand"),
+  set_theme = FALSE
+)
+
+fmt_pct <- function(x) scales::percent(x, accuracy = 0.1)
+```
+
+# Model Configuration
+
+State utilities and ongoing progressed-state costs are integrated over the
+intervals between weekly grid points using the trapezoidal rule (half weight at
+weeks 0 and 520). Thus 521 points span exactly 520 weeks: with no mortality,
+unit utilities and no discounting, the model returns 10 QALYs. Quarterly
+follow-up and post-progression cost rates accrue as four times the quarterly
+rate per year of progressed-state occupancy. Discount weights are applied at
+each grid point before integration. Drug administrations, scheduled tests and
+visits, baseline screening and end-of-life events retain their full costs at
+their modeled time points; they are not half-cycle corrected (issue #163).
+
+Diagnostic prices are read directly from `c_test_CRP` and `c_test_NGS` on every
+calculation, including direct model and enriched-population calls. A legacy
+`c_test_biomarker` lookup is ignored; editing a scalar price needs no separate
+synchronization step (issue #173).
+
+```{r model-config}
+config <- get_current_model_config()
+
+config_table <- data.frame(
+  Item = c("Economic strategies", "Economic biomarkers", "OS formula",
+           "PFS formula", "Control arm"),
+  Value = c(
+    paste(get_strategies(), collapse = ", "),
+    paste(get_biomarkers(), collapse = ", "),
+    paste(deparse(config$formulas$shared$os), collapse = " "),
+    paste(deparse(config$formulas$shared$pfs), collapse = " "),
+    "The joint OS and PFS models predicted with Rx = control for every patient (no separate control formula; issue #151)"
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  config_table,
+  booktabs = TRUE,
+  align = c("l", "l"),
+  caption = "Single economic model configuration"
+) %>%
+  tbl_style(latex_options = c("HOLD_position")) %>%
+  tbl_column_spec(2, width = "11cm")
+```
+
+# Biomarker Prevalence
+
+```{r biomarker-prevalence}
+prevalence_table <- strategies_df %>%
+  filter(id %in% get_biomarkers()) %>%
+  transmute(
+    Biomarker = recode(id, crp = "CRP-positive", tmb_braf = "TMB/BRAF-positive"),
+    Prevalence = fmt_pct(prevalence),
+    Source = "METIMMOX-1 trial data"
+  )
+
+knitr::kable(
+  prevalence_table,
+  booktabs = TRUE,
+  align = c("l", "r", "l"),
+  caption = "Economic biomarker prevalences"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+Every economic strategy uses the same complete-case population (n = `r nrow(l_params_base$prediction_population)`). Its observed joint CRP and TMB/BRAF distribution defines the base case. In the PSA, the four joint cell probabilities are drawn together from a Dirichlet distribution with the observed cell counts, and the two marginal prevalences are derived. This represents uncertainty in the trial population's joint biomarker proportions, with age and sex distributions within each cell held fixed. The population weights change control and both guided strategies together. The one-way prevalence analysis rakes this same joint distribution to the changed marginal, retaining the other marginal and the joint odds ratio (issue #166).
+
+# Estimand of the CRP-Guided Strategy
+
+```{r crp-estimand}
+# Deterministic sensitivity results of reports/technical/crp_week4_estimand.qmd,
+# recomputed with the same functions (R/crp_week4_estimand.R; issue #175).
+estimand_base <- calculate_pairwise_icers(model_fun(l_params_base))
+estimand_sens <- run_crp_missingness_sensitivity(data, l_params_base, models, time_points)
+estimand_summary <- summarise_crp_missingness(estimand_sens, estimand_base, WTP)
+estimand_optimal <- attr(estimand_summary, "optimal")
+decision_week <- which(l_params_base$l_nivo == 1)[1] - 1
+estimand_pre <- pre_decision_increments(pre_decision_outcomes(
+  l_params_base, decision_week = decision_week, time_horizon = time_horizon, cl = cl))
+n_no_week4_crp <- length(estimand_sens$restored_rows)
+n_scenarios <- nrow(estimand_sens$scenarios)
+crp_range <- estimand_summary[estimand_summary$Strategy == "crp", ]
+tmb_range <- estimand_summary[estimand_summary$Strategy == "tmb_braf", ]
+crp_pre <- estimand_pre[estimand_pre$Strategy == "crp", ]
+range_text <- function(x) {
+  parts <- character(0)
+  if (x$n_finite > 1) parts <- c(parts, sprintf("pairwise ICERs from %s to %s in %d scenarios",
+    fmt_eur(x$icer_min), fmt_eur(x$icer_max), x$n_finite))
+  if (x$n_finite == 1) parts <- c(parts, sprintf("a pairwise ICER of %s in one scenario",
+    fmt_eur(x$icer_min)))
+  if (x$n_dominated > 0) parts <- c(parts, sprintf("dominated by standard of care in %d",
+    x$n_dominated))
+  if (x$n_cost_saving > 0) parts <- c(parts, sprintf("cost-saving versus standard of care in %d",
+    x$n_cost_saving))
+  base <- switch(x$base_status,
+    "Pairwise ICER vs SoC" = fmt_eur(x$base_icer),
+    "Dominated by SoC" = "dominated by standard of care",
+    "Cost-saving vs SoC" = "cost-saving versus standard of care",
+    x$base_status)
+  sprintf("%s (base case: %s)", paste(parts, collapse = "; "), base)
+}
+optimal_text <- if (length(unique(estimand_optimal)) == 1) {
+  sprintf("%s has the highest net monetary benefit at WTP = %s in the base case and in every scenario.",
+          strategy_label(estimand_optimal[[1]]), fmt_eur(WTP))
+} else {
+  sprintf("The strategy with the highest net monetary benefit at WTP = %s differs between the base case (%s) and at least one scenario.",
+          fmt_eur(WTP), strategy_label(estimand_optimal[["base"]]))
+}
+```
+
+The economic model estimates a **randomisation-time policy**. Every strategy
+is assigned at randomisation (t = 0), and costs and QALYs are counted from
+then. The CRP-guided strategy is assigned using the week-4 CRP value (cycle 3
+day 1), which is available before the first nivolumab dose at modeled week
+`r decision_week`. The fitted treatment and biomarker-by-treatment effects act
+from t = 0, although all strategies receive identical treatment until that
+dose. The `r n_no_week4_crp` patients without a week-4 CRP are excluded from
+the complete-case cohort of `r nrow(data_complete)` patients (issue #175).
+
+The technical report `reports/technical/crp_week4_estimand.qmd` quantifies
+both choices deterministically. It restores the patients without a week-4 CRP
+under `r n_scenarios` combinations of assigned CRP status and assigned
+TMB/BRAF status (for the patients whose TMB/BRAF status is unknown):
+
+- **CRP-guided:** `r range_text(crp_range)`.
+- **TMB/BRAF-guided:** `r range_text(tmb_range)`.
+- `r optimal_text`
+
+Before the first nivolumab dose, the CRP-guided strategy accrues
+`r format(signif(crp_pre$inc_qalys_pre, 3), scientific = FALSE)` more QALYs
+than standard of care. This is `r scales::percent(crp_pre$share_qalys, accuracy = 0.001)`
+of its full-horizon QALY increment.
+
+# Utilities
+
+The two health-state utilities are not sampled independently in the PSA. Independent beta draws placed the progressed utility above the progression-free utility in a substantial minority of draws (about 16% under the CORRECT utilities and about 49% under the IPD utilities), which widened the PSA with orderings that cannot occur. The PSA instead draws a non-negative decrement `u_decrement` (gamma, CV 0.15, mean equal to the base-case difference `u_np - u_p`) and sets `u_p = u_np - u_decrement`, so `u_p <= u_np` holds in every draw and the marginal mean of `u_p` is unchanged (issue #154). The realised reversal fraction is reported in the cost-effectiveness report. The reported results use the CORRECT utilities (`UTILITY_SOURCE = 1`). The alternative IPD mode (`UTILITY_SOURCE = 0`, issue #188) derives both utilities in the pipeline from the METIMMOX EQ-5D-5L responses with the value set chosen by `EQ5D_VALUE_SET` (Danish by default: 0.912 and 0.897), and replaces the assumed CV 0.15 of `u_np` and `u_decrement` with patient-clustered bootstrap standard errors (Danish set: 0.013 and 0.016).
+
+```{r utility-table}
+utility_table <- data.frame(
+  Parameter = c("Progression-free utility", "Post-progression utility"),
+  Symbol = c("u_np", "u_p"),
+  Base_Case = c(l_params_base$u_np, l_params_base$u_p),
+  DSA_Low = c(l_params_base$u_np, l_params_base$u_p) * (1 - DSA_mult),
+  DSA_High = pmin(c(l_params_base$u_np, l_params_base$u_p) * (1 + DSA_mult), 1),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(across(c(Base_Case, DSA_Low, DSA_High), ~ sprintf("%.3f", .x)))
+
+knitr::kable(
+  utility_table,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r"),
+  col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High"),
+  caption = "Health-state utilities"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Costs
+
+Unit drug and test costs are **fixed in the PSA** and varied deterministically only (issue #154). They are published tariffs, laboratory prices, or — for nivolumab — an assumed acquisition price; none of them is a quantity that further research could resolve, so sampling them attributed decision uncertainty — and, under the earlier nearest-neighbour value-of-information estimator, research value — to prices that are known. Fixing them roughly halved total EVPI (from EUR 45.2 to EUR 22.1 per patient) without changing any base-case result. Visit, baseline, follow-up and end-of-life costs remain probabilistic because they bundle genuine resource-use uncertainty, and the deterministic influence of the prices is undiminished: the nivolumab price is still the second-largest one-way driver for both guided strategies.
+
+**Outpatient visits** (issue #36) are costed from the Norwegian DRG (ISF) system: an outpatient contact carries DRG weight 0.047, and the 2023 unit price for somatic care is NOK 49,484 (EUR 4,541.60), giving NOK 2,325.75 = `r sprintf("EUR %.2f", l_params_base$c_other_visit)` per visit. The weight does not differ between visit types, so the baseline visit (`c_other_baseline`), visits at administrations and surveillance scans (`c_other_visit`) and the quarterly follow-up visit in the progressed state (`c_other_follow`) all take this value; the three parameters are kept separate so that each can be varied on its own in the one-way analysis. The earlier values (EUR 33, 530 and 33) had no documented source.
+
+**Monitoring and visits** (issue #164). Progression-free patients have a CT scan at baseline and every 12 weeks, and a blood test at baseline and every 4 weeks, up to the horizon. A visit is charged at baseline, at every drug administration and at every CT scan; during treatment each scan already coincides with an administration, so the CT rule adds a surveillance visit every 12 weeks after the last administration (week 38). Blood tests between scans carry no separate visit. Progressed patients accrue one follow-up visit and one CT scan per quarter, integrated over progressed-state occupancy.
+
+**Dispersion of sampled parameters** (issue #56). The four resource-use costs are gamma distributed with a coefficient of variation (CV) of 0.20, and `u_np` (beta) and `u_decrement` (gamma) with a CV of 0.15. Both CVs are **assumptions**: no study reports the dispersion of these costs, and the utility sources give no usable standard error, so conventional moderate values were chosen. They are neither estimated from data nor taken from the literature, and they are not varied in a scenario. A CV of 0.20 gives a gamma 95% interval of about 0.65 to 1.43 times the mean; a CV of 0.15 gives a beta 95% interval for `u_np` = 0.73 of about 0.49 to 0.91.
+
+The nivolumab price of `r sprintf("EUR %s", format(l_params_base$c_drug_nivo, big.mark = ","))` per administration is an **assumption, not a citable tariff**: it represents an assumed Norwegian hospital acquisition price (about 40% below list). Norwegian hospital prices are set by confidential LIS tender and cannot be published; international list prices are higher. Eight administrations give about `r sprintf("EUR %s", format(8 * l_params_base$c_drug_nivo, big.mark = ","))` per treated patient, making this the largest single cost driver in the model. It is varied by +/-20% in the one-way analysis and by a factor of three in the biosimilar scenario.
+
+```{r cost-table}
+cost_spec <- parameter_distribution_spec()
+cost_psa_status <- function(symbol) {
+  row <- cost_spec[cost_spec$parameter == symbol, , drop = FALSE]
+  if (nrow(row) != 1) return("Fixed")
+  if (row$psa) "Sampled (gamma)" else "Fixed"
+}
+
+cost_table <- data.frame(
+  Parameter = c(
+    "Nivolumab per administration",
+    "FLOX per administration",
+    "CT scan",
+    "Routine blood monitoring",
+    "CRP biomarker test",
+    "NGS test",
+    "Outpatient visit",
+    "Baseline visit",
+    "Follow-up visit, progressed (per quarter)",
+    "Post-progression treatment (per quarter)",
+    "End-of-life cost"
+  ),
+  Symbol = c(
+    "c_drug_nivo", "c_drug_FLOX", "c_test_CT", "c_test_blood",
+    "c_test_CRP", "c_test_NGS", "c_other_visit", "c_other_baseline",
+    "c_other_follow", "c_other_pp", "c_other_last"
+  ),
+  Base_Case = c(
+    l_params_base$c_drug_nivo, l_params_base$c_drug_FLOX,
+    l_params_base$c_test_CT, l_params_base$c_test_blood,
+    l_params_base$c_test_CRP, l_params_base$c_test_NGS, l_params_base$c_other_visit,
+    l_params_base$c_other_baseline, l_params_base$c_other_follow,
+    l_params_base$c_other_pp, l_params_base$c_other_last
+  ),
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    PSA = vapply(Symbol, cost_psa_status, character(1)),
+    DSA_Low = pmax(Base_Case * (1 - DSA_mult), 0),
+    DSA_High = Base_Case * (1 + DSA_mult),
+    across(c(Base_Case, DSA_Low, DSA_High), fmt_eur)
+  ) %>%
+  select(Parameter, Symbol, Base_Case, DSA_Low, DSA_High, PSA)
+
+knitr::kable(
+  cost_table,
+  booktabs = TRUE,
+  align = c("l", "l", "r", "r", "r", "l"),
+  col.names = c("Parameter", "Symbol", "Base Case", "DSA Low", "DSA High", "PSA"),
+  caption = "Cost inputs"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "scale_down")) %>%
+  tbl_footnote(
+    general = c(
+      "Fixed parameters are not sampled in the PSA and therefore carry no value-of-information; they are varied in the one-way analysis.",
+      "Sampled costs are gamma distributed with an assumed CV of 0.20 (no source; see text). Visit costs: DRG weight 0.047 times the 2023 ISF unit price (NOK 49,484).",
+      "The CT scan price is also charged once per quarter in the progressed state.",
+      "c_other_pp is zero in the base case: post-progression treatment is outside the modeled scope (see below). Its deterministic range is degenerate, so it is tested as a structural scenario rather than in the one-way analysis."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+## Post-progression treatment costs
+
+The base case applies **no post-progression treatment cost**. Once a patient has progressed, the model charges only the quarterly follow-up visit (`c_other_follow`), a quarterly CT scan (`c_test_CT`, issue #164) and the one-time end-of-life cost (`c_other_last`); second-line systemic therapy and any further post-progression visits are not modeled. Because the strategies differ in the time patients spend in the progressed state, this omission is **differential** rather than a common offset, and its direction depends on which strategy accrues more progressed time. The parameter `c_other_pp` makes the omission explicit and is varied in a structural scenario (EUR 5,000 per quarter in the progressed state) reported in the one-way sensitivity analysis.
+
+## Second treatment sequence
+
+The treatment schedules give a second eight-cycle sequence at weeks 24-38 to **every patient still progression-free** at that point, in both arms. In METIMMOX the second sequence was started on progression during the treatment break, so the model charges second-sequence drug and visit costs to progression-free patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model; the assumption is instead bounded by a structural scenario that removes the second sequence entirely while holding survival at the trial estimate, giving a cost-side bound.
+
+# Structural Parameters
+
+```{r structural-table}
+structural_table <- data.frame(
+  Parameter = c("Cycle length", "Time horizon", "Cost discount rate",
+                "Effect discount rate", "Willingness-to-pay threshold",
+                "PSA sample size"),
+  Value = c(
+    paste0(cl * 52, " week (1/52 year = ", format(cl, digits = 3), " years)"),
+    paste0(time_horizon, " weeks (", time_horizon * cl, " years)"),
+    fmt_pct(dr),
+    fmt_pct(dr),
+    fmt_eur(WTP),
+    format(n_samples, big.mark = ",")
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  structural_table,
+  booktabs = TRUE,
+  align = c("l", "r"),
+  caption = "Structural model parameters"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# Input-to-Output Traceability
+
+The table maps every field of the base-case parameter list `l_params_base` to the function and calculation step that consumes it (issue #165). `model_fun()` resolves the grid, the population weights and the survival curves of each subgroup and calls `partitioned_survival_states()` and `calculate_outcomes()`, which converts state occupancy into discounted costs and QALYs. The table is built from the field names of `l_params_base`, and rendering stops if a field has no entry or an entry names a field that does not exist, so it cannot fall out of step with the model inputs.
+
+```{r traceability-table}
+biomarkers_econ <- get_biomarkers()
+cost_keys <- biomarker_cost_key(biomarkers_econ)
+prevalence_keys <- biomarker_prevalence_key(biomarkers_econ)
+schedule_step <- "Indicator of a scheduled event at each weekly grid point; multiplied by the unit price and by progression-free occupancy."
+
+trace <- rbind(
+  data.frame(Field = "cl", Function = "model_fun(), discount_weights(), calculate_outcomes()",
+             Step = "Cycle length in years: the year of each grid point for discounting, the duration of each interval for QALYs (trapezoidal weights), and the conversion of quarterly cost rates (4 x cl quarters per interval)."),
+  data.frame(Field = "time_horizon", Function = "model_fun()",
+             Step = "Number of weekly intervals; fixes the time_horizon + 1 grid points against which schedules and survival curves are checked and on which PSA curves are predicted."),
+  data.frame(Field = "dr_costs", Function = "discount_weights()",
+             Step = "Annual discount rate of the cost weights applied to every cost stream."),
+  data.frame(Field = "dr_effects", Function = "discount_weights()",
+             Step = "Annual discount rate of the QALY weights."),
+  data.frame(Field = "u_np", Function = "calculate_outcomes()",
+             Step = "Utility weight of progression-free occupancy."),
+  data.frame(Field = "u_p", Function = "calculate_outcomes()",
+             Step = "Utility weight of progressed occupancy (derived as u_np - u_decrement, floored at 0, in every PSA draw)."),
+  data.frame(Field = "u_decrement", Function = "apply_derived_psa_parameters()",
+             Step = "Not read by model_fun(); the sampled PSA decrement from which u_p is derived."),
+  data.frame(Field = "c_drug_nivo", Function = "calculate_outcomes()",
+             Step = "Drug cost per nivolumab administration (l_nivo), biomarker-positive subgroups only."),
+  data.frame(Field = "c_drug_FLOX", Function = "calculate_outcomes()",
+             Step = "Drug cost per FLOX administration: l_FLOX_exp in biomarker-positive subgroups, l_FLOX_control otherwise."),
+  data.frame(Field = "c_test_CT", Function = "calculate_outcomes()",
+             Step = "CT price: scheduled scans (l_CT) while progression-free, and one scan per quarter of progressed occupancy."),
+  data.frame(Field = "c_test_blood", Function = "calculate_outcomes()",
+             Step = "Blood-test price on the l_blood schedule."),
+  data.frame(Field = unname(cost_keys), Function = "calculate_outcomes()",
+             Step = paste0("One-time diagnostic test at week 0 for every patient of the ",
+                           strategy_label(names(cost_keys)), " strategy (also the screening cost of the enriched-population analysis).")),
+  data.frame(Field = "c_other_visit", Function = "calculate_outcomes()",
+             Step = "Outpatient visit price on the l_visit schedule."),
+  data.frame(Field = "c_other_baseline", Function = "calculate_outcomes()",
+             Step = "One-time baseline visit at week 0."),
+  data.frame(Field = "c_other_follow", Function = "calculate_outcomes()",
+             Step = "Follow-up visit rate per quarter of progressed occupancy."),
+  data.frame(Field = "c_other_pp", Function = "calculate_outcomes()",
+             Step = "Post-progression treatment rate per quarter of progressed occupancy (0 in the base case)."),
+  data.frame(Field = "c_other_last", Function = "calculate_outcomes()",
+             Step = "End-of-life cost charged on each interval's increase in dead occupancy."),
+  data.frame(Field = c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"),
+             Function = "calculate_outcomes()", Step = schedule_step),
+  data.frame(Field = "p_os", Function = "model_fun(), partitioned_survival_states()",
+             Step = "OS curve of each subgroup (control, biomarker-positive, biomarker-negative): progressed = max(OS - PFS, 0), dead = 1 - OS. The *_weighted curves are for reporting only."),
+  data.frame(Field = "p_pfs", Function = "model_fun(), partitioned_survival_states()",
+             Step = "PFS curve of each subgroup: progression-free occupancy."),
+  data.frame(Field = unname(prevalence_keys), Function = "model_fun(), model_population_weights()",
+             Step = paste0("Share of the ", strategy_label(names(prevalence_keys)),
+                           " cohort in the biomarker-positive subgroup: weights its costs and QALYs against the negative subgroup.")),
+  data.frame(Field = paste0("p_joint_", c("00", "01", "10", "11")), Function = "model_population_weights()",
+             Step = "Joint biomarker cell masses of the common target population; a change re-standardises all curves, control included."),
+  data.frame(Field = "joint_counts", Function = "configure_parameter_distributions()",
+             Step = "Not read by model_fun(); complete-case joint cell counts, the Dirichlet parameters of the PSA prevalence draws."),
+  data.frame(Field = "population_curves", Function = "model_fun(), standardize_population_curves()",
+             Step = "Patient-level curves, re-averaged when the population weights change."),
+  data.frame(Field = "prediction_population", Function = "model_fun()",
+             Step = "Complete-case patients whose predictions are averaged, deterministically and in every PSA draw."),
+  data.frame(Field = "population_weights", Function = "model_fun()",
+             Step = "Weights behind the current curves; compared with the weights implied by the prevalence fields.")
+)
+
+# IPD utility mode only (UTILITY_SOURCE = 0, issue #188).
+if (UTILITY_SOURCE == 0) {
+  trace <- rbind(trace,
+    data.frame(Field = "utility_se", Function = "create_parameter_distributions()",
+               Step = "Not read by model_fun(); patient-clustered bootstrap SEs of u_np and u_decrement that replace the assumed CV 0.15 of their PSA distributions."),
+    data.frame(Field = "utility_input", Function = "psa_cache_fingerprint()",
+               Step = "Not read by model_fun(); EQ-5D-5L value set, file digest and counts, so the PSA fingerprint covers the utility input."))
+}
+
+unmapped <- setdiff(names(l_params_base), trace$Field)
+unknown <- setdiff(trace$Field, names(l_params_base))
+if (length(unmapped) > 0 || length(unknown) > 0 || anyDuplicated(trace$Field)) {
+  stop("Traceability table out of step with l_params_base. Unmapped: ",
+       paste(unmapped, collapse = ", "), "; not in l_params_base: ",
+       paste(unknown, collapse = ", "))
+}
+trace <- trace[match(names(l_params_base), trace$Field), ]
+
+knitr::kable(
+  trace,
+  booktabs = TRUE,
+  row.names = FALSE,
+  format = report_table_format(),
+  caption = "Fields of l\\_params\\_base and the model step that consumes each"
+) %>%
+  tbl_style(latex_options = c("HOLD_position", "repeat_header"), font_size = 8) %>%
+  tbl_column_spec(1, width = "2.8cm") %>%
+  tbl_column_spec(2, width = "3.6cm") %>%
+  tbl_column_spec(3, width = "7.6cm")
+```
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 4.8

@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: >-
+  METIMMOX-1: clinical effectiveness, cost-effectiveness and value of
+  information of biomarker-guided immunotherapy in metastatic MSS/pMMR
+  colorectal cancer
+abstract: >-
+  R code behind three secondary analyses of the randomised METIMMOX trial
+  (NCT03388190): Cox models of biomarker-by-treatment interactions, a
+  partitioned survival cost-effectiveness model of CRP- and TMB/BRAF-guided
+  immunotherapy, and value-of-information analyses.
+authors:
+  - family-names: Geisler
+    given-names: Benjamin P.
+    affiliation: University of Oslo
+license: MIT
+repository-code: "https://github.com/ben-geisler/METIMMOX-1"
+version: 0.1.0
+keywords:
+  - colorectal cancer
+  - immunotherapy
+  - biomarkers
+  - cost-effectiveness analysis
+  - partitioned survival model
+  - value of information
+  - R

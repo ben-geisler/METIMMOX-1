@@ -1,0 +1,162 @@
+---
+title: "Table S1: Baseline Patient Characteristics"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("table_s1")
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04"),
+  funs = "tlr_landmark",
+  packages = c("here", "dplyr", "knitr", "kableExtra", "tableone", "survival"),
+  set_theme = FALSE
+)
+```
+
+```{r load-data, include=FALSE}
+# The cohort is `data_complete` from script 04: the complete-case cohort of the
+# economic survival models (complete on age, sex, arm, week-4 CRP, TMB/BRAF and
+# both endpoints). TLR completeness is NOT required (issue #157); the patients
+# without a TLR reading, who left the study before the first on-treatment CT
+# (exit reasons from tlr_missing_exit_summary(); issue #182), are shown as
+# "Not assessed".
+n_total <- nrow(data_complete)
+n_tlr_missing <- sum(is.na(data_complete$tlr))
+tlr_missing <- tlr_missing_exit_summary(data_complete)
+stopifnot(tlr_missing$n == n_tlr_missing)
+arm_levels <- levels(data_complete$Rx)
+
+cat("Patients in the economic complete-case cohort:", n_total, "\n")
+cat("Without TLR:", n_tlr_missing, "\n")
+cat("Treatment arms:", paste(arm_levels, collapse = ", "), "\n")
+```
+
+```{r build-table, include=FALSE}
+# ---- Baseline characteristics (tableone, with between-arm tests) -------------
+# `sex` is the trial column "Sex 0female": level "1" is male.
+tlr_num <- as.numeric(as.character(data_complete$tlr))
+table_data <- data_complete %>%
+  mutate(
+    `Treatment Arm` = Rx,
+    `Age (years)` = Age,
+    Sex = ifelse(as.numeric(as.character(sex)) == 1, "Male", "Female"),
+    `CRP-positive (<5 mg/L, week 4)` =
+      ifelse(as.numeric(as.character(crp)) == 1, "Yes", "No"),
+    `TMB/BRAF-positive` =
+      ifelse(as.numeric(as.character(tmb_braf)) == 1, "Yes", "No"),
+    `TLR-positive (>=10%, first on-treatment CT)` = factor(
+      ifelse(is.na(tlr_num), "Not assessed", ifelse(tlr_num == 1, "Yes", "No")),
+      levels = c("Yes", "No", "Not assessed")
+    )
+  )
+
+baseline_vars <- c("Age (years)", "Sex", "CRP-positive (<5 mg/L, week 4)",
+                   "TMB/BRAF-positive",
+                   "TLR-positive (>=10%, first on-treatment CT)")
+cat_vars <- setdiff(baseline_vars, "Age (years)")
+
+tab1 <- CreateTableOne(
+  vars = baseline_vars,
+  strata = "Treatment Arm",
+  data = table_data,
+  factorVars = cat_vars,
+  addOverall = TRUE
+)
+
+tab1_df <- print(tab1, showAllLevels = TRUE, quote = FALSE,
+                 noSpaces = TRUE, printToggle = FALSE)
+
+# ---- Follow-up and outcomes: descriptive only, no tests ----------------------
+# OS and PFS are censored times, so they are not summarised as mean (SD) nor
+# tested with oneway.test (issue #157). Follow-up is the reverse Kaplan-Meier
+# median (censoring treated as the event); survival medians are Kaplan-Meier
+# estimates with 95% CI.
+arm_sets <- c(list(Overall = data_complete), split(data_complete, data_complete$Rx))
+
+fq <- function(x, digits = 1) {
+  ifelse(is.na(x), "NR", formatC(x, format = "f", digits = digits))
+}
+reverse_km_row <- function(d, time, event) {
+  t <- d[[time]]; e <- 1 - d[[event]]
+  q <- quantile(survfit(Surv(t, e) ~ 1), probs = c(0.25, 0.5, 0.75))$quantile
+  sprintf("%s (%s to %s)", fq(q[2]), fq(q[1]), fq(q[3]))
+}
+km_median_row <- function(d, time, event) {
+  t <- d[[time]]; e <- d[[event]]
+  tab <- summary(survfit(Surv(t, e) ~ 1))$table
+  sprintf("%s (%s to %s)", fq(tab[["median"]]), fq(tab[["0.95LCL"]]),
+          fq(tab[["0.95UCL"]]))
+}
+events_row <- function(d, event) {
+  sprintf("%d (%.1f)", sum(d[[event]]), 100 * mean(d[[event]]))
+}
+
+outcome_rows <- rbind(
+  "Follow-up for survival, weeks (median (IQR), reverse Kaplan-Meier)" =
+    sapply(arm_sets, reverse_km_row, time = "OSwk", event = "Death"),
+  "Deaths (n (%))" = sapply(arm_sets, events_row, event = "Death"),
+  "Progression or death (n (%))" =
+    sapply(arm_sets, events_row, event = "Progression"),
+  "Overall survival, weeks (Kaplan-Meier median (95% CI))" =
+    sapply(arm_sets, km_median_row, time = "OSwk", event = "Death"),
+  "Progression-free survival, weeks (Kaplan-Meier median (95% CI))" =
+    sapply(arm_sets, km_median_row, time = "PFSwk", event = "Progression")
+)
+
+arm_cols <- setdiff(colnames(tab1_df), c("level", "p", "test"))
+stopifnot(all(arm_cols %in% colnames(outcome_rows)))
+outcome_mat <- cbind(level = "", outcome_rows[, arm_cols, drop = FALSE],
+                     p = "", test = "")[, colnames(tab1_df), drop = FALSE]
+
+tab_df <- rbind(tab1_df, outcome_mat)
+n_baseline <- nrow(tab1_df)
+```
+
+```{r display-table}
+kable(tab_df,
+      caption = sprintf("Table S1: Patient characteristics, follow-up and outcomes by treatment arm (n = %d)", n_total),
+      format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                font_size = 12) %>%
+  pack_rows("Baseline characteristics", 1, n_baseline) %>%
+  pack_rows("Follow-up and outcomes (descriptive, no tests)",
+            n_baseline + 1, nrow(tab_df)) %>%
+  footnote(
+    general = c(
+      sprintf("Data from the METIMMOX trial (NCT03388190). n = %d: the complete-case cohort of the economic survival models (complete on age, sex, arm, week-4 CRP, TMB/BRAF and both endpoints). TLR was not assessed in %d of these patients (%s), who left the study before the first on-treatment CT (%s).",
+              n_total, n_tlr_missing, tlr_missing$arm_text, tlr_missing$reason_text),
+      "Baseline characteristics: mean (SD) or n (%); p-values from the chi-squared test (categorical variables; the TLR test compares all three levels including Not assessed) or the t-test (age). Follow-up and outcome rows are descriptive only: follow-up is the reverse Kaplan-Meier median with interquartile range, survival medians are Kaplan-Meier estimates with 95% CI, NR = not reached; no p-values are reported for censored outcomes.",
+      "CRP = C-reactive protein; TLR = target lesion reduction; TMB = tumor mutational burden.",
+      "Biomarker definitions: CRP-positive (CRP <5.0 mg/L at week 4, before the first nivolumab dose); TMB/BRAF-positive (TMB >=9 mut/Mb or BRAF V600E); TLR-positive (target lesion reduction: a reduction of at least 10% in the sum of target-lesion diameters at the first on-treatment CT; an on-treatment measure, described here only and excluded from the economic model)."
+    ),
+    general_title = "Notes: "
+  )
+```
+
+```{r save-table, include=FALSE}
+tables_dir <- here("outputs", "tables")
+if (!dir.exists(tables_dir)) {
+  dir.create(tables_dir, recursive = TRUE)
+}
+
+write_artifact_csv(tab_df, file = here("outputs", "tables", "table_s1.csv"))
+cat("Table saved to:", here("outputs", "tables", "table_s1.csv"), "\n")
+```
+
+Table S1 has been saved to `outputs/tables/table_s1.csv`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

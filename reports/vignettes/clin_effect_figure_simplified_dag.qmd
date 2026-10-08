@@ -1,0 +1,49 @@
+---
+title: "Simplified Causal DAG (Unpublished)"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/publication_artifacts.R"))
+begin_artifact_render("clin_effect_figure_simplified_dag")
+source(here::here("R/report_setup.R"))
+setup_report(
+  funs = c("dag_helpers"),
+  packages = c("here", "ggplot2", "dplyr", "dagitty", "ggdag", "ggtext"),
+  set_theme = FALSE
+)
+```
+
+```{r dag-simple-plot, fig.width=9, fig.height=6}
+#| fig-cap: "Simplified causal DAG for METIMMOX-1 (unpublished). Solid arrows denote assumed causal effects. Age and sex both point to TMB/BRAF; only age points to survival, as in the full DAG, which has an Age -> OS edge and no edge from sex to either outcome (PFS and OS are merged into one survival node, so the age arrow stands for Age -> OS). The dashed arrow indicates that the treatment effect on survival is hypothesised to be modified by TMB/BRAF and CRP status. Interaction, latent-variable and target lesion reduction (TLR) nodes are shown in the full DAG (Figure S1). Abbreviations: CRP = C-reactive protein, OS = overall survival, PFS = progression-free survival, T = treatment, TMB = tumour mutational burden."
+
+p <- plot_simple_dag()
+print(p)
+```
+
+```{r save-figure, include=FALSE}
+figs_dir <- here("outputs", "figs")
+if (!dir.exists(figs_dir)) dir.create(figs_dir, recursive = TRUE)
+
+save_artifact_plot(
+  filename = here("outputs", "figs", "clin_effect_figure_simplified_dag.png"),
+  plot = p,
+  width = 9, height = 6, dpi = 300, bg = "white"
+)
+cat("Figure saved to:", here("outputs", "figs", "clin_effect_figure_simplified_dag.png"), "\n")
+```
+
+Figure saved to `outputs/figs/clin_effect_figure_simplified_dag.png`.
+
+```{r artifact-manifest, include=FALSE}
+finish_artifact_render()
+```

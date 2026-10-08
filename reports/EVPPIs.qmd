@@ -1,0 +1,298 @@
+---
+title: "Value of Information Analysis"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+# Scripts 04-06 are sourced (a few seconds) so that the PSA cache can be
+# checked against the fingerprint 10_PSA.R stamps on it (issue #156): the
+# report stops on an absent or stale cache instead of printing placeholders
+# (issue #157).
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "evppi_functions"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+expected_psa <- psa_cache_fingerprint(
+  sampling_fingerprint = sampling_models$fingerprint,
+  l_params_base = l_params_base,
+  param_distributions = param_distributions,
+  strategies = strategies,
+  n_sim = n_sim,
+  seed = analysis_seed,
+  time_horizon = time_horizon,
+  cl = cl
+)
+psa_obj <- load_psa_cache(
+  verbose = FALSE, required = TRUE,
+  expected_fingerprint = expected_psa,
+  strategies = strategies, n_sim = n_sim,
+  sampling_fingerprint = sampling_models$fingerprint
+)
+
+evppi_cache_file <- evppi_path()
+expected_evppi <- evppi_cache_fingerprint(
+  psa_obj, WTP, current_evppi_config(), analysis_seed, current_population_inputs())
+evppi_cache <- load_evppi_cache(psa_obj, expected_evppi, WTP)
+evppi_results <- evppi_cache$evppi_results
+evpi_manual <- evppi_cache$evpi_manual
+
+has_evppi <- !is.null(evppi_results) && nrow(evppi_results) > 0
+# A cache with no rows is legitimate only when EVPI is zero (standard of care
+# optimal in every PSA draw): every EVPPI is then zero and 11_EVPPIs.R stores
+# no rows (issue #156). No rows with a positive EVPI is a broken cache.
+evpi_is_zero <- evpi_manual <= 0.01
+if (!has_evppi && !evpi_is_zero) {
+  stop("EVPPI cache ", evppi_cache_file, " contains no EVPPI rows although ",
+       "EVPI is ", format_eur(evpi_manual, accuracy = 0.01), " per patient. ",
+       "Rerun analysis/11_EVPPIs.R.", call. = FALSE)
+}
+no_evppi_msg <- sprintf(
+  paste("EVPI is %s per patient: standard of care has the highest net monetary benefit in",
+        "every PSA draw, so the EVPPI of every parameter and group is zero and no",
+        "rows are stored (analysis script short-circuit)."),
+  format_eur(evpi_manual, accuracy = 0.01)
+)
+group_consistency <- if (has_evppi) attr(evppi_results, "group_consistency") else NULL
+if (has_evppi) {
+  for (col in c("evppi_se", "evppi_percent_of_evpi", "evppi_population_millions")) {
+    if (!col %in% names(evppi_results)) evppi_results[[col]] <- NA_real_
+  }
+  if (!"n_params" %in% names(evppi_results)) evppi_results$n_params <- NA_integer_
+  evppi_results$is_group <- grepl("^\\[GROUP\\] ", evppi_results$parameter)
+}
+
+# "--" marks an estimate that could not be computed (NA by design, never zero).
+format_percent <- function(x) ifelse(is.finite(x), sprintf("%.1f%%", x), "--")
+format_population <- function(x) ifelse(is.finite(x), paste0("EUR ", sprintf("%.2f", x), "M"), "--")
+evpi_population_millions <- calculate_population_evppi(
+  evpi_manual,
+  annual_incidence = annual_incidence_norway,
+  research_horizon = research_horizon_years,
+  discount_rate = discount_rate_research
+)
+```
+
+# Overview
+
+This report summarizes expected value of information results for the single joint economic model. The underlying PSA object contains three strategies: standard of care, CRP-guided immunotherapy, and TMB/BRAF-guided immunotherapy.
+
+EVPPI is estimated by nonparametric regression of net monetary benefit on the parameter(s) of interest (see the EVPPI Estimator section). Every estimate is reported with its Monte Carlo standard error. Group values are joint estimates for all members of the group; they are never obtained by adding single-parameter rows, because EVPPI is not additive.
+
+# PSA Decision Uncertainty
+
+```{r evpi-summary}
+psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP) %>%
+  select(Strategy, Mean_Cost, Mean_QALY, Prob_CE) %>%
+  mutate(
+    Strategy = strategy_label(Strategy),
+    Mean_Cost = format_eur(Mean_Cost),
+    Mean_QALY = sprintf("%.3f", Mean_QALY),
+    Prob_CE = scales::percent(Prob_CE, accuracy = 0.1)
+  )
+
+knitr::kable(
+  psa_summary,
+  booktabs = TRUE,
+  align = c("l", "r", "r", "r"),
+  col.names = c("Strategy", "Mean Cost", "Mean QALYs", "Probability Cost-Effective"),
+  caption = paste0("PSA summary at WTP = EUR ", format(WTP, big.mark = ","))
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+```{r evpi-value}
+evpi_display <- data.frame(
+  Metric = c("Per-patient EVPI", "Population EVPI"),
+  Value = c(
+    format_eur(evpi_manual, accuracy = 0.01),
+    format_population(evpi_population_millions)
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  evpi_display,
+  booktabs = TRUE,
+  align = c("l", "r"),
+  caption = "Expected value of perfect information"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"))
+```
+
+# EVPPI Results
+
+## Individual Parameters
+
+```{r evppi-table-parameters}
+if (!has_evppi) {
+  cat(no_evppi_msg)
+} else {
+  single_display <- evppi_results %>%
+    filter(!is_group) %>%
+    arrange(desc(evppi)) %>%
+    mutate(
+      EVPPI = format_eur(evppi, accuracy = 0.01),
+      SE = format_eur(evppi_se, accuracy = 0.01),
+      `Percent of EVPI` = format_percent(evppi_percent_of_evpi),
+      `Population EVPPI` = format_population(evppi_population_millions)
+    ) %>%
+    select(Parameter = parameter, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`)
+
+  knitr::kable(
+    single_display,
+    booktabs = TRUE,
+    align = c("l", "r", "r", "r", "r"),
+    caption = "Single-parameter EVPPI with Monte Carlo standard errors"
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position"))
+}
+```
+
+## Parameter Groups
+
+```{r evppi-table-groups}
+if (has_evppi && any(evppi_results$is_group)) {
+  group_display <- evppi_results %>%
+    filter(is_group) %>%
+    arrange(desc(evppi)) %>%
+    mutate(
+      Group = evppi_group_label(parameter),
+      Parameters = ifelse(is.finite(n_params), as.character(n_params), "--"),
+      EVPPI = format_eur(evppi, accuracy = 0.01),
+      SE = format_eur(evppi_se, accuracy = 0.01),
+      `Percent of EVPI` = format_percent(evppi_percent_of_evpi),
+      `Population EVPPI` = format_population(evppi_population_millions)
+    ) %>%
+    select(Group, Parameters, EVPPI, SE, `Percent of EVPI`, `Population EVPPI`)
+
+  knitr::kable(
+    group_display,
+    booktabs = TRUE,
+    align = c("l", "r", "r", "r", "r", "r"),
+    caption = "Joint EVPPI of parameter groups with Monte Carlo standard errors"
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position"))
+} else if (has_evppi) {
+  cat("The EVPPI cache contains no parameter-group rows.")
+}
+```
+
+Each group row is one joint estimate for all parameters in the group. The resource-use cost group covers the sampled visit, baseline, follow-up and end-of-life costs (unit drug and test prices are fixed in the PSA, issue #154, so there is no drug-cost, test-cost or all-costs group); the utilities group is the progression-free utility and the utility decrement; the biomarker-treatment interaction group covers the OS and PFS treatment-by-biomarker coefficients of both biomarkers.
+
+## Group Consistency Check
+
+Perfect information on a group of parameters is worth at least as much as perfect information on any one of them. Each group estimate is compared with its largest member, allowing for two combined Monte Carlo standard errors with a floor of 1% of EVPI. The analysis script stops if a group falls short of this bound.
+
+```{r evppi-consistency}
+if (!is.null(group_consistency) && nrow(group_consistency) > 0) {
+  consistency_display <- group_consistency %>%
+    mutate(
+      Group = evppi_group_label(group),
+      `Group EVPPI` = format_eur(group_evppi, accuracy = 0.01),
+      `Largest member` = max_member,
+      `Member EVPPI` = format_eur(member_evppi, accuracy = 0.01),
+      Shortfall = format_eur(shortfall, accuracy = 0.01),
+      Tolerance = format_eur(tolerance, accuracy = 0.01),
+      Result = ifelse(violation, "Violation", "Pass")
+    ) %>%
+    select(Group, `Group EVPPI`, `Largest member`, `Member EVPPI`,
+           Shortfall, Tolerance, Result)
+
+  knitr::kable(
+    consistency_display,
+    booktabs = TRUE,
+    align = c("l", "r", "l", "r", "r", "r", "l"),
+    caption = "Group EVPPI versus largest single-parameter member"
+  ) %>%
+    tbl_style(latex_options = c("HOLD_position", "scale_down"))
+} else if (!has_evppi && evpi_is_zero) {
+  cat("No group-consistency check applies: the EVPI threshold short-circuits EVPPI regression, so no parameter or group rows are stored.")
+} else {
+  cat("The group-consistency table is not stored in this EVPPI cache; rerun analysis/11_EVPPIs.R.")
+}
+```
+
+```{r evppi-plot, fig.cap="EVPPI by parameter and parameter group. Error bars span plus or minus 1.96 Monte Carlo standard errors."}
+if (!has_evppi) {
+  ggplot() +
+    annotate("text", x = 0.5, y = 0.5,
+             label = "EVPI = 0: all EVPPI are zero", size = 5) +
+    theme_void()
+} else {
+  plot_df <- evppi_results %>%
+    filter(is.finite(evppi)) %>%
+    mutate(
+      label = ifelse(is_group, paste0(evppi_group_label(parameter), " (group)"), parameter),
+      type = ifelse(is_group, "Parameter group", "Single parameter"),
+      lower = ifelse(is.finite(evppi_se), evppi - 1.96 * evppi_se, NA_real_),
+      upper = ifelse(is.finite(evppi_se), evppi + 1.96 * evppi_se, NA_real_)
+    ) %>%
+    arrange(evppi) %>%
+    mutate(label = factor(label, levels = unique(label)))
+
+  ggplot(plot_df, aes(x = evppi, y = label, fill = type)) +
+    geom_col() +
+    geom_errorbar(aes(xmin = lower, xmax = upper), width = 0.3,
+                  orientation = "y", colour = "gray30", na.rm = TRUE) +
+    scale_fill_manual(values = c("Single parameter" = "#3B6EA8",
+                                 "Parameter group" = "#B5651D")) +
+    scale_x_continuous(labels = scales::dollar_format(prefix = "EUR ")) +
+    labs(x = "EVPPI per patient", y = NULL, fill = NULL) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+```
+
+# EVPPI Estimator
+
+EVPPI values are estimated with the nonparametric regression method of Strong, Oakley and Brennan (2014) as implemented in the `voi` package (`voi::evppi()`). For each parameter or parameter group, the incremental net monetary benefit of every strategy relative to standard of care is regressed on the parameter(s) with a generalized additive model. The fitted values estimate the expected net benefit conditional on the parameter(s), and EVPPI is the mean over PSA draws of the maximum fitted value across strategies minus the maximum of the mean fitted values.
+
+Groups of up to four parameters use a tensor-product cubic regression spline of all members (the `voi` default). Larger groups use additive cubic regression splines, a form that is well specified for cost parameters because net monetary benefit is linear and additive in unit costs; no group in the current parameter set has more than four members since the unit prices were fixed in issue #154. The Monte Carlo standard error is the standard deviation of the EVPPI recomputed for 1,000 draws of the regression coefficients from their asymptotic posterior distribution. It reflects uncertainty in the fitted regression, not structural uncertainty about the regression form, and it shrinks as the number of PSA draws grows.
+
+A zero estimate means that the fitted net-benefit curves never change which strategy is optimal over the sampled range of the parameter(s); it is a regression result, not a floored value. Small negative estimates within one or two standard errors of zero are Monte Carlo noise and are shown as estimated. Estimates that could not be computed are reported as missing rather than zero.
+
+Versions of this report before issue #152 used a nearest-neighbour estimator (1,000 nearest of 5,000 draws at 500 quantile grid points) whose output reflected uneven inclusion of draws across neighbourhoods rather than value of information: a parameter unrelated to the model returned a non-zero value, groups fell below their members, and values were capped at EVPI. Those values are not comparable with the estimates reported here.
+
+References: Strong M, Oakley JE, Brennan A. Estimating multiparameter partial expected value of perfect information from a probabilistic sensitivity analysis sample: a nonparametric regression approach. Medical Decision Making 2014;34(3):311-326. Jackson C, Baio G, Heath A, Strong M, Welton NJ, Wilson ECF. Value of information analysis in models to inform health policy. Annual Review of Statistics and Its Application 2022;9:95-118 (the `voi` package).
+
+# Population Scaling
+
+Population-level values assume `r annual_incidence_norway` annual eligible patients in Norway, a `r research_horizon_years`-year research horizon, and a `r scales::percent(discount_rate_research, accuracy = 0.1)` annual discount rate for research benefits. The scaling is linear, so population standard errors are the per-patient standard errors multiplied by the same factor.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 5.3

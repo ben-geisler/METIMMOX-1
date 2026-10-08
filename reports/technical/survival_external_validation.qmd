@@ -1,0 +1,748 @@
+---
+title: "Survival Extrapolation Validation"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    fig-width: 8
+    fig-height: 5.5
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+# ===============================================================================
+# Survival extrapolation validation (issue #162, AdViSHE D4)
+#
+# 1. Dependent validation: model-predicted versus Kaplan-Meier OS and PFS at
+#    1, 2, 3 and 5 years and the median, for the control arm and each economic
+#    biomarker subgroup. The model is predicted for exactly the patients behind
+#    each Kaplan-Meier curve, on their own arm (issue #157 convention).
+# 2. Independent validation: the economic standard-of-care curves against
+#    published first-line mCRC survival (data/external/survival_benchmarks.csv),
+#    with the tolerance fixed in advance in R/survival_validation.R.
+#
+# Model intervals are 95% percentiles over joint coefficient draws from the
+# sampling cache (script 06, read-only), with the patient population held fixed.
+# ===============================================================================
+source(here::here("R/report_setup.R"))
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("prediction_functions", "report_format", "pfs_os_violation_diagnostics",
+           "survival_validation"),
+  packages = c("here", "knitr", "kableExtra", "ggplot2", "dplyr", "tidyr",
+               "scales", "survival", "flexsurv"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+theme_set(theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.caption = element_text(size = 8.5, colour = "grey30", hjust = 0)))
+
+years <- c(1, 2, 3, 5)
+n_draws <- 1000
+times <- 0:time_horizon
+ctrl_rx <- levels(data_complete$Rx)[1]
+exp_rx <- levels(data_complete$Rx)[2]
+fit_os <- models$best_fit$os
+fit_pfs <- models$best_fit$pfs
+dist_os <- models$best_fit$os_distribution
+dist_pfs <- models$best_fit$pfs_distribution
+
+component <- get_joint_sampling_models(sampling_models)
+set.seed(analysis_seed)
+draw_idx <- sort(sample(seq_len(component$n_samples), min(n_draws, component$n_samples)))
+
+# ---- Groups: the patients behind each Kaplan-Meier curve -----------------------
+# Same subsets as subgroup_data() in survival_model_specification.qmd and
+# biomarker_sets() in figure_pfs_os_curves.qmd: control arm; biomarker-positive
+# patients on the experimental arm; biomarker-negative patients on the control arm.
+group_meta <- data.frame(
+  group = c("control", "crp_pos", "crp_neg", "tmb_braf_pos", "tmb_braf_neg"),
+  label = c("SoC", "CRP+", "CRP-", "TMB/BRAF+", "TMB/BRAF-"),
+  stringsAsFactors = FALSE
+)
+group_data <- function(group) {
+  d <- data_complete
+  if (group == "control") return(d[d$Rx == ctrl_rx, ])
+  bm <- sub("_(pos|neg)$", "", group)
+  status <- as.numeric(as.character(d[[bm]]))
+  if (grepl("_pos$", group)) d[status == 1 & d$Rx == exp_rx, ]
+  else d[status == 0 & d$Rx == ctrl_rx, ]
+}
+
+endpoint_cols <- list(OS = c(time = "OSwk", event = "Death"),
+                      PFS = c(time = "PFSwk", event = "Progression"))
+endpoint_fit <- function(ep) if (ep == "OS") fit_os else fit_pfs
+
+predict_group <- function(fit, d) {
+  curve <- predict_pop_avg(fit, d, times)
+  if (is.null(curve) || length(curve) != length(times)) {
+    stop("Population-averaged prediction failed for ", nrow(d), " patients")
+  }
+  curve
+}
+
+# ---- Economic standard-of-care curves and closed-form check --------------------
+soc_data <- data_complete
+soc_data$Rx <- factor(ctrl_rx, levels = levels(data_complete$Rx))
+soc_curve <- list(OS = l_params_base$p_os$control_OS,
+                  PFS = l_params_base$p_pfs$control_PFS)
+for (ep in c("OS", "PFS")) {
+  recomputed <- predict_group(endpoint_fit(ep), soc_data)
+  if (max(abs(recomputed - soc_curve[[ep]])) > 1e-8) {
+    stop("The economic SoC ", ep, " curve is not the joint model averaged over ",
+         "the complete-case cohort with Rx = control.")
+  }
+  if (identical(endpoint_fit(ep)$dlist$name, "gamma")) {
+    direct <- direct_gamma_pop_avg(endpoint_fit(ep), coef(endpoint_fit(ep)), soc_data, times)
+    if (max(abs(direct - recomputed)) > 1e-8) {
+      stop("Closed-form gamma curve differs from predict() for ", ep)
+    }
+  }
+}
+```
+
+
+```{r dependent, include=FALSE}
+fmt_pct <- function(x) ifelse(is.finite(x), sprintf("%.1f%%", 100 * x), "--")
+fmt_ci_pct <- function(lo, hi) {
+  ifelse(is.finite(lo) & is.finite(hi),
+         sprintf("%.1f-%.1f%%", 100 * lo, 100 * hi), "--")
+}
+fmt_mo <- function(x) ifelse(is.finite(x), sprintf("%.1f", x), "NR")
+fmt_ci_mo <- function(lo, hi) sprintf("%s-%s", fmt_mo(lo), fmt_mo(hi))
+# Estimate with interval in one cell: "62.5% (43.5-76.7%)" or "21.2 (10.5-29.5)"
+fmt_est_ci <- function(x, lo, hi, is_med) {
+  is_med <- rep_len(is_med, length(x))
+  ifelse(is_med,
+         ifelse(is.finite(lo) | is.finite(hi),
+                sprintf("%s (%s)", fmt_mo(x), fmt_ci_mo(lo, hi)), fmt_mo(x)),
+         ifelse(is.finite(lo) & is.finite(hi),
+                sprintf("%s (%s)", fmt_pct(x), fmt_ci_pct(lo, hi)), fmt_pct(x)))
+}
+
+dependent_rows <- list()
+for (ep in c("OS", "PFS")) {
+  for (g in group_meta$group) {
+    d <- group_data(g)
+    t_col <- endpoint_cols[[ep]][["time"]]
+    e_col <- endpoint_cols[[ep]][["event"]]
+    km <- km_landmarks(d[[t_col]], d[[e_col]], years)
+    km_med <- km_median_months(d[[t_col]], d[[e_col]])
+    curve <- predict_group(endpoint_fit(ep), d)
+    iv <- draw_landmark_intervals(
+      draw_curves(component, tolower(ep), d, draw_idx, times), years)
+    dependent_rows[[paste(ep, g)]] <- data.frame(
+      endpoint = ep, group = g,
+      label = sprintf("%s (n = %d)", group_meta$label[group_meta$group == g], nrow(d)),
+      landmark = c(paste(years, ifelse(years == 1, "year", "years")), "Median (months)"),
+      measure = c(rep("survival", length(years)), "median_months"),
+      km = c(km$surv, km_med[["median"]]),
+      km_lower = c(km$lower, km_med[["lower"]]),
+      km_upper = c(km$upper, km_med[["upper"]]),
+      n_risk = c(km$n_risk, NA),
+      km_status = c(km$status, ifelse(is.finite(km_med[["median"]]), "Estimated",
+                                      "Not reached")),
+      model = c(curve_at_years(curve, years), curve_median_months(curve)),
+      model_lower = iv$lower, model_upper = iv$upper,
+      stringsAsFactors = FALSE
+    )
+  }
+}
+dependent <- bind_rows(dependent_rows)
+dependent$in_km_ci <- ifelse(
+  is.finite(dependent$km_lower) & is.finite(dependent$km_upper) & is.finite(dependent$model),
+  ifelse(dependent$model >= dependent$km_lower & dependent$model <= dependent$km_upper,
+         "Yes", "No"),
+  "--")
+
+dependent_table <- function(ep) {
+  x <- dependent[dependent$endpoint == ep, ]
+  is_med <- x$measure == "median_months"
+  data.frame(
+    Group = ifelse(x$landmark == x$landmark[1], x$label, ""),
+    Landmark = x$landmark,
+    `Kaplan-Meier (95% CI)` = ifelse(grepl("^NE", x$km_status), "NE",
+                                     fmt_est_ci(x$km, x$km_lower, x$km_upper, is_med)),
+    `At risk` = ifelse(is.na(x$n_risk), "", as.character(x$n_risk)),
+    `Parametric model (95% interval)` = fmt_est_ci(x$model, x$model_lower,
+                                                   x$model_upper, is_med),
+    `In KM CI` = x$in_km_ci,
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+}
+dependent_kable <- function(ep, caption) {
+  knitr::kable(dependent_table(ep), format = report_table_format(), booktabs = TRUE,
+               row.names = FALSE, align = "llrrrc", caption = caption) |>
+    tbl_style(latex_options = "HOLD_position", font_size = 9) |>
+    tbl_column_spec(1, width = "2.3cm") |>
+    tbl_column_spec(2, width = "2.2cm") |>
+    tbl_column_spec(3, width = "3.1cm") |>
+    tbl_column_spec(4, width = "1.0cm") |>
+    tbl_column_spec(5, width = "3.4cm") |>
+    tbl_column_spec(6, width = "1.2cm")
+}
+
+dep_eval <- dependent[dependent$in_km_ci != "--", ]
+dep_out <- dep_eval[dep_eval$in_km_ci == "No", ]
+n_ne <- sum(grepl("^NE", dependent$km_status))
+n_few <- sum(grepl("^Fewer", dependent$km_status))
+max_fu_yr <- max(c(data_complete$OSwk, data_complete$PFSwk)) / 52
+```
+
+```{r independent, include=FALSE}
+benchmarks <- read_survival_benchmarks()
+bench_path <- here::here(SURVIVAL_BENCHMARK_PATH)
+bench_md5 <- unname(tools::md5sum(bench_path))
+bench_commit <- tryCatch(
+  system2("git", c("-C", shQuote(here::here()), "log", "--diff-filter=A",
+                   "--format=%h %cs", "--", SURVIVAL_BENCHMARK_PATH), stdout = TRUE),
+  error = function(e) character(0), warning = function(w) character(0))
+bench_commit <- if (length(bench_commit) > 0) tail(bench_commit, 1) else "not available"
+
+ctrl_data <- group_data("control")
+model_curves <- list(
+  soc = soc_curve,
+  ctrl = list(OS = predict_group(fit_os, ctrl_data), PFS = predict_group(fit_pfs, ctrl_data))
+)
+model_draws <- list(
+  soc = list(OS = draw_curves(component, "os", soc_data, draw_idx, times),
+             PFS = draw_curves(component, "pfs", soc_data, draw_idx, times)),
+  ctrl = list(OS = draw_curves(component, "os", ctrl_data, draw_idx, times),
+              PFS = draw_curves(component, "pfs", ctrl_data, draw_idx, times))
+)
+
+comparison <- bind_rows(lapply(seq_len(nrow(benchmarks)), function(i) {
+  row <- benchmarks[i, ]
+  out <- row[, c("id", "source", "endpoint", "measure", "time_years", "estimate",
+                 "lower", "upper", "role")]
+  for (m in c("soc", "ctrl")) {
+    val <- benchmark_model_value(model_curves[[m]][[row$endpoint]], row)
+    iv <- benchmark_model_interval(model_draws[[m]][[row$endpoint]], row)
+    out[[paste0(m, "_value")]] <- val
+    out[[paste0(m, "_lower")]] <- iv[1]
+    out[[paste0(m, "_upper")]] <- iv[2]
+    out[[paste0(m, "_consistent")]] <- benchmark_consistent(iv[1], iv[2], row)
+    out[[paste0(m, "_verdict")]] <- evaluate_benchmark(val, row)
+  }
+  out
+}))
+comparison$soc_pass <- benchmark_passed(comparison$soc_verdict)
+
+short_source <- function(s) sub(" \\(.*\\)$", "", s)
+# Short cohort tags so that rows from the same source can be told apart. Every
+# benchmark id must match exactly one pattern, so a new row forces a new tag.
+cohort_tags <- c(
+  "^nordic7_a_" = "arm A",
+  "^aasebo_mss_comb_" = "MSS, combination chemotherapy",
+  "^aasebo_mss_chemo_" = "MSS, any chemotherapy",
+  "^cnorway_sync_pall_" = "synchronous, palliative chemotherapy",
+  "^cnorway_meta_pall_" = "metachronous, palliative chemotherapy",
+  "^sorbye_no_all_" = "all ages",
+  "^sorbye_no_lt60_" = "age <60"
+)
+cohort_tag <- function(id) {
+  vapply(id, function(x) {
+    hit <- vapply(names(cohort_tags), grepl, logical(1), x = x)
+    if (sum(hit) != 1) stop("Benchmark id ", x, " needs exactly one cohort tag")
+    cohort_tags[[which(hit)]]
+  }, "", USE.NAMES = FALSE)
+}
+source_label <- function(r) paste0(short_source(r$source), ", ", cohort_tag(r$id))
+measure_label <- function(r) {
+  ifelse(r$measure == "median_months", paste(r$endpoint, "median (months)"),
+         sprintf("%s at %s years", r$endpoint, formatC(r$time_years, format = "fg")))
+}
+fmt_value <- function(x, measure) ifelse(measure == "median_months", fmt_mo(x), fmt_pct(x))
+fmt_bench <- function(r) {
+  fmt_est_ci(r$estimate, r$lower, r$upper, r$measure == "median_months")
+}
+fmt_model <- function(r, m) {
+  fmt_est_ci(r[[paste0(m, "_value")]], r[[paste0(m, "_lower")]],
+             r[[paste0(m, "_upper")]], r$measure == "median_months")
+}
+
+# Headline (adopted after review): published value inside the model interval
+n_eval <- sum(comparison$soc_consistent != "Not evaluable")
+n_consistent <- sum(comparison$soc_consistent == "Consistent")
+not_consistent <- comparison[comparison$soc_consistent == "Not consistent", ]
+n_ctrl_consistent <- sum(comparison$ctrl_consistent == "Consistent")
+# Pre-specified rule: model point estimate
+n_pe_eval <- sum(!is.na(comparison$soc_pass))
+n_pe_pass <- sum(comparison$soc_pass, na.rm = TRUE)
+pe_off <- comparison[!is.na(comparison$soc_pass) & !comparison$soc_pass, ]
+comp_rows <- comparison[comparison$role == "comparable", ]
+lb_rows <- comparison[comparison$role == "lower_bound", ]
+tail_rows <- comparison[comparison$measure == "survival" & comparison$time_years >= 5, ]
+tail_low <- tail_rows[!is.na(tail_rows$soc_pass) & !tail_rows$soc_pass, ]
+pfs_off <- pe_off[pe_off$endpoint == "PFS", ]
+
+# METIMMOX reference values (control arm, Kaplan-Meier)
+ctrl_os_fit <- survfit(Surv(OSwk, Death) ~ 1, data = ctrl_data)
+ctrl_last_wk <- max(ctrl_data$OSwk)
+ctrl_km_last <- tail(ctrl_os_fit$surv, 1)
+ctrl_last_event_wk <- max(ctrl_data$OSwk[ctrl_data$Death == 1])
+ctrl_model_at_last <- curve_at_years(model_curves$ctrl$OS, ctrl_last_wk / 52)
+ctrl_km_os_med <- km_median_months(ctrl_data$OSwk, ctrl_data$Death)
+ctrl_km_pfs_med <- km_median_months(ctrl_data$PFSwk, ctrl_data$Progression)
+ctrl_km_os3 <- km_landmarks(ctrl_data$OSwk, ctrl_data$Death, 3)
+soc_pfs_med <- curve_median_months(soc_curve$PFS)
+pfs_med_in_km <- is.finite(soc_pfs_med) &&
+  soc_pfs_med >= ctrl_km_pfs_med[["lower"]] && soc_pfs_med <= ctrl_km_pfs_med[["upper"]]
+
+# METIMMOX enrolment period: years of inclusion of the complete-case patients
+raw_dates <- readRDS(here::here("data/tidy/METIMMOX.rds"))[, c("ID", "Date of inclusion")]
+incl <- as.Date(raw_dates[["Date of inclusion"]][match(data_complete$ID, raw_dates$ID)])
+if (anyNA(incl)) stop("Inclusion date missing for a complete-case patient")
+metimmox_period <- paste(format(range(incl), "%Y"), collapse = "-")
+
+soc_os_at <- function(y) {
+  v <- apply(model_draws$soc$OS, 1, curve_at_years, years = y)
+  sprintf("%s (95%% interval %s)", fmt_pct(curve_at_years(soc_curve$OS, y)),
+          fmt_ci_pct(quantile(v, 0.025, names = FALSE), quantile(v, 0.975, names = FALSE)))
+}
+n_tail_consistent <- sum(tail_rows$soc_consistent == "Consistent")
+tail_text <- if (nrow(tail_rows) == 0) {
+  "No benchmark reaches 5 years."
+} else {
+  paste0(
+    if (n_tail_consistent == nrow(tail_rows)) {
+      sprintf("At 5 years and later, all %d published lower bounds are consistent with the parametric model's 95%% interval. ",
+              nrow(tail_rows))
+    } else {
+      sprintf("At 5 years and later, %d of the %d published lower bounds %s consistent with the parametric model's 95%% interval. ",
+              n_tail_consistent, nrow(tail_rows), ifelse(n_tail_consistent == 1, "is", "are"))
+    },
+    if (nrow(tail_low) > 0) {
+      sprintf(paste(
+        "The point estimates, however, lie below %s of them: the parametric model's",
+        "standard-of-care OS is %s at 5 years and %s at 6.5 years. The extrapolated tail",
+        "is therefore on the pessimistic side of the external evidence, though within its",
+        "uncertainty, in line with the fitted curve falling below the trial's own late",
+        "Kaplan-Meier plateau (Section 2)."),
+        ifelse(nrow(tail_low) == nrow(tail_rows), "all", as.character(nrow(tail_low))),
+        soc_os_at(5), soc_os_at(6.5))
+    } else "The point estimates also meet every bound.")
+}
+
+fmt_list <- function(r, value_col = "soc_value") {
+  paste(sprintf("%s, %s (parametric model %s, published %s)", source_label(r),
+                measure_label(r), fmt_value(r[[value_col]], r$measure), fmt_bench(r)),
+        collapse = "; ")
+}
+```
+
+# Purpose and classification
+
+This report answers validateHE finding TR-COMP-022 (AdViSHE item D4: model outcomes compared with empirical data) and GitHub issue #162. Every survival curve of the economic model comes from the **parametric survival model**: the joint `r dist_os` (OS) and `r dist_pfs` (PFS) regression models fitted in script 04 to `r nrow(data_complete)` complete-case patients with at most `r sprintf("%.1f", max_fu_yr)` years of follow-up, and extrapolated to a `r round(time_horizon / 52)`-year horizon. Before this report, its fits had been compared only visually with the trial's own Kaplan-Meier curves (`para_models.qmd`, `survival_model_specification.qmd`).
+
+The report contains two comparisons, classified as AdViSHE asks:
+
+- **Dependent validation (Section 2).** Parametric-model versus Kaplan-Meier OS and PFS at 1, 2, 3 and 5 years and at the median, in the METIMMOX patients the model was fitted to. Agreement here shows that the fit reproduces its own data. It says nothing about the extrapolated tail.
+- **Independent validation (Section 3).** The parametric model's standard-of-care curves against published survival of first-line mCRC patients outside METIMMOX. The benchmarks and a point-estimate tolerance were committed (`r bench_commit`) before any comparison was computed.
+
+Throughout, "parametric model" means this parametric survival model and its predictions. Its 95% interval is the 2.5th-97.5th percentile over `r length(draw_idx)` joint coefficient draws from the PSA sampling cache, with the patient population held fixed.
+
+The general-population plausibility check of the PSA draws (Norwegian life table) is in `psa_extrapolation_plausibility.qmd` (issue #179) and is not repeated here.
+
+# Dependent validation: parametric model versus trial Kaplan-Meier
+
+Each Kaplan-Meier curve is compared with the parametric model predicted for **exactly the same patients**, each with their own age, sex, biomarker values and actual arm, then averaged (the issue #157 convention). The groups are those that enter the economic model:
+
+- control-arm patients (SoC);
+- biomarker-positive patients on FLOX + nivolumab;
+- biomarker-negative patients on FLOX.
+
+Kaplan-Meier 95% confidence intervals use the log-log transformation. A Kaplan-Meier landmark after a group's last observed time is not estimable ("NE"). Where every patient had an event before the landmark, the estimate is 0 without a confidence interval. `r n_ne` of the `r nrow(dependent[dependent$measure == "survival", ])` landmark cells are NE, including every 5-year Kaplan-Meier cell. `r n_few` estimable cells rest on fewer than `r KM_FEW_AT_RISK` patients at risk.
+
+```{r table-dep-os}
+dependent_kable("OS", "Overall survival: Kaplan-Meier versus parametric model predicted for the same patients") |>
+  tbl_footnote(general = paste(
+    "NE: not estimable (after the group's last follow-up). NR: not reached.",
+    "At risk: patients at risk at the landmark. In KM CI: parametric-model point estimate",
+    "inside the Kaplan-Meier 95% CI; -- where that CI is unavailable (not estimable,",
+    "or no event yet so the estimate is 100% with a degenerate interval).",
+    "Groups: SoC = control arm; + = biomarker-positive on FLOX + nivolumab;",
+    "- = biomarker-negative on FLOX."), threeparttable = TRUE)
+```
+
+```{r table-dep-pfs}
+dependent_kable("PFS", "Progression-free survival: Kaplan-Meier versus parametric model predicted for the same patients") |>
+  tbl_footnote(general = paste(
+    "As for the OS table. A Kaplan-Meier estimate of 0.0% without a CI means",
+    "every patient in the group had progressed or died before the landmark."),
+    threeparttable = TRUE)
+```
+
+Of the `r nrow(dep_eval)` cells with a Kaplan-Meier confidence interval, the parametric-model point estimate lies inside the interval in `r sum(dep_eval$in_km_ci == "Yes")`.
+`r if (nrow(dep_out) > 0) paste0("It lies outside in ", nrow(dep_out), ": ", paste(sprintf("%s %s, %s (Kaplan-Meier %s, parametric model %s)", dep_out$endpoint, sub(" \\(n = .*", "", dep_out$label), tolower(dep_out$landmark), fmt_value(dep_out$km, dep_out$measure), fmt_value(dep_out$model, dep_out$measure)), collapse = "; "), ".") else "There is no cell where it lies outside."`
+`r no_ev <- dependent[dependent$km_status == "No events before landmark", ]; if (nrow(no_ev) > 0) paste0("Cells without any event before the landmark have no informative interval and are not counted: ", paste(sprintf("%s %s, %s (parametric model %s)", no_ev$endpoint, sub(" \\(n = .*", "", no_ev$label), no_ev$landmark, fmt_pct(no_ev$model)), collapse = "; "), ".") else ""`
+With groups of `r min(sapply(group_meta$group, function(g) nrow(group_data(g))))` to `r max(sapply(group_meta$group, function(g) nrow(group_data(g))))` patients the Kaplan-Meier intervals are wide, so this is a weak test, and it cannot reach the 5-year landmark at all.
+
+The control arm's observed OS is flat from its last death at week `r round(ctrl_last_event_wk)` (`r sprintf("%.1f", ctrl_last_event_wk / 52)` years) to its last follow-up at week `r round(ctrl_last_wk)`, at `r fmt_pct(ctrl_km_last)`. At that time the parametric model predicts `r fmt_pct(ctrl_model_at_last)` for the same patients: the fitted curve keeps falling where the Kaplan-Meier curve has levelled off. That plateau rests on the few control patients still under follow-up and is not by itself evidence of a cured fraction.
+
+# Independent validation: published first-line mCRC survival
+
+## Benchmarks
+
+The benchmarks are in `data/external/survival_benchmarks.csv` (MD5 `r substr(bench_md5, 1, 12)`...). Its provenance, including why each source is treated as comparable or as a lower bound, is in `data/external/README.md`. Every value is transcribed from a published table or text; nothing was digitised.
+
+- **Comparable** sources are first-line oxaliplatin-based chemotherapy cohorts. They allow a two-sided check.
+- **Lower-bound** sources are unselected or real-world populations: older patients, poorer performance status, monotherapy, and in the registries also untreated patients. A trial population receiving FLOX should not have shorter survival than these, so they allow a one-sided check only.
+
+The METIMMOX row of the next table describes the `r nrow(data_complete)` complete-case patients behind the parametric model; the control arm alone (`r nrow(ctrl_data)` patients) has a median age of `r median(ctrl_data$Age)` years.
+
+```{r table-sources}
+metimmox_row <- data.frame(
+  Source = "METIMMOX (this analysis)",
+  Population = sprintf("First-line FLOX or FLOX + nivolumab, randomised trial, complete case (n = %d)",
+                       nrow(data_complete)),
+  Period = metimmox_period, MSI = "MSS/pMMR only",
+  `Median age` = format(median(data_complete$Age)),
+  check.names = FALSE, stringsAsFactors = FALSE)
+src <- benchmarks |>
+  distinct(source, population, era, msi_selection, median_age) |>
+  transmute(Source = source, Population = population, Period = era,
+            MSI = msi_selection,
+            `Median age` = ifelse(is.na(median_age), "--", format(median_age)))
+src <- rbind(metimmox_row, src)
+knitr::kable(src, format = report_table_format(), booktabs = TRUE, row.names = FALSE,
+             caption = "METIMMOX and the benchmark sources (DOIs in the references)") |>
+  tbl_style(latex_options = "HOLD_position", font_size = 8) |>
+  tbl_row_spec(1, bold = TRUE) |>
+  tbl_column_spec(1, width = "3.4cm") |>
+  tbl_column_spec(2, width = "5.6cm") |>
+  tbl_column_spec(3, width = "1.6cm") |>
+  tbl_column_spec(4, width = "1.9cm") |>
+  tbl_column_spec(5, width = "1.2cm")
+```
+
+## How the comparison is judged
+
+The primary curve is the economic standard-of-care curve, the one that enters the cost-effectiveness model: the parametric model averaged over all `r nrow(data_complete)` complete-case patients with `Rx` set to control. The curve predicted for the `r nrow(ctrl_data)` control-arm patients is a secondary comparison (Section 3.5). Two criteria are reported:
+
+- **Consistent with the parametric model (headline, adopted after review).** A comparable benchmark is consistent when its published estimate lies inside the parametric model's 95% interval. A lower bound is consistent when the upper limit of that interval reaches the bound, i.e. the model's uncertainty allows survival at least as high as the bound.
+- **Point estimate (pre-specified rule).** `r survival_benchmark_tolerance()`
+
+The point-estimate rule was fixed before the comparison was run. On review it was judged too strict as the headline, because it ignores the uncertainty of a model fitted to `r nrow(data_complete)` patients; it is kept in the tables so that the pre-specified result stays visible.
+
+## Comparison
+
+For reference, the METIMMOX control arm itself has a Kaplan-Meier median OS of `r fmt_mo(ctrl_km_os_med[["median"]])` months (95% CI `r fmt_ci_mo(ctrl_km_os_med[["lower"]], ctrl_km_os_med[["upper"]])`), a median PFS of `r fmt_mo(ctrl_km_pfs_med[["median"]])` months (`r fmt_ci_mo(ctrl_km_pfs_med[["lower"]], ctrl_km_pfs_med[["upper"]])`) and OS of `r fmt_pct(ctrl_km_os3$surv)` at 3 years (`r fmt_ci_pct(ctrl_km_os3$lower, ctrl_km_os3$upper)`); OS at 5 years is not estimable (follow-up ends at `r sprintf("%.1f", max_fu_yr)` years).
+
+```{r table-comparison}
+comparison_kable <- function(rows, caption, m = "soc") {
+  tab <- data.frame(
+    Source = source_label(rows),
+    Measure = measure_label(rows),
+    Published = fmt_bench(rows),
+    `Parametric model (95% interval)` = fmt_model(rows, m),
+    Consistent = ifelse(rows[[paste0(m, "_consistent")]] == "Consistent", "Yes",
+                        ifelse(rows[[paste0(m, "_consistent")]] == "Not consistent", "No", "--")),
+    `Point estimate` = point_estimate_label(rows[[paste0(m, "_verdict")]]),
+    check.names = FALSE, stringsAsFactors = FALSE)
+  knitr::kable(tab, format = report_table_format(), booktabs = TRUE, row.names = FALSE,
+               align = "llrrcl", caption = caption) |>
+    tbl_style(latex_options = "HOLD_position", font_size = 8) |>
+    tbl_column_spec(1, width = "3.6cm") |>
+    tbl_column_spec(2, width = "2.0cm") |>
+    tbl_column_spec(3, width = "2.2cm") |>
+    tbl_column_spec(4, width = "2.6cm") |>
+    tbl_column_spec(5, width = "1.4cm") |>
+    tbl_column_spec(6, width = "1.9cm")
+}
+comparison_kable(comp_rows, "Comparable benchmarks: economic standard-of-care curve (parametric model) versus published values") |>
+  tbl_footnote(general = paste(
+    "Published: estimate with its reported 95% CI. Medians in months.",
+    "Consistent: published estimate inside the parametric model's 95% interval.",
+    "Point estimate: the pre-specified rule (parametric-model point estimate inside the published CI)."),
+    threeparttable = TRUE)
+```
+
+```{r table-comparison-lb}
+comparison_kable(lb_rows, "Lower-bound benchmarks: economic standard-of-care curve (parametric model) versus published values") |>
+  tbl_footnote(general = paste(
+    "Published: the bound (with its reported 95% CI where available). Survival as the",
+    "proportion alive; medians in months. Consistent: the upper limit of the parametric",
+    "model's 95% interval reaches the bound. Point estimate: the pre-specified rule",
+    "(parametric-model point estimate at or above the bound)."),
+    threeparttable = TRUE)
+```
+
+**Result.** `r if (n_consistent == n_eval) sprintf("All %d published values are consistent with the parametric survival model's 95%% interval.", n_eval) else sprintf("%d of the %d published values are consistent with the parametric survival model's 95%% interval; the exceptions are %s.", n_consistent, n_eval, fmt_list(not_consistent))` Judged on the point estimate alone (the pre-specified rule), `r n_pe_pass` of `r n_pe_eval` agree: `r sum(comp_rows$soc_pass, na.rm = TRUE)` of `r sum(!is.na(comp_rows$soc_pass))` comparable and `r sum(lb_rows$soc_pass, na.rm = TRUE)` of `r sum(!is.na(lb_rows$soc_pass))` lower-bound benchmarks.
+`r if (nrow(pe_off) > 0) paste0("The point estimate differs from the published value for ", fmt_list(pe_off), ".") else ""`
+
+## Interpretation
+
+**Medians.** The parametric model's standard-of-care median OS is `r fmt_mo(curve_median_months(soc_curve$OS))` months and its median PFS `r fmt_mo(soc_pfs_med)` months, against `r fmt_mo(ctrl_km_os_med[["median"]])` and `r fmt_mo(ctrl_km_pfs_med[["median"]])` months in the METIMMOX control arm (Kaplan-Meier); METIMMOX's own publication reports a control-group median PFS of 9.2 months (Ree et al. 2024, doi:10.1038/s41416-024-02696-6). `r if (nrow(pfs_off) > 0 && pfs_med_in_km) "The parametric model's median PFS lies inside the trial's Kaplan-Meier interval, so its distance from the published PFS medians reflects a difference between METIMMOX and the benchmark cohorts rather than the fit." else if (nrow(pfs_off) > 0) "The parametric model's median PFS also lies outside the trial's own Kaplan-Meier interval." else ""` Two differences can lengthen METIMMOX PFS relative to other trials:
+
+- the analysis PFS endpoint counts deaths without recorded progression only within `r pfs_death_window_weeks` weeks of the last assessment (issue #181);
+- the scan schedules differ between the trials.
+
+**Tail.** `r tail_text`
+
+`r if (any(grepl("^sorbye_no_lt60_", pe_off$id))) sprintf("The registry rows for patients under 60 describe a younger population than METIMMOX (complete-case median age %s years) and are therefore a stricter bound than the all-ages rows (remark added after the comparison was run).", median(data_complete$Age)) else ""`
+
+**Consequence for the economic model.** This report checks the standard-of-care curve only. The guided strategies use the same parametric model, so their tails are extrapolated with the same distribution. Whether a heavier tail would raise or lower the incremental QALYs depends on how the biomarker-by-treatment effects carry into it, and that is not assessed here; the survival-family structural sensitivity in `OWSA.qmd` bounds this uncertainty. By project decision (1 October 2026) the parametric survival model is not changed: the low tail point estimate is reported as a limitation here, in `CEA.qmd` and in the manuscript.
+
+## Secondary comparison: control-arm patients
+
+```{r table-ctrl}
+ctrl_tab <- data.frame(
+  Source = source_label(comparison),
+  Measure = measure_label(comparison),
+  Published = fmt_bench(comparison),
+  `Parametric model, control-arm patients (95% interval)` = fmt_model(comparison, "ctrl"),
+  Consistent = ifelse(comparison$ctrl_consistent == "Consistent", "Yes",
+                      ifelse(comparison$ctrl_consistent == "Not consistent", "No", "--")),
+  check.names = FALSE, stringsAsFactors = FALSE)
+knitr::kable(ctrl_tab, format = report_table_format(), booktabs = TRUE, row.names = FALSE,
+             align = "llrrc",
+             caption = "Parametric model predicted for the control-arm patients versus published values") |>
+  tbl_style(latex_options = "HOLD_position", font_size = 8) |>
+  tbl_column_spec(1, width = "3.8cm") |>
+  tbl_column_spec(2, width = "2.2cm") |>
+  tbl_column_spec(3, width = "2.4cm") |>
+  tbl_column_spec(4, width = "3.4cm") |>
+  tbl_column_spec(5, width = "1.6cm")
+```
+
+Predicted for the `r nrow(ctrl_data)` control-arm patients instead of the whole cohort, the parametric model is consistent with `r n_ctrl_consistent` of `r n_eval` published values. The two curves differ because the control arm has a different covariate mix (median age `r median(ctrl_data$Age)` versus `r median(data_complete$Age)` years, `r sum(as.numeric(as.character(ctrl_data$crp)) == 1)` of `r nrow(ctrl_data)` CRP-positive versus `r sum(as.numeric(as.character(data_complete$crp)) == 1)` of `r nrow(data_complete)`).
+
+## Overall survival at fixed landmarks
+
+```{r table-landmarks}
+land_bench <- function(y) {
+  r <- benchmarks[benchmarks$endpoint == "OS" & benchmarks$measure == "survival" &
+                    !is.na(benchmarks$time_years) & benchmarks$time_years == y, ]
+  if (nrow(r) == 0) return("--")
+  paste(sprintf("%s: %s", source_label(r), fmt_pct(r$estimate)), collapse = "; ")
+}
+km_ctrl <- dependent[dependent$endpoint == "OS" & dependent$group == "control" &
+                       dependent$measure == "survival", ]
+soc_iv <- draw_landmark_intervals(model_draws$soc$OS, years)
+ctrl_iv <- draw_landmark_intervals(model_draws$ctrl$OS, years)
+land_tab <- data.frame(
+  Year = years,
+  `Parametric model, SoC` = fmt_est_ci(curve_at_years(soc_curve$OS, years),
+                                       soc_iv$lower[1:4], soc_iv$upper[1:4], FALSE),
+  `Parametric model, control-arm patients` = fmt_est_ci(
+    curve_at_years(model_curves$ctrl$OS, years), ctrl_iv$lower[1:4], ctrl_iv$upper[1:4], FALSE),
+  `METIMMOX KM, control arm` = ifelse(grepl("^NE", km_ctrl$km_status), "NE",
+                                      fmt_est_ci(km_ctrl$km, km_ctrl$km_lower,
+                                                 km_ctrl$km_upper, FALSE)),
+  `Published (lower bounds)` = vapply(years, land_bench, ""),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+knitr::kable(land_tab, format = report_table_format(), booktabs = TRUE, row.names = FALSE,
+             align = "rrrrl",
+             caption = "Overall survival at 1, 2, 3 and 5 years: parametric model, METIMMOX and published values") |>
+  tbl_style(latex_options = "HOLD_position", font_size = 8) |>
+  tbl_column_spec(1, width = "0.8cm") |>
+  tbl_column_spec(2, width = "2.6cm") |>
+  tbl_column_spec(3, width = "2.6cm") |>
+  tbl_column_spec(4, width = "2.6cm") |>
+  tbl_column_spec(5, width = "5.2cm")
+```
+
+None of the comparable sources reports landmark survival in its text or tables; they report medians only. The published landmark values above are all lower bounds.
+
+**Why the two parametric-model columns differ.** Both come from the same parametric survival model but average over different patients. The economic SoC curve averages all `r nrow(data_complete)` complete-case patients, each predicted as if treated with FLOX; this is the common population in which every strategy of the cost-effectiveness model is evaluated (issue #166). The control-arm curve averages only the `r nrow(ctrl_data)` patients randomised to FLOX, the same patients as the METIMMOX Kaplan-Meier column (issue #157). The two groups differ by chance: `r sum(as.numeric(as.character(ctrl_data$crp)) == 1)` of `r nrow(ctrl_data)` control-arm patients are CRP-positive (week-4 CRP below 5 mg/L, a favourable prognostic factor) against `r sum(as.numeric(as.character(data_complete$crp)) == 1)` of `r nrow(data_complete)` in the whole cohort, reflecting the arm imbalance in week-4 CRP; the control arm is also slightly older (median `r median(ctrl_data$Age)` versus `r median(data_complete$Age)` years). The SoC curve therefore lies above the control-arm curve.
+
+## Figures
+
+```{r tail-figure-setup, include=FALSE}
+ctrl_pfs_fit <- survfit(Surv(PFSwk, Progression) ~ 1, data = ctrl_data)
+bench_fills <- c("#eb6834", "#7b3294", "#1b9e77", "#e7298a", "#66a61e", "#a6761d",
+                 "#1f78b4", "#666666")
+line_cols <- c("Parametric model, economic SoC" = "#2a78d6",
+               "Parametric model, control-arm patients" = "#2a78d6",
+               "METIMMOX Kaplan-Meier, control arm" = "grey35")
+line_types <- c("Parametric model, economic SoC" = "solid",
+                "Parametric model, control-arm patients" = "dashed",
+                "METIMMOX Kaplan-Meier, control arm" = "solid")
+role_shapes <- c("Comparable" = 21, "Lower bound" = 24)
+
+# One figure per endpoint, in two panels:
+# (a) curves plus published survival proportions at their time;
+# (b) forest-style panel of medians (months) with 95% CIs: every published
+#     median, the parametric model's SoC median with its 95% interval and the
+#     METIMMOX control-arm Kaplan-Meier median with its CI.
+# Fill colours are fixed per source across both endpoints.
+all_source_labels <- unique(source_label(comparison))
+source_fills <- setNames(bench_fills[seq_along(all_source_labels)], all_source_labels)
+
+curve_panel <- function(ep, x_max) {
+  band <- data.frame(year = times / 52, model = soc_curve[[ep]],
+                     ctrl = model_curves$ctrl[[ep]],
+                     lower = apply(model_draws$soc[[ep]], 2, quantile, 0.025),
+                     upper = apply(model_draws$soc[[ep]], 2, quantile, 0.975))
+  km_fit <- if (ep == "OS") ctrl_os_fit else ctrl_pfs_fit
+  km_df <- data.frame(year = c(0, km_fit$time) / 52, surv = c(1, km_fit$surv))
+  pts <- comparison[comparison$endpoint == ep & comparison$measure == "survival", ]
+  if (nrow(pts) > 0) pts$label <- source_label(pts)
+  p <- ggplot() +
+    geom_ribbon(data = band, aes(year, ymin = lower, ymax = upper),
+                fill = "#2a78d6", alpha = 0.18) +
+    geom_line(data = band, aes(year, model, colour = "Parametric model, economic SoC",
+                               linetype = "Parametric model, economic SoC"), linewidth = 0.8) +
+    geom_line(data = band, aes(year, ctrl, colour = "Parametric model, control-arm patients",
+                               linetype = "Parametric model, control-arm patients"),
+              linewidth = 0.6) +
+    geom_step(data = km_df, aes(year, surv, colour = "METIMMOX Kaplan-Meier, control arm",
+                                linetype = "METIMMOX Kaplan-Meier, control arm"),
+              linewidth = 0.6) +
+    geom_vline(xintercept = max_fu_yr, linetype = "dotted", colour = "grey50") +
+    scale_colour_manual(values = line_cols, name = NULL) +
+    scale_linetype_manual(values = line_types, name = NULL) +
+    scale_x_continuous(breaks = 0:x_max) +
+    scale_y_continuous(labels = percent_format(accuracy = 1), breaks = seq(0, 1, 0.25)) +
+    coord_cartesian(xlim = c(0, x_max), ylim = c(0, 1)) +
+    labs(x = "Years from randomisation",
+         y = if (ep == "OS") "Overall survival" else "Progression-free survival",
+         title = if (ep == "OS") "(a) Survival curves and published survival proportions"
+                 else "(a) Survival curves") +
+    theme(legend.position = "bottom", legend.box = "vertical",
+          plot.title = element_text(size = 10, face = "bold")) +
+    guides(colour = guide_legend(nrow = 1, order = 1),
+           linetype = guide_legend(nrow = 1, order = 1))
+  if (nrow(pts) > 0) {
+    p <- p +
+      geom_errorbar(data = pts[is.finite(pts$lower), ],
+                    aes(x = time_years, ymin = lower, ymax = upper), width = 0.08,
+                    colour = "grey25", linewidth = 0.4) +
+      geom_point(data = pts, aes(time_years, estimate, fill = label), shape = 24,
+                 size = 2.6, colour = "grey15") +
+      scale_fill_manual(values = source_fills[unique(pts$label)],
+                        name = "Published lower bounds:") +
+      guides(fill = guide_legend(ncol = 2, order = 2, title.position = "top",
+                                 override.aes = list(shape = 24, size = 3)))
+  }
+  p
+}
+
+median_panel <- function(ep) {
+  med <- comparison[comparison$endpoint == ep & comparison$measure == "median_months", ]
+  pub <- data.frame(
+    row = source_label(med), est = med$estimate, lo = med$lower, hi = med$upper,
+    kind = ifelse(med$role == "comparable", "Published, comparable",
+                  "Published, lower bound"),
+    fill = unname(source_fills[source_label(med)]), stringsAsFactors = FALSE)
+  km_med <- if (ep == "OS") ctrl_km_os_med else ctrl_km_pfs_med
+  mod_iv <- benchmark_model_interval(model_draws$soc[[ep]], list(measure = "median_months"))
+  ref <- data.frame(
+    row = c("METIMMOX: parametric model, economic SoC",
+            "METIMMOX: Kaplan-Meier, control arm"),
+    est = c(curve_median_months(soc_curve[[ep]]), km_med[["median"]]),
+    lo = c(mod_iv[1], km_med[["lower"]]), hi = c(mod_iv[2], km_med[["upper"]]),
+    kind = c("Parametric model (95% interval)", "METIMMOX Kaplan-Meier (95% CI)"),
+    fill = c("#2a78d6", "grey35"), stringsAsFactors = FALSE)
+  d <- rbind(ref, pub)
+  d$row <- factor(d$row, levels = rev(d$row))
+  kind_shapes <- c("Parametric model (95% interval)" = 23,
+                   "METIMMOX Kaplan-Meier (95% CI)" = 22,
+                   "Published, comparable" = 21, "Published, lower bound" = 24)
+  ggplot(d, aes(est, row)) +
+    annotate("rect", xmin = mod_iv[1], xmax = mod_iv[2], ymin = -Inf, ymax = Inf,
+             fill = "#2a78d6", alpha = 0.12) +
+    geom_vline(xintercept = curve_median_months(soc_curve[[ep]]), colour = "#2a78d6",
+               linewidth = 0.5) +
+    geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.25, colour = "grey25",
+                   linewidth = 0.4, na.rm = TRUE) +
+    geom_point(aes(shape = kind), fill = d$fill, size = 2.6, colour = "grey15") +
+    scale_shape_manual(values = kind_shapes[unique(d$kind)], name = NULL) +
+    labs(x = sprintf("Median %s (months)", ep), y = NULL,
+         title = "(b) Medians: METIMMOX and published values") +
+    theme(legend.position = "bottom",
+          plot.title = element_text(size = 10, face = "bold"),
+          axis.text.y = element_text(size = 8)) +
+    guides(shape = guide_legend(nrow = 2, override.aes = list(fill = "grey60")))
+}
+
+endpoint_figure <- function(ep, x_max, heights) {
+  cowplot::plot_grid(curve_panel(ep, x_max), median_panel(ep), ncol = 1,
+                     rel_heights = heights)
+}
+fig_note <- paste(
+  "Panel (a): solid line and band, the economic standard-of-care curve of the parametric",
+  "survival model (all complete-case patients with Rx = control) and its 95%",
+  "coefficient-draw interval; dashed line, the parametric model predicted for the",
+  "control-arm patients, the same patients as the METIMMOX Kaplan-Meier step curve",
+  "(issue #157 convention); dotted line, end of trial follow-up.")
+note_os <- paste(fig_note, "Triangles: published survival proportions, all lower bounds,",
+  "with their 95% CI where reported. Panel (b): published medians with their 95% CI",
+  "(circles comparable, triangles lower bounds; colours as in panel a), the parametric",
+  "model's standard-of-care median with its 95% interval (diamond, line and band) and",
+  "the METIMMOX control-arm Kaplan-Meier median with its 95% CI (square).")
+note_pfs <- paste(fig_note, "Panel (b): published medians with their 95% CI (circles",
+  "comparable, triangles lower bounds), the parametric model's standard-of-care median",
+  "with its 95% interval (diamond, line and band) and the METIMMOX control-arm",
+  "Kaplan-Meier median with its 95% CI (square).")
+```
+
+```{r fig-os, fig.height=9, fig.cap=paste("Overall survival under standard of care.", note_os)}
+endpoint_figure("OS", x_max = 10, heights = c(1.55, 1))
+```
+
+```{r fig-pfs, fig.height=7.5, fig.cap=paste("Progression-free survival under standard of care, first 5 years.", note_pfs)}
+endpoint_figure("PFS", x_max = 5, heights = c(1.5, 0.8))
+```
+
+All published PFS values are medians, so the PFS comparison is in panel (b). Panel (a) is cut at 5 years, beyond which the parametric model's standard-of-care PFS is `r fmt_pct(curve_at_years(soc_curve$PFS, 5))` or less.
+
+
+# Applicability of the benchmarks
+
+None of the benchmark cohorts matches METIMMOX exactly. The differences pull in both directions:
+
+- **Era.** The benchmark cohorts were treated between 2001 and 2015; the METIMMOX complete-case patients were enrolled in `r metimmox_period`. Survival of metastatic colorectal cancer has improved over these decades (Sorbye et al. 2013; Storli et al. 2025). Older cohorts should therefore, if anything, show *shorter* survival, which supports their use as lower bounds.
+- **MSI selection.** METIMMOX enrolled MSS/pMMR tumours only. Of the benchmarks, only Aasebo et al. 2019 is restricted to MSS tumours. In that cohort 7% of unselected patients had MSI-high tumours, which had shorter survival with first-line chemotherapy than MSS tumours. Unselected cohorts are therefore slightly pessimistic for an MSS population.
+- **Age and fitness.** The METIMMOX complete-case median age is `r median(data_complete$Age)` years (control arm `r median(ctrl_data$Age)`), against 61 in NORDIC-VII arm A and about 70 in the population-based cohorts, which also include patients with performance status above 1.
+- **Time origin.** METIMMOX measures OS from inclusion, before first-line treatment. The population-based studies measure OS from the diagnosis of metastatic disease, which lengthens their OS relative to METIMMOX.
+- **Endpoint definitions.** PFS definitions and scan intervals differ between trials (see Section 3.4).
+
+# Limitations
+
+- The comparable sources report medians, not survival at 1, 2, 3 and 5 years. The only landmark benchmarks are lower bounds, so the tail is tested one-sidedly: an extrapolation that was too optimistic would not be detected.
+- No benchmark is restricted to the METIMMOX eligibility criteria, and none reports survival by CRP or TMB/BRAF status. The biomarker-guided strategies are therefore validated only against the trial data (Section 2).
+- The 5-year Kaplan-Meier landmark is not estimable in any group, because follow-up ends at `r sprintf("%.1f", max_fu_yr)` years.
+- The full texts of Tveit et al. 2012 and Sorbye et al. 2013 were not accessible. NORDIC-VII confidence intervals come from a published tabulation of the trial, and the registry values from the abstract.
+- The headline consistency criterion was adopted after the pre-specified point-estimate comparison had been run; both are reported.
+- The validateHE external-validation module was not run. This report is the external validation referred to in the manuscript methods (issue #160).
+
+# References
+
+- Tveit KM, Guren T, Glimelius B, et al. Phase III trial of cetuximab with continuous or intermittent fluorouracil, leucovorin, and oxaliplatin (Nordic FLOX) versus FLOX alone in first-line treatment of metastatic colorectal cancer: the NORDIC-VII study. J Clin Oncol 2012;30:1755-62. doi:10.1200/JCO.2011.38.0915
+- Guren TK, Thomsen M, Kure EH, et al. Cetuximab in treatment of metastatic colorectal cancer: final survival analyses and extended RAS data from the NORDIC-VII study. Br J Cancer 2017;116:1271-8. doi:10.1038/bjc.2017.93
+- Aasebo KO, Dragomir A, Sundstrom M, et al. Consequences of a high incidence of microsatellite instability and BRAF-mutated tumors: a population-based cohort of metastatic colorectal cancer patients. Cancer Med 2019;8:3623-35. doi:10.1002/cam4.2205
+- Storli PE, Dille-Amdam RG, Skjerseth GH, et al. Synchronous metastases from colorectal cancer. Treatment and long-term survival compared to patients with metachronous metastases: a population-based study from Central Norway 2001-2015. Acta Oncol 2025;64:797-806. doi:10.2340/1651-226X.2025.42985 (labelled "Central Norway 2025" in the tables)
+- Sorbye H, Cvancarova M, Qvortrup C, et al. Age-dependent improvement in median and long-term survival in unselected population-based Nordic registries of patients with synchronous metastatic colorectal cancer. Ann Oncol 2013;24:2354-60. doi:10.1093/annonc/mdt197
+- Ree AH, Saltyte Benth J, Hamre HM, et al. First-line oxaliplatin-based chemotherapy and nivolumab for metastatic microsatellite-stable colorectal cancer: the randomised METIMMOX trial. Br J Cancer 2024;130:1921-8. doi:10.1038/s41416-024-02696-6
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 1.2

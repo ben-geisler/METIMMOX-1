@@ -1,0 +1,503 @@
+#libraries
+if (!require("pacman")) install.packages("pacman")
+library(pacman)
+p_load(here, survival, flexsurv, dplyr, tidyr, mvtnorm)
+source(here::here("R/joint_survival_sampling.R"))
+
+# Ensure time_points is the same as used in section 3
+time_points <- seq(0, time_horizon, by = 1)
+time_points_length <- length(time_points)
+
+# ===============================================================================
+# SAMPLING CACHE CONFIGURATION
+# ===============================================================================
+
+# Define cache directory and file paths
+sampling_cache_dir <- cache_dir()
+
+# Create cache file path based on n_samples
+cache_file <- sampling_cache_path(n_samples)
+sampling_seed <- analysis_seed
+
+# ===============================================================================
+# MODEL FORMULA SELECTION
+# ===============================================================================
+# Model formulas are defined in R/model_configs.R
+# This ensures PSA uses the same single joint model as base case.
+#
+# Economic biomarker strategies are CRP and TMB/BRAF. Both share one joint
+# formula, so one joint coefficient draw serves every strategy. The
+# control arm is NOT a separate age/sex model: it is the same joint fit
+# predicted with Rx forced to the control level, exactly as in the base case
+# (issue #151). The cache therefore holds one joint component; a legacy "control" component, if
+# present in an older cache, is ignored.
+# ===============================================================================
+
+# Source model configurations if not already loaded
+if (!exists("get_model_configs")) {
+  source(here::here("R/model_configs.R"))
+}
+if (!exists("extract_all_survival_probabilities", mode = "function")) {
+  source(here::here("R/prediction_functions.R"))
+}
+
+# Get model configuration
+model_config <- get_current_model_config()
+cat("Resampling: Using", model_config$label, "\n")
+cat("Description:", model_config$description, "\n")
+
+# Create biomarker formula function using central config
+#' Survival formula of a biomarker strategy
+#'
+#' Thin wrapper around get_strategy_formula() (R/model_configs.R) so that the
+#' sampling cache always uses the central formula definitions.
+#'
+#' @param outcome Character: "os" or "pfs".
+#' @param biomarker Character: economic biomarker id (e.g. "crp", "tmb_braf").
+#' @return Survival formula for that biomarker strategy and outcome.
+create_biomarker_formula <- function(outcome, biomarker) {
+  return(get_strategy_formula(biomarker, outcome))
+}
+
+# ===============================================================================
+# CORRELATED SAMPLING FUNCTION
+# ===============================================================================
+# MULTIVARIATE-NORMAL COEFFICIENT SAMPLING (issue #156)
+# ===============================================================================
+# Parameter uncertainty in the survival models is propagated by drawing
+# coefficient vectors from the multivariate-normal approximation to the sampling
+# distribution of each fitted joint model (mean = maximum-likelihood estimate,
+# covariance = inverse observed information, both on flexsurvreg's optimisation
+# scale). This replaced the unstratified nonparametric bootstrap, whose
+# resamples could contain 0-2 of the 6 control-arm CRP-positive patients and
+# produced interaction coefficients between -3.7 and +4.0 and singular fits.
+#
+# OS and PFS coefficients are drawn together (issue #159). Paired patient
+# bootstraps estimate cross-endpoint dependence; block whitening and recolouring
+# retain each original fit's covariance. Bootstrap fits are never PSA draws.
+# Within a draw, the same coefficient vector serves
+# the control arm (Rx = control) and every biomarker subgroup, so the
+# control/biomarker correlation of issue #151 is unchanged.
+#
+# The cache stores the draws as n_samples x n_parameters matrices and the two
+# original fits; sampled_survival_models() (prediction_functions.R) builds a
+# flexsurvreg object with the drawn estimates on request.
+# ===============================================================================
+
+SAMPLING_METHOD <- "mvn_joint_v2"
+
+#' Draw joint multivariate-normal OS/PFS coefficient vectors
+#'
+#' Fits the OS and PFS models on the original data, estimates their
+#' cross-endpoint covariance by paired patient bootstrap
+#' (estimate_joint_survival_covariance()) and draws n_samples joint coefficient
+#' vectors that retain each fit's marginal covariance (issues #156, #159).
+#'
+#' @param formula_os Survival formula for overall survival.
+#' @param formula_pfs Survival formula for progression-free survival.
+#' @param data Data frame of patients the models are fitted on.
+#' @param dist_os flexsurvreg distribution name for OS.
+#' @param dist_pfs flexsurvreg distribution name for PFS.
+#' @param n_samples Number of coefficient draws.
+#' @param seed RNG seed for the covariance bootstrap and the draws.
+#' @param n_bootstrap Number of paired bootstrap resamples used to estimate
+#'   the cross-endpoint covariance.
+#' @return List with the sampling method, joint covariance diagnostics, the
+#'   draw matrices ($draws$os, $draws$pfs), the original fits, draw counts,
+#'   the extreme-draw count and bound, a coefficient summary data frame, the
+#'   distributions, the seed and the creation time.
+sample_survival_coefficients <- function(formula_os, formula_pfs, data,
+                                         dist_os = "weibull", dist_pfs = "weibull",
+                                         n_samples = n_samples, seed = 123L,
+                                         n_bootstrap = 1000L) {
+
+  n_patients <- nrow(data)
+  cat("Generating", n_samples, "multivariate-normal coefficient draws for the",
+      "joint OS and PFS models fitted on", n_patients, "patients...\n")
+  cat("Using OS distribution:", dist_os, "| PFS distribution:", dist_pfs, "\n")
+
+  original_os <- flexsurvreg(formula_os, data = data, dist = dist_os)
+  original_pfs <- flexsurvreg(formula_pfs, data = data, dist = dist_pfs)
+
+  start_time <- Sys.time()
+  joint_covariance <- estimate_joint_survival_covariance(
+    formula_os, formula_pfs, data, original_os, original_pfs,
+    dist_os, dist_pfs, n_bootstrap = n_bootstrap, seed = seed
+  )
+  draws <- draw_joint_survival_coefficients(original_os, original_pfs,
+    joint_covariance$covariance, n_samples, seed)
+  total_time <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+
+  # Draw diagnostics: no draw can fail (the normal approximation is always
+  # proper), so the reported rate is the share of draws whose treatment-by-
+  # biomarker interaction exceeds a ten-fold time ratio in either direction, an
+  # interpretive flag for extreme tails rather than a validity criterion.
+  interaction_terms <- function(draw_matrix) {
+    nm <- colnames(draw_matrix)
+    nm[grepl(":", nm, fixed = TRUE) & grepl("Rx", nm, fixed = TRUE)]
+  }
+  summarise_draws <- function(draw_matrix, outcome) {
+    m_stats <- t(apply(draw_matrix, 2, function(v) c(
+      mean = mean(v), sd = stats::sd(v),
+      q2.5 = unname(stats::quantile(v, 0.025)),
+      q97.5 = unname(stats::quantile(v, 0.975)),
+      min = min(v), max = max(v)
+    )))
+    data.frame(outcome = outcome, coefficient = rownames(m_stats), m_stats,
+               row.names = NULL, stringsAsFactors = FALSE)
+  }
+  df_coefficient_summary <- rbind(summarise_draws(draws$os, "os"),
+                               summarise_draws(draws$pfs, "pfs"))
+  extreme_bound <- log(10)
+  extreme_flags <- lapply(draws, function(m) {
+    v_terms <- interaction_terms(m)
+    if (length(v_terms) == 0) return(rep(FALSE, nrow(m)))
+    apply(abs(m[, v_terms, drop = FALSE]) > extreme_bound, 1, any)
+  })
+  n_extreme <- sum(extreme_flags$os | extreme_flags$pfs)
+
+  cat(sprintf("Coefficient draws complete: %d draws per outcome in %.1f seconds; 0 failed\n",
+              n_samples, total_time))
+  cat(sprintf("Extreme-draw rate (any interaction |coefficient| > log(10)): %d/%d (%.2f%%)\n",
+              n_extreme, n_samples, 100 * n_extreme / n_samples))
+  cat("Interaction coefficient draws (mean, 2.5%, 97.5%):\n")
+  df_interaction_draws <- df_coefficient_summary[grepl(":", df_coefficient_summary$coefficient, fixed = TRUE), ]
+  for (r in seq_len(nrow(df_interaction_draws))) {
+    cat(sprintf("  %-4s %-32s %7.3f [%7.3f, %7.3f]\n", df_interaction_draws$outcome[r], df_interaction_draws$coefficient[r],
+                df_interaction_draws$mean[r], df_interaction_draws$q2.5[r], df_interaction_draws$q97.5[r]))
+  }
+
+  list(
+    method = SAMPLING_METHOD,
+    joint_covariance = joint_covariance,
+    draws = draws,
+    original_os = original_os,
+    original_pfs = original_pfs,
+    n_samples = n_samples,
+    n_failed = 0L,
+    n_extreme = n_extreme,
+    extreme_bound = extreme_bound,
+    coefficient_summary = df_coefficient_summary,
+    dist_os = dist_os,
+    dist_pfs = dist_pfs,
+    seed = seed,
+    creation_time = Sys.time()
+  )
+}
+
+#' Check whether a sampling cache was generated with the expected seed
+#'
+#' Return TRUE only when the joint component records the expected seed.
+#'
+#' @param sampling_models Sampling cache list (as read from
+#'   sampling_cache_path()).
+#' @param seed Expected RNG seed.
+#' @return Logical scalar; FALSE when the joint component cannot be resolved.
+sampling_cache_seed_matches <- function(sampling_models, seed = 123L) {
+  joint <- tryCatch(get_joint_sampling_models(sampling_models), error = function(e) NULL)
+  !is.null(joint) && identical(joint$seed, seed)
+}
+
+# ===============================================================================
+# DISTRIBUTION RESOLUTION HELPER
+# ===============================================================================
+# Resolves the AIC-best parametric distributions from the models object.
+# Returns a list with $os and $pfs distribution names.
+# ===============================================================================
+
+#' Resolve the selected OS and PFS distributions
+#'
+#' @param models Fitted-models object from 04_parametric_survival_analysis.R;
+#'   its $best_fit$os_distribution and $best_fit$pfs_distribution are used.
+#' @return List with $os and $pfs distribution names; "weibull" (with a
+#'   warning printed) for any that is missing.
+resolve_best_distributions <- function(models) {
+  default_dist <- "weibull"
+
+  if (is.null(models)) {
+    cat("WARNING: 'models' is NULL. Using default distribution:", default_dist, "\n")
+    return(list(os = default_dist, pfs = default_dist))
+  }
+
+  os_dist <- models$best_fit$os_distribution
+  pfs_dist <- models$best_fit$pfs_distribution
+
+  if (is.null(os_dist)) {
+    cat("WARNING: No selected OS distribution found. Using default:", default_dist, "\n")
+    os_dist <- default_dist
+  }
+  if (is.null(pfs_dist)) {
+    cat("WARNING: No selected PFS distribution found. Using default:", default_dist, "\n")
+    pfs_dist <- default_dist
+  }
+
+  cat("Resolved distributions - OS:", os_dist, "| PFS:", pfs_dist, "\n")
+  return(list(os = os_dist, pfs = pfs_dist))
+}
+
+# ===============================================================================
+# CHECK CACHE OR GENERATE SAMPLING MODELS
+# ===============================================================================
+# The cache is keyed by a fingerprint of everything that determines its content
+# (formulas, fitting data, selected distributions, n_samples, seed and sampling
+# method; issue #156). A cache whose fingerprint differs is regenerated, so a
+# changed formula, data set or distribution can no longer be served from a
+# stale file. The file name still carries n_samples for discoverability.
+
+selected_dists <- resolve_best_distributions(models)
+v_biomarkers_to_sample <- get_biomarkers()
+
+# Every economic biomarker strategy must share one joint formula: the cache
+# stores that model once, and the interaction-coefficient extraction and the
+# control-arm prediction (issue #151) both assume a single joint fit.
+v_formula_keys <- vapply(v_biomarkers_to_sample, function(biomarker) {
+  paste(paste(deparse(create_biomarker_formula("os", biomarker)), collapse = " "),
+        paste(deparse(create_biomarker_formula("pfs", biomarker)), collapse = " "),
+        sep = " || ")
+}, character(1))
+if (length(unique(v_formula_keys)) != 1L) {
+  stop("Biomarker strategies use different survival formulas (",
+       paste(unique(v_formula_keys), collapse = "; "),
+       "). The shared joint sampling cache requires one formula; extend ",
+       "06_sampling.R before adding biomarker-specific formulas.")
+}
+joint_formulas <- list(
+  os = create_biomarker_formula("os", v_biomarkers_to_sample[1]),
+  pfs = create_biomarker_formula("pfs", v_biomarkers_to_sample[1])
+)
+
+expected_sampling <- sampling_cache_fingerprint(
+  formulas = joint_formulas,
+  data = data_complete,
+  distributions = selected_dists,
+  n_samples = n_samples,
+  seed = sampling_seed,
+  method = SAMPLING_METHOD
+)
+
+sampling_models <- NULL
+if (file.exists(cache_file)) {
+  cat("\n=== Loading sampling models from cache ===\n")
+  cat("Cache file:", cache_file, "\n")
+  sampling_models <- readRDS(cache_file)
+
+  if (!is.list(sampling_models) || is.null(sampling_models$joint) ||
+      is.null(sampling_models$fingerprint)) {
+    cat("Cache predates issue #156 (per-biomarker bootstrap components or no ",
+        "fingerprint). Regenerating...\n", sep = "")
+    sampling_models <- NULL
+  } else if (!identical(sampling_models$fingerprint, expected_sampling$fingerprint)) {
+    cat("Cache fingerprint does not match the current inputs. Regenerating...\n")
+    report_fingerprint_differences(sampling_models$fingerprint_inputs,
+                                   expected_sampling$inputs)
+    sampling_models <- NULL
+  } else if (!sampling_cache_seed_matches(sampling_models, sampling_seed)) {
+    cat("Cache RNG seed is missing or does not match the requested seed (",
+        sampling_seed, "). Regenerating...\n", sep = "")
+    sampling_models <- NULL
+  } else {
+    joint_models <- get_joint_sampling_models(sampling_models)
+    cat("Cache loaded successfully!\n")
+    cat("- Method:", joint_models$method, "\n")
+    cat("- Joint-model draws:", joint_models$n_samples, "\n")
+    cat("- Biomarkers sharing the joint model:",
+        paste(sampling_models$biomarkers, collapse = ", "), "\n")
+    cat("- Created:", format(joint_models$creation_time), "\n")
+    cat("- Distributions: OS", joint_models$dist_os,
+        "| PFS", joint_models$dist_pfs, "\n")
+    cat("- RNG seed:", joint_models$seed, "\n")
+    cat("- Fingerprint:", sampling_models$fingerprint, "\n")
+    rm(joint_models)
+  }
+} else {
+  cat("\n=== No cache found - will generate sampling models ===\n")
+}
+
+# ===============================================================================
+# SURVIVAL MODEL COEFFICIENT SAMPLING (if not cached)
+# ===============================================================================
+
+if (is.null(sampling_models)) {
+  assert_sampling_regeneration_allowed()
+  if (!dir.exists(sampling_cache_dir)) dir.create(sampling_cache_dir, recursive = TRUE)
+  cat("\n=== Starting multivariate-normal coefficient sampling ===\n")
+  cat("Results will be cached to:", cache_file, "\n\n")
+
+  # One joint model (age, sex, treatment and the biomarker-by-treatment
+  # interactions) serves every strategy. No separate control model is fitted:
+  # the control arm is this same fit predicted with Rx = control (issue #151).
+  joint_component <- sample_survival_coefficients(
+    formula_os = joint_formulas$os,
+    formula_pfs = joint_formulas$pfs,
+    data = data_complete,
+    dist_os = selected_dists$os,
+    dist_pfs = selected_dists$pfs,
+    n_samples = n_samples,
+    seed = sampling_seed
+  )
+
+  sampling_models <- list(
+    joint = joint_component,
+    biomarkers = v_biomarkers_to_sample,
+    fingerprint = expected_sampling$fingerprint,
+    fingerprint_inputs = expected_sampling$inputs,
+    canonical_data = expected_sampling$canonical_data,
+    runtime = expected_sampling$runtime,
+    creation_time = Sys.time()
+  )
+  rm(joint_component)
+
+  cat("\n=== Saving sampling models to cache ===\n")
+  tryCatch({
+    saveRDS(sampling_models, cache_file)
+    cat("Sampling models saved successfully to:", cache_file, "\n")
+    cat("File size:", format(file.info(cache_file)$size / 1024^2, digits = 2), "MB\n")
+  }, error = function(e) {
+    cat("WARNING: Failed to save cache:", conditionMessage(e), "\n")
+  })
+}
+rm(expected_sampling, v_formula_keys)
+
+# Print confirmation of model structure
+cat("\n=== Sampling model structure ready ===\n")
+cat("- Model:", model_config$label, "\n")
+cat("- Biomarker strategies sharing the joint model:",
+    paste(sampling_models$biomarkers, collapse = ", "), "\n")
+cat("- Formulas defined in: R/model_configs.R\n")
+cat("- Number of coefficient draws:",
+    get_joint_sampling_models(sampling_models)$n_samples, "\n")
+cat("- Draws: multivariate normal around the fitted joint models; OS and PFS",
+    "drawn jointly using paired-bootstrap dependence (issue #159)\n")
+cat("- Control arm: joint model predicted with Rx = control (issue #151)\n")
+
+# ===============================================================================
+# PARAMETER DISTRIBUTIONS FOR UNCERTAINTY ANALYSIS (NON-SURVIVAL PARAMETERS)
+# ===============================================================================
+
+# Survival curves are excluded because they come from correlated resampling.
+parameter_config <- configure_parameter_distributions(l_params_base)
+param_distributions <- parameter_config$distributions
+param_groups <- parameter_config$groups
+df_parameter_spec <- parameter_config$spec
+rm(parameter_config)
+
+# ===============================================================================
+# POPULATION AVERAGING FUNCTION FOR PSA
+# ===============================================================================
+# With biomarker_name = NULL, predicts the control curve over all patients with
+# Rx forced to the control level, i.e. the joint model's standard-of-care
+# prediction, mirroring generate_population_averaged_predictions() in the base
+# case (issue #151). Otherwise predicts the biomarker-positive/experimental and
+# biomarker-negative/control subgroup curves using one shared code path.
+
+#' Population-averaged survival curves for one PSA coefficient draw
+#'
+#' @param sampling_model_list Sampling cache list (see sampled_survival_models()).
+#' @param biomarker_name Economic biomarker id, or NULL for the control curve
+#'   (all patients predicted with Rx = control).
+#' @param outcome Character: "os" or "pfs".
+#' @param sample_idx Coefficient-draw index (row of the draw matrices).
+#' @param data_original Prediction population (data frame of patients).
+#' @param time_points Numeric vector of model time points (weeks).
+#' @param weights Patient weights summing to one; equal weights when NULL.
+#' @return For biomarker_name = NULL, a numeric survival vector over
+#'   time_points; otherwise a list with $positive (experimental) and $negative
+#'   (control) subgroup curves. NULL when the sampled model is unavailable; a
+#'   curve is all NA when its prediction fails or its subgroup is empty.
+generate_psa_population_averaged_predictions <- function(sampling_model_list,
+                                                         biomarker_name = NULL,
+                                                         outcome = "os",
+                                                         sample_idx = 1,
+                                                         data_original,
+                                                         time_points,
+                                                         weights = NULL) {
+  if (is.null(weights)) weights <- rep(1 / nrow(data_original), nrow(data_original))
+  sampled_model <- tryCatch(
+    sampled_survival_models(sampling_model_list, sample_idx),
+    error = function(e) NULL
+  )
+  if (is.null(sampled_model)) {
+    warning("Sampled model ", sample_idx, " is unavailable - returning NULL")
+    return(NULL)
+  }
+
+  model_obj <- sampled_model[[outcome]]$model
+  if (is.null(model_obj)) {
+    warning("Model object for ", outcome, " is NULL in sample ", sample_idx)
+    return(NULL)
+  }
+
+  average_prediction <- function(subgroup_data, subgroup_weights, rx_level = NULL, label) {
+    if (nrow(subgroup_data) == 0) {
+      warning("No patients in ", label, " subgroup")
+      return(rep(NA_real_, length(time_points)))
+    }
+    if (!is.null(rx_level)) {
+      subgroup_data$Rx <- factor(rx_level, levels = levels(data_original$Rx))
+    }
+    tryCatch({
+      df_prediction <- predict(
+        model_obj, newdata = subgroup_data,
+        type = "survival", times = time_points
+      )
+      weighted_survival_average(extract_all_survival_probabilities(df_prediction), subgroup_weights)
+    }, error = function(e) {
+      warning("Prediction failed for ", label, " in sim ", sample_idx,
+              ": ", conditionMessage(e))
+      rep(NA_real_, length(time_points))
+    })
+  }
+
+  if (is.null(biomarker_name)) {
+    return(average_prediction(
+      data_original, weights,
+      rx_level = levels(data_original$Rx)[1],
+      label = "control"
+    ))
+  }
+
+  v_status <- as.numeric(as.character(data_original[[biomarker_name]]))
+  subgroup_spec <- list(
+    positive = list(status = 1, rx = levels(data_original$Rx)[2], suffix = "+"),
+    negative = list(status = 0, rx = levels(data_original$Rx)[1], suffix = "-")
+  )
+  lapply(subgroup_spec, function(subgroup) {
+    average_prediction(
+      data_original[v_status == subgroup$status, , drop = FALSE],
+      weights[v_status == subgroup$status],
+      rx_level = subgroup$rx,
+      label = paste0(biomarker_name, subgroup$suffix)
+    )
+  })
+}
+
+# Report what the PSA actually samples. Since issue #154 the specification also
+# holds parameters that are fixed in the PSA (unit prices) and one that is
+# derived rather than drawn (u_p), so the summary is built per group instead of
+# assuming a single cost CV and a single utility CV.
+df_sampled_spec <- df_parameter_spec[df_parameter_spec$psa & !df_parameter_spec$derived, ,
+                               drop = FALSE]
+df_fixed_spec <- df_parameter_spec[!df_parameter_spec$psa, , drop = FALSE]
+df_derived_spec <- df_parameter_spec[df_parameter_spec$derived, , drop = FALSE]
+
+cat("\n=== Parameter distributions configured ===\n")
+for (group_name in unique(df_sampled_spec$group)) {
+  df_rows <- df_sampled_spec[df_sampled_spec$group == group_name, , drop = FALSE]
+  cat(sprintf("- %s: %s (CV = %s): %s\n",
+              group_name,
+              paste(unique(df_rows$distribution), collapse = "/"),
+              paste(unique(df_rows$cv), collapse = "/"),
+              paste(df_rows$parameter, collapse = ", ")))
+}
+if (nrow(df_derived_spec) > 0) {
+  cat("- Derived in the PSA (not drawn):",
+      paste(df_derived_spec$parameter, collapse = ", "), "\n")
+}
+if (nrow(df_fixed_spec) > 0) {
+  cat("- Fixed in the PSA, varied in the DSA only (issue #154):",
+      paste(df_fixed_spec$parameter, collapse = ", "), "\n")
+}
+cat("- Survival parameters: multivariate-normal coefficient draws (n =",
+    get_joint_sampling_models(sampling_models)$n_samples, ")\n")
+cat("- PSA population averaging function ready\n")
+cat("\nReady for PSA analysis\n")

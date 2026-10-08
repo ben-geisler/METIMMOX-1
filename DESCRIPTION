@@ -1,0 +1,61 @@
+Package: METIMMOX1
+Type: Project
+Title: Secondary Analyses of the METIMMOX Trial
+Version: 0.1.0
+Authors@R: person("Ben", "Geisler", role = c("aut", "cre"),
+    email = "8674152+ben-geisler@users.noreply.github.com")
+Description: Code behind three papers on biomarker-guided immunotherapy in
+    metastatic microsatellite-stable or mismatch repair-proficient colorectal
+    cancer: the clinical effectiveness of candidate biomarkers, a partitioned
+    survival cost-effectiveness model of biomarker-guided strategies, and the
+    value of further research.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.3.0)
+Imports:
+    coin,
+    cowplot,
+    coxphf,
+    dagitty,
+    dampack,
+    darthtools,
+    devtools,
+    digest,
+    dplyr,
+    emmeans,
+    flextable,
+    flexsurv,
+    gems,
+    ggdag,
+    ggplot2,
+    ggraph,
+    ggtext,
+    glmnet,
+    grid,
+    gridExtra,
+    here,
+    jsonlite,
+    kableExtra,
+    knitr,
+    logistf,
+    MASS,
+    Matrix,
+    mstate,
+    mvtnorm,
+    officer,
+    pacman,
+    parallel,
+    readr,
+    readxl,
+    reshape2,
+    scales,
+    survival,
+    survminer,
+    tableone,
+    tibble,
+    tidyr,
+    tidyverse,
+    vcd,
+    voi,
+    xtable
