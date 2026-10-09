@@ -6,7 +6,7 @@ Secondary analyses of the randomised METIMMOX trial ([NCT03388190](https://clini
 
 METIMMOX (*Colorectal Cancer METastasis: Shaping Anti-tumor IMMunity by OXaliplatin*) compared first-line alternating short-course oxaliplatin-based chemotherapy (Nordic FLOX) plus nivolumab with FLOX alone. This repository holds the code of three papers that share one data pipeline:
 
-1. **Clinical effectiveness:** *Biomarker signals in MSS/pMMR mCRC are predominantly prognostic, not predictive* (working title). Do CRP, TMB/BRAF and target lesion reduction identify patients who benefit from nivolumab, or only patients with a better prognosis?
+1. **Clinical effectiveness:** *Biomarker signals in MSS/pMMR mCRC are predominantly prognostic, not predictive* (working title). Do CRP, TMB/*BRAF* and target lesion reduction identify patients who benefit from nivolumab, or only patients with a better prognosis?
 2. **Cost-effectiveness:** is giving nivolumab only to biomarker-selected patients cost-effective in Norway?
 3. **Value of information:** what would further research to resolve the remaining uncertainty be worth?
 
@@ -27,7 +27,7 @@ It is a mirror of a private working repository, updated from it after every chan
 | Biomarker | Definition | Used in |
 |---|---|---|
 | CRP | C-reactive protein < 5 mg/L at week 4 (cycle 3 day 1), measured after the two FLOX cycles that both arms receive and before the first nivolumab dose | All papers |
-| TMB/BRAF | Tumour mutational burden >= 9 mut/Mb or a BRAF mutation (baseline next-generation sequencing) | All papers |
+| TMB/*BRAF* | Tumour mutational burden >= 9 mut/Mb or a *BRAF* mutation (baseline next-generation sequencing) | All papers |
 | TLR | Target lesion reduction: at least 10% shrinkage in the sum of target-lesion diameters at the first on-treatment CT | Paper 1 only |
 
 Week-4 CRP is not a baseline measurement, but it is known before the decision to add nivolumab; see the [CRP estimand report](reports/technical/crp_week4_estimand.qmd). TLR is a post-randomisation mediator measured on treatment, so it cannot select patients for treatment and is excluded from every economic analysis. Its clinical analyses use landmark cohorts (week 9 primary; scan date and week 12 as sensitivity analyses) to limit guarantee-time bias.
@@ -58,7 +58,7 @@ Items marked "rendered report" have no CSV: they are the named chunks of the rep
 
 ## Paper 2: Cost-effectiveness
 
-Three strategies are compared: standard of care (FLOX alone for everyone), CRP-guided and TMB/BRAF-guided treatment (FLOX + nivolumab for biomarker-positive patients, FLOX alone for the rest).
+Three strategies are compared: standard of care (FLOX alone for everyone), CRP-guided and TMB/*BRAF*-guided treatment (FLOX + nivolumab for biomarker-positive patients, FLOX alone for the rest).
 
 - **Structure.** Partitioned survival model with three states (progression-free, progressed, dead), weekly cycles, a 10-year horizon, Norwegian healthcare perspective, 4% discounting of costs and QALYs, willingness to pay EUR 51,000 per QALY.
 - **Survival.** One joint parametric model per endpoint on the 68-patient complete-case cohort:
@@ -158,7 +158,7 @@ Rscript tests/test_pfs_endpoint.R     # a single test
 1. Ree AH, Šaltytė Benth J, Hamre HM, et al. First-line oxaliplatin-based chemotherapy and nivolumab for metastatic microsatellite-stable colorectal cancer: the randomised METIMMOX trial. *Br J Cancer*. 2024;130(12):1921-1928. [doi:10.1038/s41416-024-02696-6](https://doi.org/10.1038/s41416-024-02696-6)
 2. Meltzer S, Negård A, Bakke KM, et al. Early radiologic signal of responsiveness to immune checkpoint blockade in microsatellite-stable/mismatch repair-proficient metastatic colorectal cancer. *Br J Cancer*. 2022;127(12):2227-2233. [doi:10.1038/s41416-022-02004-0](https://doi.org/10.1038/s41416-022-02004-0)
 3. Meltzer S, Berg JP, Hamre HM, et al. 632P Predictive value of C-reactive protein (CRP) in microsatellite-stable (MSS) metastatic colorectal cancer (mCRC) patients given first-line alternating short-course oxaliplatin-based chemotherapy (FLOX) and nivolumab. *Ann Oncol*. 2023;34:S449. [doi:10.1016/j.annonc.2023.09.1822](https://doi.org/10.1016/j.annonc.2023.09.1822)
-4. Ree AH, Bousquet PA, Nilsen HL, et al. 543P Tumor mutational burden (TMB), BRAF status, and C-reactive protein (CRP) predict response to first-line alternating oxaliplatin-based chemotherapy and nivolumab in metastatic microsatellite-stable (MSS) colorectal cancer (CRC). *Ann Oncol*. 2024;35:S453. [doi:10.1016/j.annonc.2024.08.612](https://doi.org/10.1016/j.annonc.2024.08.612)
+4. Ree AH, Bousquet PA, Nilsen HL, et al. 543P Tumor mutational burden (TMB), *BRAF* status, and C-reactive protein (CRP) predict response to first-line alternating oxaliplatin-based chemotherapy and nivolumab in metastatic microsatellite-stable (MSS) colorectal cancer (CRC). *Ann Oncol*. 2024;35:S453. [doi:10.1016/j.annonc.2024.08.612](https://doi.org/10.1016/j.annonc.2024.08.612)
 
 ## Citation
 
