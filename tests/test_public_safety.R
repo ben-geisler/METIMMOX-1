@@ -1,7 +1,7 @@
-# Public-mirror safety scan (issue #189). Synthetic fixtures check every rule;
-# then the files this tree would publish (R/, analysis/, tests/, reports/ and
-# the root files of R/public_safety.R) are scanned for real, in the private
-# working repository and in the public mirror alike. Needs no trial data.
+# Public-mirror safety scan (issues #189, #194). Synthetic fixtures check every
+# rule; then the files this tree would publish (R/, analysis/, tests/, reports/,
+# .github/ and the root files of R/public_safety.R) are scanned for real, in the
+# private working repository and in the public mirror alike. Needs no trial data.
 # Run from the repository root: Rscript tests/test_public_safety.R
 source("R/public_safety.R")
 
@@ -23,7 +23,10 @@ clean <- list(
   "analysis/01_data_prep.R" = c("read.csv('data/sensitive/excluded_ids.csv')"),
   "reports/CEA.qmd" = c("---", "title: CEA", "---", "Dated 2026-10-08; R 4.3.2-1."),
   "DESCRIPTION" = c("Authors@R: person(email = \"8674152+ben-geisler@users.noreply.github.com\")"),
-  "README.md" = c("Co-Authored-By: Claude <noreply@anthropic.com>")
+  "README.md" = c("Co-Authored-By: Claude <noreply@anthropic.com>"),
+  ".github/workflows/ci.yml" = c("name: CI", "on: [push, pull_request]", "jobs:", "  tests:",
+                                 "    if: github.repository == 'ben-geisler/METIMMOX-1'",
+                                 "    runs-on: ubuntu-latest")
 )
 root <- make_tree(clean)
 stopifnot(nrow(scan_public_tree(root, names(clean))) == 0)
@@ -51,10 +54,25 @@ stopifnot(
 )
 cat("PASS: every rule catches its synthetic violation\n")
 
-# Which files belong in the mirror: the public folders and root files only.
+# .github (issue #194): workflow files (yml, yaml) pass, other file types fail,
+# and the text rules apply to workflows as to the code.
+stopifnot(
+  identical(rules_for(".github/dependabot.yaml", "version: 2"), character(0)),
+  identical(rules_for(".github/tools/setup.exe"), "file_type"),
+  identical(rules_for(".github/badge.png"), "file_type"),
+  identical(rules_for(".github/workflows/notify.yml", paste0("to: someone", "@", "hospital.no")), "email"),
+  identical(rules_for(".github/workflows/run.yml", paste0("run: Rscript /", "home/", "someone/x.R")),
+            "machine_path")
+)
+cat("PASS: .github workflow files pass, other file types and text violations there fail\n")
+
+# Which files belong in the mirror: the public folders (including .github) and
+# root files only, not other dot folders.
 root <- make_tree(c(clean, list("docs/manuscript.md" = "x", "AGENTS.md" = "x",
-                                "outputs/tables/t.csv" = "a", "make.R" = "x")))
-stopifnot(identical(public_mirror_files(root), sort(c(names(clean), "make.R"), method = "radix")))
+                                "outputs/tables/t.csv" = "a", "make.R" = "x",
+                                ".claude/settings.local.json" = "{}", ".quarto/x.yml" = "x")))
+stopifnot(identical(public_mirror_files(root), sort(c(names(clean), "make.R"), method = "radix")),
+          ".github/workflows/ci.yml" %in% public_mirror_files(root))
 cat("PASS: public_mirror_files() keeps only the mirrored folders and root files\n")
 
 # The real tree: what this repository would publish must pass the scan.

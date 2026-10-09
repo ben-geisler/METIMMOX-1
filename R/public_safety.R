@@ -11,12 +11,15 @@
 # be typed into these sources in the first place.
 # ===============================================================================
 
-PUBLIC_MIRROR_DIRS <- c("R", "analysis", "tests", "reports")
+# .github holds the GitHub Actions workflow of the public repository (issue
+# #194); it is mirrored and scanned like the code.
+PUBLIC_MIRROR_DIRS <- c("R", "analysis", "tests", "reports", ".github")
 PUBLIC_MIRROR_FILES <- c("README.md", "LICENSE", "DESCRIPTION", "renv.lock",
                          "METIMMOX-1.Rproj", "make.R", "CITATION.cff")
-# File types allowed in the mirror (lower case; "" for DESCRIPTION and LICENSE).
+# File types allowed in the mirror (lower case; "" for DESCRIPTION and LICENSE;
+# yml and yaml for the workflow files under .github).
 PUBLIC_ALLOWED_EXTENSIONS <- c("r", "qmd", "rmd", "md", "lock", "rproj", "cff",
-                               "gitignore", "")
+                               "gitignore", "yml", "yaml", "")
 # Text rules: a trial ID is the site digit, a hyphen and a three-digit patient
 # number starting with 0.
 PUBLIC_TEXT_RULES <- c(

@@ -1,5 +1,7 @@
 # METIMMOX-1
 
+[![CI](https://github.com/ben-geisler/METIMMOX-1/actions/workflows/ci.yml/badge.svg)](https://github.com/ben-geisler/METIMMOX-1/actions/workflows/ci.yml)
+
 Secondary analyses of the randomised METIMMOX trial ([NCT03388190](https://clinicaltrials.gov/study/NCT03388190)) in metastatic microsatellite-stable (MSS) / mismatch repair-proficient (pMMR) colorectal cancer.
 
 METIMMOX (*Colorectal Cancer METastasis: Shaping Anti-tumor IMMunity by OXaliplatin*) compared first-line alternating short-course oxaliplatin-based chemotherapy (Nordic FLOX) plus nivolumab with FLOX alone. This repository holds the code of three papers that share one data pipeline:
@@ -12,7 +14,7 @@ Papers 2 and 3 use the same economic model. The code is written for clinical res
 
 ## What this repository contains
 
-The code that computes every number, table and figure of the three papers: model and helper functions (`R/`), the numbered pipeline (`analysis/`), the regression tests (`tests/`) and the Quarto sources of every report and publication figure or table (`reports/`, `reports/technical/`, `reports/vignettes/`).
+The code that computes every number, table and figure of the three papers: model and helper functions (`R/`), the numbered pipeline (`analysis/`), the regression tests (`tests/`) and the Quarto sources of every report and publication figure or table (`reports/`, `reports/technical/`, `reports/vignettes/`). The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the data-free tests and the safety scan on every push.
 
 It is a mirror of a private working repository, updated from it after every change. Three things are not here:
 
@@ -37,14 +39,22 @@ Week-4 CRP is not a baseline measurement, but it is known before the decision to
 | Item | Generator | Output |
 |---|---|---|
 | Figure 1: Kaplan-Meier curves by biomarker and arm | [clin_effect_figure1.qmd](reports/vignettes/clin_effect_figure1.qmd) | `outputs/figs/clin_effect_figure1.png`, `.eps` |
-| Tables 1-4: baseline characteristics; Firth Cox models; ridge versus Firth; TLR landmark analysis | [clinical_effectiveness.qmd](reports/clinical_effectiveness.qmd) | rendered report |
+| Table 1: baseline characteristics (n = 68) | [clinical_effectiveness.qmd](reports/clinical_effectiveness.qmd), chunk `table-sample` | rendered report |
+| Table 2: Firth Cox models, OS and PFS (n = 68) | clinical_effectiveness.qmd, chunks `table-os`, `table-pfs` | rendered report |
+| Table 3: ridge versus Firth interaction estimates | clinical_effectiveness.qmd, chunks `table-ridge-os`, `table-ridge-pfs`, `table-ridge-seeds` | rendered report |
+| Table 4: TLR landmark analysis | clinical_effectiveness.qmd, chunks `table-lm-tlr-firth-os`, `table-lm-tlr-firth-pfs` | rendered report |
+| Figure S1: diagnostic and treatment schedule | drawn outside the repository | none |
 | Figure S2: directed acyclic graph | [clin_effect_figure_s2.qmd](reports/vignettes/clin_effect_figure_s2.qmd) | `outputs/figs/clin_effect_figure_s2.png` |
-| Table S1: DAG node definitions | [dag.qmd](reports/dag.qmd) | rendered report |
-| Table S2: bivariate association tests | [clin_effect_table_s2.qmd](reports/vignettes/clin_effect_table_s2.qmd) | `outputs/tables/clin_effect_table_s2.csv`, `_raw.csv` |
-| Table S3: conditional-independence assessments | [clin_effect_table_s3.qmd](reports/vignettes/clin_effect_table_s3.qmd) | `outputs/tables/clin_effect_table_s3.csv`, `_raw.csv` |
-| Tables S4-S11: Schoenfeld tests; landmark cohorts; standard versus Firth Cox; PFS endpoint sensitivity | [clinical_effectiveness.qmd](reports/clinical_effectiveness.qmd) | rendered report |
+| Table S1: DAG node definitions | [dag.qmd](reports/dag.qmd), chunk `node-table` | rendered report |
+| Table S2: bivariate association tests (18 direct edges) | [clin_effect_table_s2.qmd](reports/vignettes/clin_effect_table_s2.qmd) | `outputs/tables/clin_effect_table_s2.csv`, `_raw.csv` |
+| Table S3: conditional-independence assessments (15 testable, 4 definitional, 2 omitted edges) | [clin_effect_table_s3.qmd](reports/vignettes/clin_effect_table_s3.qmd) | `outputs/tables/clin_effect_table_s3.csv`, `_raw.csv` |
+| Table S4: Schoenfeld residual tests | clinical_effectiveness.qmd, chunk `table-schoenfeld` | rendered report |
+| Tables S5, S6: week-9 landmark characteristics (OS n = 65, PFS n = 56) | clinical_effectiveness.qmd, chunks `table-lm-characteristics-os`, `table-lm-characteristics-pfs` | rendered report |
+| Tables S7, S8: standard versus Firth Cox, OS and PFS | clinical_effectiveness.qmd, chunks `table-std-firth-os`, `table-std-firth-pfs` | rendered report |
+| Tables S9, S10: standard versus Firth Cox, week-9 landmark OS and PFS | clinical_effectiveness.qmd, chunks `table-lm-tlr-std-firth-os`, `table-lm-tlr-std-firth-pfs` | rendered report |
+| Table S11: PFS death-censoring rule sensitivity | clinical_effectiveness.qmd, chunk `table-pfs-endpoint-sensitivity` | rendered report |
 
-The DAG tests are also discussed in [dag_associations.qmd](reports/dag_associations.qmd); [biomarker_distributions.qmd](reports/biomarker_distributions.qmd) describes prevalence and overlap by arm. `tests/check_output_consistency.R` cross-checks the rendered clinical report against Tables S2 and S3. Pipeline: scripts 01-03.
+Items marked "rendered report" have no CSV: they are the named chunks of the report, rendered to `outputs/reports/clinical_effectiveness.md` and its PDF. The table builders behind S2 and S3 are `R/supp_table_s2.R`, `R/supp_table_s3.R` and `R/supp_table_labels.R`; the statistics come from `R/dag_association_tests.R`. The DAG tests are also discussed in [dag_associations.qmd](reports/dag_associations.qmd); [biomarker_distributions.qmd](reports/biomarker_distributions.qmd) describes prevalence and overlap by arm. `tests/check_output_consistency.R` cross-checks the rendered clinical report against Tables S2 and S3. Pipeline: scripts 01-03.
 
 ## Paper 2: Cost-effectiveness
 

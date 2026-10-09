@@ -48,7 +48,7 @@ run_cache_provenance_tests <- function() {
     paste0("f <- ", paste(capture.output(dput(f)), collapse = "\n")),
     'cat("HASH:", sampling_cache_fingerprint(f, d, list(os="gamma", pfs="gamma"), 10L, 123L, "mvn_v1")$fingerprint, "\\n")'),
     hash_script)
-  rscript <- file.path(R.home("bin"), "Rscript.exe")
+  rscript <- file.path(R.home("bin"), if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript")
   v_hashes <- replicate(2, {
     output <- system2(rscript, shQuote(hash_script), stdout = TRUE, stderr = TRUE)
     sub("^HASH: ", "", trimws(grep("^HASH:", output, value = TRUE)))
