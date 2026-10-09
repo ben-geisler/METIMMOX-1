@@ -8,7 +8,8 @@
 # wrong number of years while every other part of the model used cl, and nothing
 # would error -- the results would just be quietly wrong.
 #
-# The weekly result must be unchanged within the 1e-10 tolerance AGENTS.md
+# The weekly result must be unchanged within the 1e-10 tolerance the test
+# protocol (docs/validation/README.md of the private repository)
 # documents for numeric comparisons, so this fix does not invalidate the
 # regenerated caches or snapshots.
 #

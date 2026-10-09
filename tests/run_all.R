@@ -15,9 +15,10 @@
 # tests that read trial data or caches skip those sections themselves.
 #
 # Known failures: KNOWN_FAILURES lists tests documented as failing in the test
-# protocol of AGENTS.md. They are reported as XFAIL and do not fail the run; a
-# known failure that passes is reported as XPASS and does fail the run, so the
-# list cannot go stale. The list is empty: test_psa_basecase_alignment.R left it
+# protocol (docs/validation/README.md of the private repository). They are
+# reported as XFAIL and do not fail the run; a known failure that passes is
+# reported as XPASS and does fail the run, so the list cannot go stale. The
+# list is empty: test_psa_basecase_alignment.R left it
 # when #180 retired its five-MCSE criterion, test_sampling_failure_fallback.R
 # when #186 rewrote it for the #159 sampler.
 #
