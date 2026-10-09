@@ -57,9 +57,16 @@ jobs:
       # the runner's checkout, restores renv.lock and caches the library.
       # "never" saves the cache right after the restore, so a failing test does
       # not discard a cold package build (raise cache-version to start over).
+      # RENV_INSTALL_TEST_LOAD: renv's Linux-only test load of each installed
+      # package fails for the locked waldo 0.5.2, because the locked glue
+      # registers an S3 method for waldo::compare_proxy before waldo's
+      # namespace is complete. Nothing here loads waldo (testthat/devtools
+      # chain), so the test load is skipped, as renv skips it on Windows.
       - uses: r-lib/actions/setup-renv@v2
         with:
           bypass-cache: never
+        env:
+          RENV_INSTALL_TEST_LOAD: "FALSE"
 
       # Tests that need the confidential trial data or caches are skipped.
       - name: Data-free test suite
