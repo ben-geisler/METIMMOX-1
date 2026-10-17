@@ -154,7 +154,7 @@ knitr::kable(
 
 ## Parameters sampled
 
-The PSA samples the health-state utilities, the joint biomarker cell probabilities, and the resource-use costs (visit, baseline work-up, quarterly follow-up, end-of-life care), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
+The PSA samples the health-state utilities, the joint biomarker cell probabilities, the resource-use costs (visit, baseline work-up, progressed-state follow-up, end-of-life care), the shares of patients starting a third and a fourth treatment sequence (issue #208) and the shares and course lengths of the second-line pathway (issue #209), together with the survival models. Unit drug and test prices are **fixed** (issue #154): they are published tariffs or, for nivolumab, an assumed acquisition price, so treating them as uncertain would attribute decision uncertainty — and value of information — to quantities that no study could resolve. Their influence is reported in the one-way sensitivity analysis and in the biosimilar pricing scenario instead.
 
 The two utilities are sampled jointly rather than independently. The PSA draws a non-negative decrement and sets the progressed utility to the progression-free utility minus that decrement, so no draw can place the progressed utility above the progression-free utility.
 
@@ -195,6 +195,21 @@ knitr::kable(
 
 Intervals are the 2.5th and 97.5th percentiles of the retained PSA draws, not confidence intervals for the mean. Incremental intervals use paired differences within each draw versus standard of care. The ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios. Dominance labels compare mean costs and QALYs. Table 5 is the primary publication table.
 
+```{r psa-life-years}
+knitr::kable(
+  psa_display[, c("Strategy", "LYs_Disc", "LYs_Undisc", "Inc_LYs_Disc", "Inc_LYs_Undisc")],
+  booktabs = TRUE,
+  col.names = c("Strategy", "Discounted", "Undiscounted",
+                "Incremental, discounted", "Incremental, undiscounted"),
+  caption = "Probabilistic life-years per patient: means (95 percent uncertainty intervals); increments versus standard of care"
+) %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 8) %>%
+  tbl_column_spec(1, width = "2.4cm") %>%
+  tbl_column_spec(2:5, width = "2.9cm")
+```
+
+Life-years are the third PSA outcome (issue #197): the alive occupancy of each draw, integrated with the same trapezoidal interval weights as the QALYs and, when discounted, the same `r sprintf("%.0f%%", 100 * l_params_base$dr_effects)` annual effect discount factors. The undiscounted value is the restricted mean survival over the `r format(time_horizon * cl)`-year horizon. They come from the same draws as costs and QALYs, so their increments are paired in the same way, and they do not enter the ICER or the decision.
+
 ```{r ceac, fig.cap="Cost-effectiveness acceptability curves"}
 create_ceac_plot(psa_obj, wtp_line = WTP)
 ```
@@ -208,14 +223,18 @@ base_display <- base_results %>%
     Strategy = strategy_label(Strategy),
     Cost = format_eur(Cost),
     Effect = sprintf("%.3f", Effect),
+    LY_disc = sprintf("%.3f", LY_disc),
+    LY_undisc = sprintf("%.3f", LY_undisc),
     NMB = format_eur(NMB)
-  )
+  ) %>%
+  select(Strategy, Cost, Effect, LY_disc, LY_undisc, NMB)
 
 knitr::kable(
   base_display,
   booktabs = TRUE,
-  align = c("l", "r", "r", "r"),
-  col.names = c("Strategy", "Cost", "QALYs", "NMB"),
+  align = c("l", "r", "r", "r", "r", "r"),
+  col.names = c("Strategy", "Cost", "QALYs", "Life-years (disc.)",
+                "Life-years (undisc.)", "NMB"),
   caption = paste0("Deterministic point evaluation anchoring the one-way sensitivity analysis; WTP = EUR ", format(WTP, big.mark = ","))
 ) %>%
   tbl_style(latex_options = c("HOLD_position", "scale_down"))
@@ -330,9 +349,9 @@ Control and both guided strategies are evaluated in the same complete-case trial
 
 Three scope decisions bound the interpretation of these results (issue #154).
 
-**No post-progression treatment costs.** After progression the model charges only a quarterly follow-up visit, a quarterly CT scan and the one-time end-of-life cost. Second-line systemic therapy and any further post-progression visits are not modeled. The strategies differ in time spent in the progressed state, so this omission is differential rather than a common offset. A structural scenario charging EUR 5,000 per quarter in the progressed state is reported in the one-way sensitivity analysis.
+**Post-progression treatment.** Since issue #209 second-line therapy is costed from the Norwegian pathway described by the trial team, once at incident progression (`r fmt_eur(second_line_cost_per_progression(l_params_base))` per progressing patient), together with a follow-up visit and a CT scan every 2.5 months in the progressed state (issue #207) and the one-time end-of-life cost. The pathway's shares, doses and durations are assumptions or literature values, not trial data (the trial recorded no post-study therapy), its drug prices are public list prices without tender discounts, and third-line and BRAF-targeted therapy are not costed. Structural scenarios without the second-line cost and with the former flat `r fmt_eur(dsa_structural_scenarios(dr, time_horizon / 52)$Post_progression_cost$max)` per quarter of progressed occupancy instead are reported in the one-way sensitivity analysis.
 
-**Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption.
+**Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption. Third and fourth sequences (issue #208) are costed from the trial's administration records instead: the share of patients of each arm who started them, times one full sequence, at the observed start weeks and whatever the health state; the scenario removes them with the second.
 
 **Nivolumab price is an assumption.** The base-case price per administration is an assumed Norwegian hospital acquisition cost rather than a citable tariff, because Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver; the biosimilar scenario and the one-way analysis show how the conclusions move with it.
 
@@ -369,4 +388,4 @@ os5_iv <- benchmark_model_interval(soc_os_draws, list(measure = "survival", time
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.0
+**Report version:** 5.3

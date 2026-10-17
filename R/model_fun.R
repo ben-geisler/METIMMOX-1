@@ -159,10 +159,38 @@ resolve_time_setting <- function(params, name, supplied) {
   from_params
 }
 
+#' Run the partitioned survival model for every economic strategy
+#'
+#' @param params Parameter list (`l_params_base` or a PSA/DSA variant).
+#' @param time_horizon,cl Time grid; default to `params$time_horizon` and
+#'   `params$cl`, and an explicit value must agree with them (issue #172).
+#' @param determpsa "det" (stops on an OS < PFS crossing), "psa" (sampled
+#'   survival model `sim_idx`, crossings clamped) or "curves" (supplied curves,
+#'   crossings clamped).
+#' @param return_traces Also return state-occupancy traces per strategy.
+#' @param sim_idx Row of the sampling-cache draw matrices (PSA mode only).
+#' @param prediction_population Population whose weights define the curves
+#'   (issue #166).
+#' @param return_cells PSA mode only: attach the cell-level outcomes of the
+#'   draw (issue #200) as attribute `cells`: a list with `values` (cell x arm x
+#'   outcome array from calculate_cell_outcomes()), `violations` (cell x arm
+#'   counts of PFS > OS points before the cap), `mass` (the draw's joint cell
+#'   weights) and `counts`. NULL for a fallback draw.
+#' @return Data frame with one row per strategy: `Strategy`, `Cost`
+#'   (discounted), `Effect` (discounted QALYs), `LY_disc` and `LY_undisc`
+#'   (discounted and undiscounted life-years under the OS curve, issue #197),
+#'   in every mode; with `return_traces = TRUE` a list of `results` and
+#'   `traces`. The attribute `fallback_used` flags a PSA draw that fell back to
+#'   base-case curves; with `return_cells = TRUE` the attribute `cells` holds
+#'   the cell outcomes.
 model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
                       return_traces = FALSE, sim_idx = NULL,
-                      prediction_population = params$prediction_population) {
+                      prediction_population = params$prediction_population,
+                      return_cells = FALSE) {
   determpsa <- match.arg(determpsa, c("det", "psa", "curves"))
+  if (isTRUE(return_cells) && determpsa != "psa") {
+    stop("return_cells is only available with determpsa = 'psa'.")
+  }
   time_horizon <- resolve_time_setting(params, "time_horizon", time_horizon)
   cl <- resolve_time_setting(params, "cl", cl)
   if (!is.numeric(time_horizon) || length(time_horizon) != 1L ||
@@ -197,6 +225,7 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
 
   # Track if fallback to base case was used (Issue #79)
   fallback_used <- FALSE
+  cell_curves <- NULL  # cell-level curves of a PSA draw (issue #200)
 
   v_population_weights <- NULL
   if (!is.null(prediction_population)) {
@@ -213,7 +242,8 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # =========================================================================
   # Each PSA iteration:
   #   1. Uses sampled survival model i (coefficient draw i) (captures parameter uncertainty)
-  #   2. Predicts for ALL patients in each subgroup, then averages
+  #   2. Predicts every patient under both arms and averages within the joint
+  #      biomarker cells; strategy curves are cell combinations (issue #200)
   #   3. Applies the same draw-specific population weights to every strategy
   #
   # This properly separates:
@@ -246,124 +276,72 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
       cat("PSA iteration", sim_idx, "- subgroup population averaging\n")
     }
 
+    # -----------------------------------------------------------------------
+    # CELL-LEVEL PREDICTION (issue #200)
+    # -----------------------------------------------------------------------
     # One joint component serves the control arm and every biomarker strategy
-    # (issues #151, #156). A draw that cannot be materialised, or a legacy
-    # bootstrap sample flagged as failed (original fit substituted), is
-    # recorded as fallback so the PSA loop replaces it.
+    # (issues #151, #156). Every patient of the explicit prediction population
+    # is predicted once under control and once under the experimental arm with
+    # the sampled joint model, and the curves are averaged within the joint
+    # biomarker cells. The strategy curves are mass-weighted combinations of
+    # the cell curves (strategy_curves_from_cells()): control = every cell
+    # under control (the joint model's standard-of-care prediction, as in the
+    # base case); a guided strategy = its positive cells under the
+    # experimental arm and its negative cells under control. A draw that cannot
+    # be materialised or predicted, or a legacy bootstrap sample flagged as
+    # failed (original fit substituted), is recorded as fallback so the PSA
+    # loop replaces it.
     joint_sampling_models <- get_joint_sampling_models(sampling_models)
-    joint_sample <- tryCatch(
-      sampled_survival_models(joint_sampling_models, sim_idx),
-      error = function(e) NULL
-    )
-    if (is.null(joint_sample) || isTRUE(joint_sample$failed)) {
+    cell_curves <- tryCatch(
+      generate_psa_cell_predictions(
+        sampling_model_list = joint_sampling_models,
+        sample_idx = sim_idx,
+        data_original = prediction_population,
+        time_points = seq(0, time_horizon),
+        weights = v_population_weights
+      ),
+      error = function(e) {
+        warning("Failed to generate cell curves for sim ", sim_idx, ": ",
+                conditionMessage(e), " - using base case")
+        NULL
+      })
+    if (is.null(cell_curves) || isTRUE(cell_curves$failed)) {
       fallback_used <- TRUE
     }
-    rm(joint_sample)
 
-    # -----------------------------------------------------------------------
-    # CONTROL STRATEGY: Population-averaged predictions over FULL population
-    # -----------------------------------------------------------------------
-    # Uses the shared population-averaging helper to predict for ALL patients in
-    # the explicit prediction population (both arms) with Rx forced to the control level, using the
-    # sampled JOINT model. This mirrors the base case, which predicts the
-    # control curve from the same joint fit with Rx = control
-    # (generate_population_averaged_predictions). A separate age/sex-only
-    # control model was previously bootstrapped here; that shifted the PSA
-    # away from the base case and broke the control/biomarker correlation
-    # (issue #151).
-
-    tryCatch({
-      v_os_control <- generate_psa_population_averaged_predictions(
-        sampling_model_list = joint_sampling_models,
-        outcome = "os",
-        sample_idx = sim_idx,
-        data_original = prediction_population,
-        weights = v_population_weights,
-        time_points = seq(0, time_horizon)
-      )
-
-      v_pfs_control <- generate_psa_population_averaged_predictions(
-        sampling_model_list = joint_sampling_models,
-        outcome = "pfs",
-        sample_idx = sim_idx,
-        data_original = prediction_population,
-        weights = v_population_weights,
-        time_points = seq(0, time_horizon)
-      )
+    if (!is.null(cell_curves)) {
+      cell_weights <- cell_masses(prediction_population, v_population_weights)
+      strategy_curves <- strategy_curves_from_cells(cell_curves, cell_weights, v_biomarkers_to_run)
 
       # A missing or invalid prediction (issue #60: not finite, outside
       # [0, 1], not starting at 1, or increasing) is a failed draw.
-      if (!valid_psa_curves(v_os_control, v_pfs_control)) {
+      control_curves <- strategy_curves[[control_strategy]]
+      if (!valid_psa_curves(control_curves$os, control_curves$pfs)) {
         warning("Missing or invalid control survival curves for sim ", sim_idx,
                 " - using base case curves")
         fallback_used <- TRUE  # Issue #79: Track fallback
       } else {
-        # Update params with population-averaged predictions
-        params$p_os[[paste0(control_strategy, "_OS")]] <- v_os_control
-        params$p_pfs[[paste0(control_strategy, "_PFS")]] <- v_pfs_control
+        params$p_os[[paste0(control_strategy, "_OS")]] <- control_curves$os
+        params$p_pfs[[paste0(control_strategy, "_PFS")]] <- control_curves$pfs
       }
 
-    }, error = function(e) {
-      warning("Failed to generate control curves for sim ", sim_idx, ": ",
-              conditionMessage(e), " - using base case")
-      fallback_used <<- TRUE  # Issue #79: Track fallback (<<- for enclosing scope)
-    })
-
-    # -----------------------------------------------------------------------
-    # BIOMARKER STRATEGIES: Subgroup population averaging
-    # -----------------------------------------------------------------------
-    # For each biomarker:
-    #   - Biomarker+ subgroup: ALL biomarker+ patients with experimental Rx
-    #   - Biomarker- subgroup: ALL biomarker- patients with control Rx
-    # Weighted combination uses the marginals of the common target population
-
-    for(biomarker in v_biomarkers_to_run) {
-      tryCatch({
-        # Get population-averaged predictions for BOTH subgroups
-        preds_os <- generate_psa_population_averaged_predictions(
-          sampling_model_list = joint_sampling_models,
-          biomarker_name = biomarker,
-          outcome = "os",
-          sample_idx = sim_idx,
-          data_original = prediction_population,
-          weights = v_population_weights,
-          time_points = seq(0, time_horizon)
-        )
-
-        preds_pfs <- generate_psa_population_averaged_predictions(
-          sampling_model_list = joint_sampling_models,
-          biomarker_name = biomarker,
-          outcome = "pfs",
-          sample_idx = sim_idx,
-          data_original = prediction_population,
-          weights = v_population_weights,
-          time_points = seq(0, time_horizon)
-        )
-
-        # A missing or invalid prediction is a failed draw (issue #60).
-        if (is.null(preds_os) || is.null(preds_pfs) ||
-            !valid_psa_curves(preds_os$positive, preds_os$negative,
-                              preds_pfs$positive, preds_pfs$negative)) {
+      # Biomarker+ subgroup: positive cells under the experimental arm;
+      # biomarker- subgroup: negative cells under control. The marginal
+      # prevalence used downstream comes from the common target population.
+      for (biomarker in v_biomarkers_to_run) {
+        preds <- strategy_curves[[biomarker]]
+        if (!valid_psa_curves(preds$biomarker_positive$os, preds$biomarker_negative$os,
+                              preds$biomarker_positive$pfs, preds$biomarker_negative$pfs)) {
           warning("Missing or invalid ", biomarker, " survival curves for sim ", sim_idx,
                   " - using base case curves")
           fallback_used <- TRUE  # Issue #79: Track fallback
         } else {
-          # Store subgroup-specific curves
-          params$p_os[[paste0(biomarker, "_pos_OS")]] <- preds_os$positive
-          params$p_os[[paste0(biomarker, "_neg_OS")]] <- preds_os$negative
-          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- preds_pfs$positive
-          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- preds_pfs$negative
-
-          # Marginal prevalence comes from the common target population weights
-          # Weighted combination happens downstream using:
-          #   prevalence * biomarker+ + (1-prevalence) * biomarker-
+          params$p_os[[paste0(biomarker, "_pos_OS")]] <- preds$biomarker_positive$os
+          params$p_os[[paste0(biomarker, "_neg_OS")]] <- preds$biomarker_negative$os
+          params$p_pfs[[paste0(biomarker, "_pos_PFS")]] <- preds$biomarker_positive$pfs
+          params$p_pfs[[paste0(biomarker, "_neg_PFS")]] <- preds$biomarker_negative$pfs
         }
-
-      }, error = function(e) {
-        warning("Failed to generate ", biomarker, " curves for sim ", sim_idx, ": ",
-                conditionMessage(e), " - using base case")
-        fallback_used <<- TRUE  # Issue #79: Track fallback (<<- for enclosing scope)
-      })
+      }
     }
   }
   
@@ -375,9 +353,11 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
     Strategy = as.character(v_strat_names),
     Cost = numeric(length(v_strat_names)),
     Effect = numeric(length(v_strat_names)),
+    LY_disc = numeric(length(v_strat_names)),
+    LY_undisc = numeric(length(v_strat_names)),
     stringsAsFactors = FALSE
   )
-  
+
   traces <- list()
   if(return_traces) {
     for(strat in v_strat_names) {
@@ -483,7 +463,9 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # Store results for control
   df_results$Cost[df_results$Strategy == control_strategy] <- control_results$costs_total
   df_results$Effect[df_results$Strategy == control_strategy] <- control_results$qalys_total
-  
+  df_results$LY_disc[df_results$Strategy == control_strategy] <- control_results$ly_disc_total
+  df_results$LY_undisc[df_results$Strategy == control_strategy] <- control_results$ly_undisc_total
+
   # Store traces for control if requested
   if(return_traces) {
     traces[[control_strategy]] <- list(
@@ -582,11 +564,17 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
       (1 - biomarker_prev) * neg_results$costs_total
     total_effect <- biomarker_prev * pos_results$qalys_total + 
       (1 - biomarker_prev) * neg_results$qalys_total
+    total_ly_disc <- biomarker_prev * pos_results$ly_disc_total +
+      (1 - biomarker_prev) * neg_results$ly_disc_total
+    total_ly_undisc <- biomarker_prev * pos_results$ly_undisc_total +
+      (1 - biomarker_prev) * neg_results$ly_undisc_total
     
     # Store results for this biomarker strategy
     df_results$Cost[df_results$Strategy == biomarker] <- total_cost
     df_results$Effect[df_results$Strategy == biomarker] <- total_effect
-    
+    df_results$LY_disc[df_results$Strategy == biomarker] <- total_ly_disc
+    df_results$LY_undisc[df_results$Strategy == biomarker] <- total_ly_undisc
+
     # Store traces if requested
     if(return_traces) {
       # Create weighted values for summary traces
@@ -620,6 +608,19 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
   # RETURN RESULTS
   # =========================================================================
 
+  # Cell-level outcomes of this draw (issue #200): only for a draw whose cell
+  # curves were predicted; a fallback draw carries none and is replaced.
+  cell_results <- NULL
+  if (isTRUE(return_cells) && !fallback_used && !is.null(cell_curves)) {
+    cell_results <- tryCatch(c(
+      calculate_cell_outcomes(params, cell_curves, v_dw_c, v_dw_e, cl),
+      list(mass = cell_weights$mass, counts = cell_weights$counts)),
+      error = function(e) {
+        warning("Cell outcomes failed for sim ", sim_idx, ": ", conditionMessage(e))
+        NULL
+      })
+  }
+
   # Return results with or without traces
   # Attach fallback_used attribute for PSA loop to detect failures (Issue #79)
   if(return_traces) {
@@ -633,5 +634,6 @@ model_fun <- function(params, time_horizon = NULL, cl = NULL, determpsa = "det",
 
   # Add fallback_used attribute so PSA loop can detect and replace failed iterations
   attr(result, "fallback_used") <- fallback_used
+  if (isTRUE(return_cells)) attr(result, "cells") <- cell_results
   return(result)
 }

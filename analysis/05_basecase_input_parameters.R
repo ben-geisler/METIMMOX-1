@@ -20,10 +20,13 @@ time_points_length <- length(time_points)
 # (parameter_distributions.R, issues #49, #172), shared with the time-horizon
 # scenario: nivolumab at modeled weeks 4, 6, 12, 14, 28, 30, 36, 38; FLOX
 # (experimental) at weeks 0, 2, 8, 10, 24, 26, 32, 34; FLOX (control) at the
-# union; CT at baseline and every 12 weeks; blood tests at baseline and every
-# 4 weeks; visits at baseline, every administration and every CT scan (issue
-# #164: a surveillance visit with each post-treatment CT). Positions beyond the
-# horizon are dropped, so every vector has exactly time_points_length points.
+# union; CT at baseline and every 8 weeks; blood tests at every administration
+# week and with every CT; visits at baseline, every administration and every CT
+# scan (issue #164: a surveillance visit with each post-treatment CT), and a
+# second contact on day 2 of every FLOX administration, charged in
+# calculate_outcomes() (issue #207: trial team's answers MON1-MON3 of 15
+# October 2026). Positions beyond the horizon are dropped, so every vector has
+# exactly time_points_length points.
 schedules <- build_treatment_schedules(time_points_length)
 l_nivo <- schedules$l_nivo
 l_FLOX_exp <- schedules$l_FLOX_exp
@@ -82,16 +85,17 @@ l_params_base <- list(
   u_p  = if (UTILITY_SOURCE == 0) ipd_utilities$u_p else 0.59,
   
   # Drug costs
-  # c_drug_nivo: ASSUMPTION, not a published tariff (issue #154). EUR 13,923 per
+  # c_drug_nivo: ASSUMPTION, not a published tariff (issue #154). EUR 1,392 per
   # administration is the assumed Norwegian hospital acquisition cost of one
-  # nivolumab administration in this regimen; eight administrations give about
-  # EUR 111,000 per treated patient. Norwegian hospital prices are set by
-  # confidential LIS tender and cannot be cited; published list prices are
-  # higher (a US list price is about USD 8,100 per 240 mg vial). The value is
-  # the largest single cost driver in the model, so it is varied in the one-way
-  # DSA (+/-20%) and in the biosimilar scenario (EUR 4,641 per administration,
-  # one third of the base case) rather than sampled in the PSA.
-  c_drug_nivo = 13923,   # assumed cost of nivolumab per administration
+  # nivolumab administration in this regimen, already about 40% below list;
+  # eight administrations give about EUR 11,100 per treated patient. (Before
+  # #210 the value was EUR 13,923, ten times the intended price.) Norwegian
+  # hospital prices are set by confidential LIS tender and cannot be cited. The
+  # value is a major cost driver, so it is varied in the one-way DSA (+/-20%)
+  # and in the biosimilar scenario (NIVO_PRICE_BIOSIMILAR in
+  # scenario_analysis.R, one third of the base case) rather than sampled in the
+  # PSA.
+  c_drug_nivo = 1392,   # assumed cost of nivolumab per administration
   c_drug_FLOX = 427,    # cost of FLOX per administration
   
   # Test costs
@@ -106,19 +110,20 @@ l_params_base <- list(
   # outpatient contact times the 2023 somatic-care unit price of NOK 49,484
   # (EUR 4,541.60), i.e. NOK 2,325.75 = EUR 213.46 per visit. The weight is the
   # same for every visit type, so the baseline, treatment/surveillance and
-  # quarterly follow-up visits share one value; the three parameters are kept
+  # progressed-state follow-up visits share one value; the three parameters are kept
   # separate so that each can be varied on its own. (Before #36: EUR 33, 530
   # and 33 without a source.)
   c_other_visit = 213.46,    # outpatient visit (DRG weight 0.047)
   c_other_baseline = 213.46, # baseline visit (DRG weight 0.047)
-  c_other_follow = 213.46,   # follow-up visit in the progressed state (per quarter)
-  # Post-progression treatment cost per quarter in the progressed state
-  # (issue #154). Zero in the base case: second-line systemic therapy, imaging
-  # and visits after progression are outside the modeled scope, so the
-  # progressed state accrues only the quarterly follow-up visit, the quarterly
-  # CT scan (issue #164) and the end-of-life cost. The strategies differ in time spent progressed, so the
-  # omission is differential; the parameter makes it explicit and is varied in
-  # the Post_progression_cost structural scenario in 09_DSA.R.
+  c_other_follow = 213.46,   # follow-up visit in the progressed state (one every 2.5 months, #207)
+  # Flat post-progression treatment cost per quarter in the progressed state
+  # (issue #154). Zero in the base case: since issue #209 second-line therapy
+  # is costed once at incident progression from the Norwegian pathway (the
+  # second-line fields appended below), and the progressed state otherwise
+  # accrues the follow-up visit and the CT scan every 2.5 months (issues
+  # #164, #207) and the end-of-life cost. The former EUR 5,000 per quarter is
+  # the Post_progression_cost structural scenario in 09_DSA.R, which replaces
+  # the pathway.
   c_other_pp = 0,
   c_other_last = 13803,     # cost of end-of-life care
   
@@ -171,3 +176,51 @@ joint_population <- joint_biomarker_population(data_complete)
 l_params_base$joint_counts <- joint_population$counts
 for (cell in names(joint_population$probabilities))
   l_params_base[[paste0("p_joint_", cell)]] <- unname(joint_population$probabilities[cell])
+
+# Third and fourth treatment sequences (issue #208). Trial team, 15 October
+# 2026 (SEQ1-SEQ5): later sequences were also started on progression during a
+# break, so they follow the trial's own data, not a schedule. Script 01 derives
+# per patient from the export's administration block whether a third and a
+# fourth sequence were started and when (weeks from inclusion). Here, in the
+# economic prediction population, the shares starting each sequence by arm
+# (with their counts, for the beta distributions of the PSA) and the observed
+# start weeks of the starters enter l_params_base; calculate_outcomes() charges
+# share x one full sequence of the arm's regimen at those weeks, whatever the
+# health state (later_sequence_resource_use()). Sequence 2 is unchanged (weeks
+# 24-38 for every progression-free patient); no fifth or sixth sequence is
+# modelled.
+source(here::here("R", "later_sequences.R"))
+later_sequence_data <- later_sequence_inputs(
+  data_complete, readRDS(here::here("data", "tidy", "METIMMOX.rds")))
+l_params_base$later_sequences <- later_sequence_data$later_sequences
+l_params_base[names(later_sequence_data$shares)] <- later_sequence_data$shares
+rm(later_sequence_data)
+
+# Second-line therapy at incident progression (issue #209; user decision of
+# 17 October 2026: the costed Norwegian pathway is the base case). The
+# pathway table data/external/second_line_pathway.csv (R/second_line_costs.R)
+# gives the shares, cycles, contacts and blood tests, and the drug cost per
+# cycle of each backbone and biologic at the table's doses and public list
+# prices. The progression share of PFS events is counted in the economic
+# cohort under the #181 PFS rule, pooled over both arms: the trial team
+# expects no difference by arm (SL3), and by arm one count is zero, which
+# would give a degenerate beta. calculate_outcomes() charges the expected
+# course cost per progressing patient once per progression
+# (second_line_event_costs()).
+source(here::here("R", "second_line_costs.R"))
+second_line_inputs <- second_line_model_inputs(read_second_line_pathway())
+progression_share <- pfs_progression_share(data_complete)
+for (field in names(second_line_inputs$values)) {
+  l_params_base[[field]] <- unname(second_line_inputs$values[[field]])
+}
+l_params_base$p_pfs_progression <- progression_share$value
+# PSA standard errors (create_parameter_distributions()) and sourced one-way
+# bounds (build_dsa_ranges()) of the second-line parameters.
+l_params_base$psa_se <- c(p_pfs_progression = progression_share$se, second_line_inputs$se)
+v_ranged <- !is.na(second_line_inputs$lower)
+l_params_base$dsa_bounds <- data.frame(
+  pars = c("p_pfs_progression", names(second_line_inputs$lower)[v_ranged]),
+  min = c(progression_share$lower, unname(second_line_inputs$lower[v_ranged])),
+  max = c(progression_share$upper, unname(second_line_inputs$upper[v_ranged])),
+  stringsAsFactors = FALSE)
+rm(field, v_ranged)

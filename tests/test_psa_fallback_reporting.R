@@ -17,7 +17,7 @@ df_psa_params <- data.frame(sim = seq_len(4))
 # Successful iterations report and return a zero fallback rate.
 #' Stub model: one control row with unit cost and effect, never a fallback.
 model_fun <- function(params, ...) {
-  data.frame(Strategy = "control", Cost = 1, Effect = 1)
+  data.frame(Strategy = "control", Cost = 1, Effect = 1, LY_disc = 1, LY_undisc = 1)
 }
 v_output <- capture.output({
   result <- run_psa_analysis(
@@ -48,7 +48,7 @@ stopifnot(any(grepl("PSA initial-pass fallback rate: 0/4 \\(0.00%", v_output)))
 # before the replacement phase can conceal the high initial failure rate.
 #' Stub model: unit cost and effect, flagged as a fallback for draw 1 only.
 model_fun <- function(params, sim_idx, ...) {
-  df_result <- data.frame(Strategy = "control", Cost = 1, Effect = 1)
+  df_result <- data.frame(Strategy = "control", Cost = 1, Effect = 1, LY_disc = 1, LY_undisc = 1)
   attr(df_result, "fallback_used") <- sim_idx == 1
   df_result
 }
@@ -101,7 +101,9 @@ model_fun <- function(params, sim_idx, ...) {
   df_result <- data.frame(
     Strategy = "control",
     Cost = 10 * params$draw_id + sim_idx,
-    Effect = params$draw_id
+    Effect = params$draw_id,
+    LY_disc = params$draw_id,
+    LY_undisc = sim_idx
   )
   attr(df_result, "fallback_used") <- if (initial_pass) {
     params$draw_id %in% c(1L, 3L)
@@ -139,6 +141,9 @@ stopifnot(
   # Draw 3 was re-run with cached model 4; model_idx records that (issue #156).
   identical(result$model_idx, c(2L, 4L, 4L)),
   identical(as.numeric(result$cost[, "control"]), c(22, 34, 44)),
+  # Life-years are kept per draw and follow the model used (#197).
+  identical(as.numeric(result$ly_disc[, "control"]), c(2, 3, 4)),
+  identical(as.numeric(result$ly_undisc[, "control"]), c(2, 4, 4)),
   any(grepl("iteration 1 after 3 attempts", v_replacement_warnings)),
   any(grepl("Replacement model attempts: 4", v_output))
 )
@@ -156,7 +161,7 @@ model_fun <- function(params, ...) {
   if (isTRUE(params$invalid)) {
     stop("deliberate unrecoverable draw")
   }
-  data.frame(Strategy = "control", Cost = 1, Effect = 1)
+  data.frame(Strategy = "control", Cost = 1, Effect = 1, LY_disc = 1, LY_undisc = 1)
 }
 v_drop_warnings <- character(0)
 v_output <- capture.output({
@@ -183,22 +188,27 @@ stopifnot(identical(result$dropped_iterations, 1L))
 stopifnot(identical(result$retained_iterations, 2:4))
 stopifnot(identical(result$model_idx, 2:4))
 stopifnot(result$n_sim == 3)
-stopifnot(nrow(result$cost) == 3, nrow(result$effect) == 3)
+stopifnot(nrow(result$cost) == 3, nrow(result$effect) == 3,
+          nrow(result$ly_disc) == 3, nrow(result$ly_undisc) == 3)
 stopifnot(!anyNA(result$cost), !anyNA(result$effect))
 stopifnot(any(grepl("Dropping 1 PSA iteration", v_drop_warnings)))
 stopifnot(!any(grepl("column mean", c(v_output, v_drop_warnings), ignore.case = TRUE)))
 
 # Non-finite values, duplicate/missing rows and missing columns all use the
 # same threshold and replacement path on initial and replacement calls (#171).
-df_valid <- data.frame(Strategy = c("control", "crp"), Cost = c(1, 2), Effect = c(1, 1.5))
+# Life-years are the third outcome and follow the same rules (#197).
+df_valid <- data.frame(Strategy = c("control", "crp"), Cost = c(1, 2), Effect = c(1, 1.5),
+                       LY_disc = c(2, 2.5), LY_undisc = c(3, 3.5))
 invalid_results <- list()
-for (column in c("Cost", "Effect")) for (value in c(NA_real_, NaN, Inf, -Inf)) {
+for (column in c("Cost", "Effect", "LY_disc", "LY_undisc")) for (value in c(NA_real_, NaN, Inf, -Inf)) {
   df_bad <- df_valid
   df_bad[[column]][2] <- value
   invalid_results[[length(invalid_results) + 1L]] <- df_bad
 }
 invalid_results <- c(invalid_results, list(df_valid[1, ], df_valid[c(1, 1), ],
-  df_valid[c(1, 2, 2), ], df_valid[, c("Strategy", "Effect")]))
+  df_valid[c(1, 2, 2), ], df_valid[, c("Strategy", "Effect")],
+  df_valid[, c("Strategy", "Cost", "Effect", "LY_undisc")],
+  df_valid[, c("Strategy", "Cost", "Effect", "LY_disc")]))
 for (df_bad in invalid_results) {
   calls <- 0L
   model_fun <- function(params, sim_idx, ...) {

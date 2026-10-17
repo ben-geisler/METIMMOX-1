@@ -113,7 +113,8 @@ cat("\n=== Running Single-Model Analysis ===\n")
 #' @param psa_obj dampack PSA object with cost and effect (or legacy
 #'   effectiveness) matrices.
 #' @return Data frame with one row per strategy: Strategy, meanCost, sdCost,
-#'   meanEffect, sdEffect and the 2.5% and 97.5% percentiles of cost and effect.
+#'   meanEffect, sdEffect and the 2.5% and 97.5% percentiles of cost and effect;
+#'   plus meanLYDisc and meanLYUndisc when the PSA carries life-years (#197).
 compute_psa_summary <- function(psa_obj) {
   df_psa_summary_full <- summary(psa_obj, calc_sds = TRUE,
                               prob = c(0.025, 0.975))
@@ -125,7 +126,7 @@ compute_psa_summary <- function(psa_obj) {
   }
   m_cost_q <- apply(m_cost, 2, quantile, probs = c(0.025, 0.975))
   m_effect_q <- apply(m_effect, 2, quantile, probs = c(0.025, 0.975))
-  data.frame(
+  df_summary <- data.frame(
     Strategy = df_psa_summary_full$Strategy,
     meanCost = df_psa_summary_full$meanCost,
     sdCost = df_psa_summary_full$sdCost,
@@ -137,6 +138,11 @@ compute_psa_summary <- function(psa_obj) {
     Effect_97.5_percent = m_effect_q[2, ],
     stringsAsFactors = FALSE
   )
+  if (!is.null(psa_obj$ly_disc) && !is.null(psa_obj$ly_undisc)) {
+    df_summary$meanLYDisc <- unname(colMeans(as.matrix(psa_obj$ly_disc)))
+    df_summary$meanLYUndisc <- unname(colMeans(as.matrix(psa_obj$ly_undisc)))
+  }
+  df_summary
 }
 
 # Run base case
@@ -213,7 +219,8 @@ if (is.null(psa_obj)) {
       cl = cl,
       n_sim = n_sim,
       seed = analysis_seed,
-      currency = "EUR"
+      currency = "EUR",
+      extended_outcomes = TRUE  # life-years and cell outcomes (#197, #200)
     )
     psa_obj <- psa_build$psa_obj
     psa_params <- psa_build$psa_params

@@ -14,6 +14,10 @@
 #    invalid PSA prediction is treated as a failed draw (fallback_used).
 # 4. Scalars (#60): utilities, discount rates and prevalences must be finite
 #    numeric scalars.
+# 5. Life-years (#197): model_fun() returns discounted and undiscounted
+#    life-years per strategy in every mode, finite, nonnegative, at most the
+#    horizon in years, discounted at most undiscounted, and equal to the
+#    discounted QALYs when both utilities are 1.
 #
 # Synthetic data only; no trial data or cache is read.
 # Run: "C:\Program Files\R\R-4.3.2\bin\x64\Rscript.exe" tests/test_model_input_contract.R
@@ -113,21 +117,24 @@ legacy <- local({
   l_FLOX_exp <- rep(0, n); l_FLOX_exp[c(1, 3, 9, 11, 25, 27, 33, 35)] <- 1
   l_FLOX_control <- rep(0, n)
   l_FLOX_control[c(1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39)] <- 1
-  l_CT <- rep(0, n); l_CT[1] <- 1; l_CT[seq(13, n, by = 12)] <- 1
-  l_blood <- rep(0, n); l_blood[1] <- 1; l_blood[seq(5, n, by = 4)] <- 1
+  l_CT <- rep(0, n); l_CT[seq(1, n, by = 8)] <- 1  # every 8 weeks (issue #207)
   l_visit <- rep(0, n); l_visit[1] <- 1
   l_visit[which(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1)] <- 1
   l_visit[l_CT == 1] <- 1  # surveillance visit with every CT (issue #164)
+  # Blood test every administration week and with every CT (issue #207).
+  l_blood <- l_visit
   list(l_nivo = l_nivo, l_FLOX_exp = l_FLOX_exp, l_FLOX_control = l_FLOX_control,
        l_CT = l_CT, l_blood = l_blood, l_visit = l_visit)
 })
 stopifnot(identical(build_treatment_schedules(521), legacy))
-# Issue #164: the CT rule adds visits only after the last administration
-# (position 39); every in-treatment CT already falls on an administration.
+# Issues #164, #207: the CT rule adds a visit with the week-16 scan of the
+# treatment break (position 17) and with every scan after the last
+# administration (position 39); the other in-treatment CTs fall on an
+# administration.
 s521 <- build_treatment_schedules(521)
 v_added <- which(s521$l_visit == 1 & !(s521$l_nivo == 1 | s521$l_FLOX_exp == 1 |
                                         s521$l_FLOX_control == 1))
-stopifnot(identical(v_added, seq(49L, 521L, by = 12L)),
+stopifnot(identical(v_added, c(17L, seq(41L, 521L, by = 8L))),
           all(s521$l_visit[s521$l_CT == 1] == 1))
 
 # A 30-point horizon keeps 30 points (script 05 used to lengthen it to 39).
@@ -221,13 +228,17 @@ sampled_survival_models <- function(component, idx) list(failed = FALSE)
 #' Mock weights: NULL, i.e. unweighted population averaging.
 model_population_weights <- function(params, population) NULL
 psa_mock_curve <- NULL
-#' Mock PSA predictor returning psa_mock_curve() for the control curve or for
-#' both biomarker subgroups.
-generate_psa_population_averaged_predictions <- function(sampling_model_list, biomarker_name = NULL,
-                                                         outcome, sample_idx, data_original,
-                                                         weights, time_points) {
-  v_curve <- psa_mock_curve(outcome, time_points)
-  if (is.null(biomarker_name)) v_curve else list(positive = v_curve, negative = v_curve)
+#' Mock PSA cell predictor (issue #200): psa_mock_curve() for every joint
+#' biomarker cell under both arms, in the shape of generate_psa_cell_predictions().
+generate_psa_cell_predictions <- function(sampling_model_list, sample_idx, data_original,
+                                          time_points, weights = NULL) {
+  cell_weights <- cell_masses(data_original, weights)
+  v_columns <- cell_curve_columns(names(cell_weights$mass))
+  as_matrix <- function(v) matrix(v, length(time_points), length(v_columns),
+                                  dimnames = list(NULL, v_columns))
+  c(list(os = as_matrix(psa_mock_curve("os", time_points)),
+         pfs = as_matrix(psa_mock_curve("pfs", time_points)), failed = FALSE),
+    cell_weights[c("counts", "mass", "cells")])
 }
 psa_params <- p260; psa_params$prediction_population <- df_mock_complete
 
@@ -258,5 +269,45 @@ for (case in list(list("u_np", NA_real_), list("u_p", Inf), list("u_np", c(0.7, 
   expect_error_matching(model_fun(p), paste0("'", case[[1]], "' must be a finite numeric scalar"))
 }
 
-cat("PASS: time settings from params, schedules on every horizon, survival-curve",
-    "and scalar contracts (issues #172, #49, #60).\n")
+# ---------------------------------------------------------------------------
+# 5. Life-years (#197)
+# ---------------------------------------------------------------------------
+#' Assert the life-year contract for one model_fun() result on a grid of
+#' `horizon` cycles of length `cl` years.
+check_life_years <- function(df, horizon, cl = 1 / 52) {
+  stopifnot(all(c("LY_disc", "LY_undisc") %in% names(df)),
+            is.numeric(df$LY_disc), is.numeric(df$LY_undisc),
+            all(is.finite(df$LY_disc)), all(is.finite(df$LY_undisc)),
+            all(df$LY_disc >= 0), all(df$LY_undisc >= 0),
+            all(df$LY_undisc <= horizon * cl + 1e-10),
+            all(df$LY_disc <= df$LY_undisc + 1e-12))
+}
+check_life_years(df_bare, 260)
+check_life_years(model_fun(monthly), 260, 1 / 12)
+for (h in c(0, 1, 3, 12, 38)) check_life_years(model_fun(make_params(h)), h)
+check_life_years(df_valid_draw, 260)
+check_life_years(model_fun(p260, determpsa = "curves"), 260)
+stopifnot(all(model_fun(make_params(0))$LY_undisc == 0),
+          all(df_bare$LY_disc < df_bare$LY_undisc))
+# Life-years depend on survival only: changing utilities or costs leaves them.
+other_inputs <- p260; other_inputs$u_np <- 0.5; other_inputs$c_drug_nivo <- 0
+stopifnot(identical(model_fun(other_inputs)[, c("LY_disc", "LY_undisc")],
+                    df_bare[, c("LY_disc", "LY_undisc")]))
+# With both utilities at 1, discounted QALYs equal discounted life-years.
+utility_one <- p260; utility_one$u_np <- 1; utility_one$u_p <- 1
+df_utility_one <- model_fun(utility_one)
+stopifnot(max(abs(df_utility_one$Effect - df_utility_one$LY_disc)) < 1e-10)
+# Without effect discounting the two life-year columns coincide.
+no_discount <- p260; no_discount$dr_effects <- 0
+df_no_discount <- model_fun(no_discount)
+stopifnot(max(abs(df_no_discount$LY_disc - df_no_discount$LY_undisc)) < 1e-12)
+# A guided strategy combines its subgroups by prevalence, as for QALYs, and
+# its undiscounted life-years are the trapezoidal area under OS.
+#' Trapezoidal area, in years, under a weekly survival curve of 261 points.
+ly_of <- function(os) sum(os * (1 / 52) * c(0.5, rep(1, 259), 0.5))
+crp_expected <- p260$p_crp * ly_of(p260$p_os$crp_pos_OS) +
+  (1 - p260$p_crp) * ly_of(p260$p_os$crp_neg_OS)
+stopifnot(abs(df_bare$LY_undisc[df_bare$Strategy == "crp"] - crp_expected) < 1e-10)
+
+cat("PASS: time settings from params, schedules on every horizon, survival-curve,",
+    "scalar and life-year contracts (issues #172, #49, #60, #197).\n")

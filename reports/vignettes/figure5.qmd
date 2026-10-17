@@ -47,6 +47,8 @@ figure_groups <- c(
   "[GROUP] other_costs" = "Resource-use costs",
   "[GROUP] utilities" = "Utilities",
   "[GROUP] prevalence" = "Biomarker prevalence",
+  "[GROUP] later_sequences" = "Later treatment sequences",
+  "[GROUP] second_line" = "Second-line therapy",
   "[GROUP] interaction_all" = "Biomarker-treatment interaction"
 )
 

@@ -19,6 +19,46 @@
 #            but they are excluded from EVPPI groups because they are exactly
 #            collinear with the parameters they are derived from.
 
+# Later treatment sequences (issue #208): the share of patients assigned to an
+# arm who start a third sequence and, among them, the share who start a fourth.
+# Model inputs are these four shares (later_sequence_resource_use() in
+# calculate_outcomes.R reads them by this naming convention); the share
+# starting a fourth sequence is p_seq3_<arm> * p_seq4_given_seq3_<arm>, so it
+# can never exceed the share starting a third.
+LATER_SEQUENCE_SHARE_PARAMETERS <- c("p_seq3_control", "p_seq3_experimental",
+                                     "p_seq4_given_seq3_control",
+                                     "p_seq4_given_seq3_experimental")
+
+#' Beta shapes of a later-sequence share from the trial counts (issue #208)
+#'
+#' beta(n_seq3, n_patients - n_seq3) for the third sequence and
+#' beta(n_seq4, n_seq3 - n_seq4) for the fourth given the third: by the
+#' aggregation property these are the two independent factors of the
+#' Dirichlet(n_none, n_seq3_only, n_seq4) posterior of the three outcomes (no
+#' third sequence, a third only, a third and a fourth), the same raw-count
+#' parameterisation as the joint biomarker masses. A zero count gives a point
+#' mass (rbeta() with a zero shape), and beta(0, 0) is set to a point mass at
+#' zero.
+#'
+#' @param parameter One of LATER_SEQUENCE_SHARE_PARAMETERS.
+#' @param counts Data frame with columns arm, n_patients, n_seq3, n_seq4
+#'   (params$later_sequences$counts).
+#' @return Named numeric vector c(shape1, shape2).
+later_sequence_beta_shapes <- function(parameter, counts) {
+  arm <- sub("^p_seq(3|4_given_seq3)_", "", parameter)
+  row <- counts[counts$arm == arm, , drop = FALSE]
+  if (nrow(row) != 1L) stop("No later-sequence counts for arm '", arm, "'.")
+  v_shapes <- if (grepl("^p_seq3_", parameter)) {
+    c(row$n_seq3, row$n_patients - row$n_seq3)
+  } else {
+    c(row$n_seq4, row$n_seq3 - row$n_seq4)
+  }
+  if (any(!is.finite(v_shapes)) || any(v_shapes < 0))
+    stop("Invalid later-sequence counts for ", parameter, ".")
+  if (all(v_shapes == 0)) v_shapes <- c(0, 1)
+  c(shape1 = v_shapes[1], shape2 = v_shapes[2])
+}
+
 parameter_distribution_spec <- function() {
   v_biomarker_cost_parameters <- unique(unname(biomarker_cost_key()))
   v_prevalence_parameters <- unname(biomarker_prevalence_key())
@@ -83,7 +123,50 @@ parameter_distribution_spec <- function() {
     stringsAsFactors = FALSE
   )
 
-  df_spec <- rbind(df_fixed_costs, df_other_costs, df_utilities, df_prevalence)
+  # Shares of patients starting a third and a fourth treatment sequence, by
+  # arm, from the trial's administration records (issue #208). Sampled after
+  # every earlier parameter, so those keep their draws.
+  df_later_sequences <- data.frame(
+    parameter = LATER_SEQUENCE_SHARE_PARAMETERS,
+    distribution = "beta_count",
+    cv = NA_real_,
+    group = "later_sequences",
+    psa = TRUE,
+    order = 60 + seq_along(LATER_SEQUENCE_SHARE_PARAMETERS),
+    stringsAsFactors = FALSE
+  )
+
+  # Second-line therapy at incident progression (issue #209). The shares
+  # (beta) and the course lengths in cycles (gamma) are sampled with the
+  # standard errors that script 05 puts in params$psa_se: from the pathway
+  # table's bounds read as an approximate 95% interval (an ASSUMPTION,
+  # second_line_model_inputs()), and for the progression share of PFS events
+  # from the trial count, Beta(n_progression, n_death). The drug cost per
+  # cycle of each backbone and biologic is a list-price product and is fixed
+  # in the PSA (#154 rule); contacts and blood tests per cycle are fixed too.
+  # Rows come after every earlier row, including the later-sequence shares
+  # of issue #208, so the draws of the earlier parameters are unchanged by
+  # their addition (generate_psa_samples() draws in spec order).
+  v_second_line_sampled <- c("p_pfs_progression", "p_sl_treated", "p_sl_folfiri",
+                             "p_sl_ras_braf_wt", "p_sl_antiegfr_if_wt",
+                             "p_sl_bevacizumab_if_no_antiegfr", "n_sl_cycles_none",
+                             "n_sl_cycles_bevacizumab", "n_sl_cycles_panitumumab")
+  v_second_line_fixed <- c("n_sl_contacts_FOLFIRI", "n_sl_contacts_FLIRI", "n_sl_blood_tests",
+                           "c_sl_drug_FOLFIRI", "c_sl_drug_FLIRI", "c_sl_drug_bevacizumab",
+                           "c_sl_drug_panitumumab")
+  df_second_line <- data.frame(
+    parameter = c(v_second_line_sampled, v_second_line_fixed),
+    distribution = c(ifelse(grepl("^p_", v_second_line_sampled), "beta", "gamma"),
+                     rep(NA_character_, length(v_second_line_fixed))),
+    cv = NA_real_,
+    group = "second_line",
+    psa = c(rep(TRUE, length(v_second_line_sampled)), rep(FALSE, length(v_second_line_fixed))),
+    order = 70 + seq_len(length(v_second_line_sampled) + length(v_second_line_fixed)),
+    stringsAsFactors = FALSE
+  )
+
+  df_spec <- rbind(df_fixed_costs, df_other_costs, df_utilities, df_prevalence,
+                   df_later_sequences, df_second_line)
   df_spec$derived <- df_spec$distribution %in% "derived"
   # DSA varies marginal prevalences, not individual joint masses. The sampled
   # utility decrement is also excluded because DSA varies state utilities.
@@ -137,8 +220,29 @@ distribution_parameters <- function(mean_value, distribution, cv) {
   stop("Unsupported parameter distribution: ", distribution)
 }
 
+#' Specification rows that apply to a parameter list
+#'
+#' A list without any second-line field (test fixtures, lists built before
+#' issue #209) costs no second-line therapy (second_line_costed() in
+#' calculate_outcomes.R), so the second_line rows are dropped for it. A list
+#' with some but not all of them keeps the rows, and the missing-parameter
+#' checks of the callers stop.
+#'
+#' @param spec Parameter specification.
+#' @param params Parameter list.
+#' @return The specification, without the second_line rows when `params` has
+#'   none of their fields.
+applicable_parameter_spec <- function(spec, params) {
+  v_second_line <- spec$group %in% "second_line"
+  if (any(v_second_line) && !any(spec$parameter[v_second_line] %in% names(params))) {
+    spec <- spec[!v_second_line, , drop = FALSE]
+  }
+  spec
+}
+
 create_parameter_distributions <- function(params,
                                            spec = parameter_distribution_spec()) {
+  spec <- applicable_parameter_spec(spec, params)
   spec <- spec[spec$psa, , drop = FALSE]
   v_missing_parameters <- setdiff(spec$parameter, names(params))
   if (length(v_missing_parameters) > 0) {
@@ -155,6 +259,12 @@ create_parameter_distributions <- function(params,
       return(list(dist = "dirichlet", alpha = v_counts,
                   component = sub("^p_joint_", "", spec$parameter[i])))
     }
+    if (spec$distribution[i] == "beta_count") {
+      v_counts <- params$later_sequences$counts
+      if (is.null(v_counts)) stop("Later-sequence shares require params$later_sequences$counts.")
+      v_shapes <- later_sequence_beta_shapes(spec$parameter[i], v_counts)
+      return(list(dist = "beta", shape1 = unname(v_shapes[1]), shape2 = unname(v_shapes[2])))
+    }
     # In IPD utility mode (UTILITY_SOURCE = 0, issue #188) script 05 supplies
     # patient-clustered bootstrap standard errors in params$utility_se; they
     # replace the assumed CV for the parameters they name. The literature base
@@ -164,6 +274,17 @@ create_parameter_distributions <- function(params,
     if (length(se) == 1L && !is.na(se)) {
       if (!is.finite(se) || se <= 0) stop("utility_se must be positive and finite.")
       cv <- unname(se / params[[spec$parameter[i]]])
+    }
+    # Standard errors supplied with the base case (issue #209: the second-line
+    # rows, whose spec CV is NA) replace the CV in the same way.
+    se <- params$psa_se[spec$parameter[i]]
+    if (length(se) == 1L && !is.na(se)) {
+      if (!is.finite(se) || se <= 0) stop("psa_se must be positive and finite.")
+      cv <- unname(se / params[[spec$parameter[i]]])
+    }
+    if (!identical(spec$distribution[i], "derived") && is.na(cv)) {
+      stop("No dispersion for PSA parameter '", spec$parameter[i],
+           "': the spec gives no CV and params$psa_se has no standard error.")
     }
     distribution_parameters(params[[spec$parameter[i]]], spec$distribution[i], cv)
   })
@@ -176,7 +297,8 @@ create_parameter_groups <- function(spec = parameter_distribution_spec()) {
   spec <- spec[spec$psa & !spec$derived, , drop = FALSE]
   grouped <- split(spec$parameter, factor(
     spec$group,
-    levels = c("drug_costs", "test_costs", "other_costs", "utilities", "prevalence")
+    levels = c("drug_costs", "test_costs", "other_costs", "utilities", "prevalence",
+               "later_sequences", "second_line")
   ))
   grouped <- grouped[lengths(grouped) > 0]
 
@@ -216,7 +338,7 @@ apply_derived_psa_parameters <- function(samples) {
 }
 
 configure_parameter_distributions <- function(params) {
-  df_spec <- parameter_distribution_spec()
+  df_spec <- applicable_parameter_spec(parameter_distribution_spec(), params)
   list(
     distributions = create_parameter_distributions(params, df_spec),
     groups = create_parameter_groups(df_spec),
@@ -245,11 +367,16 @@ configure_parameter_distributions <- function(params) {
 #'
 #' @param params Base-case parameter list (l_params_base).
 #' @param spec Parameter specification from parameter_distribution_spec().
+#' Parameters named in `params$dsa_bounds` (issue #209: the second-line
+#' shares, cycles and contacts with a sourced range, and the progression
+#' share) run at those bounds instead.
+#'
 #' @param mult Proportional variation (default DSA_mult, +/-20%).
 #' @return Data frame with columns pars, min, max, linked_par, linked_min,
 #'   linked_max (NA where varying the parameter moves no other parameter).
 build_dsa_ranges <- function(params, spec = parameter_distribution_spec(),
                              mult = DSA_mult) {
+  spec <- applicable_parameter_spec(spec, params)
   spec <- spec[spec$dsa, , drop = FALSE]
   v_pars <- spec$parameter
   v_missing_parameters <- setdiff(v_pars, names(params))
@@ -264,10 +391,29 @@ build_dsa_ranges <- function(params, spec = parameter_distribution_spec(),
     stringsAsFactors = FALSE
   )
   v_cost_groups <- c("drug_costs", "test_costs", "other_costs")
-  v_bounded_zero <- spec$group %in% c(v_cost_groups, "prevalence")
-  v_bounded_one  <- spec$group %in% c("utilities", "prevalence")
+  v_bounded_zero <- spec$group %in% c(v_cost_groups, "prevalence", "later_sequences", "second_line")
+  v_bounded_one  <- spec$group %in% c("utilities", "prevalence", "later_sequences") |
+    (spec$group %in% "second_line" & grepl("^p_", spec$parameter))
   df_ranges$min[v_bounded_zero] <- pmax(df_ranges$min[v_bounded_zero], 0)
   df_ranges$max[v_bounded_one]  <- pmin(df_ranges$max[v_bounded_one], 1)
+  # Sourced bounds (issue #209): a parameter listed in params$dsa_bounds (a
+  # data frame with pars, min, max; script 05 fills it from the second-line
+  # pathway table and the progression-share beta) runs at those bounds
+  # instead of base +/- mult.
+  if (!is.null(params$dsa_bounds)) {
+    df_bounds <- params$dsa_bounds
+    if (!all(c("pars", "min", "max") %in% names(df_bounds)) ||
+        any(!is.finite(df_bounds$min) | !is.finite(df_bounds$max))) {
+      stop("params$dsa_bounds must be a data frame with finite pars, min and max.")
+    }
+    v_rows <- match(df_bounds$pars, df_ranges$pars)
+    if (anyNA(v_rows)) {
+      stop("params$dsa_bounds names parameters outside the DSA: ",
+           paste(df_bounds$pars[is.na(v_rows)], collapse = ", "))
+    }
+    df_ranges$min[v_rows] <- df_bounds$min
+    df_ranges$max[v_rows] <- df_bounds$max
+  }
   df_ranges$linked_par <- NA_character_
   df_ranges$linked_min <- NA_real_
   df_ranges$linked_max <- NA_real_
@@ -335,21 +481,29 @@ dsa_structural_scenarios <- function(base_dr, base_horizon_years,
       label = "Time horizon", unit = "years",
       base = base_horizon_years, min = 5, max = 20, sides = c("min", "max")
     ),
-    # The base case costs nothing after progression beyond the quarterly
-    # follow-up contact and the end-of-life cost (issue #154). EUR 5,000 per
-    # quarter is an illustrative upper bound spanning a second-line systemic
-    # therapy course plus imaging and visits; it is a scenario value, not a
-    # costed Norwegian second-line pathway.
+    # Since issue #209 the base case costs the Norwegian second-line pathway
+    # once at incident progression. The former flat EUR 5,000 per quarter of
+    # progressed occupancy (issue #154, an illustrative value, not a costed
+    # pathway) is kept as a scenario that REPLACES the pathway: adding it would
+    # charge second-line therapy twice.
     Post_progression_cost = list(
-      label = "Post-progression treatment cost (per quarter, progressed state)",
+      label = "Flat post-progression cost per quarter instead of the second-line pathway",
       unit = "EUR", base = base_pp_cost, min = base_pp_cost, max = 5000,
       sides = "max"
+    ),
+    # No second-line therapy cost (the base case before issue #209): the
+    # pathway is switched off and nothing replaces it.
+    Second_line_therapy = list(
+      label = "Second-line therapy at progression (1 = costed pathway, 0 = not costed)",
+      unit = "indicator", base = 1, min = 0, max = 1, sides = "min"
     ),
     # The base case gives every progression-free patient a second eight-cycle
     # sequence at weeks 24-38. The scenario removes it, holding survival at the
     # trial estimate, so it bounds the cost side of that assumption only.
+    # Without a second sequence there is no third or fourth (issue #208), so
+    # the scenario also removes the later sequences.
     Second_sequence = list(
-      label = "Second treatment sequence at weeks 24-38 (1 = given, 0 = omitted)",
+      label = "Second treatment sequence at weeks 24-38 and the later sequences (1 = given, 0 = omitted)",
       unit = "indicator", base = 1, min = 0, max = 1, sides = "min"
     )
   )
@@ -379,7 +533,20 @@ TREATMENT_SCHEDULE_POSITIONS <- list(
   FLOX_control = c(1, 3, 5, 7, 9, 11, 13, 15, 25, 27, 29, 31, 33, 35, 37, 39)
 )
 
+# Monitoring interval of progression-free patients (issue #207; trial team's
+# answer MON2 of 15 October 2026, docs/open_questions_2026-10-15-answers.csv:
+# "every 8 weeks during treatment and break"): a CT scan at baseline and every
+# 8 weeks up to the horizon, including after the last sequence (was every 12
+# weeks). Blood tests follow MON1 (blood_schedule()): one per administration
+# week on treatment and, off treatment, one with every CT.
+PF_CT_INTERVAL_WEEKS <- 8L
+
 #' Positions first, first + by, ... up to n_points (empty when n_points < first)
+#'
+#' @param first First position.
+#' @param by Step between positions.
+#' @param n_points Number of grid points.
+#' @return Integer vector of positions (empty when n_points < first).
 recurring_positions <- function(first, by, n_points) {
   if (n_points < first) integer(0) else seq(first, n_points, by = by)
 }
@@ -389,10 +556,13 @@ recurring_positions <- function(first, by, n_points) {
 #' @param n_points Number of model time points (time_horizon + 1).
 #' @param nivo,FLOX_exp,FLOX_control Administration positions; positions beyond
 #'   the grid are dropped.
-#' @return Named list l_nivo, l_FLOX_exp, l_FLOX_control, l_CT (baseline, then
-#'   every 12 weeks from position 13), l_blood (baseline, then every 4 weeks
-#'   from position 5) and l_visit (baseline, every administration and every
-#'   CT scan; issue #164).
+#' @return Named list of 0/1 vectors of length n_points: l_nivo, l_FLOX_exp,
+#'   l_FLOX_control, l_CT (baseline, then every PF_CT_INTERVAL_WEEKS weeks),
+#'   l_blood (baseline, every administration week and every CT;
+#'   blood_schedule()) and l_visit (baseline, every administration and every
+#'   CT scan; issue #164). The second outpatient contact of a two-day FLOX
+#'   administration (issue #207) is not a schedule: calculate_outcomes()
+#'   derives it from the FLOX schedule of the regimen.
 build_treatment_schedules <- function(n_points,
                                       nivo = TREATMENT_SCHEDULE_POSITIONS$nivo,
                                       FLOX_exp = TREATMENT_SCHEDULE_POSITIONS$FLOX_exp,
@@ -409,13 +579,13 @@ build_treatment_schedules <- function(n_points,
   l_nivo <- indicator(nivo)
   l_FLOX_exp <- indicator(FLOX_exp)
   l_FLOX_control <- indicator(FLOX_control)
-  l_CT <- indicator(c(1, recurring_positions(13, 12, n_points)))
+  l_CT <- indicator(recurring_positions(1, PF_CT_INTERVAL_WEEKS, n_points))
   list(
     l_nivo = l_nivo,
     l_FLOX_exp = l_FLOX_exp,
     l_FLOX_control = l_FLOX_control,
     l_CT = l_CT,
-    l_blood = indicator(c(1, recurring_positions(5, 4, n_points))),
+    l_blood = blood_schedule(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT),
     l_visit = visit_schedule(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT)
   )
 }
@@ -423,16 +593,41 @@ build_treatment_schedules <- function(n_points,
 #' Outpatient visit schedule (issue #164)
 #'
 #' A visit is charged at baseline, at every drug administration and at every
-#' CT scan. During treatment every CT position (13, 25, 37) already coincides
-#' with an administration, so the CT rule adds a surveillance visit only after
-#' the last administration: progression-free patients are seen with each
-#' 12-weekly scan up to the horizon. Blood tests between scans are drawn
-#' without a separate visit.
+#' CT scan. With the 8-weekly CT (issue #207) the scans at modeled weeks 8, 24
+#' and 32 coincide with an administration; the CT rule adds a visit with the
+#' week-16 scan of the treatment break and a surveillance visit with each scan
+#' after the last administration (week 40 onwards) up to the horizon. The
+#' second contact of a two-day FLOX administration is added in
+#' calculate_outcomes() (FLOX_CONTACTS_PER_ADMINISTRATION), not here.
+#'
+#' @param l_nivo,l_FLOX_exp,l_FLOX_control,l_CT 0/1 schedules of equal length.
+#' @return 0/1 vector: 1 at baseline, every administration and every CT.
 visit_schedule <- function(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT) {
   l_visit <- as.numeric(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1 |
                           l_CT == 1)
   l_visit[1] <- 1
   l_visit
+}
+
+#' Blood-test schedule of progression-free patients (issue #207)
+#'
+#' Trial team's answer MON1 of 15 October 2026 ("blood test every two weeks";
+#' the protocol requires local labs within 3 days before each dose): one test
+#' per administration week of a sequence, which in both arms falls every two
+#' weeks (FLOX or nivolumab). Progression-free time off treatment (the break
+#' at weeks 16-22 and after the last sequence) follows the protocol schedule,
+#' a blood test every 8 weeks together with the CT; this reading is an
+#' interpretation recorded in docs/decisions.md. Both arms have the same
+#' administration weeks, so one vector serves both; by construction it
+#' coincides with visit_schedule().
+#'
+#' @param l_nivo,l_FLOX_exp,l_FLOX_control,l_CT 0/1 schedules of equal length.
+#' @return 0/1 vector: 1 at baseline, every administration week and every CT.
+blood_schedule <- function(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT) {
+  l_blood <- as.numeric(l_nivo == 1 | l_FLOX_exp == 1 | l_FLOX_control == 1 |
+                          l_CT == 1)
+  l_blood[1] <- 1
+  l_blood
 }
 
 # ---------------------------------------------------------------------------
@@ -444,8 +639,8 @@ visit_schedule <- function(l_nivo, l_FLOX_exp, l_FLOX_control, l_CT) {
 # A different time horizon re-predicts the base-case survival curves on the
 # new weekly grid from the selected joint models and rebuilds the schedule
 # vectors with the same rules as script 05 (drug positions are fixed calendar
-# weeks; CT every 12 weeks and blood tests every 4 weeks recur to the end of
-# the horizon). The post-progression cost and second-sequence scenarios test
+# weeks; the 8-weekly CT, with its blood test and visit, recurs to the end of
+# the horizon, issue #207). The post-progression cost and second-sequence scenarios test
 # the two scope assumptions raised in issue #154.
 
 #' Rebuild the base-case parameter list for a different model horizon
@@ -501,14 +696,21 @@ build_horizon_params <- function(base_params, horizon_weeks, models,
 #' Remove the second treatment sequence
 #'
 #' Zero every administration from the given schedule position onwards and
-#' rebuild the visit schedule from the remaining administrations and the
-#' unchanged CT scans (visit_schedule()). Monitoring
-#' (CT, blood tests) is unchanged, and so is survival, so the scenario bounds
-#' the cost of the assumption only.
+#' rebuild the visit and blood-test schedules from the remaining
+#' administrations and the unchanged CT scans (visit_schedule(),
+#' blood_schedule()). The dropped weeks lose their administration visits, the
+#' second contacts of their FLOX administrations (derived from the FLOX
+#' schedules in calculate_outcomes()) and their on-treatment blood tests; the
+#' CT scans with their visit and their blood test (the off-treatment rule,
+#' issue #207) are kept. Survival is unchanged, so the scenario bounds the cost
+#' of the assumption only. A third or fourth sequence presupposes a second, so
+#' the later sequences (issue #208) are removed too: the shares starting a
+#' third sequence are set to zero in both arms, which zeroes the fourth.
 #'
 #' @param p Parameter list.
 #' @param first_position First schedule position of the second sequence
 #'   (position 25 = modeled week 24).
+#' @return p with the second and later sequences removed.
 drop_second_sequence <- function(p, first_position = 25L) {
   zap <- function(v) {
     if (length(v) >= first_position) v[seq.int(first_position, length(v))] <- 0
@@ -518,6 +720,21 @@ drop_second_sequence <- function(p, first_position = 25L) {
   p$l_FLOX_exp     <- zap(p$l_FLOX_exp)
   p$l_FLOX_control <- zap(p$l_FLOX_control)
   p$l_visit <- visit_schedule(p$l_nivo, p$l_FLOX_exp, p$l_FLOX_control, p$l_CT)
+  p$l_blood <- blood_schedule(p$l_nivo, p$l_FLOX_exp, p$l_FLOX_control, p$l_CT)
+  for (nm in intersect(c("p_seq3_control", "p_seq3_experimental"), names(p))) p[[nm]] <- 0
+  p
+}
+
+#' Switch off the second-line therapy cost (issue #209)
+#'
+#' Sets the share of progressing patients treated in second line to 0, which
+#' makes second_line_cost_per_progression() zero exactly; a list without
+#' second-line fields is returned unchanged.
+#'
+#' @param p Parameter list.
+#' @return p with `p_sl_treated = 0` where the field exists.
+drop_second_line_therapy <- function(p) {
+  if (!is.null(p$p_sl_treated)) p$p_sl_treated <- 0
   p
 }
 
@@ -546,7 +763,11 @@ apply_structural_scenario <- function(scenario_name, value, base_params,
     p <- build_horizon_params(base_params, horizon, models, strategies_df,
                               data_complete)
   } else if (scenario_name == "Post_progression_cost") {
+    # The flat rate replaces the second-line pathway (issue #209).
     p$c_other_pp <- value
+    if (value > 0) p <- drop_second_line_therapy(p)
+  } else if (scenario_name == "Second_line_therapy") {
+    if (value == 0) p <- drop_second_line_therapy(p)
   } else if (scenario_name == "Second_sequence") {
     if (value == 0) p <- drop_second_sequence(p)
   } else {
@@ -564,10 +785,12 @@ structural_scenario_label <- function(scenario_name, value) {
   switch(scenario_name,
     Discount_rate = sprintf("Discount rate %g%% (costs and QALYs)", 100 * value),
     Time_horizon = sprintf("Time horizon %g years", value),
-    Post_progression_cost = sprintf("Post-progression cost EUR %s per quarter",
+    Post_progression_cost = sprintf("Post-progression cost EUR %s per quarter (no second-line pathway)",
                                     format(value, big.mark = ",", scientific = FALSE)),
-    Second_sequence = if (value == 0) "Second treatment sequence omitted" else
-      "Second treatment sequence given",
+    Second_line_therapy = if (value == 0) "Second-line therapy not costed" else
+      "Second-line therapy costed",
+    Second_sequence = if (value == 0) "Second and later treatment sequences omitted" else
+      "Second and later treatment sequences given",
     paste(scenario_name, value)
   )
 }

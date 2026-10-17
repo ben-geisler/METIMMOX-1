@@ -1,0 +1,424 @@
+---
+title: "Value of Research"
+subtitle: "METIMMOX-1 Economic Evaluation"
+author: "Ben Geisler"
+date: "`r Sys.Date()`"
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 6
+    keep-tex: false
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    fontsize: 11pt
+    documentclass: article
+    classoption: [a4paper]
+  gfm:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+  fig-cap-location: bottom
+  tbl-cap-location: top
+---
+
+```{r setup, include=FALSE}
+source(here::here("R/report_setup.R"))
+# Scripts 02-06 are sourced so that every cache can be checked against its
+# fingerprint; script 06 only reads the sampling cache under report setup.
+setup_report(
+  sources = c("02", "03", "04", "05", "06"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format",
+           "psa_functions", "evppi_functions", "scenario_analysis",
+           "voi_price_axis", "voi_survival_parameters"),
+  set_theme = FALSE,
+  quiet_sources = TRUE
+)
+
+# Validating loaders: each stops on an absent or stale cache (#157, #167).
+psa_obj <- load_current_psa_cache()
+evppi_cache <- load_evppi_cache(
+  psa_obj,
+  evppi_cache_fingerprint(psa_obj, WTP, current_evppi_config(), analysis_seed,
+                          current_population_inputs()),
+  WTP)
+scenario_cache <- load_scenario_cache()
+if (!identical(scenario_cache$failed_draw_policy, psa_failed_draw_policy())) {
+  stop("Scenario cache uses another failed-draw policy; rerun analysis/12_scenario_EVPPIs.R.")
+}
+threshold_file <- here::here("outputs", "tables", "cea_threshold_price.csv")
+s7_file <- here::here("outputs", "tables", "table_s7.csv")
+for (file in c(threshold_file, s7_file)) {
+  if (!file.exists(file)) stop("Missing ", file, "; render cea_numbers.qmd and table_s7.qmd first.")
+}
+df_threshold <- utils::read.csv(threshold_file)
+df_table_s7 <- utils::read.csv(s7_file)
+
+v_scenario_wtp <- sort(unique(scenario_cache$scenarios$wtp))
+settings <- list(
+  wtp = v_scenario_wtp, step = VOI_PRICE_STEP, seed = analysis_seed, B = 1000L,
+  control_strategy = get_control_strategy(),
+  max_administrations = sum(l_params_base$l_nivo),
+  cross_check = list(survival_all = c("earth", "bart")),
+  cross_check_args = list(earth = list(degree = 2)))
+
+# The base-case scenario PSA must be the main PSA cache, and the EVPI of the
+# EVPPI cache must be the price-axis EVPI at the list price.
+base_id <- scenario_cache$scenarios$scenario_id[
+  scenario_cache$scenarios$c_drug_nivo == l_params_base$c_drug_nivo &
+    scenario_cache$scenarios$wtp == WTP]
+base_matches_main <- length(base_id) == 1 &&
+  max_abs_difference(scenario_cache$all_scenario_results[[base_id]]$psa_obj$cost, psa_obj$cost) == 0 &&
+  max_abs_difference(psa_outcome_matrices(scenario_cache$all_scenario_results[[base_id]]$psa_obj)$effect,
+                     psa_outcome_matrices(psa_obj)$effect) == 0
+```
+
+```{r compute, include=FALSE}
+# Computed once per input identity and saved under data/output/voi; the
+# pipeline caches are only read.
+results <- load_or_run_voi_step1a(
+  scenario_cache, sampling_models, df_threshold, df_table_s7,
+  base_config = current_evppi_config(), population = current_population_inputs(),
+  settings = settings)
+evpi_cache_value <- evppi_cache$evpi_manual
+```
+
+```{r helpers, include=FALSE}
+df_axis <- results$price_axis
+df_evppi <- results$evppi
+v_strategies <- grep("^prob_optimal_", names(df_axis), value = TRUE)
+v_strategy_ids <- sub("^prob_optimal_", "", v_strategies)
+price_ref <- unname(results$prices["reference"])
+price_alt <- unname(results$prices["alternative"])
+price_threshold <- results$adoption_threshold$price
+wtp_primary <- WTP
+format_number <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+format_price <- function(x) ifelse(abs(x - round(x)) < 1e-9, format_eur(x), format_eur(x, accuracy = 0.01))
+format_se_plain <- function(x, se) ifelse(is.finite(x), sprintf("%.2f (%s)", x, ifelse(is.finite(se), sprintf("%.2f", se), "--")), "--")
+format_se <- function(x, se) ifelse(is.finite(x), paste0(format_eur(x, accuracy = 0.01), " (",
+                                                         ifelse(is.finite(se), sprintf("%.2f", se), "--"), ")"),
+                                    "--")
+axis_value <- function(price, wtp, column) {
+  df_axis[[column]][abs(df_axis$c_drug_nivo - price) < 1e-9 & df_axis$wtp == wtp]
+}
+scenario_label_of <- function(id) {
+  info <- scenario_cache$scenarios[scenario_cache$scenarios$scenario_id == id, ]
+  paste0("EUR ", format_number(info$c_drug_nivo), "/dose, WTP EUR ", format_number(info$wtp))
+}
+survival_group_labels <- c(
+  survival_all = "All survival coefficients (union)",
+  cell_effect_00 = "Cell effect: CRP-, TMB/BRAF-",
+  cell_effect_10 = "Cell effect: CRP+, TMB/BRAF-",
+  cell_effect_01 = "Cell effect: CRP-, TMB/BRAF+",
+  cell_effect_11 = "Cell effect: CRP+, TMB/BRAF+",
+  rx_main = "Treatment main effect",
+  prognostic = "Prognostic biomarker effects",
+  baseline_survival = "Baseline survival (shape, rate, age, sex)")
+group_label <- function(x) ifelse(x %in% names(survival_group_labels),
+                                  survival_group_labels[x], evppi_group_label(x))
+method_labels <- c(gam_tensor = "GAM tensor", gam_additive = "GAM additive",
+                   earth = "earth (degree 2)", bart = "BART",
+                   zero_evpi_bound = "Zero-EVPI bound", not_estimated = "Not estimated")
+method_label <- function(x) ifelse(x %in% names(method_labels), method_labels[x], x)
+n_survival <- df_evppi$n_params[df_evppi$group == "survival_all"][1]
+primary_id <- scenario_cache$scenarios$scenario_id[
+  scenario_cache$scenarios$c_drug_nivo == price_alt & scenario_cache$scenarios$wtp == wtp_primary]
+evppi_of <- function(id, group, method = NULL) {
+  v_rows <- df_evppi$scenario_id == id & df_evppi$group == group
+  if (!is.null(method)) v_rows <- v_rows & df_evppi$method == method
+  df_evppi[v_rows, , drop = FALSE]
+}
+```
+
+# Overview
+
+This report is step 1a of the value-of-information analysis of paper 3 (issue #199; plan in `docs/manuscripts/3_value_of_information/plan.md`). It uses the existing caches only: the scenario cache of `analysis/12_scenario_EVPPIs.R` holds one PSA at the list price of nivolumab (`r format_price(price_ref)` per administration) and one at the biosimilar price (`r format_price(price_alt)`), both run with the same seed (`r analysis_seed`). The report
+
+1. verifies that the two PSAs are paired draw by draw and differ only in the nivolumab cost, so that the cost at any price follows from the per-draw number of discounted administrations;
+2. evaluates per-patient and population EVPI for the three paper 2 strategies on a price grid from EUR 0 to the list price, at the willingness-to-pay thresholds of the scenario cache;
+3. estimates the EVPPI of the survival-model coefficients of both endpoints, of the treatment effect in each joint biomarker cell, and of the existing parameter groups.
+
+Every EVPPI is a joint estimate for its own group and carries its Monte Carlo standard error. EVPPIs are not additive: rows are never summed, differenced or expressed as shares of EVPI. The only comparison with EVPI is the row for the union of all survival coefficients, the group that contains every survival parameter of the model. The results were `r if (isTRUE(results$computed)) "computed during this render" else "read from the saved results of an earlier render with identical inputs"` and are written to `data/output/voi/voi_price_axis.csv` and `data/output/voi/evppi_extended.csv`.
+
+# Price Pairing Check
+
+Per draw $i$ and strategy $s$, the administrations are derived from the two evaluated prices $p_0$ (list) and $p_1$ (biosimilar) as $N_{is} = (C_{is}(p_1) - C_{is}(p_0)) / (p_1 - p_0)$, and the cost at any price is $C_{is}(p) = C_{is}(p_0) + (p - p_0) N_{is}$. $N_{is}$ is the discounted number of nivolumab administrations weighted by progression-free occupancy. The checks below stop the report on any failure.
+
+```{r pairing-checks}
+df_checks <- rbind(
+  results$pairing_checks,
+  data.frame(check = "Base-case scenario PSA equals the main PSA cache",
+             passed = base_matches_main, detail = paste("scenario", base_id),
+             stringsAsFactors = FALSE))
+if (!all(df_checks$passed)) stop("Pairing check failed: ", paste(df_checks$check[!df_checks$passed], collapse = "; "))
+knitr::kable(
+  data.frame(Check = df_checks$check, Result = ifelse(df_checks$passed, "Pass", "Fail"),
+             Detail = df_checks$detail),
+  format = report_table_format(), booktabs = TRUE, align = c("l", "l", "l"),
+  caption = "Per-draw price pairing of the list-price and biosimilar-price PSAs") %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 9) %>%
+  tbl_column_spec(1, width = "6.5cm") %>%
+  tbl_column_spec(2, width = "1.2cm") %>%
+  tbl_column_spec(3, width = "6.3cm")
+```
+
+```{r administrations}
+df_admin <- results$administrations_summary
+for (col in c("mean", "min", "p2_5", "p97_5", "max")) df_admin[[col]][abs(df_admin[[col]]) < 1e-12] <- 0
+knitr::kable(
+  data.frame(Strategy = strategy_label(df_admin$strategy),
+             Mean = sprintf("%.4f", df_admin$mean), Minimum = sprintf("%.3f", df_admin$min),
+             `2.5%` = sprintf("%.3f", df_admin$p2_5), `97.5%` = sprintf("%.3f", df_admin$p97_5),
+             Maximum = sprintf("%.3f", df_admin$max), check.names = FALSE),
+  format = report_table_format(), booktabs = TRUE, align = c("l", rep("r", 5)),
+  caption = sprintf("Discounted nivolumab administrations per patient by draw (of %d scheduled)",
+                    settings$max_administrations)) %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 9)
+
+df_vs <- results$administrations_vs_table
+knitr::kable(
+  data.frame(Strategy = strategy_label(df_vs$strategy),
+             `Mean incremental N (paired draws)` = sprintf("%.10f", df_vs$mean_incremental_administrations),
+             `cea_threshold_price.csv` = sprintf("%.10f", df_vs$table_discounted_administrations),
+             `Relative difference` = sprintf("%.1e", df_vs$relative_difference), check.names = FALSE),
+  format = report_table_format(), booktabs = TRUE, align = c("l", "r", "r", "r"),
+  caption = "Mean administrations versus standard of care against the published threshold-price table") %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 9)
+```
+
+Standard of care receives no nivolumab, so its administrations are zero in every draw and the increments versus standard of care equal each guided strategy's own administrations. The means agree with the `discounted_administrations` column of `outputs/tables/cea_threshold_price.csv`, which `cea_numbers.qmd` derives from the scenario means.
+
+# The Price Axis
+
+The grid runs from EUR 0 to the list price in steps of EUR `r settings$step` and contains the list price, the biosimilar price and the probabilistic adoption threshold price of paper 2 (`r format_price(price_threshold)`, the price at which the `r strategy_label(results$adoption_threshold$strategy)` strategy's expected incremental net monetary benefit versus standard of care is zero at EUR `r format_number(wtp_primary)` per QALY; from `cea_threshold_price.csv`). Per-patient EVPI is the mean over draws of the highest net monetary benefit minus the highest mean net monetary benefit. Population EVPI scales it by `r format_number(results$population$annual_incidence)` eligible patients per year over `r results$population$research_horizon` years discounted at `r scales::percent(results$population$discount_rate, accuracy = 0.1)` (`calculate_population_evppi()` with the current globals). The QALY-scale EVPI, `r sprintf("%.4f", df_axis$evpi_qaly_scale[1])` QALYs per patient (`r sprintf("%.0f", df_axis$evpi_qaly_scale_population[1])` QALYs in the population), is the same quantity computed on QALYs. It is the limit of EVPI divided by the threshold as the threshold grows and does not depend on the price; the third panel shows it as a reference line.
+
+```{r fig-price-axis, fig.height=8.5, fig.cap="EVPI by nivolumab price. Lines are the willingness-to-pay thresholds; dotted vertical lines mark the adoption threshold, biosimilar and list prices. The dashed horizontal line in the bottom panel is the QALY-scale EVPI (infinite-threshold limit)."}
+v_panels <- c("Per-patient EVPI (EUR)", "Population EVPI (EUR million)",
+              "Per-patient EVPI / WTP (QALYs)")
+df_long <- rbind(
+  data.frame(price = df_axis$c_drug_nivo, wtp = df_axis$wtp, panel = v_panels[1], value = df_axis$evpi_per_patient),
+  data.frame(price = df_axis$c_drug_nivo, wtp = df_axis$wtp, panel = v_panels[2], value = df_axis$evpi_population_millions),
+  data.frame(price = df_axis$c_drug_nivo, wtp = df_axis$wtp, panel = v_panels[3], value = df_axis$evpi_qaly_equivalent))
+df_long$panel <- factor(df_long$panel, levels = v_panels)
+df_long$wtp_label <- factor(paste0("EUR ", format_number(df_long$wtp), " per QALY"),
+                            levels = paste0("EUR ", format_number(v_scenario_wtp), " per QALY"))
+df_marks <- data.frame(price = unname(results$marked_prices),
+                       label = c(list_price = "List", biosimilar = "Biosimilar",
+                                 adoption_threshold = "Adoption threshold")[names(results$marked_prices)])
+df_reference <- data.frame(panel = factor(v_panels[3], levels = v_panels), value = df_axis$evpi_qaly_scale[1])
+ggplot(df_long, aes(price, value, colour = wtp_label)) +
+  geom_vline(data = df_marks, aes(xintercept = price), linetype = "dotted", colour = "grey40") +
+  geom_hline(data = df_reference, aes(yintercept = value), linetype = "dashed", colour = "black") +
+  geom_line(linewidth = 0.8) +
+  geom_text(data = transform(df_marks, panel = factor(v_panels[1], levels = v_panels)),
+            aes(x = price, y = Inf, label = label), inherit.aes = FALSE,
+            angle = 90, hjust = 1.1, vjust = -0.4, size = 3, colour = "grey30") +
+  facet_wrap(~panel, ncol = 1, scales = "free_y") +
+  scale_x_continuous(labels = scales::label_number(big.mark = ","), breaks = seq(0, 14000, by = 2000)) +
+  scale_colour_manual(values = c("#3B6EA8", "#B5651D", "#5E8C31")) +
+  labs(x = "Nivolumab price per administration (EUR)", y = NULL, colour = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+```{r price-axis-table}
+v_table_prices <- c(0, price_threshold, price_alt, price_ref)
+df_points <- df_axis[vapply(df_axis$c_drug_nivo, function(p) any(abs(p - v_table_prices) < 1e-9), logical(1)), ]
+df_points <- df_points[order(df_points$wtp, df_points$c_drug_nivo), ]
+df_points_display <- data.frame(
+  WTP = format_number(df_points$wtp),
+  Price = format_price(df_points$c_drug_nivo),
+  `EVPI per patient` = format_eur(df_points$evpi_per_patient, accuracy = 0.01),
+  `Population EVPI (M)` = sprintf("%.2f", df_points$evpi_population_millions),
+  check.names = FALSE)
+for (s in v_strategy_ids) {
+  df_points_display[[paste("P(optimal)", strategy_short_label(s))]] <-
+    sprintf("%.3f", df_points[[paste0("prob_optimal_", s)]])
+}
+knitr::kable(df_points_display, format = report_table_format(), booktabs = TRUE,
+             align = c("r", "r", "r", "r", rep("r", length(v_strategy_ids))),
+             caption = "EVPI and probability of the highest net monetary benefit at the marked prices") %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 8) %>%
+  tbl_column_spec(1, width = "1.6cm") %>%
+  tbl_column_spec(2, width = "1.9cm") %>%
+  tbl_column_spec(3, width = "2.3cm") %>%
+  tbl_column_spec(4, width = "2.0cm") %>%
+  tbl_column_spec(5:(4 + length(v_strategy_ids)), width = "1.9cm")
+```
+
+At EUR `r format_number(wtp_primary)` per QALY, per-patient EVPI is `r format_eur(axis_value(0, wtp_primary, "evpi_per_patient"), accuracy = 0.01)` at a price of zero, `r format_eur(axis_value(price_threshold, wtp_primary, "evpi_per_patient"), accuracy = 0.01)` at the adoption threshold price, `r format_eur(axis_value(price_alt, wtp_primary, "evpi_per_patient"), accuracy = 0.01)` at the biosimilar price and `r format_eur(axis_value(price_ref, wtp_primary, "evpi_per_patient"), accuracy = 0.01)` at the list price, where standard of care has the highest net monetary benefit in `r scales::percent(axis_value(price_ref, wtp_primary, paste0("prob_optimal_", get_control_strategy())), accuracy = 0.1)` of draws.
+
+```{r evpi-reproduction}
+df_repro <- results$evpi_reproduction
+df_repro_display <- data.frame(
+  Scenario = unname(vapply(df_repro$scenario_id, scenario_label_of, character(1))),
+  `Price axis` = sprintf("%.6f", df_repro$evpi_axis),
+  `Scenario PSA` = sprintf("%.6f", df_repro$evpi_scenario_psa),
+  `Table S7 / EVPPI cache` = sprintf("%.6f", df_repro$evpi_table_s7),
+  Reproduced = ifelse(df_repro$reproduced, "Yes", "No"), check.names = FALSE)
+cache_row <- data.frame(Scenario = "EVPPI cache (list price, base-case WTP)",
+                        `Price axis` = sprintf("%.6f", axis_value(price_ref, wtp_primary, "evpi_per_patient")),
+                        `Scenario PSA` = "--", `Table S7 / EVPPI cache` = sprintf("%.6f", evpi_cache_value),
+                        Reproduced = ifelse(abs(axis_value(price_ref, wtp_primary, "evpi_per_patient") -
+                                                  evpi_cache_value) <= 1e-6, "Yes", "No"),
+                        check.names = FALSE)
+df_repro_display <- rbind(df_repro_display, cache_row)
+if (any(df_repro_display$Reproduced != "Yes")) stop("EVPI reproduction failed")
+rownames(df_repro_display) <- NULL
+knitr::kable(df_repro_display, format = report_table_format(), booktabs = TRUE,
+             align = c("l", "r", "r", "r", "l"),
+             caption = "Per-patient EVPI (EUR) at the cached scenarios: price axis, scenario PSA and Table S7 (tolerance 1e-6); the last row compares the list price at the base-case threshold with the EVPPI cache") %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 8) %>%
+  tbl_column_spec(1, width = "5.4cm") %>%
+  tbl_column_spec(2:4, width = "2.4cm") %>%
+  tbl_column_spec(5, width = "1.4cm")
+```
+
+The price axis reproduces the EVPI of every cached scenario: the biosimilar price at EUR `r format_number(wtp_primary)` per QALY gives `r format_eur(axis_value(price_alt, wtp_primary, "evpi_per_patient"), accuracy = 0.01)` per patient, the value in Table S7.
+
+# EVPPI of the Survival Coefficients
+
+## Parameters and Groups
+
+The joint OS and PFS models (`r models$best_fit$os_distribution` OS, `r models$best_fit$pfs_distribution` PFS) have `r n_survival / 2` coefficients each on flexsurv's optimisation scale (log shape, log rate, and the covariate effects on the log rate: age, sex, treatment, the two biomarkers and the two treatment-by-biomarker interactions). They are appended to the PSA parameters by `model_idx`, so each PSA row carries the coefficients of the cached model that produced it; the interaction columns already bound by script 12 are checked to be identical. The treatment effect in a joint biomarker cell is the treatment coefficient plus the interactions of the biomarkers that are positive in the cell (cell codes list CRP first, then TMB/BRAF). Groups:
+
+- **All survival coefficients (union)**: all `r n_survival` coefficients of both endpoints;
+- **Cell effects**: the OS and PFS treatment effect of one cell (two parameters each);
+- **Treatment main effect**: the OS and PFS treatment coefficients;
+- **Prognostic biomarker effects**: the CRP and TMB/BRAF main effects on both endpoints;
+- **Baseline survival**: shape, rate, age and sex on both endpoints;
+- the existing groups of Table S7 (resource-use costs, utilities, biomarker prevalence and the interaction groups).
+
+Groups of up to four parameters use voi's tensor-product cubic regression spline and larger groups additive cubic regression splines (`evppi_gam_formula()`). The additive form cannot represent interactions between parameters, so it can understate the EVPPI of a large group. The union is therefore also estimated with two regressions that allow interactions: multivariate adaptive regression splines with pairwise interactions (`earth`, degree 2) and Bayesian additive regression trees (BART, `dbarts` defaults). The standard error is the standard deviation over 1,000 draws of the GAM coefficients, over earth's variance model (`varmod.method = "lm"`, 10-fold cross-validation repeated 30 times) or over the BART posterior draws, so the three standard errors measure different things. At the list price and EUR `r format_number(wtp_primary)` per QALY the EVPI is zero, so every group is bounded at zero (`zero_evpi_bound`, #168).
+
+## Primary Scenario
+
+```{r evppi-primary}
+df_primary <- df_evppi[df_evppi$scenario_id == primary_id, , drop = FALSE]
+df_primary_display <- data.frame(
+  Group = group_label(df_primary$group),
+  Parameters = df_primary$n_params,
+  Method = method_label(df_primary$method),
+  `EVPPI (SE)` = format_se(df_primary$evppi, df_primary$evppi_se),
+  check.names = FALSE)
+knitr::kable(df_primary_display, format = report_table_format(), booktabs = TRUE,
+             align = c("l", "r", "l", "r"),
+             caption = sprintf("Per-patient EVPPI at the biosimilar price (%s) and EUR %s per QALY; EVPI %s",
+                               format_price(price_alt), format_number(wtp_primary),
+                               format_eur(df_primary$evpi[1], accuracy = 0.01))) %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 9) %>%
+  tbl_column_spec(1, width = "6.2cm") %>%
+  tbl_column_spec(2, width = "1.6cm") %>%
+  tbl_column_spec(3, width = "3.2cm") %>%
+  tbl_column_spec(4, width = "3.0cm") %>%
+  tbl_footnote(general = "EVPPIs are not additive; rows must not be summed, differenced or read as shares of EVPI.")
+```
+
+```{r primary-values, include=FALSE}
+row_union <- evppi_of(primary_id, "survival_all", "gam_additive")
+row_earth <- evppi_of(primary_id, "survival_all", "earth")
+row_bart <- evppi_of(primary_id, "survival_all", "bart")
+row_cell_10 <- evppi_of(primary_id, "cell_effect_10")
+inline_estimate <- function(df_row) if (nrow(df_row) != 1) "not available" else
+  sprintf("%s (SE %.2f)", format_eur(df_row$evppi, accuracy = 0.01), df_row$evppi_se)
+```
+
+At the biosimilar price and EUR `r format_number(wtp_primary)` per QALY the EVPI is `r format_eur(row_union$evpi, accuracy = 0.01)` per patient. The EVPPI of all survival coefficients jointly is `r inline_estimate(row_union)` with additive splines, `r inline_estimate(row_earth)` with earth and `r inline_estimate(row_bart)` with BART. The treatment effect in the CRP-positive, TMB/BRAF-negative cell alone has an EVPPI of `r inline_estimate(row_cell_10)`.
+
+## All Scenarios
+
+```{r evppi-scenarios}
+v_positive_ids <- unique(df_evppi$scenario_id[!df_evppi$method %in% c("zero_evpi_bound", "not_estimated")])
+v_positive_ids <- scenario_cache$scenarios$scenario_id[scenario_cache$scenarios$scenario_id %in% v_positive_ids]
+v_groups <- unique(df_evppi$group[grepl("^gam", df_evppi$method)])
+df_wide <- data.frame(Group = group_label(v_groups), stringsAsFactors = FALSE)
+for (id in v_positive_ids) {
+  info <- scenario_cache$scenarios[scenario_cache$scenarios$scenario_id == id, ]
+  col <- paste0(format_number(info$c_drug_nivo), " / ", format_number(info$wtp / 1000), "k")
+  df_wide[[col]] <- vapply(v_groups, function(g) {
+    df_row <- df_evppi[df_evppi$scenario_id == id & df_evppi$group == g & grepl("^gam", df_evppi$method), ]
+    if (nrow(df_row) != 1) "--" else format_se_plain(df_row$evppi, df_row$evppi_se)
+  }, character(1))
+}
+df_evpi_row <- data.frame(Group = "EVPI (total)", stringsAsFactors = FALSE)
+for (k in seq_along(v_positive_ids)) {
+  df_evpi_row[[names(df_wide)[k + 1]]] <- sprintf("%.2f",
+    df_evppi$evpi[df_evppi$scenario_id == v_positive_ids[k]][1])
+}
+df_wide <- rbind(df_evpi_row, df_wide)
+knitr::kable(df_wide, format = report_table_format(), booktabs = TRUE,
+             align = c("l", rep("r", length(v_positive_ids))),
+             caption = "Per-patient GAM EVPPI (SE) by scenario (nivolumab price per dose / WTP per QALY, EUR)") %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 8) %>%
+  tbl_column_spec(1, width = "4.4cm") %>%
+  tbl_column_spec(2:(1 + length(v_positive_ids)), width = "1.9cm") %>%
+  tbl_footnote(general = paste(
+    "The list-price scenario at the base-case threshold has EVPI zero; every group is bounded at zero there.",
+    "EVPPIs are not additive."))
+```
+
+## The Union Check
+
+The union of the survival coefficients contains every survival parameter, so its EVPPI is the comparison with EVPI: EVPI also includes the uncertainty in utilities, resource-use costs and prevalence, whose groups are about zero. The table gives the union by regression method next to EVPI; no difference is formed.
+
+```{r union-table}
+df_union_display <- do.call(rbind, lapply(v_positive_ids, function(id) {
+  value <- function(method) {
+    df_row <- evppi_of(id, "survival_all", method)
+    if (nrow(df_row) != 1) "--" else format_se_plain(df_row$evppi, df_row$evppi_se)
+  }
+  data.frame(Scenario = scenario_label_of(id),
+             EVPI = sprintf("%.2f", evppi_of(id, "survival_all", "gam_additive")$evpi),
+             `GAM additive` = value("gam_additive"), `earth (degree 2)` = value("earth"),
+             BART = value("bart"), check.names = FALSE)
+}))
+knitr::kable(df_union_display, format = report_table_format(), booktabs = TRUE,
+             align = c("l", "r", "r", "r", "r"),
+             caption = sprintf("Per-patient EVPPI (SE, EUR) of all %d survival coefficients jointly, by regression method", n_survival)) %>%
+  tbl_style(latex_options = "HOLD_position", font_size = 8) %>%
+  tbl_column_spec(1, width = "4.4cm") %>%
+  tbl_column_spec(2, width = "2.0cm") %>%
+  tbl_column_spec(3:5, width = "2.5cm")
+```
+
+```{r nested-check}
+df_nested <- results$union_checks
+n_nested_fail <- if (is.null(df_nested)) 0 else sum(!df_nested$union_at_least_group)
+df_consistency <- do.call(rbind, lapply(names(results$group_consistency), function(id) {
+  df_c <- results$group_consistency[[id]]
+  if (is.null(df_c) || nrow(df_c) == 0) return(NULL)
+  data.frame(scenario_id = id, groups = nrow(df_c), violations = sum(df_c$violation))
+}))
+if (n_nested_fail > 0) {
+  knitr::kable(data.frame(Scenario = vapply(df_nested$scenario_id[!df_nested$union_at_least_group], scenario_label_of, character(1)),
+                          Group = group_label(df_nested$group[!df_nested$union_at_least_group]),
+                          `Group EVPPI` = format_se(df_nested$group_evppi, df_nested$group_se)[!df_nested$union_at_least_group],
+                          `Union (additive)` = format_se(df_nested$union_evppi, df_nested$union_se)[!df_nested$union_at_least_group],
+                          check.names = FALSE),
+               format = report_table_format(), booktabs = TRUE,
+               caption = "Groups whose GAM EVPPI exceeds the additive union beyond two combined standard errors") %>%
+    tbl_style(latex_options = "HOLD_position", font_size = 8)
+}
+```
+
+Every survival group and interaction group is a function of the union's coefficients, so none can exceed the union's EVPPI beyond Monte Carlo error. With additive splines for the union, `r n_nested_fail` of `r if (is.null(df_nested)) 0 else nrow(df_nested)` group-by-scenario comparisons `r if (n_nested_fail == 1) "does" else "do"` exceed it by more than two combined standard errors`r if (n_nested_fail > 0) " (table above), which shows where the additive form understates the joint EVPPI" else ""`. The group-consistency assertion of `run_evppi_analysis()` (every group at least its largest member within two standard errors, floor 1% of EVPI) passed for `r sum(df_consistency$groups)` group estimates in `r nrow(df_consistency)` scenarios with `r sum(df_consistency$violations)` violations.
+
+# Outputs
+
+- `data/output/voi/voi_price_axis.csv`: one row per price and threshold with per-patient and population EVPI, EVPI divided by the threshold, the QALY-scale EVPI (per patient and population), the probability that each strategy has the highest net monetary benefit, the strategy with the highest expected net monetary benefit, and the population inputs.
+- `data/output/voi/evppi_extended.csv`: one row per scenario, group and regression method (`scenario_id`, `wtp`, `c_drug_nivo`, `group`, `n_params`, `method`, `evppi`, `evppi_se`, `evpi`, `error`); `method` is `gam_tensor`, `gam_additive`, `earth` (degree 2), `bart` or `zero_evpi_bound`.
+- `data/output/voi/voi_step1a_results.rds`: the saved results with the fingerprint of their inputs (scenario and sampling caches, the two published tables, settings, population inputs, code and package versions); a render with identical inputs reads it instead of recomputing.
+
+---
+
+**Report completed on:** `r Sys.Date()`\
+**Repository:** ben-geisler/METIMMOX-1\
+**Report version:** 0.2

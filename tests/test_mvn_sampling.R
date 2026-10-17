@@ -115,7 +115,8 @@ cat("PASS: joint sampling component resolves for both cache layouts\n")
 #' Stub model: control cost 100 + sim_idx; errors when draw 2 is paired with its
 #' own economic draw, so build_psa_obj() must re-run it with another model.
 model_fun <- function(params, time_horizon, cl, determpsa, return_traces, sim_idx) {
-  df_result <- data.frame(Strategy = "control", Cost = 100 + sim_idx, Effect = 1)
+  df_result <- data.frame(Strategy = "control", Cost = 100 + sim_idx, Effect = 1,
+                          LY_disc = sim_idx, LY_undisc = 2 * sim_idx)
   attr(df_result, "fallback_used") <- FALSE
   if (identical(sim_idx, 2L) && identical(params$cost_draw, params$draws_for_2)) {
     stop("model 2 cannot be used with draw 2")
@@ -141,7 +142,12 @@ stopifnot(
   identical(psa_build$psa_obj$model_idx, c(1L, 3L, 3L, 4L)),
   identical(psa_build$psa_params$b_model, c(10, 30, 30, 40)),
   identical(psa_build$psa_params$sim, 1:4),
-  identical(as.numeric(psa_build$psa_obj$cost$control), c(101, 103, 103, 104))
+  identical(as.numeric(psa_build$psa_obj$cost$control), c(101, 103, 103, 104)),
+  # Life-years of a replaced draw come from the model that produced its
+  # outcomes, like its cost (issue #197).
+  identical(as.numeric(psa_build$psa_obj$ly_disc$control), c(1, 3, 3, 4)),
+  identical(as.numeric(psa_build$psa_obj$ly_undisc$control), c(2, 6, 6, 8)),
+  identical(names(psa_build$psa_obj$ly_disc), "control")
 )
 cat("PASS: replaced PSA draws carry the index of the model that produced them\n")
 

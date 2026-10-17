@@ -54,6 +54,8 @@ evppi_group_label <- function(x) {
     all_costs = "All costs",
     utilities = "Utilities",
     prevalence = "Biomarker prevalence",
+    later_sequences = "Later treatment sequences",
+    second_line = "Second-line therapy",
     stats::setNames(paste0(biomarker_label(v_biomarkers), "-treatment interaction"),
                     paste0("interaction_", v_biomarkers)),
     interaction_all = "Biomarker-treatment interaction"
@@ -78,6 +80,11 @@ fmt_eur <- format_eur
 
 #' Compact display of probabilistic means and 95% percentile intervals (#180).
 #' The numeric summary remains the publication CSV; this is presentation only.
+#'
+#' @param x Output of create_psa_summary_table().
+#' @return Character data frame: Strategy, Cost, QALYs, Inc_Cost, Inc_QALYs,
+#'   ICER, Status, Prob_CE, then the life-year columns LYs_Disc, LYs_Undisc,
+#'   Inc_LYs_Disc and Inc_LYs_Undisc (issue #197).
 format_psa_summary <- function(x) {
   interval <- function(mean, lower, upper, money = FALSE) {
     fmt <- if (money) format_eur else function(v) sprintf("%.4f", v)
@@ -91,7 +98,12 @@ format_psa_summary <- function(x) {
     Inc_QALYs = interval(x$Mean_Inc_QALY, x$Inc_QALY_Lower, x$Inc_QALY_Upper),
     ICER = format_icer(x$ICER, x$Status),
     Status = x$Status,
-    Prob_CE = scales::percent(x$Prob_CE, accuracy = 0.1)
+    Prob_CE = scales::percent(x$Prob_CE, accuracy = 0.1),
+    LYs_Disc = interval(x$Mean_LY_Disc, x$LY_Disc_Lower, x$LY_Disc_Upper),
+    LYs_Undisc = interval(x$Mean_LY_Undisc, x$LY_Undisc_Lower, x$LY_Undisc_Upper),
+    Inc_LYs_Disc = interval(x$Mean_Inc_LY_Disc, x$Inc_LY_Disc_Lower, x$Inc_LY_Disc_Upper),
+    Inc_LYs_Undisc = interval(x$Mean_Inc_LY_Undisc, x$Inc_LY_Undisc_Lower,
+                              x$Inc_LY_Undisc_Upper)
   )
 }
 

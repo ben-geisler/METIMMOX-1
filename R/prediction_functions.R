@@ -147,6 +147,86 @@ sampled_survival_models <- function(component, idx) {
 }
 
 
+#' Cell-average OS and PFS curves of a prediction population under both arms
+#'
+#' Predicts every patient once under control and once under the experimental
+#' arm (Rx levels 1 and 2 of the population) for each endpoint and averages
+#' within the joint biomarker cells (issue #200). The strategy curves of the
+#' PSA are combinations of these curves (strategy_curves_from_cells()).
+#'
+#' @param model_os,model_pfs Fitted or sampled flexsurvreg models (any object
+#'   with a flexsurv-style predict() method).
+#' @param population Prediction population with Rx and complete binary
+#'   biomarkers.
+#' @param time_points Model time points (weeks).
+#' @param weights Patient weights; NULL gives equal weights. Within-cell
+#'   averages use them, so non-constant weights within a cell are honoured.
+#' @param biomarkers Biomarker columns defining the cells.
+#' @return List with `os`, `pfs` (matrices time x cell_arm, columns from
+#'   cell_curve_columns(); NA for cells without patients), `counts`, `mass`
+#'   and `cells` (from cell_masses()).
+predict_cell_curves <- function(model_os, model_pfs, population, time_points,
+                                weights = NULL, biomarkers = get_biomarkers()) {
+  cell_weights <- cell_masses(population, weights, biomarkers)
+  v_cells <- names(cell_weights$mass)
+  v_levels_rx <- levels(population$Rx)
+  if (length(v_levels_rx) < 2L) stop("Rx must be a factor with control and experimental levels.")
+  v_columns <- cell_curve_columns(v_cells)
+  out <- list()
+  for (outcome in c("os", "pfs")) {
+    model <- if (outcome == "os") model_os else model_pfs
+    m_out <- matrix(NA_real_, length(time_points), length(v_columns),
+                    dimnames = list(NULL, v_columns))
+    for (k in seq_along(CELL_ARMS)) {
+      df_newdata <- population
+      df_newdata$Rx <- factor(v_levels_rx[k], levels = v_levels_rx)
+      m_patients <- extract_all_survival_probabilities(predict(model, newdata = df_newdata,
+        type = "survival", times = time_points))
+      m_out[, cell_curve_columns(v_cells, CELL_ARMS[k])] <-
+        average_within_cells(m_patients, cell_weights$index, v_cells, weights)
+    }
+    out[[outcome]] <- m_out
+  }
+  c(out, cell_weights[c("counts", "mass", "cells")])
+}
+
+#' Cell-average curves for one PSA coefficient draw
+#'
+#' Materialises the sampled joint OS/PFS models of draw `sample_idx` once and
+#' calls predict_cell_curves(). This is the only survival prediction of a PSA
+#' draw in model_fun() (issue #200): 2 x 2 predictions of the population
+#' (arm x endpoint) instead of the former 3 x 2 subgroup predictions.
+#'
+#' @param sampling_model_list Joint sampling component (see
+#'   sampled_survival_models()).
+#' @param sample_idx Coefficient-draw index (row of the draw matrices).
+#' @param data_original Prediction population.
+#' @param time_points Model time points (weeks).
+#' @param weights Patient weights; NULL gives equal weights.
+#' @return predict_cell_curves() output with `failed` (TRUE for a legacy
+#'   sample flagged as failed), or NULL when the sampled model is unavailable
+#'   or prediction fails (with a warning).
+generate_psa_cell_predictions <- function(sampling_model_list, sample_idx, data_original,
+                                          time_points, weights = NULL) {
+  sampled_model <- tryCatch(sampled_survival_models(sampling_model_list, sample_idx),
+                            error = function(e) NULL)
+  if (is.null(sampled_model) || is.null(sampled_model$os$model) ||
+      is.null(sampled_model$pfs$model)) {
+    warning("Sampled model ", sample_idx, " is unavailable - returning NULL")
+    return(NULL)
+  }
+  curves <- tryCatch(
+    predict_cell_curves(sampled_model$os$model, sampled_model$pfs$model, data_original,
+                        time_points, weights),
+    error = function(e) {
+      warning("Cell prediction failed in sim ", sample_idx, ": ", conditionMessage(e))
+      NULL
+    })
+  if (is.null(curves)) return(NULL)
+  curves$failed <- isTRUE(sampled_model$failed)
+  curves
+}
+
 # Main function for population-averaged predictions across all strategies
 # Uses actual patient-level covariate distributions instead of reference patient
 generate_population_averaged_predictions <- function(models, strategies_df,

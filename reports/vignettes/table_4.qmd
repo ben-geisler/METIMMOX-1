@@ -25,7 +25,14 @@ setup_report(
 
 ```{r build-table, include=FALSE}
 basecase <- run_basecase(verbose = FALSE)
+# Life-years per strategy (issue #197), discounted and undiscounted, from the
+# same model_fun() run; they do not enter the frontier or the ICERs.
+df_life_years <- basecase$base_results[, c("Strategy", "LY_disc", "LY_undisc")]
 icer_df <- as.data.frame(basecase$icer_obj)
+icer_df <- cbind(icer_df, df_life_years[match(as.character(icer_df$Strategy),
+                                              df_life_years$Strategy),
+                                        c("LY_disc", "LY_undisc")])
+rownames(icer_df) <- NULL
 
 # Table 4: dampack efficiency-frontier results (the CEA.qmd convention, issue
 # #153). Labels are looked up by name (issue #157).
@@ -35,11 +42,13 @@ display_df <- icer_df %>%
     Strategy_Label = strategy_label(Strategy),
     Cost = format_eur(Cost),
     QALYs = sprintf("%.2f", Effect),
+    LYs_Disc = sprintf("%.2f", LY_disc),
+    LYs_Undisc = sprintf("%.2f", LY_undisc),
     Inc_Cost = format_eur(Inc_Cost),
     Inc_QALYs = ifelse(is.na(Inc_Effect), "--", sprintf("%.2f", Inc_Effect)),
     ICER = mapply(format_icer, ICER, Status)
   ) %>%
-  select(Strategy_Label, Cost, QALYs, Inc_Cost, Inc_QALYs, ICER)
+  select(Strategy_Label, Cost, QALYs, LYs_Disc, LYs_Undisc, Inc_Cost, Inc_QALYs, ICER)
 
 # Table S5: full results at three decimals with, for every guided strategy,
 # the PAIRWISE comparison against standard of care (increments, ICER and
@@ -48,10 +57,13 @@ display_df <- icer_df %>%
 # outputs/tables/table_s5.csv was a byte-identical copy of tables/table_4.csv.
 table_s5_df <- calculate_pairwise_icers(basecase$base_results) %>%
   mutate(
-    Frontier_ICER = icer_df$ICER[match(Strategy, as.character(icer_df$Strategy))]
+    Frontier_ICER = icer_df$ICER[match(Strategy, as.character(icer_df$Strategy))],
+    Inc_LY_disc = LY_disc - LY_disc[Strategy == get_control_strategy()],
+    Inc_LY_undisc = LY_undisc - LY_undisc[Strategy == get_control_strategy()]
   ) %>%
   select(Strategy, Cost, Effect, Inc_Cost, Inc_Effect, ICER, Status,
-         Frontier_ICER, Frontier_Status)
+         Frontier_ICER, Frontier_Status, LY_disc, LY_undisc,
+         Inc_LY_disc, Inc_LY_undisc)
 
 display_df_s5 <- table_s5_df %>%
   transmute(
@@ -60,6 +72,9 @@ display_df_s5 <- table_s5_df %>%
     QALYs = sprintf("%.3f", Effect),
     Inc_Cost = ifelse(Status == "Reference", "--", format_eur(Inc_Cost)),
     Inc_QALYs = ifelse(Status == "Reference", "--", sprintf("%.3f", Inc_Effect)),
+    LYs = sprintf("%.3f / %.3f", LY_disc, LY_undisc),
+    Inc_LYs = ifelse(Status == "Reference", "--",
+                     sprintf("%.3f / %.3f", Inc_LY_disc, Inc_LY_undisc)),
     Pairwise_ICER = format_icer(ICER, Status),
     Pairwise_Status = Status,
     Frontier_ICER = format_icer(Frontier_ICER, Frontier_Status),
@@ -74,15 +89,17 @@ kable(
   display_df,
   caption = "Table 4: Deterministic point evaluation at fitted parameters, anchoring the one-way sensitivity analysis",
   format = "html",
-  col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost",
+  col.names = c("Strategy", "Cost", "QALYs", "Life-years (discounted)",
+                "Life-years (undiscounted)", "Incremental Cost",
                 "Incremental QALYs", "ICER"),
-  align = c("l", rep("r", 5))
+  align = c("l", rep("r", 7))
 ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 12) %>%
   footnote(
     general = c(
-      "Costs and QALYs discounted at 4% per year.",
+      "Costs, QALYs and discounted life-years discounted at 4% per year; undiscounted life-years are the restricted mean survival over the model horizon.",
+      "Life-years do not enter the efficiency frontier or the ICER.",
       paste0("All strategies use the same complete-case target population (n = ", nrow(l_params_base$prediction_population), ")."),
       "ICER = incremental cost-effectiveness ratio versus the next non-dominated alternative.",
       paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY.")
@@ -99,9 +116,11 @@ kable(
   caption = "Table S5: Deterministic point evaluation anchoring the one-way sensitivity analysis (pairwise versus standard of care and efficiency frontier)",
   format = "html",
   col.names = c("Strategy", "Cost", "QALYs", "Incremental Cost vs SoC",
-                "Incremental QALYs vs SoC", "Pairwise ICER vs SoC",
-                "Pairwise status", "Frontier ICER", "Frontier status"),
-  align = c("l", rep("r", 5), "l", "r", "l")
+                "Incremental QALYs vs SoC", "Life-years (discounted / undiscounted)",
+                "Incremental life-years vs SoC (discounted / undiscounted)",
+                "Pairwise ICER vs SoC", "Pairwise status", "Frontier ICER",
+                "Frontier status"),
+  align = c("l", rep("r", 7), "l", "r", "l")
 ) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 12) %>%
@@ -110,7 +129,7 @@ kable(
       "Increments and the pairwise ICER compare each guided strategy with standard of care (issue #153).",
       "Control and both guided strategies share the same complete-case population and joint biomarker distribution (issue #166).",
       "The frontier ICER is the dampack incremental ratio versus the next non-dominated alternative, as in Table 4; a strategy that is dominated on the frontier (more costly and less effective than the other guided strategy) can still have a finite pairwise ICER.",
-      "Costs and QALYs discounted at 4% per year."
+      "Costs, QALYs and discounted life-years discounted at 4% per year; undiscounted life-years are the restricted mean survival over the model horizon. Life-years do not enter the ICERs."
     ),
     general_title = "Notes: "
   )

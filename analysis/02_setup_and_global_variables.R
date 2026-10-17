@@ -52,18 +52,32 @@ analysis_seed <- 123L  # default passed explicitly to each stochastic block
 ## global discount rate
 dr = 0.04
 
-## population parameters for scaling EVPPI to population level
-## Source: Norwegian Cancer Registry (Kreftregisteret)
-## - Total CRC incidence: ~4,000 cases/year
-## - MSS/pMMR proportion: ~70-75% of metastatic CRC (international literature)
-## - Metastatic proportion: ~50% present with metastatic disease
-## - Conservative estimate: 1,500 annual eligible patients accounts for
-##   diagnostic testing rates and treatment eligibility criteria
-annual_incidence_norway <- 1500  # Annual MSS/pMMR mCRC cases in Norway
+## population parameters for scaling EVPI/EVPPI to population level (issues
+## #200, #201). Eligible patients per year (adults with unresectable metastatic
+## MSS/pMMR CRC fit for first-line doublet chemotherapy) are read from the
+## sourced table data/external/voi_incidence.csv (one eligible_per_year row per
+## region with extreme low/high scenarios; derivation in the private
+## repository's docs/manuscripts/3_value_of_information/inputs/
+## incidence_derivation.md). Norway is primary; its bounds and the Nordic and
+## European values are scenario inputs. The former unsourced placeholder of
+## 1,500 per year matched the number of all MSS/pMMR metastatic patients per
+## year in Norway before the fitness step (about 1,517). Since #212 the fitness
+## share is the co-authors' 0.60 of that number (personal communication,
+## A. H. Ree, 15 October 2026; range 0.50-0.70 an assumption pending the Cancer
+## Registry figure), about 910 per year.
+source(here::here("R/voi_incidence.R"))
+voi_incidence <- read_voi_incidence()
+annual_incidence_norway <- voi_eligible_per_year(voi_incidence, "Norway")
+annual_incidence_norway_low <- voi_eligible_per_year(voi_incidence, "Norway", "lower")
+annual_incidence_norway_high <- voi_eligible_per_year(voi_incidence, "Norway", "upper")
+annual_incidence_scenarios <- c(
+  norway_low = annual_incidence_norway_low, norway_high = annual_incidence_norway_high,
+  nordic = voi_eligible_per_year(voi_incidence, "Nordic"),
+  europe = voi_eligible_per_year(voi_incidence, "Europe"))
+rm(voi_incidence)
 research_horizon_years <- 10     # Time horizon for research value (years)
-discount_rate_research <- 0.035  # Discount rate for future research benefits (3.5%)
-                                 # Standard rate for public health research in Norway
-                                 # (slightly lower than 4% used for costs/QALYs)
+discount_rate_research <- 0.04   # Discount rate of research benefits, aligned with
+                                 # the model's 4% (user decision, 9 October 2026)
 
 ## Utility source switch
 ## Controls which health state utility values are used as base case

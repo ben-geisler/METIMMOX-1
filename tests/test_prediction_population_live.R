@@ -31,6 +31,15 @@ run_test <- function() {
   p$l_nivo[] <- 0
   p$l_FLOX_exp <- p$l_FLOX_control
   p$c_test_CRP <- p$c_test_NGS <- 0
+  # Later treatment sequences (issue #208): the control arm's shares, start
+  # weeks and regimen for both arms.
+  later <- p$later_sequences
+  later$regimen$experimental <- later$regimen$control
+  df_ctl <- later$start_weeks[later$start_weeks$arm == "control", , drop = FALSE]
+  later$start_weeks <- rbind(df_ctl, transform(df_ctl, arm = "experimental"))
+  p$later_sequences <- later
+  p$p_seq3_experimental <- p$p_seq3_control
+  p$p_seq4_given_seq3_experimental <- p$p_seq4_given_seq3_control
   for (bm in get_biomarkers()) for (mult in c(0.8, 1, 1.2)) {
     changed <- p; key <- paste0("p_", bm); changed[[key]] <- p[[key]] * mult
     df_result <- model_fun(changed)

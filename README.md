@@ -68,8 +68,8 @@ Three strategies are compared: standard of care (FLOX alone for everyone), CRP-g
   ```
   The distributions are chosen jointly from nine candidate families as the minimum-combined-AIC pair that keeps OS >= PFS in every modelled subgroup and week. Standard of care is the same model predicted with `Rx = control`. Curves are averaged over every patient's own covariates (population averaging).
 - **Uncertainty.** The PSA (5,000 draws) samples survival coefficients from a joint multivariate normal whose OS-PFS dependence comes from a paired patient bootstrap, the joint biomarker distribution from a Dirichlet, and utilities and resource-use costs. Drug and test unit prices are fixed in the PSA and varied in the one-way analysis. Results are probabilistic means with percentile intervals.
-- **Sensitivity and scenarios.** One-way DSA, structural scenarios (discount rate, horizon, post-progression cost, no second treatment sequence, alternative survival families), a biosimilar nivolumab price and biomarker-enriched populations.
-- **Scope.** Deliberately excluded: separate adverse-event costs or disutilities, post-progression therapy cost in the base case, and a general-population mortality floor on extrapolated hazards. The nivolumab price of EUR 13,923 per administration is an assumption, not a tendered price.
+- **Sensitivity and scenarios.** One-way DSA, structural scenarios (discount rate, horizon, no second-line therapy cost, a flat post-progression cost instead of the second-line pathway, no second treatment sequence, alternative survival families), a biosimilar nivolumab price and biomarker-enriched populations.
+- **Scope.** Deliberately excluded: separate adverse-event costs or disutilities, third-line and BRAF-targeted therapy after progression, and a general-population mortality floor on extrapolated hazards. Second-line therapy after progression is costed from the Norwegian pathway, once at incident progression (#209). The nivolumab price of EUR 1,392 per administration (#210; EUR 13,923 before) is an assumption, not a tendered price.
 
 | Item (numbering of the current draft) | Generator | Output |
 |---|---|---|
@@ -94,14 +94,14 @@ Method reports: [para_models](reports/para_models.qmd), [input_parameters](repor
 
 ## Paper 3: Value of information
 
-EVPI and EVPPI from the Paper 2 PSA. EVPPI uses nonparametric regression (Strong, Oakley and Brennan 2014, via `voi::evppi()`) on single parameters and parameter groups (biomarker-by-treatment interaction coefficients, joint biomarker prevalence, utilities, resource-use costs), each with a Monte Carlo standard error. Per-patient values are scaled to the Norwegian population (1,500 eligible patients per year, 10-year research horizon). Scenarios repeat the PSA and EVPPI at willingness-to-pay thresholds of EUR 51,000, 100,000 and 150,000 per QALY, at list and biosimilar nivolumab prices.
+EVPI and EVPPI from the Paper 2 PSA. EVPPI uses nonparametric regression (Strong, Oakley and Brennan 2014, via `voi::evppi()`) on single parameters and parameter groups (biomarker-by-treatment interaction coefficients, joint biomarker prevalence, utilities, resource-use costs, second-line therapy), each with a Monte Carlo standard error. Per-patient values are scaled to the Norwegian population (eligible patients per year from the sourced table `data/external/voi_incidence.csv`, 10-year research horizon, research benefits discounted at 4%). Scenarios repeat the PSA and EVPPI at willingness-to-pay thresholds of EUR 51,000, 100,000 and 150,000 per QALY, at list and biosimilar nivolumab prices.
 
 | Item | Generator | Output |
 |---|---|---|
 | Population EVPPI by parameter group and scenario | [figure5.qmd](reports/vignettes/figure5.qmd) | `outputs/figs/figure5.png` |
 | EVPPI by group and scenario | [table_s7.qmd](reports/vignettes/table_s7.qmd) | `outputs/tables/table_s7.csv` |
 
-Reports: [EVPPIs](reports/EVPPIs.qmd), [scenario_effect](reports/scenario_effect.qmd). Pipeline: scripts 01-12.
+Reports: [EVPPIs](reports/EVPPIs.qmd), [scenario_effect](reports/scenario_effect.qmd). Pipeline: scripts 01-12 and 14 (`analysis/14_VOI.R`: price axis, 16-policy space, candidate trial designs, EVSI, maximum justifiable research cost, expected net benefit of sampling and the research threshold price, written to `data/output/voi/`; in progress, #203).
 
 ## Data
 
@@ -116,8 +116,10 @@ With access, the pipeline expects:
 | `data/sensitive/excluded_ids.csv` | trial IDs excluded from every analysis, with the reason (columns `ID`, `reason`) |
 | `data/external/survival_benchmarks.csv` | published survival estimates for the external validation, transcribed from Tveit et al. 2012 (doi:10.1200/JCO.2011.38.0915), Guren et al. 2017 (doi:10.1038/bjc.2017.93), Aasebo et al. 2019 (doi:10.1002/cam4.2205), Acta Oncologica 2025 (doi:10.2340/1651-226X.2025.42985) and Sorbye et al. 2013 (doi:10.1093/annonc/mdt197) |
 | `data/external/ssb_07902_2025.csv` | Norwegian 2025 period life table, probabilities of death by age and sex, from [Statistics Norway table 07902](https://www.ssb.no/en/statbank/table/07902) (per 1,000 divided by 1,000) |
+| `data/external/second_line_pathway.csv` | Norwegian second-line pathway after first-line FLOX (shares, guideline doses, public list prices, contacts, cycles from the pivotal second-line trials) with a source per row, read by script 05 through `R/second_line_costs.R` for the base-case second-line cost (#209) |
+| `data/external/voi_incidence.csv` | eligible patients per year for population value of information (Norway, Nordic countries, Europe): published incidence, stage, MSS/pMMR and treatment shares with a source per row, read by script 02 through `R/voi_incidence.R` |
 
-The two `data/external/` files contain only published values; they live with the data so that `data/` is one folder and are available on request with it.
+The `data/external/` files contain only published values; they live with the data so that `data/` is one folder and are available on request with it.
 
 ## Running the analysis
 
@@ -125,12 +127,14 @@ Requires R 4.3, Quarto with a LaTeX installation for PDF output, and the data ab
 
 ```bash
 Rscript make.R --dry-run      # list the steps
-Rscript make.R                # analysis 01-12, publication vignettes, reports, tests
+Rscript make.R                # analysis 01-12 and 14, publication vignettes, reports, tests
 Rscript make.R --from 09      # rerun the analysis from script 09 (02-06 re-sourced as setup)
+Rscript make.R --from 14 --no-vignettes --no-reports --no-tests   # value of information only (02-06 and 10 as setup)
+Rscript make.R --from 14 --no-vignettes --no-reports --no-tests --voi-states E0   # the same with METIMMOX alone (no published-trials state)
 Rscript make.R --no-analysis --no-vignettes --no-tests --reports CEA,OWSA
 ```
 
-From empty caches the analysis takes about 1.5 hours (script 06 several minutes, 10 about 20 minutes, 12 about 40 minutes); the vignettes and reports take about another hour. Scripts 06, 10, 11 and 12 write caches to `data/tidy/`, each with a fingerprint of its inputs, code and package versions; reports stop rather than render from a stale cache. Everything rendered goes to `outputs/`: figures and tables to `outputs/figs/` and `outputs/tables/` (with their provenance in `outputs/manifest.csv`), reports to `outputs/reports/` (PDF and Markdown).
+From empty caches the analysis takes about 1.5 hours (script 06 several minutes, 10 about 20 minutes, 12 about 40 minutes); the vignettes and reports take about another hour. Script 14 only reads those caches and stops when one is stale; it saves its own results with a fingerprint, so an unchanged rerun only rewrites its CSVs. Scripts 06, 10, 11 and 12 write caches to `data/tidy/`, each with a fingerprint of its inputs, code and package versions; reports stop rather than render from a stale cache. Everything rendered goes to `outputs/`: figures and tables to `outputs/figs/` and `outputs/tables/` (with their provenance in `outputs/manifest.csv`), reports to `outputs/reports/` (PDF and Markdown).
 
 **Package versions.** `renv.lock` lists the exact package versions the published results were produced with. The project does not switch R to a project-specific package library (renv is not "activated"), so the scripts use your normal library. To match the recorded versions, install them once:
 

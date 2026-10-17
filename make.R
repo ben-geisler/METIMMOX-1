@@ -2,10 +2,12 @@
 # ===============================================================================
 # RUN THE WHOLE METIMMOX-1 PIPELINE
 # ===============================================================================
-# 1. analysis: the numbered scripts 01-12 (08b included). 01 runs in its own R
-#    process because it clears the workspace; 02-12 run together in a second
-#    process, as the reports expect. 13_save_snapshot.R is the interactive
-#    snapshot utility and is not part of the pipeline.
+# 1. analysis: the numbered scripts 01-12 (08b included) and 14 (paper 3 value
+#    of information; reads the caches of 06, 10 and 12 and never regenerates
+#    them). 01 runs in its own R process because it clears the workspace; 02-12
+#    and 14 run together in a second process, as the reports expect.
+#    13_save_snapshot.R is the interactive snapshot utility and is not part of
+#    the pipeline.
 # 2. vignettes: the publication vignettes in reports/vignettes/, one at a time
 #    (they share outputs/manifest.csv); they write outputs/figs/ and outputs/tables/.
 # 3. reports: every report in reports/ and reports/technical/, PDF then
@@ -25,6 +27,9 @@
 #   Rscript make.R --no-analysis --no-vignettes --no-tests --reports CEA,OWSA
 #   Rscript make.R --no-analysis --no-reports --no-tests --vignettes figure1,table_5
 #   Rscript make.R --dry-run               # list the steps without running them
+#   Rscript make.R --from 14 --no-vignettes --no-reports --no-tests --voi-states E0
+#                                          # paper 3 value of information with METIMMOX
+#                                          # alone (no published-trials state E2)
 # ===============================================================================
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -45,7 +50,7 @@ ANALYSIS_SCRIPTS <- c("01_data_prep", "02_setup_and_global_variables",
                       "03_biomarker_strategies", "04_parametric_survival_analysis",
                       "05_basecase_input_parameters", "06_sampling", "07_traces",
                       "08_basecase_analysis", "08b_enriched_population_analysis",
-                      "09_DSA", "10_PSA", "11_EVPPIs", "12_scenario_EVPPIs")
+                      "09_DSA", "10_PSA", "11_EVPPIs", "12_scenario_EVPPIs", "14_VOI")
 SETUP_SCRIPTS <- ANALYSIS_SCRIPTS[2:5]
 PIPELINE_PACKAGES <- c("devtools", "readxl", "dplyr", "tableone", "ggplot2", "flexsurv",
                        "survival", "survminer", "gems", "mstate", "tidyverse", "xtable",
@@ -58,7 +63,7 @@ PIPELINE_PACKAGES <- c("devtools", "readxl", "dplyr", "tableone", "ggplot2", "fl
 #' run therefore re-sources 02-06 (06 loads the sampling cache) and, from 11 on,
 #' 10 (which loads the PSA cache) before its own steps.
 #'
-#' @param from Script number prefix ("01" to "12", "08b"), or NULL for all.
+#' @param from Script number prefix ("01" to "12", "08b", "14"), or NULL for all.
 #' @return List with `run` (scripts run as steps) and `setup` (earlier scripts
 #'   sourced first only to rebuild the session).
 analysis_plan <- function(from = NULL) {
@@ -112,6 +117,15 @@ run_analysis <- function(v_scripts, v_setup) {
 }
 
 plan <- analysis_plan(opt("--from"))
+# Evidence states of analysis/14_VOI.R ("E0" = METIMMOX alone); the analysis
+# runs in a child process, which inherits the environment variable.
+if (!is.null(opt("--voi-states"))) {
+  v_states <- split_names(opt("--voi-states"))
+  if (!all(v_states %in% c("E0", "E2")) || !"E0" %in% v_states) {
+    stop("--voi-states takes E0 (METIMMOX alone) or E0,E2 (with the published trials).")
+  }
+  Sys.setenv(METIMMOX_VOI14_STATES = paste(v_states, collapse = ","))
+}
 v_vignettes <- vignette_sources(split_names(opt("--vignettes")))
 v_reports <- report_sources(split_names(opt("--reports")))
 steps <- list(

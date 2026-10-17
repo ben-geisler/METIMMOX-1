@@ -91,7 +91,28 @@ parameter_labels <- c(
   u_np = "Utility: progression-free",
   u_p = "Utility: progressed",
   p_crp = "CRP prevalence",
-  p_tmb_braf = "TMB/BRAF prevalence"
+  p_tmb_braf = "TMB/BRAF prevalence",
+  p_seq3_control = "Third sequence share: FLOX",
+  p_seq3_experimental = "Third sequence share: FLOX + nivolumab",
+  p_seq4_given_seq3_control = "Fourth sequence share: FLOX",
+  p_seq4_given_seq3_experimental = "Fourth sequence share: FLOX + nivolumab",
+  # Second-line therapy at progression (issue #209)
+  p_pfs_progression = "Second line: progression share of PFS events",
+  p_sl_treated = "Second line: share treated",
+  p_sl_folfiri = "Second line: FOLFIRI share",
+  p_sl_ras_braf_wt = "Second line: RAS/BRAF wild type",
+  p_sl_antiegfr_if_wt = "Second line: anti-EGFR if wild type",
+  p_sl_bevacizumab_if_no_antiegfr = "Second line: bevacizumab share",
+  n_sl_cycles_none = "Second line: cycles, doublet",
+  n_sl_cycles_bevacizumab = "Second line: cycles with bevacizumab",
+  n_sl_cycles_panitumumab = "Second line: cycles with panitumumab",
+  n_sl_contacts_FOLFIRI = "Second line: FOLFIRI contacts per cycle",
+  n_sl_contacts_FLIRI = "Second line: FLIRI contacts per cycle",
+  n_sl_blood_tests = "Second line: blood tests per cycle",
+  c_sl_drug_FOLFIRI = "Second line: FOLFIRI drug cost",
+  c_sl_drug_FLIRI = "Second line: FLIRI drug cost",
+  c_sl_drug_bevacizumab = "Second line: bevacizumab drug cost",
+  c_sl_drug_panitumumab = "Second line: panitumumab drug cost"
 )
 
 tornado_wide$Label <- unname(parameter_labels[tornado_wide$Parameter])

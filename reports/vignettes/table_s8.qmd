@@ -158,7 +158,8 @@ kable(
              sprintf("%g%%", 100 * dr), "; base-case time horizon ",
              sprintf("%g years", time_horizon / 52), "."),
       "Every scenario is a pipeline definition: WTP and nivolumab-price scenarios from define_scenarios() (scenario_analysis.R), structural scenarios from dsa_structural_scenarios() applied with apply_structural_scenario() (parameter_distributions.R, shared with 09_DSA.R), trial EQ-5D-5L utilities from define_utility_scenarios() (scenario_analysis.R) and trial_eq5d_utilities() (trial_utilities.R). All are deterministic runs on the base-case survival curves.",
-      "Biosimilar (decreased) nivolumab pricing sets nivolumab to EUR 4,641 per administration.",
+      paste0("Biosimilar (decreased) nivolumab pricing sets nivolumab to EUR ",
+             format(NIVO_PRICE_BIOSIMILAR, big.mark = ","), " per administration."),
       paste0("Trial EQ-5D-5L utilities: ", utility_source_note, "."),
       "Optimal strategy is the highest-NMB strategy within each scenario."
     ),

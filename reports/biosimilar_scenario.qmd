@@ -34,7 +34,7 @@ execute:
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
-  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format"),
+  funs = c("model_fun", "calculate_outcomes", "cea_helpers", "report_format", "scenario_analysis"),
   set_theme = FALSE
 )
 
@@ -46,7 +46,7 @@ run_pairwise <- function(params) {
 
 base_params <- l_params_base
 biosimilar_params <- l_params_base
-biosimilar_params$c_drug_nivo <- 4641
+biosimilar_params$c_drug_nivo <- NIVO_PRICE_BIOSIMILAR  # scenario_analysis.R (#210)
 
 base_results <- run_pairwise(base_params)
 biosimilar_results <- run_pairwise(biosimilar_params)
@@ -158,4 +158,4 @@ The biosimilar scenario is evaluated with the same single joint economic surviva
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.1
+**Report version:** 4.2

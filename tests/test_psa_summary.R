@@ -1,10 +1,16 @@
-# Independent arithmetic examples for primary probabilistic reporting (#180).
+# Independent arithmetic examples for primary probabilistic reporting (#180),
+# including the life-year draws of issue #197.
 source("R/cea_helpers.R")
 source("R/report_format.R")
-#' dampack PSA object from draw-by-strategy cost and effect matrices.
-make_psa <- function(cost, effect, strategies) {
-  dampack::make_psa_obj(cost = as.data.frame(cost),
+#' dampack PSA object from draw-by-strategy cost and effect matrices, with
+#' life-year draws attached as build_psa_obj() stores them (issue #197).
+make_psa <- function(cost, effect, strategies, ly_disc = effect + 1,
+                     ly_undisc = 1.5 * effect + 1) {
+  psa <- dampack::make_psa_obj(cost = as.data.frame(cost),
     effectiveness = as.data.frame(effect), strategies = strategies)
+  psa$ly_disc <- setNames(as.data.frame(ly_disc), strategies)
+  psa$ly_undisc <- setNames(as.data.frame(ly_undisc), strategies)
+  psa
 }
 # Put control second to exercise lookup; strongly correlated levels make
 # subtracting marginal interval endpoints visibly wrong for paired increments.
@@ -22,6 +28,44 @@ stopifnot(x$Mean_Cost[1] == 140, x$Mean_QALY[1] == 5,
   x$Mean_Inc_Cost[2] == 0, x$Inc_Cost_Upper[2] == 0,
   is.na(x$ICER[2]), x$Status[2] == "Reference",
   x$Status[3] == "Dominated by SoC", format_psa_summary(x)$ICER[3] == "Dominated")
+
+# Life-years (#197): means, type-7 percentile limits and paired increments, the
+# same arithmetic as the QALYs (discounted LY = QALY + 1 here, undiscounted
+# LY = 1.5 QALY + 1).
+v_ly_columns <- c("Mean_LY_Disc", "LY_Disc_Lower", "LY_Disc_Upper", "Mean_Inc_LY_Disc",
+                  "Inc_LY_Disc_Lower", "Inc_LY_Disc_Upper", "Mean_LY_Undisc",
+                  "LY_Undisc_Lower", "LY_Undisc_Upper", "Mean_Inc_LY_Undisc",
+                  "Inc_LY_Undisc_Lower", "Inc_LY_Undisc_Upper")
+#' TRUE when every element of `x` equals `y` within 1e-12.
+near <- function(x, y) all(abs(x - y) < 1e-12)
+stopifnot(identical(tail(names(x), length(v_ly_columns)), v_ly_columns),
+  near(unlist(x[1, v_ly_columns]),
+       c(6, 3.15, 8.85, 2.5, 1.075, 3.925, 8.5, 4.225, 12.775, 3.75, 1.6125, 5.8875)),
+  near(unlist(x[2, v_ly_columns[c(4:6, 10:12)]]), 0),
+  near(x$Mean_Inc_LY_Disc[3], -0.5))
+# Paired, not marginal: the increment interval is not the difference of the
+# marginal limits.
+stopifnot(x$Inc_LY_Disc_Lower[1] != x$LY_Disc_Lower[1] - x$LY_Disc_Lower[2])
+# Life-years do not enter the ICER, status or the probability of cost-effectiveness.
+p_ly <- p
+p_ly$ly_disc[, 1] <- p_ly$ly_disc[, 1] + 100
+x_ly <- create_psa_summary_table(p_ly, wtp = 100)
+v_decision <- c("ICER", "Status", "Prob_CE")
+stopifnot(identical(x_ly[, v_decision], x[, v_decision]), near(x_ly$Mean_LY_Disc[1], 106))
+v_display <- format_psa_summary(x)
+stopifnot(all(c("LYs_Disc", "LYs_Undisc", "Inc_LYs_Disc", "Inc_LYs_Undisc") %in% names(v_display)),
+          v_display$LYs_Disc[1] == "6.0000 (3.1500; 8.8500)")
+# A PSA object without life-year draws, or with misaligned ones, is refused.
+p_no_ly <- p
+p_no_ly$ly_disc <- NULL
+stopifnot(inherits(try(create_psa_summary_table(p_no_ly, 100), silent = TRUE), "try-error"))
+p_short_ly <- p
+p_short_ly$ly_undisc <- p_short_ly$ly_undisc[1:3, ]
+stopifnot(inherits(try(create_psa_summary_table(p_short_ly, 100), silent = TRUE), "try-error"))
+p_na_ly <- p
+p_na_ly$ly_disc[2, 2] <- NA_real_
+stopifnot(inherits(try(create_psa_summary_table(p_na_ly, 100), silent = TRUE), "try-error"))
+
 # Nonconstant per-draw ratios: ratio of means 10, mean of ratios 25/3.
 p$cost[, 1] <- p$cost[, 2] + c(0, 20, 40, 40)
 x <- create_psa_summary_table(p, 100)
@@ -38,4 +82,5 @@ stopifnot(identical(names(x), names(create_psa_summary_table(NULL))),
           nrow(create_psa_summary_table(NULL)) == 0)
 p$cost[1, 1] <- NA_real_
 stopifnot(inherits(try(create_psa_summary_table(p), silent = TRUE), "try-error"))
-cat("PASS: paired percentile intervals, ratio-of-means ICER, reference and dominance semantics.\n")
+cat("PASS: paired percentile intervals, ratio-of-means ICER, reference and dominance",
+    "semantics; life-year means, intervals and increments (#197).\n")

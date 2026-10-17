@@ -44,7 +44,7 @@ evppi_cache <- load_scenario_cache(path = cache_file)
 # caches still sort correctly.
 group_order <- c(
   "other_costs", "drug_costs", "test_costs", "all_costs",
-  "utilities", "prevalence",
+  "utilities", "prevalence", "later_sequences", "second_line",
   paste0("interaction_", get_biomarkers()), "interaction_all"
 )
 

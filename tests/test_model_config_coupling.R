@@ -116,7 +116,7 @@ model_fun <- function(params, ...) {
     max_excess = 0.1,
     sim_idx = 1L
   ))
-  data.frame(Strategy = get_strategies(), Cost = 0, Effect = 0)
+  data.frame(Strategy = get_strategies(), Cost = 0, Effect = 0, LY_disc = 0, LY_undisc = 0)
 }
 df_psa_params <- data.frame(sim = 1L)
 v_output <- capture.output({

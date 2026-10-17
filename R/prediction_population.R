@@ -98,6 +98,115 @@ standardize_population_curves <- function(curves, population, weights) {
   out
 }
 
+# ===============================================================================
+# JOINT BIOMARKER CELLS (issue #200, paper 3 step 1b)
+# ===============================================================================
+# Cells are the rows of joint_biomarker_population()$cells, keyed by the
+# biomarker values in get_biomarkers() order ("00", "01", "10", "11" for week-4
+# CRP x TMB/BRAF, the keys of p_joint_00 ... p_joint_11). A cell curve is the
+# weighted average of its patients' curves under one arm; a cell's mass is the
+# sum of its patients' weights. Every strategy curve is a mass-weighted
+# combination of cell curves (strategy_curves_from_cells()), so the PSA
+# predicts each patient once per arm and endpoint.
+
+# Arms in Rx-level order: level 1 of Rx is control, level 2 experimental.
+CELL_ARMS <- c("control", "experimental")
+
+#' Column names of the cell x arm curve matrices
+#'
+#' @param cells Cell keys (e.g. "00").
+#' @param arms Arms; default both (CELL_ARMS).
+#' @return Character vector `<cell>_<arm>`, cells varying slowest.
+cell_curve_columns <- function(cells, arms = CELL_ARMS) {
+  as.vector(t(outer(cells, arms, paste, sep = "_")))
+}
+
+#' Joint biomarker cell masses of a weighted prediction population
+#'
+#' @param population Prediction population (complete binary biomarkers).
+#' @param weights Patient weights (any non-negative scale); NULL gives equal
+#'   weights.
+#' @param biomarkers Biomarker columns defining the cells.
+#' @return List with `mass` (named by cell key, sums to one), `counts`
+#'   (patients per cell), `index` (cell of each patient) and `cells` (the cell
+#'   definition data frame).
+cell_masses <- function(population, weights = NULL, biomarkers = get_biomarkers()) {
+  joint <- joint_biomarker_population(population, biomarkers)
+  if (is.null(weights)) weights <- rep(1, nrow(population))
+  if (length(weights) != nrow(population) || any(!is.finite(weights)) || any(weights < 0) ||
+      sum(weights) <= 0) stop("Invalid population weights for the cell masses.")
+  v_mass <- vapply(seq_len(nrow(joint$cells)), function(k) sum(weights[joint$index == k]),
+                   numeric(1)) / sum(weights)
+  list(mass = setNames(v_mass, rownames(joint$cells)), counts = joint$counts,
+       index = joint$index, cells = joint$cells)
+}
+
+#' Average patient curves within each joint biomarker cell
+#'
+#' @param m_curves Matrix of patient curves (time x patient).
+#' @param index Cell index of each patient (cell_masses()$index).
+#' @param cells Cell keys in index order.
+#' @param weights Patient weights; within a cell of zero total weight the
+#'   patients are weighted equally, as in weighted_survival_average().
+#' @return Matrix time x cell (NA columns for cells without patients).
+average_within_cells <- function(m_curves, index, cells, weights = NULL) {
+  if (is.null(weights)) weights <- rep(1, ncol(m_curves))
+  m_out <- matrix(NA_real_, nrow(m_curves), length(cells), dimnames = list(NULL, cells))
+  for (k in seq_along(cells)) {
+    v_rows <- which(index == k)
+    if (length(v_rows)) m_out[, k] <- weighted_survival_average(m_curves[, v_rows, drop = FALSE],
+                                                                 weights[v_rows])
+  }
+  m_out
+}
+
+#' Strategy curves as mass-weighted combinations of cell curves
+#'
+#' Control is every cell under control; a biomarker-guided strategy is its
+#' positive cells under the experimental arm (biomarker-positive subgroup) and
+#' its negative cells under control (biomarker-negative subgroup). With masses
+#' equal to the summed patient weights this is algebraically the patient-level
+#' standardisation of standardize_population_curves(); a subgroup of zero mass
+#' falls back to equal patient weights, as weighted_survival_average() does.
+#'
+#' @param cell_curves List with `os` and `pfs` matrices (time x cell_arm,
+#'   columns from cell_curve_columns()).
+#' @param cell_weights Output of cell_masses() (`mass`, `counts`, `cells`).
+#' @param biomarkers Biomarker ids of the guided strategies.
+#' @return List keyed by strategy in the shape of
+#'   standardize_population_curves(): control `os`/`pfs`; per biomarker `os`,
+#'   `pfs`, `biomarker_positive`, `biomarker_negative` and `prevalence`.
+strategy_curves_from_cells <- function(cell_curves, cell_weights, biomarkers = get_biomarkers()) {
+  v_mass <- cell_weights$mass
+  v_counts <- cell_weights$counts
+  combine <- function(v_cells, arm, outcome) {
+    v_cells <- v_cells[v_counts[v_cells] > 0]
+    if (!length(v_cells)) return(rep(NA_real_, nrow(cell_curves[[outcome]])))
+    v_w <- v_mass[v_cells]
+    if (sum(v_w) == 0) v_w <- v_counts[v_cells]
+    m_part <- cell_curves[[outcome]][, cell_curve_columns(v_cells, arm), drop = FALSE]
+    as.vector(m_part %*% (v_w / sum(v_w)))
+  }
+  v_all <- names(v_mass)
+  control <- get_control_strategy()
+  out <- setNames(list(list(strategy = control, os = combine(v_all, "control", "os"),
+                            pfs = combine(v_all, "control", "pfs"))), control)
+  for (biomarker in biomarkers) {
+    v_positive <- v_all[cell_weights$cells[[biomarker]] == 1]
+    v_negative <- v_all[cell_weights$cells[[biomarker]] == 0]
+    positive <- list(os = combine(v_positive, "experimental", "os"),
+                     pfs = combine(v_positive, "experimental", "pfs"))
+    negative <- list(os = combine(v_negative, "control", "os"),
+                     pfs = combine(v_negative, "control", "pfs"))
+    prevalence <- sum(v_mass[v_positive])
+    out[[biomarker]] <- list(strategy = biomarker,
+      os = prevalence * positive$os + (1 - prevalence) * negative$os,
+      pfs = prevalence * positive$pfs + (1 - prevalence) * negative$pfs,
+      biomarker_positive = positive, biomarker_negative = negative, prevalence = prevalence)
+  }
+  out
+}
+
 set_population_predictions <- function(params, predictions) {
   control <- get_control_strategy()
   for (outcome in c("os", "pfs")) {

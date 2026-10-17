@@ -43,12 +43,15 @@ l_params_base$population_weights <- c(0.5, 0.5)
 sampling_models <- list(joint = list(samples = rep(list(list(failed = FALSE)), n_samples)))
 # Index validation is the unit under test; deterministic prediction fixture
 # exercises the remaining calculation without fitting or accessing any cache.
-#' Deterministic stand-in for the PSA predictor: checks the draw index and
-#' returns the fixture curve (or the same curve for both subgroups).
-generate_psa_population_averaged_predictions <- function(sampling_model_list,
-    biomarker_name = NULL, outcome, sample_idx, data_original, time_points, weights = NULL) {
+#' Deterministic stand-in for the PSA cell predictor (issue #200): checks the
+#' draw index and returns the fixture curve for every cell and arm.
+generate_psa_cell_predictions <- function(sampling_model_list, sample_idx, data_original,
+                                          time_points, weights = NULL) {
   stopifnot(sample_idx %in% seq_len(n_samples))
-  if (is.null(biomarker_name)) v_curve else list(positive = v_curve, negative = v_curve)
+  cell_weights <- cell_masses(data_original, weights)
+  v_columns <- cell_curve_columns(names(cell_weights$mass))
+  m_curve <- matrix(v_curve, length(v_curve), length(v_columns), dimnames = list(NULL, v_columns))
+  c(list(os = m_curve, pfs = m_curve, failed = FALSE), cell_weights[c("counts", "mass", "cells")])
 }
 
 cat("Dependencies loaded successfully.\n\n")

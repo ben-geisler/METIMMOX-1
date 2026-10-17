@@ -47,9 +47,10 @@ fmt_pct <- function(x) scales::percent(x, accuracy = 0.1)
 State utilities and ongoing progressed-state costs are integrated over the
 intervals between weekly grid points using the trapezoidal rule (half weight at
 weeks 0 and 520). Thus 521 points span exactly 520 weeks: with no mortality,
-unit utilities and no discounting, the model returns 10 QALYs. Quarterly
-follow-up and post-progression cost rates accrue as four times the quarterly
-rate per year of progressed-state occupancy. Discount weights are applied at
+unit utilities and no discounting, the model returns 10 QALYs. The follow-up
+visit and CT scan of progressed patients recur every 2.5 months, 4.8 times per
+year of progressed-state occupancy (issue #207), and the post-progression cost
+rate accrues four times per year (quarterly). Discount weights are applied at
 each grid point before integration. Drug administrations, scheduled tests and
 visits, baseline screening and end-of-life events retain their full costs at
 their modeled time points; they are not half-cycle corrected (issue #163).
@@ -202,9 +203,9 @@ knitr::kable(
 
 Unit drug and test costs are **fixed in the PSA** and varied deterministically only (issue #154). They are published tariffs, laboratory prices, or — for nivolumab — an assumed acquisition price; none of them is a quantity that further research could resolve, so sampling them attributed decision uncertainty — and, under the earlier nearest-neighbour value-of-information estimator, research value — to prices that are known. Fixing them roughly halved total EVPI (from EUR 45.2 to EUR 22.1 per patient) without changing any base-case result. Visit, baseline, follow-up and end-of-life costs remain probabilistic because they bundle genuine resource-use uncertainty, and the deterministic influence of the prices is undiminished: the nivolumab price is still the second-largest one-way driver for both guided strategies.
 
-**Outpatient visits** (issue #36) are costed from the Norwegian DRG (ISF) system: an outpatient contact carries DRG weight 0.047, and the 2023 unit price for somatic care is NOK 49,484 (EUR 4,541.60), giving NOK 2,325.75 = `r sprintf("EUR %.2f", l_params_base$c_other_visit)` per visit. The weight does not differ between visit types, so the baseline visit (`c_other_baseline`), visits at administrations and surveillance scans (`c_other_visit`) and the quarterly follow-up visit in the progressed state (`c_other_follow`) all take this value; the three parameters are kept separate so that each can be varied on its own in the one-way analysis. The earlier values (EUR 33, 530 and 33) had no documented source.
+**Outpatient visits** (issue #36) are costed from the Norwegian DRG (ISF) system: an outpatient contact carries DRG weight 0.047, and the 2023 unit price for somatic care is NOK 49,484 (EUR 4,541.60), giving NOK 2,325.75 = `r sprintf("EUR %.2f", l_params_base$c_other_visit)` per visit. The weight does not differ between visit types, so the baseline visit (`c_other_baseline`), visits at administrations and surveillance scans (`c_other_visit`) and the follow-up visit in the progressed state (`c_other_follow`) all take this value; the three parameters are kept separate so that each can be varied on its own in the one-way analysis. The earlier values (EUR 33, 530 and 33) had no documented source.
 
-**Monitoring and visits** (issue #164). Progression-free patients have a CT scan at baseline and every 12 weeks, and a blood test at baseline and every 4 weeks, up to the horizon. A visit is charged at baseline, at every drug administration and at every CT scan; during treatment each scan already coincides with an administration, so the CT rule adds a surveillance visit every 12 weeks after the last administration (week 38). Blood tests between scans carry no separate visit. Progressed patients accrue one follow-up visit and one CT scan per quarter, integrated over progressed-state occupancy.
+**Monitoring and visits** (issues #164, #207; trial team's answers MON1-MON3 of 15 October 2026). Progression-free patients have a CT scan at baseline and every 8 weeks up to the horizon, during treatment, in the break and after the last sequence. A blood test is drawn in every administration week (every two weeks during a sequence, in both arms) and, off treatment, with every CT (the protocol's 8-weekly schedule; an interpretation of the answers, see docs/decisions.md). A visit is charged at baseline, at every drug administration and at every CT scan, so the scans of the break (week 16) and after the last administration (week 38) each carry a surveillance visit; a FLOX administration (bolus 5-FU/folinic acid on days 1 and 2) counts as two outpatient contacts, a nivolumab administration as one. Progressed patients accrue one follow-up visit and one CT scan every 2.5 months (4.8 per patient-year), integrated over progressed-state occupancy.
 
 **Dispersion of sampled parameters** (issue #56). The four resource-use costs are gamma distributed with a coefficient of variation (CV) of 0.20, and `u_np` (beta) and `u_decrement` (gamma) with a CV of 0.15. Both CVs are **assumptions**: no study reports the dispersion of these costs, and the utility sources give no usable standard error, so conventional moderate values were chosen. They are neither estimated from data nor taken from the literature, and they are not varied in a scenario. A CV of 0.20 gives a gamma 95% interval of about 0.65 to 1.43 times the mean; a CV of 0.15 gives a beta 95% interval for `u_np` = 0.73 of about 0.49 to 0.91.
 
@@ -228,7 +229,7 @@ cost_table <- data.frame(
     "NGS test",
     "Outpatient visit",
     "Baseline visit",
-    "Follow-up visit, progressed (per quarter)",
+    "Follow-up visit, progressed (every 2.5 months)",
     "Post-progression treatment (per quarter)",
     "End-of-life cost"
   ),
@@ -266,20 +267,111 @@ knitr::kable(
     general = c(
       "Fixed parameters are not sampled in the PSA and therefore carry no value-of-information; they are varied in the one-way analysis.",
       "Sampled costs are gamma distributed with an assumed CV of 0.20 (no source; see text). Visit costs: DRG weight 0.047 times the 2023 ISF unit price (NOK 49,484).",
-      "The CT scan price is also charged once per quarter in the progressed state.",
-      "c_other_pp is zero in the base case: post-progression treatment is outside the modeled scope (see below). Its deterministic range is degenerate, so it is tested as a structural scenario rather than in the one-way analysis."
+      "The CT scan price is also charged once every 2.5 months in the progressed state.",
+      "c_other_pp is zero in the base case, which costs second-line therapy at incident progression instead (see below). Its deterministic range is degenerate, so the former EUR 5,000 per quarter is tested as a structural scenario that replaces the second-line pathway."
     ),
     general_title = "Notes: "
   )
 ```
 
-## Post-progression treatment costs
+## Second-line therapy after progression
 
-The base case applies **no post-progression treatment cost**. Once a patient has progressed, the model charges only the quarterly follow-up visit (`c_other_follow`), a quarterly CT scan (`c_test_CT`, issue #164) and the one-time end-of-life cost (`c_other_last`); second-line systemic therapy and any further post-progression visits are not modeled. Because the strategies differ in the time patients spend in the progressed state, this omission is **differential** rather than a common offset, and its direction depends on which strategy accrues more progressed time. The parameter `c_other_pp` makes the omission explicit and is varied in a structural scenario (EUR 5,000 per quarter in the progressed state) reported in the one-way sensitivity analysis.
+```{r second-line}
+sl_cost <- second_line_cost_per_progression(l_params_base)
+sl_table_cost <- second_line_cost(read_second_line_pathway(), l_params_base)$summary
+sl_share <- pfs_progression_share(data_complete)
+sl_spec <- parameter_distribution_spec()
+sl_spec <- sl_spec[sl_spec$group == "second_line", , drop = FALSE]
+sl_ranges <- build_dsa_ranges(l_params_base, parameter_distribution_spec(), mult = DSA_mult)
+sl_ranges <- sl_ranges[match(sl_spec$parameter, sl_ranges$pars), ]
+sl_sourced <- sl_spec$parameter %in% l_params_base$dsa_bounds$pars
+sl_scenarios <- dsa_structural_scenarios(dr, time_horizon / 52, l_params_base$c_other_pp)
+if (!isTRUE(all.equal(sl_cost, sl_table_cost["base", "per_progressing"], tolerance = 1e-10))) {
+  stop("The closed-form second-line cost differs from second_line_cost() on the pathway table.")
+}
+fmt_sl <- function(par, x) if (startsWith(par, "c_")) fmt_eur(x) else sprintf("%.3f", x)
+sl_dist <- function(i) {
+  if (!sl_spec$psa[i]) return("Fixed")
+  sprintf("%s (SE %.3f)", sl_spec$distribution[i], l_params_base$psa_se[[sl_spec$parameter[i]]])
+}
+sl_table <- data.frame(
+  Symbol = sl_spec$parameter,
+  Base_Case = mapply(fmt_sl, sl_spec$parameter, unlist(l_params_base[sl_spec$parameter])),
+  DSA_Low = mapply(fmt_sl, sl_spec$parameter, sl_ranges$min),
+  DSA_High = mapply(fmt_sl, sl_spec$parameter, sl_ranges$max),
+  DSA_Source = ifelse(sl_sourced, "Sourced bounds", sprintf("+/-%d%%", round(100 * DSA_mult))),
+  PSA = vapply(seq_len(nrow(sl_spec)), sl_dist, character(1)),
+  stringsAsFactors = FALSE, row.names = NULL)
+```
+
+Since issue #209 the base case costs **second-line systemic therapy** after progression from the Norwegian pathway that the trial team described (FOLFIRI or Nordic FLIRI, some bevacizumab or panitumumab; about 80% of progressing patients treated, no difference by arm). The sourced table `data/external/second_line_pathway.csv` gives the shares, doses, public list prices, contacts and blood tests per cycle and the number of cycles; its derivation is documented in the private repository. The expected course cost is `r fmt_eur(sl_cost)` per progressing patient (`r fmt_eur(sl_table_cost["base", "per_treated"])` per treated patient over `r sprintf("%.1f", sl_table_cost["base", "weeks_treated"])` weeks on average; extreme scenarios of the table `r fmt_eur(sl_table_cost["low", "per_progressing"])` to `r fmt_eur(sl_table_cost["high", "per_progressing"])`).
+
+The course cost is charged **once at incident progression** and discounted at the time of progression (`second_line_event_costs()`), not as a rate over progressed occupancy: its inputs are mean courses among treated patients, so the cost depends on how many patients progress and when, not on how long they survive afterwards. Incident progressions per weekly interval are the decrement of the PFS curve times the share of PFS events that are progressions rather than deaths without progression. That share is counted in the complete-case cohort under the PFS rule of issue #181: `r sl_share$n_progression` of `r sl_share$n_events` PFS events (`r sprintf("%.3f", sl_share$value)`), pooled over both arms because the trial team expects the same pathway in both arms and the counts by arm are small (`r paste(sprintf("%s: %d of %d", tolower(colnames(sl_share$by_arm)), sl_share$by_arm["progression", ], colSums(sl_share$by_arm)), collapse = "; ")`); a count of zero deaths without progression in one arm would give a degenerate beta distribution. The cost is linear in the PFS curve, so it adds over the joint biomarker cells exactly like the other progression-free costs.
+
+In the PSA the shares are beta and the cycles gamma distributed; their standard errors read the table's bounds as an approximate 95% interval (an **assumption**: the bounds are sourced extremes, not confidence intervals), and the progression share is Beta(`r sl_share$n_progression`, `r sl_share$n_death`). The drug cost per cycle of each backbone and biologic (doses, patient size and list prices folded together) and the contacts and blood tests are fixed in the PSA, like the other unit prices. The sampled parameters form the EVPPI group "Second-line therapy". The one-way analysis uses the table's bounds where it gives a range and +/-`r round(100 * DSA_mult)`% otherwise. Two structural scenarios test the choice: no second-line cost (the base case before issue #209) and the former flat `r fmt_eur(sl_scenarios$Post_progression_cost$max)` per quarter of progressed occupancy (`c_other_pp`), which **replaces** the pathway rather than adding to it.
+
+```{r second-line-table}
+knitr::kable(
+  sl_table,
+  booktabs = TRUE,
+  row.names = FALSE,
+  align = c("l", "r", "r", "r", "l", "l"),
+  col.names = c("Symbol", "Base Case", "DSA Low", "DSA High", "DSA range", "PSA"),
+  caption = "Second-line therapy inputs"
+) %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 8) %>%
+  tbl_column_spec(1, width = "4.6cm") %>%
+  tbl_column_spec(2, width = "1.6cm") %>%
+  tbl_column_spec(3, width = "1.6cm") %>%
+  tbl_column_spec(4, width = "1.6cm") %>%
+  tbl_column_spec(5, width = "2.2cm") %>%
+  tbl_column_spec(6, width = "2.4cm")
+```
+
+Once a patient has progressed, the model also charges the follow-up visit (`c_other_follow`) and a CT scan (`c_test_CT`, issue #164) every 2.5 months (issue #207) and the one-time end-of-life cost (`c_other_last`). Adverse-event costs, third-line therapy and BRAF-targeted second-line therapy (encorafenib with cetuximab) are not costed.
+
+The second-line course and the third and fourth treatment sequences (issue #208, below) are costed separately and do not overlap: a later sequence reintroduces the first-line regimen (FLOX, or FLOX + nivolumab) and belongs to the first-line strategy, including the sequences the trial started on progression during a treatment break, whereas the second-line course follows the failure of first-line treatment. The timing is approximate: the later sequences are placed at the trial's observed start weeks, independent of the health state, and the second-line course at the modeled incident progression.
 
 ## Second treatment sequence
 
-The treatment schedules give a second eight-cycle sequence at weeks 24-38 to **every patient still progression-free** at that point, in both arms. In METIMMOX the second sequence was started on progression during the treatment break, so the model charges second-sequence drug and visit costs to progression-free patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model; the assumption is instead bounded by a structural scenario that removes the second sequence entirely while holding survival at the trial estimate, giving a cost-side bound.
+The treatment schedules give a second eight-cycle sequence at weeks 24-38 to **every patient still progression-free** at that point, in both arms. In METIMMOX the second sequence was started on progression during the treatment break, so the model charges second-sequence drug and visit costs to progression-free patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be triggered on progression without restructuring the model; the assumption is instead bounded by a structural scenario that removes the second sequence entirely while holding survival at the trial estimate, giving a cost-side bound. The scenario also removes the third and fourth sequences, which presuppose a second.
+
+## Third and fourth treatment sequences
+
+Later sequences were also started on progression during a treatment break, so they follow no fixed schedule (trial team, 15 October 2026; issue #208). They are costed from the trial's administration records: for each arm, the share of patients of the economic population who started a third sequence and, among them, the share who started a fourth, times one full sequence of the arm's regimen (`r length(l_params_base$later_sequences$regimen$control$FLOX)` FLOX administrations in the control arm, `r length(l_params_base$later_sequences$regimen$experimental$FLOX)` FLOX and `r length(l_params_base$later_sequences$regimen$experimental$nivolumab)` nivolumab administrations in the experimental arm, two outpatient contacts per FLOX and one per nivolumab administration, one blood test per administration week), discounted at the observed start weeks of the starters. The cost is an expected cost per patient assigned to the arm, independent of the health state, so the guided strategies take it through the arm their biomarker cells are assigned to. Every administration is costed in full; the delivered counts are a cross-check only. Survival is unchanged: the fitted OS and PFS curves already reflect the treatment delivered. In the PSA each share has a beta distribution from its counts.
+
+```{r later-sequences-table}
+later_counts <- l_params_base$later_sequences$counts
+later_starts <- summarise_later_sequence_starts(l_params_base$later_sequences)
+start_text <- function(arm, k) {
+  row <- later_starts[later_starts$arm == arm & later_starts$sequence == k, , drop = FALSE]
+  if (!nrow(row)) return("--")
+  sprintf("%g (%g-%g)", row$median, row$min, row$max)
+}
+later_table <- do.call(rbind, lapply(seq_len(nrow(later_counts)), function(i) {
+  arm <- later_counts$arm[i]
+  data.frame(
+    Arm = if (arm == "experimental") "FLOX + nivolumab" else "FLOX",
+    Patients = later_counts$n_patients[i],
+    `Third sequence` = sprintf("%d (%s)", later_counts$n_seq3[i],
+                               fmt_pct(l_params_base[[paste0("p_seq3_", arm)]])),
+    `Start week (third), median (range)` = start_text(arm, 3),
+    `Fourth sequence` = sprintf("%d (%s of third)", later_counts$n_seq4[i],
+                                fmt_pct(l_params_base[[paste0("p_seq4_given_seq3_", arm)]])),
+    `Start week (fourth), median (range)` = start_text(arm, 4),
+    check.names = FALSE, stringsAsFactors = FALSE)
+}))
+knitr::kable(later_table, booktabs = TRUE, row.names = FALSE, align = c("l", rep("r", 5)),
+             format = report_table_format(),
+             caption = "Third and fourth treatment sequences by arm (economic population; weeks from inclusion)") %>%
+  tbl_style(latex_options = c("HOLD_position"), font_size = 8) %>%
+  tbl_column_spec(1, width = "2.6cm") %>%
+  tbl_column_spec(2, width = "1.4cm") %>%
+  tbl_column_spec(3, width = "2.4cm") %>%
+  tbl_column_spec(4, width = "2.4cm") %>%
+  tbl_column_spec(5, width = "2.8cm") %>%
+  tbl_column_spec(6, width = "2.4cm")
+```
 
 # Structural Parameters
 
@@ -320,7 +412,7 @@ schedule_step <- "Indicator of a scheduled event at each weekly grid point; mult
 
 trace <- rbind(
   data.frame(Field = "cl", Function = "model_fun(), discount_weights(), calculate_outcomes()",
-             Step = "Cycle length in years: the year of each grid point for discounting, the duration of each interval for QALYs (trapezoidal weights), and the conversion of quarterly cost rates (4 x cl quarters per interval)."),
+             Step = "Cycle length in years: the year of each grid point for discounting, the duration of each interval for QALYs (trapezoidal weights), and the conversion of cost rates per progressed patient-year (4.8 x cl monitoring contacts and 4 x cl quarters per interval)."),
   data.frame(Field = "time_horizon", Function = "model_fun()",
              Step = "Number of weekly intervals; fixes the time_horizon + 1 grid points against which schedules and survival curves are checked and on which PSA curves are predicted."),
   data.frame(Field = "dr_costs", Function = "discount_weights()",
@@ -338,20 +430,38 @@ trace <- rbind(
   data.frame(Field = "c_drug_FLOX", Function = "calculate_outcomes()",
              Step = "Drug cost per FLOX administration: l_FLOX_exp in biomarker-positive subgroups, l_FLOX_control otherwise."),
   data.frame(Field = "c_test_CT", Function = "calculate_outcomes()",
-             Step = "CT price: scheduled scans (l_CT) while progression-free, and one scan per quarter of progressed occupancy."),
+             Step = "CT price: scheduled scans (l_CT, every 8 weeks) while progression-free, and one scan every 2.5 months of progressed occupancy."),
   data.frame(Field = "c_test_blood", Function = "calculate_outcomes()",
-             Step = "Blood-test price on the l_blood schedule."),
+             Step = "Blood-test price on the l_blood schedule (every administration week and every CT)."),
   data.frame(Field = unname(cost_keys), Function = "calculate_outcomes()",
              Step = paste0("One-time diagnostic test at week 0 for every patient of the ",
                            strategy_label(names(cost_keys)), " strategy (also the screening cost of the enriched-population analysis).")),
   data.frame(Field = "c_other_visit", Function = "calculate_outcomes()",
-             Step = "Outpatient visit price on the l_visit schedule."),
+             Step = "Outpatient visit price on the l_visit schedule plus a second contact for every FLOX administration of the regimen (FLOX_CONTACTS_PER_ADMINISTRATION)."),
   data.frame(Field = "c_other_baseline", Function = "calculate_outcomes()",
              Step = "One-time baseline visit at week 0."),
   data.frame(Field = "c_other_follow", Function = "calculate_outcomes()",
-             Step = "Follow-up visit rate per quarter of progressed occupancy."),
+             Step = "Follow-up visit every 2.5 months of progressed occupancy (PROGRESSED_MONITORING_PER_YEAR = 4.8)."),
   data.frame(Field = "c_other_pp", Function = "calculate_outcomes()",
-             Step = "Post-progression treatment rate per quarter of progressed occupancy (0 in the base case)."),
+             Step = "Flat post-progression treatment rate per quarter of progressed occupancy (0 in the base case; EUR 5,000 in the Post_progression_cost scenario, which replaces the second-line pathway)."),
+  data.frame(Field = "p_pfs_progression", Function = "second_line_event_costs()",
+             Step = "Share of PFS events that are progressions (trial count under the #181 rule): incident progressions = PFS decrement x this share."),
+  data.frame(Field = grep("^p_sl_", SECOND_LINE_MODEL_PARAMETERS, value = TRUE),
+             Function = "second_line_cost_per_progression()",
+             Step = "Second-line pathway shares: treated among progressing patients, FOLFIRI backbone, RAS/BRAF wild type, anti-EGFR if wild type, bevacizumab otherwise."),
+  data.frame(Field = grep("^n_sl_cycles_", SECOND_LINE_MODEL_PARAMETERS, value = TRUE),
+             Function = "second_line_cost_per_progression()",
+             Step = "Mean second-line course length in cycles, without a biologic, with bevacizumab and with panitumumab."),
+  data.frame(Field = c("n_sl_contacts_FOLFIRI", "n_sl_contacts_FLIRI", "n_sl_blood_tests"),
+             Function = "second_line_cost_per_progression()",
+             Step = "Outpatient contacts (at c_other_visit) and blood tests (at c_test_blood) per second-line cycle."),
+  data.frame(Field = grep("^c_sl_drug_", SECOND_LINE_MODEL_PARAMETERS, value = TRUE),
+             Function = "second_line_cost_per_progression()",
+             Step = "Drug cost per second-line cycle of each backbone and biologic (doses, patient size and list prices of the pathway table)."),
+  data.frame(Field = "psa_se", Function = "create_parameter_distributions()",
+             Step = "Not read by model_fun(); standard errors of the sampled second-line parameters, which have no spec CV."),
+  data.frame(Field = "dsa_bounds", Function = "build_dsa_ranges()",
+             Step = "Not read by model_fun(); sourced one-way bounds of the second-line parameters that replace +/- DSA_mult."),
   data.frame(Field = "c_other_last", Function = "calculate_outcomes()",
              Step = "End-of-life cost charged on each interval's increase in dead occupancy."),
   data.frame(Field = c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"),
@@ -372,7 +482,15 @@ trace <- rbind(
   data.frame(Field = "prediction_population", Function = "model_fun()",
              Step = "Complete-case patients whose predictions are averaged, deterministically and in every PSA draw."),
   data.frame(Field = "population_weights", Function = "model_fun()",
-             Step = "Weights behind the current curves; compared with the weights implied by the prevalence fields.")
+             Step = "Weights behind the current curves; compared with the weights implied by the prevalence fields."),
+  data.frame(Field = c("p_seq3_control", "p_seq3_experimental"),
+             Function = "later_sequence_resource_use()",
+             Step = "Share of patients assigned to the arm who start a third treatment sequence (issue #208); scales one full sequence of the arm's regimen at the observed start weeks, whatever the health state."),
+  data.frame(Field = c("p_seq4_given_seq3_control", "p_seq4_given_seq3_experimental"),
+             Function = "later_sequence_resource_use()",
+             Step = "Share of third-sequence starters who start a fourth; the fourth-sequence share is p_seq3 x p_seq4_given_seq3."),
+  data.frame(Field = "later_sequences", Function = "later_sequence_resource_use(), create_parameter_distributions()",
+             Step = "Counts by arm (beta parameters of the four shares), observed start weeks of the starters (where the sequence costs fall) and the regimen of one sequence by arm.")
 )
 
 # IPD utility mode only (UTILITY_SOURCE = 0, issue #188).
@@ -410,4 +528,4 @@ knitr::kable(
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.8
+**Report version:** 5.2

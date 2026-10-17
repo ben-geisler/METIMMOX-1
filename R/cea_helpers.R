@@ -400,7 +400,12 @@ create_ceac_plot <- function(psa_obj,
 #' Intervals are the 2.5th/97.5th percentiles (type 7) of retained draws,
 #' with increments calculated within each draw versus standard of care.
 #' ICER is the ratio of mean increments, never the mean of draw-level ratios.
-#' @return Numeric means, percentile limits, pairwise ICER/status and Prob_CE.
+#' Life-years (issue #197) are summarised the same way from the PSA object's
+#' `ly_disc` and `ly_undisc` draws: means, percentile limits and paired
+#' increments versus standard of care, discounted (`LY_Disc`) and undiscounted
+#' (`LY_Undisc`). They do not enter the ICER, status or Prob_CE.
+#' @return Numeric means, percentile limits, pairwise ICER/status, Prob_CE and
+#'   the life-year columns (appended after Prob_CE).
 create_psa_summary_table <- function(psa_obj, wtp = NULL) {
 
   if (is.null(wtp)) {
@@ -419,6 +424,12 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
       Inc_QALY_Lower = numeric(), Inc_QALY_Upper = numeric(),
       ICER = numeric(), Status = character(),
       Prob_CE = numeric(),
+      Mean_LY_Disc = numeric(), LY_Disc_Lower = numeric(), LY_Disc_Upper = numeric(),
+      Mean_Inc_LY_Disc = numeric(),
+      Inc_LY_Disc_Lower = numeric(), Inc_LY_Disc_Upper = numeric(),
+      Mean_LY_Undisc = numeric(), LY_Undisc_Lower = numeric(), LY_Undisc_Upper = numeric(),
+      Mean_Inc_LY_Undisc = numeric(),
+      Inc_LY_Undisc_Lower = numeric(), Inc_LY_Undisc_Upper = numeric(),
       stringsAsFactors = FALSE
     ))
   }
@@ -437,17 +448,45 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
       any(!is.finite(m_cost)) || any(!is.finite(m_effect))) {
     stop("PSA summary requires aligned, finite cost/effect draws for every strategy.")
   }
-  df_ceac <- dampack::ceac(wtp = c(wtp - 1, wtp, wtp + 1), psa = psa_obj)
+  if (is.null(psa_obj$ly_disc) || is.null(psa_obj$ly_undisc)) {
+    stop("PSA summary requires life-year draws (psa_obj$ly_disc, psa_obj$ly_undisc; ",
+         "issue #197). Rerun analysis/10_PSA.R.")
+  }
+  m_ly_disc <- as.matrix(psa_obj$ly_disc)
+  m_ly_undisc <- as.matrix(psa_obj$ly_undisc)
+  if (!identical(dim(m_ly_disc), dim(m_cost)) || !identical(dim(m_ly_undisc), dim(m_cost)) ||
+      any(!is.finite(m_ly_disc)) || any(!is.finite(m_ly_undisc))) {
+    stop("PSA summary requires life-year draws aligned with the cost draws, all finite.")
+  }
+  # Probability of the highest NMB from the exact per-draw maximum, exact ties
+  # shared equally (#210). dampack::ceac() uses max.col(ties.method = "random"),
+  # which treats NMBs within a relative 1e-5 of the row maximum (about EUR 0.40
+  # here) as tied and breaks them with the RNG, so the result depended on the
+  # random state.
+  m_nmb <- m_effect * wtp - m_cost
+  m_winners <- m_nmb == apply(m_nmb, 1, max)
+  v_prob_ce <- colMeans(m_winners / rowSums(m_winners))
+  interval <- function(x) unname(quantile(x, c(0.025, 0.975), type = 7))
+  # Mean, percentile limits and paired increment versus control of column i of
+  # one life-year matrix; names follow the cost/QALY columns.
+  ly_columns <- function(m_ly, i, label) {
+    v_inc <- m_ly[, i] - m_ly[, control]
+    v_ci <- interval(m_ly[, i])
+    v_inc_ci <- interval(v_inc)
+    setNames(data.frame(mean(m_ly[, i]), v_ci[1], v_ci[2], mean(v_inc),
+                        v_inc_ci[1], v_inc_ci[2]),
+             c(paste0("Mean_", label), paste0(label, "_Lower"), paste0(label, "_Upper"),
+               paste0("Mean_Inc_", label), paste0("Inc_", label, "_Lower"),
+               paste0("Inc_", label, "_Upper")))
+  }
 
   summary_list <- lapply(seq_along(psa_obj$strategies), function(i) {
     strategy <- psa_obj$strategies[i]
-    df_ceac_row <- df_ceac[df_ceac$WTP == wtp & df_ceac$Strategy == strategy, ]
-    prob_ce <- if (nrow(df_ceac_row) > 0) df_ceac_row$Proportion[1] else NA_real_
+    prob_ce <- unname(v_prob_ce[i])
     v_inc_cost <- m_cost[, i] - m_cost[, control]
     v_inc_qaly <- m_effect[, i] - m_effect[, control]
     dc <- mean(v_inc_cost)
     de <- mean(v_inc_qaly)
-    interval <- function(x) unname(quantile(x, c(0.025, 0.975), type = 7))
     v_cost_ci <- interval(m_cost[, i])
     v_qaly_ci <- interval(m_effect[, i])
     v_dc_ci <- interval(v_inc_cost)
@@ -470,6 +509,8 @@ create_psa_summary_table <- function(psa_obj, wtp = NULL) {
       ICER = if (i == control || de == 0) NA_real_ else dc / de,
       Status = status,
       Prob_CE = prob_ce,
+      ly_columns(m_ly_disc, i, "LY_Disc"),
+      ly_columns(m_ly_undisc, i, "LY_Undisc"),
       stringsAsFactors = FALSE
     )
   })

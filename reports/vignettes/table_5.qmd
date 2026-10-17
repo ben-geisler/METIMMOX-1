@@ -28,7 +28,10 @@ setup_report(
 psa_obj <- load_current_psa_cache()
 
 psa_summary <- create_psa_summary_table(psa_obj, wtp = WTP)
-display_df <- format_psa_summary(psa_summary)
+# Life-years (issue #197) sit next to QALYs and their increments.
+display_df <- format_psa_summary(psa_summary)[, c(
+  "Strategy", "Cost", "QALYs", "LYs_Disc", "LYs_Undisc", "Inc_Cost", "Inc_QALYs",
+  "Inc_LYs_Disc", "Inc_LYs_Undisc", "ICER", "Status", "Prob_CE")]
 
 ```
 
@@ -38,14 +41,17 @@ if (nrow(display_df) > 0) {
     display_df,
     caption = "Table 5: Primary probabilistic cost-effectiveness results, means (95% uncertainty intervals)",
     format = "html",
-    col.names = c("Strategy", "Cost", "QALYs", "Incremental cost vs SoC",
-                  "Incremental QALYs vs SoC", "ICER vs SoC", "Pairwise status", "Probability CE"),
-    align = c("l", rep("r", 5), "l", "r")
+    col.names = c("Strategy", "Cost", "QALYs", "Life-years (discounted)",
+                  "Life-years (undiscounted)", "Incremental cost vs SoC",
+                  "Incremental QALYs vs SoC", "Incremental life-years vs SoC (discounted)",
+                  "Incremental life-years vs SoC (undiscounted)", "ICER vs SoC",
+                  "Pairwise status", "Probability CE"),
+    align = c("l", rep("r", 9), "l", "r")
   ) %>%
     kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                   full_width = FALSE, font_size = 12) %>%
     footnote(
-      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Intervals are the 2.5th and 97.5th percentiles of PSA draws, not confidence intervals for the mean. Increments are paired within draws versus standard of care. ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios; dominance is assessed from the means. Costs and QALYs are discounted at 4% annually. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
+      general = paste0("WTP threshold: EUR ", format(WTP, big.mark = ","), "/QALY. Intervals are the 2.5th and 97.5th percentiles of PSA draws, not confidence intervals for the mean. Increments are paired within draws versus standard of care. ICER is mean incremental cost divided by mean incremental QALYs, never a mean of per-draw ratios; dominance is assessed from the means. Costs, QALYs and discounted life-years are discounted at 4% annually; undiscounted life-years are the restricted mean survival over the ", format(time_horizon * cl), "-year horizon. Life-years come from the same PSA draws as costs and QALYs and do not enter the ICER. Joint biomarker proportions are sampled together; each draw applies the same population weights to every strategy."),
       general_title = "Notes: "
     )
 } else {

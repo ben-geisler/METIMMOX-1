@@ -2,6 +2,13 @@
 # Optimized to avoid redundant PSA runs: scenarios sharing the same cost
 # parameters reuse PSA results and only recalculate EVPPI at different WTPs.
 
+#' Biosimilar nivolumab price (EUR per administration)
+#'
+#' One third of the base-case price of EUR 1,392 (issue #210; formerly EUR 4,641,
+#' one third of the erroneous EUR 13,923). The single definition used by the
+#' scenario PSA (script 12), the biosimilar report, Table S8 and the SMDM poster.
+NIVO_PRICE_BIOSIMILAR <- 464
+
 #' Define scenarios for analysis
 #'
 #' @param base_wtp Base case WTP threshold
@@ -10,7 +17,7 @@
 #' @return Data frame with scenario definitions
 define_scenarios <- function(base_wtp = 51000,
                              base_c_drug_nivo = NULL,
-                             decreased_c_drug_nivo = 4641) {
+                             decreased_c_drug_nivo = NIVO_PRICE_BIOSIMILAR) {
 
   df_scenarios <- data.frame(
     scenario_id = c("base", "s1_decreased_nivo",
@@ -94,7 +101,10 @@ run_scenario_psa <- function(c_drug_nivo, l_params_base, param_distributions,
     cl = cl,
     n_sim = n_sim,
     seed = seed,
-    additional_params = df_interaction_coefs
+    additional_params = df_interaction_coefs,
+    # The price axis of paper 3 reads the cell outcomes and life-years of
+    # every scenario PSA (#197, #200); bind_psa_pair() requires them.
+    extended_outcomes = TRUE
   )
   psa_obj <- psa_build$psa_obj
   df_scenario_psa_params <- psa_build$psa_params

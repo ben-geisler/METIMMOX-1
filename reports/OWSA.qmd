@@ -208,9 +208,9 @@ Families whose OS and PFS pair violates the OS >= PFS ordering at some modeled t
 
 # Structural Scenarios
 
-The discount rate (applied to costs and QALYs together), the model time horizon, the post-progression treatment cost and the second treatment sequence are not sampled in the PSA. They are varied here as deterministic structural scenarios (issues #153 and #154); these are the ranges reported for those parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
+The discount rate (applied to costs and QALYs together), the model time horizon, the costing of treatment after progression and the second treatment sequence are not sampled in the PSA. They are varied here as deterministic structural scenarios (issues #153 and #154); these are the ranges reported for those parameters in the input-parameter table. A different time horizon re-predicts the base-case survival curves on the new weekly grid from the selected joint models and rebuilds the treatment and monitoring schedules with the same rules as the base case.
 
-Two of the scenarios test scope assumptions rather than parameter values. The base case applies **no post-progression treatment cost**: second-line systemic therapy is outside the modeled scope, so the progressed state accrues only a quarterly follow-up visit, a quarterly CT scan and the end-of-life cost. Because the strategies differ in time spent progressed, this omission is differential, and the scenario charges EUR 5,000 per quarter in the progressed state as an illustrative upper bound. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
+Three of the scenarios test scope assumptions rather than parameter values. Since issue #209 the base case costs **second-line therapy** from the Norwegian pathway, once at incident progression (`r fmt_eur(second_line_cost_per_progression(l_params_base))` per progressing patient). One scenario switches this cost off (the base case before #209); another replaces it with the former flat EUR `r format(dsa_scenarios$Post_progression_cost$max, big.mark = ",")` per quarter of progressed occupancy, which ties the cost to post-progression survival instead of to the number and timing of progressions. The base case also gives a **second treatment sequence at weeks 24–38** to every patient still progression-free at that point, whereas METIMMOX re-treated on progression during the treatment break; the scenario removes the second sequence entirely while holding survival at the trial estimate, so it bounds the cost side of that assumption only.
 
 Unit drug and test costs are fixed in the PSA (issue #154) because they are published tariffs or assumed list prices rather than quantities a study could resolve; their influence is quantified in the one-way analysis above, not in the value-of-information results.
 
@@ -225,12 +225,15 @@ if (any(scenario_rows$Parameter != "base_case")) {
     if (parameter == "Discount_rate") return(sprintf("Discount rate %g%%", 100 * param_value))
     if (parameter == "Time_horizon") return(sprintf("Time horizon %g years", param_value))
     if (parameter == "Post_progression_cost") {
-      return(sprintf("Post-progression cost EUR %s per quarter",
+      return(sprintf("EUR %s per quarter, no second line",
                      format(param_value, big.mark = ",")))
     }
+    if (parameter == "Second_line_therapy") {
+      return(if (param_value == 0) "Second line not costed" else "Second line costed")
+    }
     if (parameter == "Second_sequence") {
-      return(if (param_value == 0) "No second treatment sequence" else
-        "Second treatment sequence given")
+      return(if (param_value == 0) "No second or later treatment sequence" else
+        "Second and later treatment sequences given")
     }
     sprintf("%s = %g", parameter, param_value)
   }
@@ -279,4 +282,4 @@ The tornado plots and rankings show which parameters drive uncertainty in NMB fo
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.5
+**Report version:** 4.7

@@ -98,8 +98,29 @@ df_metimmox$PFSwk <- df_metimmox$`Days until progression`/7
 
 df_metimmox$OSwk <-df_metimmox$`Days until death/last follow up`/7
 
+# Treatment sequences 2-4 (issue #208): from the export's administration
+# block (columns 2640-2879, every visit's date and drug), per patient the
+# indicator SeqK, the start week SeqKwk (weeks from inclusion to the first
+# administration of sequence k) and the administrations delivered. Sequence 2
+# is descriptive (the model gives it to every progression-free patient at weeks
+# 24-38); sequences 3 and 4 are costed from these data (script 05).
+df_metimmox <- dplyr::bind_cols(df_metimmox, derive_treatment_sequences(df_metimmox))
+# The "Dates" sheet's "Start/End ... cycle" columns are formulas reading the
+# same block; check that they agree with it and report, in aggregate, how its
+# entries relate to the administrations (docs/decisions.md, #208).
+df_dates_check <- check_dates_sheet(
+  read_excel(export_path, sheet = "Dates") %>%
+    filter(!is.na(`Study1/control0`) & !ID %in% read.csv(
+      "data/sensitive/excluded_ids.csv", colClasses = "character")$ID),
+  df_metimmox)
+message("Dates sheet versus administration block (patients per sequence 1-4):")
+print(df_dates_check, row.names = FALSE)
+rm(df_dates_check)
+
 # Known biomarker counts (issue #174): week-4 CRP 7/35 vs 17/36, baseline CRP
-# 7/35 vs 8/38 (control vs experimental), TMB/BRAF 31/69, TLR 44/68.
+# 7/35 vs 8/38 (control vs experimental), TMB/BRAF 31/69, TLR 44/68; patients
+# starting sequences 2, 3 and 4 by arm and agreement of the administration
+# block with "Cycles FLOX"/"Cycles Nivolumab" (issue #208).
 check_export_counts(df_metimmox)
 
 saveRDS(df_metimmox, file="data/tidy/METIMMOX.rds")

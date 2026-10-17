@@ -36,7 +36,7 @@ source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05", "06"),
   funs = c("model_fun", "calculate_outcomes", "prediction_functions",
-           "report_format", "cea_helpers", "psa_functions"),
+           "report_format", "cea_helpers", "psa_functions", "scenario_analysis"),
   packages = c("here", "survival", "flexsurv", "coxphf", "dplyr", "ggplot2",
                "scales", "dampack", "knitr", "kableExtra"),
   set_theme = FALSE
@@ -347,7 +347,7 @@ single_draws <- list(
     data = dc, dist_os = dist_for$OS, dist_pfs = dist_for$PFS,
     n_samples = N, seed = 2028L))
 
-NIVO_FACTOR <- 4641 / 13923            # biosimilar nivolumab price (repo biosimilar scenario)
+NIVO_FACTOR <- NIVO_PRICE_BIOSIMILAR / l_params_base$c_drug_nivo  # biosimilar price (scenario_analysis.R, #210)
 
 curve <- function(sm, outcome, nd) {
   prediction <- predict(sm[[outcome]]$model, newdata = nd, type = "survival", times = times_c)
@@ -417,13 +417,13 @@ soc_lab <- strategy_label("control"); crp_lab <- strategy_label("crp"); tmb_lab 
 at_wtp <- ceac_df[ceac_df$WTP == WTP, ]
 pct <- function(panel, strat) sprintf("%.0f%%", 100 * at_wtp$Probability[at_wtp$Panel == panel & at_wtp$Strategy == strat])
 ceac_caption <- sprintf(paste(
-  "Cost-effectiveness acceptability curves at biosimilar nivolumab pricing (EUR 4,641 per administration).",
+  "Cost-effectiveness acceptability curves at biosimilar nivolumab pricing (EUR %s per administration).",
   "Left: each biomarker-guided strategy from its own single-biomarker survival model.",
   "Right: both from the joint, correlation-adjusted economic model.",
   "The standard-of-care curve is the joint model with treatment set to control in both panels, so the panels differ only in the guided-strategy curves.",
   "At EUR %s per QALY (dotted line) the probability of being optimal is: standard of care %s (single) vs %s (joint); CRP-guided %s vs %s; TMB/BRAF-guided %s vs %s.",
   "Survival uncertainty: joint multivariate-normal OS/PFS coefficient draws with paired-bootstrap dependence (n = %d; joint model from the repository sampling cache, single-biomarker models with the same sampler); PFS > OS crossings are capped in PSA mode."),
-  format(WTP, big.mark = ","), pct(panel_single, soc_lab), pct(panel_joint, soc_lab),
+  format(NIVO_PRICE_BIOSIMILAR, big.mark = ","), format(WTP, big.mark = ","), pct(panel_single, soc_lab), pct(panel_joint, soc_lab),
   pct(panel_single, crp_lab), pct(panel_joint, crp_lab), pct(panel_single, tmb_lab), pct(panel_joint, tmb_lab), N)
 ```
 

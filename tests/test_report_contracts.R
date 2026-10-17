@@ -273,8 +273,10 @@ v_fun_files <- list.files(fun_dir, pattern = "\\.R$", full.names = TRUE)
 defines <- list()
 for (f in v_fun_files) {
   v_src <- readLines(f, warn = FALSE)
-  nm <- unique(sub("^\\s*([A-Za-z._][A-Za-z0-9._]*)\\s*(<-|=)\\s*function.*$", "\\1",
-                   grep("^\\s*[A-Za-z._][A-Za-z0-9._]*\\s*(<-|=)\\s*function", v_src, value = TRUE)))
+  # Top-level definitions only: a helper local to a function (e.g. unit() inside
+  # voi_designs.R) is not reachable by sourcing the file.
+  nm <- unique(sub("^([A-Za-z._][A-Za-z0-9._]*)\\s*(<-|=)\\s*function.*$", "\\1",
+                   grep("^[A-Za-z._][A-Za-z0-9._]*\\s*(<-|=)\\s*function", v_src, value = TRUE)))
   for (n in nm) defines[[n]] <- c(defines[[n]], tools::file_path_sans_ext(basename(f)))
 }
 # Sourced unconditionally by 02_setup_and_global_variables.R, so always in scope.
@@ -361,7 +363,29 @@ if (exists("po") && file.exists(table5_path)) {
   }
   expected$ICER <- colMeans(m_dc) / colMeans(m_de)
   expected$ICER[control] <- NA_real_
+  # Life-years (#197): means, percentile limits and paired increments of the
+  # cached life-year draws, discounted and undiscounted.
+  check(!is.null(po$ly_disc) && !is.null(po$ly_undisc) &&
+          identical(dim(as.matrix(po$ly_disc)), dim(m_cost)) &&
+          identical(dim(as.matrix(po$ly_undisc)), dim(m_cost)),
+        "PSA cache lacks life-year draws aligned with its cost draws (#197)")
+  for (entry in list(list("LY_Disc", po$ly_disc), list("LY_Undisc", po$ly_undisc))) {
+    if (is.null(entry[[2]])) next
+    m_ly <- as.matrix(entry[[2]])
+    m_dly <- sweep(m_ly, 1, m_ly[, control])
+    expected[[paste0("Mean_", entry[[1]])]] <- colMeans(m_ly)
+    expected[[paste0(entry[[1]], "_Lower")]] <- apply(m_ly, 2, quantile, 0.025)
+    expected[[paste0(entry[[1]], "_Upper")]] <- apply(m_ly, 2, quantile, 0.975)
+    expected[[paste0("Mean_Inc_", entry[[1]])]] <- colMeans(m_dly)
+    expected[[paste0("Inc_", entry[[1]], "_Lower")]] <- apply(m_dly, 2, quantile, 0.025)
+    expected[[paste0("Inc_", entry[[1]], "_Upper")]] <- apply(m_dly, 2, quantile, 0.975)
+  }
+  if (!is.null(po$ly_disc) && !is.null(po$ly_undisc))
+    check(all(as.matrix(po$ly_disc) <= as.matrix(po$ly_undisc)) &&
+            all(as.matrix(po$ly_disc) >= 0),
+          "PSA life-year draws: discounted exceeds undiscounted or is negative (#197)")
   for (column in names(expected)) {
+    check(column %in% names(df_table5), paste("Table 5 lacks column:", column))
     check(isTRUE(all.equal(as.numeric(df_table5[[column]]), unname(expected[[column]]),
                            tolerance = 1e-10)),
           paste("Table 5 differs from independent PSA calculation:", column))

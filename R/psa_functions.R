@@ -162,19 +162,66 @@ psa_replacement_candidates <- function(failed_i, n_sim, max_attempts = 10L) {
   as.integer(((failed_i + seq_len(candidate_count) - 1L) %% n_sim) + 1L)
 }
 
-# Both initial draws and replacements must return exactly one finite cost and
-# effect per strategy. Duplicates, missing columns and extra rows are failures.
+# Outcome columns every PSA draw must return, one finite value per strategy:
+# cost, QALYs and discounted/undiscounted life-years (issue #197).
+PSA_OUTCOME_COLUMNS <- c("Cost", "Effect", "LY_disc", "LY_undisc")
+
+#' Check that a model_fun() result is a complete PSA outcome row set
+#'
+#' Both initial draws and replacements must return exactly one finite cost,
+#' effect and discounted and undiscounted life-year value per strategy (the
+#' result columns PSA_OUTCOME_COLUMNS). Duplicates, missing columns and extra
+#' rows are failures.
+#'
+#' @param results Data frame returned by model_fun().
+#' @param strategies Expected strategy identifiers.
+#' @return TRUE or FALSE.
 psa_outcomes_complete <- function(results, strategies) {
   is.data.frame(results) &&
-    all(c("Strategy", "Cost", "Effect") %in% names(results)) &&
+    all(c("Strategy", PSA_OUTCOME_COLUMNS) %in% names(results)) &&
     nrow(results) == length(strategies) &&
     !anyNA(results$Strategy) && !anyDuplicated(results$Strategy) &&
     setequal(as.character(results$Strategy), strategies) &&
-    is.numeric(results$Cost) && is.numeric(results$Effect) &&
-    all(is.finite(results$Cost)) && all(is.finite(results$Effect))
+    all(vapply(PSA_OUTCOME_COLUMNS, function(column) {
+      is.numeric(results[[column]]) && all(is.finite(results[[column]]))
+    }, logical(1)))
+}
+
+#' Check the outcomes of one draw of the extended PSA
+#'
+#' A draw of the extended PSA (issues #197, #200) must carry the complete
+#' outcome columns of psa_outcomes_complete() (cost, QALYs and both life-year
+#' columns for every strategy) and the cell outcomes of model_fun(return_cells
+#' = TRUE) (attribute `cells`): finite values for every observed cell, both
+#' arms and every outcome in CELL_OUTCOMES, and joint cell weights that are
+#' finite, non-negative and sum to one.
+#'
+#' @param results Data frame returned by model_fun().
+#' @param strategies Strategy identifiers.
+#' @param cells Expected cell keys (e.g. "00", "01", "10", "11").
+#' @return Logical scalar.
+psa_extended_outcomes_complete <- function(results, strategies, cells) {
+  if (!psa_outcomes_complete(results, strategies)) return(FALSE)
+  cell_results <- attr(results, "cells")
+  if (is.null(cell_results) || !is.array(cell_results$values)) return(FALSE)
+  v_dim <- dimnames(cell_results$values)
+  if (!identical(v_dim[[1]], cells) || !identical(v_dim[[2]], CELL_ARMS) ||
+      !identical(v_dim[[3]], CELL_OUTCOMES)) return(FALSE)
+  v_mass <- cell_results$mass
+  if (!identical(names(v_mass), cells) || any(!is.finite(v_mass)) || any(v_mass < 0) ||
+      abs(sum(v_mass) - 1) > 1e-10) return(FALSE)
+  v_observed <- cell_results$counts[cells] > 0
+  all(is.finite(cell_results$values[v_observed, , ]))
 }
 
 #' Run PSA analysis across all simulations
+#'
+#' Every draw must return one finite cost, QALY and discounted and
+#' undiscounted life-year value per strategy (the result columns of
+#' model_fun(); issue #197). With extended outcomes (issue #200) every draw
+#' also returns the outcomes of the four joint biomarker cells under both arms
+#' (model_fun(return_cells = TRUE)). A draw without them is a failed draw and
+#' is replaced like any other.
 #'
 #' @param psa_params Data frame with PSA parameter samples
 #' @param l_params_base Base case parameter list
@@ -185,14 +232,25 @@ psa_outcomes_complete <- function(results, strategies) {
 #' @param n_sim Number of simulations
 #' @param fallback_threshold Maximum permitted proportion of initial PSA
 #'   iterations using fallback before the analysis stops
-#' @return List with cost and effect matrices, retained iteration indices, and
-#'   fallback/drop diagnostics
+#' @param extended_outcomes Collect the cell-level outcomes. NULL (default)
+#'   uses them whenever model_fun() has a `return_cells` argument, as the
+#'   production model does; test stubs without it run without cells (they
+#'   must still return the four outcome columns).
+#' @return List with cost, effect and life-year (`ly_disc`, `ly_undisc`)
+#'   matrices (retained draws x strategies), retained iteration indices, and
+#'   fallback/drop diagnostics; with extended outcomes also `cells` (list of
+#'   `values`, draw x cell x arm x outcome; `mass`, draw x cell; `violations`,
+#'   draw x cell x arm; `cells`, the cell keys).
 run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                              strategies, time_horizon, cl, n_sim,
-                             fallback_threshold = 0.02) {
+                             fallback_threshold = 0.02,
+                             extended_outcomes = NULL) {
   if (length(fallback_threshold) != 1L || !is.finite(fallback_threshold) ||
       fallback_threshold < 0 || fallback_threshold > 1) {
     stop("fallback_threshold must be a single finite value between 0 and 1")
+  }
+  if (is.null(extended_outcomes)) {
+    extended_outcomes <- "return_cells" %in% names(formals(model_fun))
   }
 
   # Create empty matrices to store results
@@ -200,6 +258,58 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
                         dimnames = list(NULL, strategies))
   m_effect <- matrix(NA, nrow = n_sim, ncol = length(strategies),
                           dimnames = list(NULL, strategies))
+  # Life-years of the same draws (issue #197), filled together with cost and
+  # effect so a replaced draw carries the outcomes of the model actually used.
+  m_ly_disc <- matrix(NA, nrow = n_sim, ncol = length(strategies),
+                      dimnames = list(NULL, strategies))
+  m_ly_undisc <- matrix(NA, nrow = n_sim, ncol = length(strategies),
+                        dimnames = list(NULL, strategies))
+
+  # Cell-level outcomes (#200), filled per draw.
+  v_cells <- NULL
+  if (isTRUE(extended_outcomes)) {
+    if (is.null(l_params_base$prediction_population)) {
+      stop("Extended PSA outcomes need l_params_base$prediction_population.")
+    }
+    v_cells <- rownames(joint_biomarker_population(l_params_base$prediction_population)$cells)
+    a_cell_values <- array(NA_real_, dim = c(n_sim, length(v_cells), length(CELL_ARMS),
+                                             length(CELL_OUTCOMES)),
+      dimnames = list(draw = NULL, cell = v_cells, arm = CELL_ARMS, outcome = CELL_OUTCOMES))
+    m_cell_mass <- matrix(NA_real_, n_sim, length(v_cells), dimnames = list(NULL, v_cells))
+    a_cell_violations <- array(NA_integer_, dim = c(n_sim, length(v_cells), length(CELL_ARMS)),
+      dimnames = list(draw = NULL, cell = v_cells, arm = CELL_ARMS))
+  }
+
+  # A draw is usable when it did not fall back and returned every outcome
+  # column (and, with extended outcomes, the cells).
+  draw_complete <- function(df_sim_results) {
+    !isTRUE(attr(df_sim_results, "fallback_used")) &&
+      psa_outcomes_complete(df_sim_results, strategies) &&
+      (!isTRUE(extended_outcomes) ||
+         psa_extended_outcomes_complete(df_sim_results, strategies, v_cells))
+  }
+  # Store a complete draw's outcomes in row i; the life-years come from the
+  # result columns LY_disc and LY_undisc (issue #197).
+  store_draw <- function(i, df_sim_results) {
+    v_strategy_rows <- match(strategies, df_sim_results$Strategy)
+    m_cost[i, ] <<- df_sim_results$Cost[v_strategy_rows]
+    m_effect[i, ] <<- df_sim_results$Effect[v_strategy_rows]
+    m_ly_disc[i, ] <<- df_sim_results$LY_disc[v_strategy_rows]
+    m_ly_undisc[i, ] <<- df_sim_results$LY_undisc[v_strategy_rows]
+    if (isTRUE(extended_outcomes)) {
+      cell_results <- attr(df_sim_results, "cells")
+      a_cell_values[i, , , ] <<- cell_results$values
+      m_cell_mass[i, ] <<- cell_results$mass[v_cells]
+      a_cell_violations[i, , ] <<- cell_results$violations
+    }
+  }
+  # model_fun() arguments common to the initial pass and the replacements.
+  run_draw <- function(sim_params, model_index) {
+    v_args <- list(params = sim_params, time_horizon = time_horizon, cl = cl,
+                   determpsa = "psa", return_traces = FALSE, sim_idx = model_index)
+    if (isTRUE(extended_outcomes)) v_args$return_cells <- TRUE
+    do.call(model_fun, v_args)
+  }
 
   # Track PFS > OS constraint violations (Issue #76)
   # Instead of printing thousands of warnings, we aggregate and summarize
@@ -227,14 +337,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     # This allows us to aggregate PFS > OS warnings instead of printing thousands
     tryCatch({
       withCallingHandlers({
-        df_sim_results <- model_fun(
-          params = sim_params,
-          time_horizon = time_horizon,
-          cl = cl,
-          determpsa = "psa",
-          return_traces = FALSE,
-          sim_idx = i  # THIS IS THE CRITICAL FIX - passes resampled model index
-        )
+        # sim_idx = i passes the resampled model index (the critical fix of #79).
+        df_sim_results <- run_draw(sim_params, i)
       }, warning = function(w) {
         # Route structured PFS > OS warnings without parsing their message text.
         if (inherits(w, "survival_ordering_warning")) {
@@ -250,13 +354,10 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       })
 
       # Validate immediately, before the threshold and replacement phase (#171).
-      if (isTRUE(attr(df_sim_results, "fallback_used")) ||
-          !psa_outcomes_complete(df_sim_results, strategies)) {
+      if (!draw_complete(df_sim_results)) {
         v_fallback_iterations <- c(v_fallback_iterations, i)
       } else {
-        v_strategy_rows <- match(strategies, df_sim_results$Strategy)
-        m_cost[i, ] <- df_sim_results$Cost[v_strategy_rows]
-        m_effect[i, ] <- df_sim_results$Effect[v_strategy_rows]
+        store_draw(i, df_sim_results)
       }
     }, error = function(e) {
       cat("Error in simulation", i, ":", conditionMessage(e), "\n")
@@ -266,6 +367,8 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
       for (strat in strategies) {
         m_cost[i, strat] <<- NA
         m_effect[i, strat] <<- NA
+        m_ly_disc[i, strat] <<- NA
+        m_ly_undisc[i, strat] <<- NA
       }
     })
     
@@ -351,24 +454,15 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
         # Try to run with a different resampled model
         tryCatch({
           suppressWarnings({
-            df_sim_results <- model_fun(
-              params = sim_params,
-              time_horizon = time_horizon,
-              cl = cl,
-              determpsa = "psa",
-              return_traces = FALSE,
-              sim_idx = actual_sim_idx
-            )
+            df_sim_results <- run_draw(sim_params, actual_sim_idx)
           })
 
           # A replacement is valid only when it did not use fallback and
-          # returned exactly one complete result for every strategy.
-          if (!isTRUE(attr(df_sim_results, "fallback_used")) &&
-              psa_outcomes_complete(df_sim_results, strategies)) {
-            v_strategy_rows <- match(strategies, df_sim_results$Strategy)
+          # returned exactly one complete result for every strategy (and,
+          # with extended outcomes, complete life-years and cell outcomes).
+          if (draw_complete(df_sim_results)) {
             # Replace the failed iteration's results
-            m_cost[failed_i, ] <- df_sim_results$Cost[v_strategy_rows]
-            m_effect[failed_i, ] <- df_sim_results$Effect[v_strategy_rows]
+            store_draw(failed_i, df_sim_results)
             success <- TRUE
             replaced_count <- replaced_count + 1
             v_replaced_iterations <- c(v_replaced_iterations, failed_i)
@@ -403,7 +497,9 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
   v_unreplaced_iterations <- setdiff(v_fallback_iterations, v_replaced_iterations)
   v_incomplete_iterations <- which(
     !apply(m_cost, 1L, function(x) all(is.finite(x))) |
-      !apply(m_effect, 1L, function(x) all(is.finite(x)))
+      !apply(m_effect, 1L, function(x) all(is.finite(x))) |
+      !apply(m_ly_disc, 1L, function(x) all(is.finite(x))) |
+      !apply(m_ly_undisc, 1L, function(x) all(is.finite(x)))
   )
   v_dropped_iterations <- sort(unique(c(
     v_unreplaced_iterations,
@@ -421,6 +517,16 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     )
     m_cost <- m_cost[v_retained_iterations, , drop = FALSE]
     m_effect <- m_effect[v_retained_iterations, , drop = FALSE]
+    m_ly_disc <- m_ly_disc[v_retained_iterations, , drop = FALSE]
+    m_ly_undisc <- m_ly_undisc[v_retained_iterations, , drop = FALSE]
+  }
+  # The cell arrays were not subset above; keep the retained draws only.
+  cells <- NULL
+  if (isTRUE(extended_outcomes)) {
+    cells <- list(values = a_cell_values[v_retained_iterations, , , , drop = FALSE],
+                  mass = m_cell_mass[v_retained_iterations, , drop = FALSE],
+                  violations = a_cell_violations[v_retained_iterations, , , drop = FALSE],
+                  cells = v_cells)
   }
 
   if (length(v_retained_iterations) == 0L) {
@@ -453,10 +559,12 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     cat("------------------------------------------------\n\n")
   }
 
-  # Return the cost and effect matrices separately
+  # Return the cost, effect and life-year matrices separately
   return(list(
     cost = m_cost,
     effect = m_effect,
+    ly_disc = m_ly_disc,
+    ly_undisc = m_ly_undisc,
     fallback_count = fallback_count,
     dropped_count = dropped_count,
     dropped_iterations = v_dropped_iterations,
@@ -467,8 +575,40 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
     replacement_model_policy = "cyclic_next_10_other_cached_models_v1",
     fallback_rate = fallback_rate,
     fallback_threshold = fallback_threshold,
-    pfs_os_violations = pfs_os_violations
+    pfs_os_violations = pfs_os_violations,
+    extended_outcomes = isTRUE(extended_outcomes),
+    cells = cells
   ))
+}
+
+# Schema of the cell-level component of a PSA object (issue #200).
+PSA_CELLS_SCHEMA <- "psa_cells_v1"
+
+#' Assemble the cell-level component stored in a PSA object
+#'
+#' @param psa_results Output of run_psa_analysis() with extended outcomes.
+#' @param l_params_base Base-case parameter list of the PSA (prediction
+#'   population, nivolumab price, diagnostic-test prices).
+#' @param df_psa_params Retained PSA parameter rows (row-aligned with the
+#'   outcomes); a sampled `c_drug_nivo` column is used per draw.
+#' @return List with `schema`, `cells` (keys), `cell_definition` (biomarker
+#'   values per cell), `biomarkers`, `arms`, `outcomes`, `values` (draw x cell
+#'   x arm x outcome), `weights` (draw x cell joint cell masses),
+#'   `violations` (draw x cell x arm), `nivolumab_price` (per draw: the price
+#'   at which the cell costs were evaluated) and `test_costs` (per biomarker).
+build_psa_cell_component <- function(psa_results, l_params_base, df_psa_params) {
+  v_biomarkers <- get_biomarkers()
+  joint <- joint_biomarker_population(l_params_base$prediction_population, v_biomarkers)
+  n_draws <- nrow(psa_results$cells$mass)
+  v_price <- if ("c_drug_nivo" %in% names(df_psa_params)) df_psa_params$c_drug_nivo else
+    rep(l_params_base$c_drug_nivo, n_draws)
+  list(schema = PSA_CELLS_SCHEMA, cells = psa_results$cells$cells,
+       cell_definition = joint$cells, biomarkers = v_biomarkers, arms = CELL_ARMS,
+       outcomes = CELL_OUTCOMES, values = psa_results$cells$values,
+       weights = psa_results$cells$mass, violations = psa_results$cells$violations,
+       nivolumab_price = as.numeric(v_price),
+       test_costs = vapply(v_biomarkers, function(b) l_params_base[[biomarker_cost_key(b)[[1]]]],
+                           numeric(1)))
 }
 
 
@@ -484,11 +624,16 @@ run_psa_analysis <- function(psa_params, l_params_base, param_distributions,
 #' @param currency Currency label passed to `dampack::make_psa_obj()`
 #' @param additional_params Optional draw-aligned columns, such as interaction coefficients
 #' @param fallback_threshold Maximum initial fallback rate
-#' @return List containing `psa_obj`, retained `psa_params`, and `psa_results`
+#' @param extended_outcomes See run_psa_analysis().
+#' @return List containing `psa_obj` (with the life-year draws as
+#'   `psa_obj$ly_disc` and `psa_obj$ly_undisc`, n_sim x strategies data frames
+#'   aligned with dampack's `cost` and `effectiveness`; issue #197), retained
+#'   `psa_params`, and `psa_results`. With extended outcomes the PSA object
+#'   also holds `cells` (build_psa_cell_component(); issue #200).
 build_psa_obj <- function(l_params_base, param_distributions, strategies,
                           time_horizon, cl, n_sim, seed = 123L,
                           currency = "€", additional_params = NULL,
-                          fallback_threshold = 0.02) {
+                          fallback_threshold = 0.02, extended_outcomes = NULL) {
   df_psa_params <- generate_psa_samples(param_distributions, n_sim, seed)
   if (!is.null(additional_params) && nrow(additional_params) != n_sim) {
     stop("additional_params must contain exactly n_sim rows")
@@ -496,7 +641,7 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
 
   psa_results <- run_psa_analysis(
     df_psa_params, l_params_base, param_distributions, strategies,
-    time_horizon, cl, n_sim, fallback_threshold
+    time_horizon, cl, n_sim, fallback_threshold, extended_outcomes
   )
   df_psa_params <- df_psa_params[psa_results$retained_iterations, , drop = FALSE]
   # The cached survival model behind each retained row. Replaced draws keep
@@ -519,6 +664,10 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
     strategies = strategies,
     currency = currency
   )
+  # Life-years of the same retained draws (issue #197), stored like the dampack
+  # cost and effectiveness tables: one column per strategy, one row per draw.
+  psa_obj$ly_disc <- as.data.frame(psa_results$ly_disc)
+  psa_obj$ly_undisc <- as.data.frame(psa_results$ly_undisc)
   v_metadata <- c(
     requested_n_sim = "requested_n_sim", fallback_count = "fallback_count",
     model_idx = "model_idx",
@@ -528,6 +677,9 @@ build_psa_obj <- function(l_params_base, param_distributions, strategies,
   )
   for (field in names(v_metadata)) {
     psa_obj[[field]] <- if (field == "requested_n_sim") n_sim else psa_results[[v_metadata[[field]]]]
+  }
+  if (isTRUE(psa_results$extended_outcomes)) {
+    psa_obj$cells <- build_psa_cell_component(psa_results, l_params_base, df_psa_params)
   }
 
   list(psa_obj = psa_obj, psa_params = df_psa_params, psa_results = psa_results)

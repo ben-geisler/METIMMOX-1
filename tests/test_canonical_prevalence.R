@@ -32,6 +32,15 @@ params <- list(time_horizon = 52, cl = 1 / 52,  # grid owned by params (#172)
 for (name in c("l_nivo", "l_FLOX_exp", "l_FLOX_control", "l_CT", "l_blood", "l_visit"))
   params[[name]] <- rep(1, 53)
 params <- set_population_predictions(params, preds)
+# Later treatment sequences (issue #208) with the same shares, start weeks and
+# regimen in both arms, so treatment stays identical across strategies.
+v_same_regimen <- list(FLOX = c(0L, 2L), nivolumab = integer(0))
+params$later_sequences <- list(
+  counts = data.frame(arm = c("control", "experimental"), n_patients = 4, n_seq3 = 2, n_seq4 = 0),
+  start_weeks = data.frame(arm = c("control", "experimental"), sequence = 3L, week = 30L, n = 2),
+  regimen = list(control = v_same_regimen, experimental = v_same_regimen))
+params[c("p_seq3_control", "p_seq3_experimental")] <- 0.5
+params[c("p_seq4_given_seq3_control", "p_seq4_given_seq3_experimental")] <- 0
 joint <- joint_biomarker_population(data_complete)
 params$joint_counts <- joint$counts
 for (cell in names(joint$probabilities)) params[[paste0("p_joint_", cell)]] <- unname(joint$probabilities[cell])
@@ -83,6 +92,10 @@ stopifnot(max(abs(rowSums(df_draws[v_joint_keys]) - 1)) < 1e-12,
 for (i in 1:10) {
   p <- params
   for (name in names(config$distributions)) p[[name]] <- df_draws[[name]][i]
+  # The arms' later-sequence shares are drawn independently; equal treatment
+  # needs the same share in both arms.
+  p$p_seq3_experimental <- p$p_seq3_control
+  p$p_seq4_given_seq3_experimental <- p$p_seq4_given_seq3_control
   assert_equal_strategies(model_fun(p, time_horizon = 52))
   assert_equal_strategies(model_fun(p, time_horizon = 52, determpsa = "psa", sim_idx = 1))
 }

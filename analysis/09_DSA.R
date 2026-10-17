@@ -54,7 +54,7 @@ print(dsa_ranges)
 #' Annotate one DSA model run with its NMB and parameter setting
 #'
 #' @param model_output Data frame returned by model_fun() (Strategy, Cost,
-#'   Effect).
+#'   Effect, LY_disc, LY_undisc).
 #' @param parameter Name of the varied parameter or scenario ("base_case" for
 #'   the base case).
 #' @param value_type Which endpoint was run: "base", "min" or "max".
@@ -361,7 +361,7 @@ if (has_models) {
   # same-family pair so the reference row is always present.
   if (!selected_label %in% names(model_sensitivity_results)) {
     df_base_rows <- dsa_results[dsa_results$Parameter == "base_case",
-                             c("Strategy", "Cost", "Effect", "NMB")]
+                             c("Strategy", "Cost", "Effect", "LY_disc", "LY_undisc", "NMB")]
     df_base_rows$Distribution <- selected_label
     model_sensitivity_results[[selected_label]] <- df_base_rows
     df_audit <- audit_row(selected_pair$os, selected_pair$pfs)
@@ -431,7 +431,7 @@ if (has_models) {
           endpoint <- if (side == "min") which.min(df_strat_results[[measure]]) else
             which.max(df_strat_results[[measure]])
           data.frame(
-            Strategy = strat, Cost = NA, Effect = NA,
+            Strategy = strat, Cost = NA, Effect = NA, LY_disc = NA, LY_undisc = NA,
             NMB = df_strat_results$NMB[endpoint], Parameter = "Survival_Model",
             Value = side, ParamValue = NA, group = "survival_model",
             NMB_diff = df_strat_results$NMB_diff[endpoint],

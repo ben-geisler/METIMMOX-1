@@ -29,7 +29,7 @@ base_c_drug_nivo <- l_params_base$c_drug_nivo
 scenarios <- define_scenarios(
   base_wtp = WTP,  # Assuming WTP = 51000 from environment
   base_c_drug_nivo = base_c_drug_nivo,
-  decreased_c_drug_nivo = 4641
+  decreased_c_drug_nivo = NIVO_PRICE_BIOSIMILAR
 )
 
 cat("=== SCENARIO DEFINITIONS ===\n")

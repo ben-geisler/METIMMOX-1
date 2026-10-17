@@ -18,6 +18,7 @@ begin_artifact_render("table_1")
 source(here::here("R/report_setup.R"))
 setup_report(
   sources = c("02", "03", "04", "05"),
+  funs = c("calculate_outcomes"),  # monitoring constants (issue #207)
   packages = c("here", "dplyr", "knitr", "kableExtra"),
   set_theme = FALSE
 )
@@ -102,12 +103,18 @@ scenario_range <- function(name, fmt) {
   sprintf("%s–%s", fmt(sc$min), fmt(sc$max))
 }
 
+# Second-line therapy at incident progression (issue #209): expected course
+# cost per progressing patient with the pathway table's extreme scenarios, and
+# the trial's progression share of PFS events.
+second_line_summary <- second_line_cost(read_second_line_pathway(), l_params_base)$summary
+second_line_share <- pfs_progression_share(data_complete)
+
 table_1 <- data.frame(
   Category = c(
     rep("Biomarker prevalences", 2),
     rep("Health-state utilities", 2),
     rep("Treatment costs (€)", 4),
-    rep("Other costs (€)", 2),
+    rep("Other costs (€)", 3),
     rep("Structural parameters", 4)
   ),
   Parameter = c(
@@ -121,10 +128,11 @@ table_1 <- data.frame(
     "NGS testing",
     "CT scan (monitoring)",
     "End-of-life",
+    "Second-line therapy (per progressing patient)",
     "Discount rate (costs and QALYs)",
     "Time horizon",
-    "Post-progression treatment cost (per quarter)",
-    "Second treatment sequence (weeks 24–38)"
+    "Flat post-progression cost per quarter (instead of second line)",
+    "Second and later treatment sequences"
   ),
   Base_case = c(
     fmt_prob(l_params_base$p_crp),
@@ -137,6 +145,7 @@ table_1 <- data.frame(
     sprintf("€%s", fmt_cost(l_params_base$c_test_NGS)),
     sprintf("€%s", fmt_cost(l_params_base$c_test_CT)),
     sprintf("€%s", fmt_cost(l_params_base$c_other_last)),
+    sprintf("€%s", fmt_cost(second_line_summary["base", "per_progressing"])),
     fmt_pct(dr),
     sprintf("%g years", time_horizon / 52),
     sprintf("€%s", fmt_cost(l_params_base$c_other_pp)),
@@ -153,6 +162,8 @@ table_1 <- data.frame(
     dsa_range("c_test_NGS", fmt_cost),
     dsa_range("c_test_CT", fmt_cost),
     dsa_range("c_other_last", fmt_cost),
+    sprintf("€%s–€%s", fmt_cost(second_line_summary["low", "per_progressing"]),
+            fmt_cost(second_line_summary["high", "per_progressing"])),
     scenario_range("Discount_rate", fmt_pct),
     paste(scenario_range("Time_horizon", fmt_yr), "years"),
     scenario_range("Post_progression_cost", function(x) sprintf("€%s", fmt_cost(x))),
@@ -160,6 +171,7 @@ table_1 <- data.frame(
   ),
   Range_type = c(
     rep("One-way DSA (±20%)", 10),
+    "Pathway extremes",
     rep("Structural scenario", 4)
   ),
   Distribution = c(
@@ -168,6 +180,7 @@ table_1 <- data.frame(
     psa_dist("c_drug_nivo"), psa_dist("c_drug_FLOX"),
     psa_dist("c_test_CRP"), psa_dist("c_test_NGS"),
     psa_dist("c_test_CT"), psa_dist("c_other_last"),
+    "Shares beta, cycles gamma",
     "Fixed", "Fixed", "Fixed", "Fixed"
   ),
   Source = c(
@@ -175,6 +188,7 @@ table_1 <- data.frame(
     utility_meta$source, utility_meta$source,
     "Assumption", "NoMA", "Local", "Local",
     "Ref 27", "Ref 28",
+    "Norwegian guideline; pivotal trials; DMP prices",
     "NoMA guidelines", "Assumption", "Assumption", "METIMMOX protocol"
   ),
   Notes = c(
@@ -189,12 +203,14 @@ table_1 <- data.frame(
     "",
     "CRP strategy only",
     "TMB/BRAF strategy only",
-    "Every 12 weeks",
+    sprintf("Every %d weeks while progression-free; every %g months when progressed", PF_CT_INTERVAL_WEEKS, PROGRESSED_MONITORING_INTERVAL_MONTHS),
     "",
+    sprintf("Charged once at incident progression; %d of %d PFS events are progressions",
+            second_line_share$n_progression, second_line_share$n_events),
     "Varied in deterministic scenarios only",
     "Varied in deterministic scenarios only",
-    "Zero in the base case; second-line therapy is outside the modeled scope",
-    "Base case gives it to every progression-free patient at weeks 24-38"
+    "Zero in the base case; the scenario replaces the second-line pathway",
+    "Base case gives the second sequence to every progression-free patient at weeks 24-38 and the third and fourth to the trial's share of patients by arm (issue #208); omitting the second omits the later ones"
   ),
   stringsAsFactors = FALSE
 )
@@ -220,7 +236,7 @@ kable(table_1 %>% select(-Category),
       sprintf("Utilities follow the UTILITY_SOURCE switch (currently %s).", if (UTILITY_SOURCE == 1) "1 = CORRECT trial" else "0 = METIMMOX IPD"),
       "PSA distribution: family used for the probabilistic analysis (parameter_distributions.R). 'Fixed' parameters are not sampled in the PSA; drug and test unit costs are published tariffs or assumed list prices, so they are varied deterministically only and carry no value-of-information (issue #154).",
       "The post-progression utility is not sampled independently: the PSA draws a non-negative decrement and sets u_p = u_np - decrement, so no draw places the progressed utility above the progression-free utility. In the one-way DSA, varying u_np holds the decrement fixed (u_p moves with it) and the u_p upper bound is capped at u_np, so no DSA run has utility rising on progression either (issue #190).",
-      "The base case applies no post-progression treatment cost and gives every progression-free patient a second treatment sequence at weeks 24-38; both assumptions are tested as structural scenarios in the OWSA report."
+      "The base case costs second-line therapy from the Norwegian pathway once at incident progression (issue #209; its range is the pathway table's extreme scenarios, its components are varied one at a time in the OWSA report) and gives every progression-free patient a second treatment sequence at weeks 24-38; no second-line cost, a flat post-progression rate instead and omitting the second sequence are structural scenarios in the OWSA report."
     ),
     general_title = "Notes: "
   )

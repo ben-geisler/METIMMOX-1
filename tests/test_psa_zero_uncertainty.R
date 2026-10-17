@@ -28,6 +28,8 @@ for (i in 1:3) {
   stopifnot(!isTRUE(attr(df_result, "fallback_used")),
             identical(df_base$Strategy, df_result$Strategy),
             max(abs(df_base$Cost - df_result$Cost)) < 1e-8,
-            max(abs(df_base$Effect - df_result$Effect)) < 1e-12)
+            max(abs(df_base$Effect - df_result$Effect)) < 1e-12,
+            max(abs(df_base$LY_disc - df_result$LY_disc)) < 1e-12,
+            max(abs(df_base$LY_undisc - df_result$LY_undisc)) < 1e-12)
 }
-cat("PASS: zero covariance and fixed parameters/weights reproduce all deterministic costs and QALYs.\n")
+cat("PASS: zero covariance and fixed parameters/weights reproduce all deterministic costs, QALYs and life-years.\n")

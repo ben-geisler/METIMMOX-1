@@ -141,7 +141,10 @@ if (!psa_cached) {
     time_horizon = time_horizon,
     cl = cl,
     n_sim = n_sim,
-    seed = psa_seed
+    seed = psa_seed,
+    # Life-years (#197) and cell-level outcomes per draw (#200) are required:
+    # bind_psa_pair() refuses a PSA object without them.
+    extended_outcomes = TRUE
   )
   psa_obj <- psa_build$psa_obj
   psa_params <- psa_build$psa_params
@@ -176,6 +179,13 @@ cat(" - Simulations:", psa_obj$n_sim, "\n")
 cat(" - Strategies:", psa_obj$n_strategies, "\n")
 cat(" - Cost matrix dimensions:", dim(psa_obj$cost), "\n")
 cat(" - Effect matrix dimensions:", dim(psa_obj$effect), "\n")
+cat(" - Life-year matrix dimensions (discounted; undiscounted):",
+    dim(psa_obj$ly_disc), ";", dim(psa_obj$ly_undisc), "\n")
+cat(" - Mean life-years, discounted:\n")
+print(colMeans(psa_obj$ly_disc))
+cat(" - Mean life-years, undiscounted:\n")
+print(colMeans(psa_obj$ly_undisc))
+cat(" - Cell outcomes (draw x cell x arm x outcome):", dim(psa_obj$cells$values), "\n")
 
 psa_summary <- summary(psa_obj)
 print(psa_summary)

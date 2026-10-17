@@ -308,8 +308,193 @@ Issue #168 repairs publication artifacts and their provenance. Table S7 and Figu
 
 The #168 baseline and fixed snapshots were saved with the usual `baseline` and `fixed` arguments before the fix commit, so both carry HEAD `b8e1b02`. The fixed snapshot regenerated all 5,000 PSA draws and EVPPI because the previous cache predated HEAD. Deterministic costs and QALYs are identical; maximum absolute PSA differences are EUR 2.91e-11 and 8.88e-16 QALYs, and EVPI remains zero. Scenario compilation was rebuilt from validated existing scenario results after verifying that the estimation functions and inputs were unchanged. The existing five-SE diagnostic still fails for four of six level comparisons; its criterion is unchanged. See [the validation record](../../../docs/validation/issue168_2026-09-22/README.md).
 
+Issue #197 adds discounted and undiscounted life-years as a third PSA outcome, stored per draw next to cost and QALYs, and as two columns of the deterministic results. It changes no calculation of costs or QALYs: the #197 comparison above shows no change in costs, QALYs, net monetary benefit or EVPI, because the PSA was regenerated from the same sampling cache, seed and parameter draws and only the new columns were added. The exact comparison of all draws, model indices and the scenario caches is in [the validation record](../../../docs/validation/issue197_2026-10-09/README.md).
+
+```{r issue212-population}
+# Issue #212 changes only the eligible population that scales EVPI and EVPPI
+# to the Norwegian population; per-patient values are compared above. The
+# population scaling is read from the two snapshots' EVPPI tables.
+pop212 <- local({
+  bf <- snapshot_file_for("212", "baseline")
+  af <- snapshot_file_for("212", "fixed")
+  if (is.na(bf) || is.na(af)) return(NULL)
+  b <- load_snapshot(bf, snapshots_dir)$evppi
+  a <- load_snapshot(af, snapshots_dir)$evppi
+  if (is.null(b$evppi_results) || is.null(a$evppi_results) ||
+      !nrow(b$evppi_results) || !nrow(a$evppi_results)) return(NULL)
+  annuity <- sum(1 / (1 + discount_rate_research)^seq_len(research_horizon_years))
+  pop_b <- b$evppi_results$evpi_population_millions[1]
+  pop_a <- a$evppi_results$evpi_population_millions[1]
+  list(evpi_b = b$evpi, evpi_a = a$evpi, pop_b = pop_b, pop_a = pop_a,
+       n_b = pop_b * 1e6 / (b$evpi * annuity), n_a = pop_a * 1e6 / (a$evpi * annuity))
+})
+```
+
+`r if (is.null(pop212)) "" else sprintf("Issue #212 sets the share of metastatic MSS patients fit for first-line doublet chemotherapy to the co-authors' 0.60 (personal communication), so the Norwegian eligible population implied by the two snapshots' population values moves from %s to %s patients per year. Per-patient EVPI is %s before and %s after (the #212 comparison above). The population EVPI over the %d-year research horizon moves from EUR %.2f million to EUR %.2f million, a ratio of %.4f; every population EVPPI scales by the same factor.", format(round(pop212$n_b), big.mark = ","), format(round(pop212$n_a), big.mark = ","), format_eur(pop212$evpi_b, accuracy = 0.01), format_eur(pop212$evpi_a, accuracy = 0.01), research_horizon_years, pop212$pop_b, pop212$pop_a, pop212$pop_a / pop212$pop_b)`
+
+```{r issue207-costs-only}
+# Issue #207 changes resource use only (monitoring schedule and outpatient
+# contacts), so costs move and QALYs and life-years must not. The check is
+# made on the deterministic results and on every PSA draw of the two snapshots.
+cmp207 <- local({
+  bf <- snapshot_file_for("207", "baseline")
+  af <- snapshot_file_for("207", "fixed")
+  if (is.na(bf) || is.na(af)) return(NULL)
+  b <- load_snapshot(bf, snapshots_dir)
+  a <- load_snapshot(af, snapshots_dir)
+  pb <- find_snapshot_pair(bf, snapshots_dir)
+  pa <- find_snapshot_pair(af, snapshots_dir)
+  if (is.null(pb) || is.null(pa)) return(NULL)
+  psa_b <- load_snapshot(pb$psa, snapshots_dir)
+  psa_a <- load_snapshot(pa$psa, snapshots_dir)
+  v_strategies <- get_strategies()
+  max_diff <- function(x, y) max(abs(as.matrix(x[, v_strategies]) - as.matrix(y[, v_strategies])))
+  det_b <- b$base_results[match(v_strategies, b$base_results$Strategy), ]
+  det_a <- a$base_results[match(v_strategies, a$base_results$Strategy), ]
+  list(
+    strategies = v_strategies,
+    det_cost_b = det_b$Cost, det_cost_a = det_a$Cost,
+    psa_cost_b = colMeans(psa_b$cost[, v_strategies]),
+    psa_cost_a = colMeans(psa_a$cost[, v_strategies]),
+    det_effect = max(abs(det_b$Effect - det_a$Effect)),
+    det_ly = max(abs(c(det_b$LY_disc - det_a$LY_disc, det_b$LY_undisc - det_a$LY_undisc))),
+    psa_effect = max_diff(psa_b$effectiveness, psa_a$effectiveness),
+    psa_ly = max(max_diff(psa_b$ly_disc, psa_a$ly_disc), max_diff(psa_b$ly_undisc, psa_a$ly_undisc)),
+    same_model_idx = identical(psa_b$model_idx, psa_a$model_idx),
+    n_sim = psa_a$n_sim, evpi_b = b$evppi$evpi, evpi_a = a$evppi$evpi
+  )
+})
+#' "Label EUR before to EUR after" for every strategy, comma-separated.
+cost_list207 <- function(before, after) {
+  paste(sprintf("%s %s to %s", strategy_labels[cmp207$strategies],
+                format_eur(before, accuracy = 1), format_eur(after, accuracy = 1)),
+        collapse = ", ")
+}
+```
+
+`r if (is.null(cmp207)) "" else sprintf("Issue #207 replaces the monitoring and contact schedule with the trial team's answers of 15 October 2026: a CT every 8 weeks while progression-free (was 12), a blood test in every administration week and, off treatment, with every CT (was every 4 weeks), two outpatient contacts per FLOX administration, and a follow-up visit and CT every 2.5 months after progression (was quarterly). Only costs move. Deterministic costs: %s. PSA mean costs: %s. The QALYs are unchanged (maximum absolute difference %s deterministic and %s over all %s PSA draws), and so are the discounted and undiscounted life-years (%s and %s), with %s model indices. Per-patient EVPI at the base WTP moves from %s to %s.", cost_list207(cmp207$det_cost_b, cmp207$det_cost_a), cost_list207(cmp207$psa_cost_b, cmp207$psa_cost_a), format(signif(cmp207$det_effect, 2)), format(signif(cmp207$psa_effect, 2)), format(cmp207$n_sim, big.mark = ","), format(signif(cmp207$det_ly, 2)), format(signif(cmp207$psa_ly, 2)), if (cmp207$same_model_idx) "identical" else "different", format_eur(cmp207$evpi_b, accuracy = 0.01), format_eur(cmp207$evpi_a, accuracy = 0.01))`
+
+```{r issue208-later-sequences}
+# Issue #208 adds the third and fourth treatment sequences as expected costs per
+# patient assigned to an arm, whatever the health state, so costs move and
+# QALYs and life-years must not. The four later-sequence shares are new PSA
+# parameters sampled after every other parameter, so the other parameter draws
+# are unchanged. Checked on the deterministic results, every PSA draw and every
+# cell of the PSA cell component.
+cmp208 <- local({
+  bf <- snapshot_file_for("208", "baseline")
+  af <- snapshot_file_for("208", "fixed")
+  if (is.na(bf) || is.na(af)) return(NULL)
+  b <- load_snapshot(bf, snapshots_dir)
+  a <- load_snapshot(af, snapshots_dir)
+  pb <- find_snapshot_pair(bf, snapshots_dir)
+  pa <- find_snapshot_pair(af, snapshots_dir)
+  if (is.null(pb) || is.null(pa)) return(NULL)
+  psa_b <- load_snapshot(pb$psa, snapshots_dir)
+  psa_a <- load_snapshot(pa$psa, snapshots_dir)
+  v_strategies <- get_strategies()
+  max_diff <- function(x, y) max(abs(as.matrix(x[, v_strategies]) - as.matrix(y[, v_strategies])))
+  det_b <- b$base_results[match(v_strategies, b$base_results$Strategy), ]
+  det_a <- a$base_results[match(v_strategies, a$base_results$Strategy), ]
+  v_health <- c("qalys", "ly_disc", "ly_undisc")
+  group_row <- function(e, name) {
+    if (is.null(e$evppi_results)) return(NULL)
+    e$evppi_results[e$evppi_results$parameter == name, , drop = FALSE]
+  }
+  later_group <- group_row(a$evppi, "[GROUP] later_sequences")
+  list(
+    strategies = v_strategies,
+    det_cost_b = det_b$Cost, det_cost_a = det_a$Cost,
+    psa_cost_b = colMeans(psa_b$cost[, v_strategies]),
+    psa_cost_a = colMeans(psa_a$cost[, v_strategies]),
+    det_effect = max(abs(det_b$Effect - det_a$Effect)),
+    det_ly = max(abs(c(det_b$LY_disc - det_a$LY_disc, det_b$LY_undisc - det_a$LY_undisc))),
+    psa_effect = max_diff(psa_b$effectiveness, psa_a$effectiveness),
+    psa_ly = max(max_diff(psa_b$ly_disc, psa_a$ly_disc), max_diff(psa_b$ly_undisc, psa_a$ly_undisc)),
+    same_model_idx = identical(psa_b$model_idx, psa_a$model_idx),
+    same_cells = identical(psa_b$cells$values[, , , v_health], psa_a$cells$values[, , , v_health]),
+    nivo_b = mean(psa_b$cells$values[, , "experimental", "nivo_admin"]),
+    nivo_a = mean(psa_a$cells$values[, , "experimental", "nivo_admin"]),
+    n_sim = psa_a$n_sim, evpi_b = b$evppi$evpi, evpi_a = a$evppi$evpi,
+    later_evppi = if (!is.null(later_group) && nrow(later_group)) later_group$evppi[1] else NA_real_,
+    later_se = if (!is.null(later_group) && nrow(later_group)) later_group$evppi_se[1] else NA_real_
+  )
+})
+#' "Label EUR before to EUR after" for every strategy, comma-separated.
+cost_list208 <- function(before, after) {
+  paste(sprintf("%s %s to %s", strategy_labels[cmp208$strategies],
+                format_eur(before, accuracy = 1), format_eur(after, accuracy = 1)),
+        collapse = ", ")
+}
+```
+
+`r if (is.null(cmp208)) "" else sprintf("Issue #208 costs the third and fourth treatment sequences from the trial's administration records: for each arm, the share of patients who started them times one full sequence of the arm's regimen at the observed start weeks, whatever the health state; omitting the second sequence omits them too. Only costs move. Deterministic costs: %s. PSA mean costs: %s. The QALYs are unchanged (maximum absolute difference %s deterministic and %s over all %s PSA draws), and so are the discounted and undiscounted life-years (%s and %s), with %s model indices; the QALYs and life-years of every cell and arm are %s. The discounted nivolumab administrations under the experimental arm (the price slope of paper 3, averaged over draws and cells) rise from %.2f to %.2f. Per-patient EVPI at the base WTP moves from %s to %s; the new later-sequence group has an EVPPI of %s (SE %s).", cost_list208(cmp208$det_cost_b, cmp208$det_cost_a), cost_list208(cmp208$psa_cost_b, cmp208$psa_cost_a), format(signif(cmp208$det_effect, 2)), format(signif(cmp208$psa_effect, 2)), format(cmp208$n_sim, big.mark = ","), format(signif(cmp208$det_ly, 2)), format(signif(cmp208$psa_ly, 2)), if (cmp208$same_model_idx) "identical" else "different", if (cmp208$same_cells) "identical" else "different", cmp208$nivo_b, cmp208$nivo_a, format_eur(cmp208$evpi_b, accuracy = 0.01), format_eur(cmp208$evpi_a, accuracy = 0.01), format_eur(cmp208$later_evppi, accuracy = 0.01), format_eur(cmp208$later_se, accuracy = 0.01))`
+
+Issue #209 is a change of base-case scope, not a bug fix: second-line therapy after progression is costed from the Norwegian pathway, once at incident progression. The #209 comparison above therefore shows costs rising in every strategy and QALYs and life-years unchanged. The incremental costs fall slightly, because the guided strategies delay progression. The PSA was regenerated from the same sampling cache and seed; the second-line parameters are drawn after all earlier parameters, so every earlier draw is unchanged.
+
+```{r issue216-second-line-after-207-208}
+# Snapshot pair 216: the #209 second-line therapy merged on top of #207
+# (monitoring) and #208 (later sequences). Only costs may move: the second-line
+# rows are drawn after every earlier parameter, so QALYs and life-years must be
+# identical in every draw.
+cmp216 <- local({
+  bf <- snapshot_file_for("216", "baseline")
+  af <- snapshot_file_for("216", "fixed")
+  if (is.na(bf) || is.na(af)) return(NULL)
+  b <- load_snapshot(bf, snapshots_dir)
+  a <- load_snapshot(af, snapshots_dir)
+  pb <- find_snapshot_pair(bf, snapshots_dir)
+  pa <- find_snapshot_pair(af, snapshots_dir)
+  if (is.null(pb) || is.null(pa)) return(NULL)
+  psa_b <- load_snapshot(pb$psa, snapshots_dir)
+  psa_a <- load_snapshot(pa$psa, snapshots_dir)
+  v_strategies <- get_strategies()
+  v_control <- v_strategies[1]
+  max_diff <- function(x, y) max(abs(as.matrix(x[, v_strategies]) - as.matrix(y[, v_strategies])))
+  det_b <- b$base_results[match(v_strategies, b$base_results$Strategy), ]
+  det_a <- a$base_results[match(v_strategies, a$base_results$Strategy), ]
+  ratio <- function(cost, effect) (cost[-1] - cost[1]) / (effect[-1] - effect[1])
+  psa_mean <- function(x) colMeans(as.matrix(x[, v_strategies]))
+  group_row <- function(e, name) {
+    if (is.null(e$evppi_results)) return(NULL)
+    e$evppi_results[e$evppi_results$parameter == name, , drop = FALSE]
+  }
+  sl_group <- group_row(a$evppi, "[GROUP] second_line")
+  list(
+    strategies = v_strategies,
+    det_cost_b = det_b$Cost, det_cost_a = det_a$Cost,
+    psa_cost_b = psa_mean(psa_b$cost), psa_cost_a = psa_mean(psa_a$cost),
+    det_ratio_b = ratio(det_b$Cost, det_b$Effect), det_ratio_a = ratio(det_a$Cost, det_a$Effect),
+    psa_ratio_b = ratio(psa_mean(psa_b$cost), psa_mean(psa_b$effectiveness)),
+    psa_ratio_a = ratio(psa_mean(psa_a$cost), psa_mean(psa_a$effectiveness)),
+    det_effect = max(abs(det_b$Effect - det_a$Effect)),
+    det_ly = max(abs(c(det_b$LY_disc - det_a$LY_disc, det_b$LY_undisc - det_a$LY_undisc))),
+    psa_effect = max_diff(psa_b$effectiveness, psa_a$effectiveness),
+    psa_ly = max(max_diff(psa_b$ly_disc, psa_a$ly_disc), max_diff(psa_b$ly_undisc, psa_a$ly_undisc)),
+    same_model_idx = identical(psa_b$model_idx, psa_a$model_idx),
+    n_sim = psa_a$n_sim, evpi_b = b$evppi$evpi, evpi_a = a$evppi$evpi,
+    sl_evppi = if (!is.null(sl_group) && nrow(sl_group)) sl_group$evppi[1] else NA_real_,
+    sl_se = if (!is.null(sl_group) && nrow(sl_group)) sl_group$evppi_se[1] else NA_real_
+  )
+})
+#' "Label EUR before to EUR after" for the given strategies, comma-separated.
+cost_list216 <- function(before, after, ids = cmp216$strategies) {
+  paste(sprintf("%s %s to %s", strategy_labels[ids],
+                format_eur(before, accuracy = 1), format_eur(after, accuracy = 1)),
+        collapse = ", ")
+}
+#' Same for ratios; a negative ratio (fewer QALYs at higher cost) is never
+#' printed as a cost per QALY.
+ratio_list216 <- function(before, after, ids = cmp216$strategies[-1]) {
+  fmt <- function(x) ifelse(x < 0, "dominated by standard of care", format_eur(x, accuracy = 1))
+  paste(sprintf("%s %s to %s", strategy_labels[ids], fmt(before), fmt(after)), collapse = ", ")
+}
+```
+
+`r if (is.null(cmp216)) "" else sprintf("Snapshot pair 216 measures the second-line therapy of issue #209 on top of the monitoring schedule of #207 and the later sequences of #208 (the #209 pair above was taken before those two). Only costs move. Deterministic costs: %s. PSA mean costs: %s. Incremental cost per QALY versus standard of care, deterministic: %s; PSA ratio of mean increments: %s The QALYs are unchanged (maximum absolute difference %s deterministic and %s over all %s PSA draws), and so are the discounted and undiscounted life-years (%s and %s), with %s model indices. Per-patient EVPI at the base WTP moves from %s to %s; the second-line group has an EVPPI of %s (SE %s).", cost_list216(cmp216$det_cost_b, cmp216$det_cost_a), cost_list216(cmp216$psa_cost_b, cmp216$psa_cost_a), ratio_list216(cmp216$det_ratio_b, cmp216$det_ratio_a), ratio_list216(cmp216$psa_ratio_b, cmp216$psa_ratio_a), format(signif(cmp216$det_effect, 2)), format(signif(cmp216$psa_effect, 2)), format(cmp216$n_sim, big.mark = ","), format(signif(cmp216$det_ly, 2)), format(signif(cmp216$psa_ly, 2)), if (cmp216$same_model_idx) "identical" else "different", format_eur(cmp216$evpi_b, accuracy = 0.01), format_eur(cmp216$evpi_a, accuracy = 0.01), format_eur(cmp216$sl_evppi, accuracy = 0.01), format_eur(cmp216$sl_se, accuracy = 0.01))`
+
 ---
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 4.7
+**Report version:** 5.2
