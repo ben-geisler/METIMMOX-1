@@ -24,7 +24,9 @@ jobs:
     name: Data-free tests and safety scan
     # The private repository carries the same file; skip the job there.
     if: github.repository == 'ben-geisler/METIMMOX-1'
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04 (GCC 15, newer CMake), where the locked
+    # readxl, systemfonts, later and nloptr no longer compile.
+    runs-on: ubuntu-24.04
     env:
       # renv.lock installs dampack and darthtools from GitHub; the token avoids
       # the anonymous API rate limit.
