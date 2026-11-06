@@ -353,7 +353,7 @@ Three scope decisions bound the interpretation of these results (issue #154).
 
 **Second treatment sequence given to all progression-free patients.** Both arms receive a second eight-cycle sequence at weeks 24-38, applied to every patient still progression-free at that point. METIMMOX re-treated on progression during the treatment break, so the model charges second-sequence drug and visit costs to patients who would not have been re-treated. A partitioned survival model has no on-treatment substate, so re-treatment cannot be conditioned on progression without restructuring the model; a structural scenario removing the second sequence, with survival held at the trial estimate, bounds the cost side of the assumption. Third and fourth sequences (issue #208) are costed from the trial's administration records instead: the share of patients of each arm who started them, times one full sequence, at the observed start weeks and whatever the health state; the scenario removes them with the second.
 
-**Nivolumab price is an assumption.** The base-case price per administration is an assumed Norwegian hospital acquisition cost rather than a citable tariff, because Norwegian hospital prices are set by confidential LIS tender. It is the largest single cost driver; the biosimilar scenario and the one-way analysis show how the conclusions move with it.
+**Nivolumab price is an assumption.** The base-case price per administration is an assumed Norwegian hospital acquisition cost rather than a citable tariff, because Norwegian hospital prices are set by confidential LIS tender. It is the largest unit-price driver; the biosimilar scenario and the one-way analysis show how the conclusions move with it.
 
 Adverse-event costs and disutilities remain outside the modeled scope, as described in the project documentation.
 
@@ -388,4 +388,4 @@ os5_iv <- benchmark_model_interval(soc_os_draws, list(measure = "survival", time
 
 **Report completed on:** `r Sys.Date()`\
 **Repository:** ben-geisler/METIMMOX-1\
-**Report version:** 5.3
+**Report version:** 5.4

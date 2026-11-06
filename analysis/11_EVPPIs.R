@@ -94,13 +94,17 @@ m_nmb <- m_effect * WTP - m_cost
 cat("NMB matrix summary:\n")
 print(summary(m_nmb))
 
-# Total EVPI via dampack. This equals the population-NMB definition used above
-# (mean(max NMB per draw) - max(mean NMB per strategy)); verified equal to the
-# hand-rolled value to < 1e-6. Named evpi_manual for cache/report compatibility.
-evpi_manual <- dampack::calc_evpi(psa = psa_obj, wtp = WTP)$EVPI[1]
+# Total EVPI: mean(max NMB per draw) - max(mean NMB per strategy). Named
+# evpi_manual for cache/report compatibility.
+#
+# Computed from the exact per-draw maximum (#210): dampack::calc_evpi() picks
+# each draw's optimum with max.col(ties.method = "random"), which treats NMBs
+# within a relative 1e-5 as tied, so with a near-tie its EVPI depended on the
+# RNG state and disagreed with load_evppi_cache() (EUR 4.6e-5 at the base case).
+evpi_manual <- calculate_evpi_from_nmb(m_nmb)
 
 cat("EVPI calculation:\n")
-cat("  - EVPI (dampack::calc_evpi):", round(evpi_manual, 2), "\n")
+cat("  - EVPI (exact per-draw maximum):", round(evpi_manual, 2), "\n")
 
 # ===============================================================================
 # RUN EVPPI ANALYSIS
